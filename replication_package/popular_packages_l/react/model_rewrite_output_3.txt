@@ -1,0 +1,104 @@
+The code provided is a basic implementation of a mini React-like library for creating a web application. It consists of two modules: `react.js` and `react-dom.js`, which together emulate React's functionality of managing state and rendering elements.
+
+1. **index.js:**
+   - Defines a `Counter` component using a custom `useState` hook to maintain and update the state (`count` in this case).
+   - Defines the `App` component, which simply renders the `Counter`.
+   - Uses `createRoot` and `root.render` to render the `App` component into a specified DOM node (`rootNode`).
+   
+2. **react.js:**
+   - Implements a `useState` function to manage state. It returns an array containing a function to get the state and a function to set the state.
+   - Provides a `createElement` function to create elements in a virtual DOM style. It returns an object representation of an HTML element with type, props, and children.
+
+3. **react-dom.js:**
+   - Contains a `createRoot` function that prepares a DOM container for rendering and provides a `render` function which clears the container and appends newly rendered elements.
+   - Implements `renderElement` to convert the virtual DOM object into actual DOM elements. It handles string, number, and function types for rendering elements and manages event listeners.
+
+Below is a rewritten and refactored version of the code:
+
+```javascript
+// index.js
+import { createElement, useState } from './react';
+import { createRoot } from './react-dom';
+
+function Counter() {
+  const [count, setCount] = useState(0);
+  return createElement(
+    'div',
+    null,
+    createElement('h1', null, count),
+    createElement(
+      'button',
+      {
+        onClick: () => setCount(count + 1)
+      },
+      'Increment'
+    )
+  );
+}
+
+function App() {
+  return createElement(Counter, null);
+}
+
+const rootNode = document.getElementById('root');
+const root = createRoot(rootNode);
+
+root.render(createElement(App, null));
+
+// react.js
+export function useState(initialValue) {
+  let _val = initialValue;
+  function state() {
+    return _val;
+  }
+  function setState(newVal) {
+    _val = newVal;
+    // In a real app this would trigger re-render
+  }
+  return [state, setState];
+}
+
+export function createElement(type, props, ...children) {
+  return { type, props: props || {}, children };
+}
+
+// react-dom.js
+export function createRoot(container) {
+  return {
+    render(element) {
+      container.innerHTML = '';
+      const renderedElement = renderElement(element);
+      container.appendChild(renderedElement);
+    },
+  };
+}
+
+function renderElement(node) {
+  if (typeof node === 'string' || typeof node === 'number') {
+    return document.createTextNode(node);
+  }
+
+  const { type, props, children } = node;
+
+  if (typeof type === 'function') {
+    return renderElement(type(props));
+  }
+
+  const domElement = document.createElement(type);
+
+  for (const [name, value] of Object.entries(props)) {
+    if (name.startsWith('on') && name.toLowerCase() in window) {
+      const eventType = name.toLowerCase().substring(2);
+      domElement.addEventListener(eventType, value);
+    } else {
+      domElement.setAttribute(name, value);
+    }
+  }
+
+  for (const child of children) {
+    domElement.appendChild(renderElement(child));
+  }
+
+  return domElement;
+}
+```

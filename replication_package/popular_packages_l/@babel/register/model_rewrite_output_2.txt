@@ -1,0 +1,53 @@
+The provided Node.js code is a custom implementation of a module loader hook that uses Babel for transforming JavaScript files before they are loaded. This code allows you to automatically compile JavaScript files using Babel when they are required in a Node.js environment.
+
+Here's how the code works:
+1. It sets up a cache object to store compiled module results to avoid recompiling them.
+2. It defines a `babelRegister` function which hooks into the Node.js `require` system.
+3. When called, this function overrides the require behavior for the specified file extensions (defaulting to `.js` and `.jsx`).
+4. For each file of these types, the code reads the file's content and uses Babel's `transformSync` to compile the content according to provided Babel options, caching the transformed code.
+5. It then overrides the module's compile function to return the cached, transformed code instead.
+6. On process exit, it restores the original require handler for `.js` files.
+7. It exports a function that initializes the `babelRegister` with passed options.
+
+Here is a possible rewrite of the original code maintaining its functionality:
+
+```javascript
+const fs = require('fs');
+const path = require('path');
+const { transformSync } = require('@babel/core');
+
+// A cache object to store the transformed module content
+const cache = {};
+
+// Function to set up Babel to compile required files
+function babelRegister({ extensions = ['.js', '.jsx'], babelOptions = {} }) {
+  const originalJsRequire = require.extensions['.js'];
+
+  // Extending the require system to transform files
+  extensions.forEach(extension => {
+    require.extensions[extension] = (module, filename) => {
+      const _compile = module._compile;
+
+      // Check the cache first
+      if (!cache[filename]) {
+        const sourceCode = fs.readFileSync(filename, 'utf8');
+        const transformed = transformSync(sourceCode, { ...babelOptions, filename });
+        cache[filename] = transformed.code;
+      }
+
+      // Use the transformed code
+      module._compile(cache[filename], filename);
+    };
+  });
+
+  // Restore the original require system for .js on process exit
+  process.on('exit', () => {
+    require.extensions['.js'] = originalJsRequire;
+  });
+}
+
+// Export a function to allow users to apply Babel require hook with options
+module.exports = function(options) {
+  babelRegister(options || {});
+};
+```

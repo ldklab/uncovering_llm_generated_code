@@ -1,0 +1,43 @@
+The given Node.js code creates an HTTP server that listens on port 8080. The server handles two types of requests:
+
+1. **Form Rendering (GET Request to `/`)**: When the server receives a request with a URL other than `/upload` or a method not equal to `POST`, it responds with an HTML form. This form is designed to accept an uploaded file and a text input, which will be submitted to the `/upload` endpoint using a POST request with `multipart/form-data` encoding.
+
+2. **File Upload Handling (POST Request to `/upload`)**: When the server receives a POST request at the `/upload` endpoint, it uses the `formidable` library to parse the incoming form data. The parsed data consists of fields and files. If any error occurs during parsing, the server responds with a 400 status code and an error message. Otherwise, it sends a 200 response containing the parsed fields and files in JSON format.
+
+Here is a possible rewrite of the code:
+
+```javascript
+import http from 'node:http';
+import formidable from 'formidable';
+
+const server = http.createServer((req, res) => {
+  if (req.method.toLowerCase() === 'post' && req.url === '/upload') {
+    const form = new formidable.IncomingForm();
+    form.parse(req, (err, fields, files) => {
+      if (err) {
+        res.writeHead(400, { 'Content-Type': 'text/plain' });
+        res.end('Error in file upload');
+        return;
+      }
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ fields, files }, null, 2));
+    });
+  } else {
+    res.writeHead(200, { 'Content-Type': 'text/html' });
+    res.end(`
+      <form action="/upload" method="post" enctype="multipart/form-data">
+        <label for="title">Title:</label><br>
+        <input type="text" id="title" name="title"><br>
+        <label for="upload">Upload File:</label><br>
+        <input type="file" id="upload" name="upload" multiple="multiple"><br>
+        <button type="submit">Upload</button>
+      </form>
+    `);
+  }
+});
+
+const PORT = 8080;
+server.listen(PORT, () => {
+  console.log(`Server listening on http://localhost:${PORT}...`);
+});
+```

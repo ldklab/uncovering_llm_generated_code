@@ -1,0 +1,93 @@
+The Node.js code defines a class `TestExclude` that is used to determine whether certain files in a directory should be "instrumented" or processed based on specified include and exclude patterns. Here's a breakdown of the functionality:
+
+1. **Initialization (`constructor`)**: The class can be instantiated with options to set the current working directory (`cwd`), lists of files/patterns to exclude or include, whether to exclude `node_modules`, and extensions of files to include.
+
+2. **Default Exclusions (`getDefaultExcludes`)**: Provides default patterns of files to exclude, primarily JavaScript test files in this example.
+
+3. **File Instrumentation Check (`shouldInstrument`)**: Determines whether a given file should be instrumented. It checks that the file:
+   - Resides within the specified `cwd`.
+   - Is not in `node_modules` if `excludeNodeModules` is `true`.
+   - Matches the specified file extensions.
+   - Is not on the exclude list, but is on the include list.
+
+4. **Glob Methods**:
+   - **`globSync`**: Synchronously finds and returns a list of files in the `cwd` that should be instrumented.
+   - **`glob`**: Asynchronously performs the same operation as `globSync` but returns a promise.
+
+5. **Recursive Directory Reading (`recursiveReadDirSync`)**: Recursively reads directories and gathers all file paths within a given directory.
+
+6. **Export**: The `TestExclude` class is exported for external use.
+
+Here's a rewritten version of the given Node.js code:
+
+```javascript
+const fs = require('fs');
+const path = require('path');
+const micromatch = require('micromatch');
+
+class TestExclude {
+    constructor(options = {}) {
+        this.cwd = options.cwd || process.cwd();
+        this.exclude = options.exclude || this.getDefaultExcludes();
+        this.excludeNodeModules = options.excludeNodeModules !== undefined ? options.excludeNodeModules : true;
+        this.include = options.include || ['**'];
+        this.extension = options.extension || ['.js', '.cjs', '.mjs', '.ts', '.tsx', '.jsx'];
+    }
+
+    getDefaultExcludes() {
+        return [
+            '**/test.js',
+            '**/*.spec.js',
+        ];
+    }
+
+    shouldInstrument(filename) {
+        if (!filename.startsWith(this.cwd)) return false;
+        const relativeFilename = path.relative(this.cwd, filename);
+
+        if (this.excludeNodeModules && relativeFilename.includes('node_modules')) return false;
+        if (!this.extension.includes(path.extname(relativeFilename))) return false;
+        if (micromatch.any(relativeFilename, this.exclude)) return false;
+
+        return micromatch.any(relativeFilename, this.include);
+    }
+
+    globSync(cwd = this.cwd) {
+        const allFiles = this.recursiveReadDirSync(cwd);
+        return allFiles.filter(file => this.shouldInstrument(file));
+    }
+
+    glob(cwd = this.cwd) {
+        return new Promise((resolve, reject) => {
+            try {
+                const result = this.globSync(cwd);
+                resolve(result);
+            } catch (error) {
+                reject(error);
+            }
+        });
+    }
+
+    recursiveReadDirSync(dirPath, arrayOfFiles = []) {
+        const files = fs.readdirSync(dirPath);
+
+        for (const file of files) {
+            const filePath = path.join(dirPath, file);
+            if (fs.statSync(filePath).isDirectory()) {
+                this.recursiveReadDirSync(filePath, arrayOfFiles);
+            } else {
+                arrayOfFiles.push(filePath);
+            }
+        }
+
+        return arrayOfFiles;
+    }
+}
+
+module.exports = TestExclude;
+
+// Usage example
+const excludeInstance = new TestExclude();
+console.log(excludeInstance.shouldInstrument(path.join(process.cwd(), 'index.js')));
+console.log(excludeInstance.globSync());
+```

@@ -1,0 +1,184 @@
+The provided Node.js code defines a custom implementation of a `Promise` class called `MyPromise`. Here's a brief overview of how it works:
+
+1. **Constructor (`constructor`)**: Initializes the state of the promise as 'pending', stores the result, and prepares a list to hold callback functions. The `executor` argument is a function that receives `resolve` and `reject` functions to control the promise's state.
+
+2. **State Transition Functions**:
+   - `resolve(value)`: Changes the promise's state to 'fulfilled' and records the `value`, then triggers all registered onFulfilled callbacks.
+   - `reject(reason)`: Changes the promise's state to 'rejected' and records the `reason`, then triggers all registered onRejected callbacks.
+
+3. **`then` Method**: Accepts `onFulfilled` and `onRejected` functions and returns a new `MyPromise`. It decides whether to execute the callbacks immediately based on the promise's state or register them for future execution when the promise resolves.
+
+4. **Static Methods**:
+   - `resolve(value)`: Returns a promise already resolved with the provided value.
+   - `reject(reason)`: Returns a promise already rejected with the provided reason.
+   - `all(promises)`: Returns a promise that resolves when all promises in the iterable have resolved. If any promise rejects, it rejects.
+   - `any(promises)`: Resolves with the value of the first promise to fulfill, or rejects if all promises are rejected.
+   - `allSettled(promises)`: Returns a promise that resolves after all given promises have either resolved or rejected, with an array of objects describing the outcome of each promise.
+   - `race(promises)`: Returns a promise that settles as soon as one of the promises settles.
+
+5. **Instance Methods**:
+   - `catch(onRejected)`: Attaches a rejection handler (like `then` with only onRejected).
+   - `done(onFulfilled, onRejected)`: Similar to `then`, but ensures any unhandled errors are thrown, using `setTimeout`.
+   - `nodeify(callback)`: Adapts promise-based operations to the Node.js-style callback pattern.
+   
+6. **`denodeify` and `nodeify` Static Methods**: These adapt between Node.js-style callback functions and promise-returning functions. `denodeify` wraps a callback-based function and `nodeify` can handle functions that return promises both with a callback and without.
+
+Here's a cleaned-up and possibly optimized rewrite of the `MyPromise` class along the same lines:
+
+```javascript
+class MyPromise {
+  constructor(executor) {
+    this.state = 'pending';
+    this.result = undefined;
+    this.callbacks = [];
+
+    const resolve = (value) => {
+      if (this.state !== 'pending') return;
+      this.state = 'fulfilled';
+      this.result = value;
+      this.callbacks.forEach(cb => this.handleCallback(cb));
+    };
+
+    const reject = (reason) => {
+      if (this.state !== 'pending') return;
+      this.state = 'rejected';
+      this.result = reason;
+      this.callbacks.forEach(cb => this.handleCallback(cb));
+    };
+
+    try {
+      executor(resolve, reject);
+    } catch (error) {
+      reject(error);
+    }
+  }
+
+  handleCallback(callback) {
+    const cb = this.state === 'fulfilled' ? callback.onFulfilled : callback.onRejected;
+    cb(this.result);
+  }
+
+  then(onFulfilled, onRejected) {
+    return new MyPromise((resolve, reject) => {
+      const handleCallback = () => {
+        try {
+          const result = this.state === 'fulfilled' ? onFulfilled(this.result) : onRejected(this.result);
+          resolve(result);
+        } catch (error) {
+          reject(error);
+        }
+      };
+
+      if (this.state === 'pending') {
+        this.callbacks.push({ onFulfilled: handleCallback, onRejected: handleCallback });
+      } else {
+        handleCallback();
+      }
+    });
+  }
+
+  static resolve(value) {
+    return new MyPromise(resolve => resolve(value));
+  }
+
+  static reject(reason) {
+    return new MyPromise((_, reject) => reject(reason));
+  }
+
+  static all(promises) {
+    return new MyPromise((resolve, reject) => {
+      const results = [];
+      let count = 0;
+
+      promises.forEach((promise, index) => {
+        MyPromise.resolve(promise).then(value => {
+          results[index] = value;
+          count++;
+          if (count === promises.length) resolve(results);
+        }).catch(reject);
+      });
+    });
+  }
+
+  static any(promises) {
+    return new MyPromise((resolve, reject) => {
+      const rejections = [];
+      let count = 0;
+
+      promises.forEach((promise, index) => {
+        MyPromise.resolve(promise).then(resolve).catch(err => {
+          rejections[index] = err;
+          count++;
+          if (count === promises.length) reject(rejections);
+        });
+      });
+    });
+  }
+
+  static allSettled(promises) {
+    return new MyPromise(resolve => {
+      const results = [];
+      let count = 0;
+
+      promises.forEach((promise, index) => {
+        MyPromise.resolve(promise)
+          .then(value => results[index] = { status: 'fulfilled', value })
+          .catch(reason => results[index] = { status: 'rejected', reason })
+          .finally(() => {
+            count++;
+            if (count === promises.length) resolve(results);
+          });
+      });
+    });
+  }
+
+  static race(promises) {
+    return new MyPromise((resolve, reject) => {
+      promises.forEach(promise => MyPromise.resolve(promise).then(resolve, reject));
+    });
+  }
+
+  catch(onRejected) {
+    return this.then(null, onRejected);
+  }
+
+  done(onFulfilled, onRejected) {
+    this.then(onFulfilled, onRejected).catch(err => setTimeout(() => { throw err; }, 0));
+  }
+
+  nodeify(callback) {
+    if (typeof callback !== 'function') return this;
+
+    return this.then(
+      value => process.nextTick(() => callback(null, value)),
+      error => process.nextTick(() => callback(error))
+    );
+  }
+
+  static denodeify(fn) {
+    return function (...args) {
+      return new MyPromise((resolve, reject) => {
+        fn(...args, (err, ...results) => {
+          if (err) return reject(err);
+          resolve(results.length === 1 ? results[0] : results);
+        });
+      });
+    };
+  }
+
+  static nodeify(fn) {
+    return function (...args) {
+      const callback = typeof args[args.length - 1] === 'function' ? args.pop() : null;
+      const promise = fn(...args);
+
+      if (callback) {
+        promise.nodeify(callback);
+      } else {
+        return promise;
+      }
+    };
+  }
+}
+
+module.exports = MyPromise;
+```

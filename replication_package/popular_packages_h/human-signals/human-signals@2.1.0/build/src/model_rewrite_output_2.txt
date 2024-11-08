@@ -1,0 +1,69 @@
+The provided Node.js code is an implementation that manages and organizes signal data, specifically Unix signals, by name and by number. Here's a high-level breakdown of its functionality:
+
+1. **Imports and Initialization:**
+   - It imports necessary modules and functions, such as `os` for operating system signals, and custom modules `signals.js` and `realtime.js`.
+   
+2. **Functionality for Signals by Name:**
+   - The `getSignalsByName` function utilizes another function `_signals.getSignals()` to retrieve a list of signal objects. It processes these signals to create a map object where keys are signal names and values are detailed signal information. This is achieved through the `reduce` method alongside `getSignalByName`, which constructs signal details for each signal and adds it to the collection.
+   - The result is stored in `signalsByName`, which maps signal names to their properties. This is then exported.
+
+3. **Functionality for Signals by Number:**
+   - The `getSignalsByNumber` function prepares to create a mapping from signal numbers to detailed signal information. It uses the `Array.from` method to iterate over a specified range based on `_realtime.SIGRTMAX`, producing an array of objects which are merged into a single object using `Object.assign`.
+   - The `getSignalByNumber` function within it attempts to find each signal by its number using `findSignalByNumber`. If the signal is found, it returns an object containing the signal's properties; otherwise, it returns an empty object.
+   - The mapping result is stored in `signalsByNumber` and exported.
+
+4. **Signal Lookup:**
+   - `findSignalByNumber` is responsible for searching the list of signals. It first tries to match signals using the constants from the `os` module, falling back to the signal's number field if necessary.
+
+Below is a reorganized version of the provided Node.js code:
+
+```javascript
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+
+const { constants } = require("os");
+const { getSignals: getSignalsFromModule } = require("./signals.js");
+const { SIGRTMAX } = require("./realtime.js");
+
+// Generate mapping of signals by name
+const getSignalsByName = () => {
+  const signals = getSignalsFromModule();
+  return signals.reduce((signalByNameMemo, { name, number, description, supported, action, forced, standard }) => ({
+    ...signalByNameMemo,
+    [name]: { name, number, description, supported, action, forced, standard }
+  }), {});
+};
+
+const signalsByName = getSignalsByName();
+exports.signalsByName = signalsByName;
+
+// Generate mapping of signals by number
+const getSignalsByNumber = () => {
+  const signals = getSignalsFromModule();
+  const length = SIGRTMAX + 1;
+  const signalsA = Array.from({ length }, (_, number) => getSignalByNumber(number, signals));
+  return Object.assign({}, ...signalsA);
+};
+
+const getSignalByNumber = (number, signals) => {
+  const signal = findSignalByNumber(number, signals);
+  if (signal === undefined) {
+    return {};
+  }
+  const { name, description, supported, action, forced, standard } = signal;
+  return {
+    [number]: { name, number, description, supported, action, forced, standard }
+  };
+};
+
+const findSignalByNumber = (number, signals) => {
+  const signal = signals.find(({ name }) => constants.signals[name] === number);
+  if (signal !== undefined) {
+    return signal;
+  }
+  return signals.find(signalA => signalA.number === number);
+};
+
+const signalsByNumber = getSignalsByNumber();
+exports.signalsByNumber = signalsByNumber;
+```

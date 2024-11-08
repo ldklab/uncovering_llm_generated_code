@@ -1,0 +1,103 @@
+The `object.fromentries` package provides a shim for the `Object.fromEntries` method. This method converts a list of key-value pairs into an object. The shim is designed to work in environments that do not support `Object.fromEntries`, either because the implementation is unavailable or noncompliant with the ES spec proposal.
+
+Here’s a breakdown of its functionality and usage:
+
+1. **Shim Compatibility:** The package ensures compliance with the ES proposal for `Object.fromEntries`, making it safe to use in older JavaScript environments that support ES3. The shim makes `Object.fromEntries` available globally if it isn't already.
+
+2. **Usage:**
+   - You can use the package by requiring it and calling `fromEntries` with a list of key-value pairs, typically obtained from `Object.entries`.
+   - If `Object.fromEntries` is not available in the environment, you can use the shim method to automatically add it.
+
+3. **Example:**
+   - Import the package.
+   - Convert an object into entries, process it with `fromEntries`, and verify results using assertions.
+   - Use the `shim` method if native support for `Object.fromEntries` is absent.
+
+4. **Testing:** The package can be tested by cloning the repository, installing dependencies, and running tests with `npm test`.
+
+Here is the code for the Node.js package:
+
+```js
+// object.fromentries/index.js
+
+module.exports = (function() {
+    var hasNativeSupport = typeof Object.fromEntries === 'function';
+
+    function fromEntries(iter) {
+        // Validate if the iterable is either an array or implements the iterator protocol
+        if (iter === null || iter === undefined) {
+            throw new TypeError('iterable is null or not defined');
+        }
+        // Initialize output object
+        var obj = {};
+        // Coerce iterable to array if not already
+        var arr = Array.isArray(iter) ? iter : Array.from(iter);
+        
+        for (var i = 0; i < arr.length; i++) {
+            var entry = arr[i];
+            if (Object(entry) !== entry) {
+                throw new TypeError('Iterator value ' + entry + ' is not an entry object');
+            }
+            // Destructure key-value pair and assign to object
+            var key = entry[0];
+            var value = entry[1];
+            obj[key] = value;
+        }
+        // Return constructed object
+        return obj;
+    }
+
+    // Shim method to install `Object.fromEntries` globally
+    fromEntries.shim = function shim() {
+        if (!hasNativeSupport) {
+            Object.defineProperty(Object, 'fromEntries', {
+                configurable: true,
+                enumerable: false,
+                value: fromEntries,
+                writable: true
+            });
+        }
+        return Object.fromEntries;
+    };
+
+    return fromEntries;
+})();
+```
+
+```json
+// object.fromentries/package.json
+{
+  "name": "object.fromentries",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "test": "node test"
+  },
+  "dependencies": {},
+  "devDependencies": {},
+  "license": "MIT"
+}
+```
+
+```js
+// object.fromentries/test.js
+
+var assert = require('assert');
+var fromEntries = require('./index');
+
+// Test basic functionality
+var obj = { a: 1, b: 2, c: 3 };
+var actual = fromEntries([['a', 1], ['b', 2], ['c', 3]]);
+assert.deepEqual(obj, actual);
+
+// Test shim installation
+if (!Object.fromEntries) {
+    fromEntries.shim();
+}
+
+assert.deepEqual(Object.fromEntries([['a', 1], ['b', 2], ['c', 3]]), obj);
+
+console.log('All tests passed.');
+```
+
+These scripts collectively create and test the `object.fromentries` package, ensuring it effectively provides the same functionality as the native `Object.fromEntries`, with additional compatibility for older JavaScript environments.

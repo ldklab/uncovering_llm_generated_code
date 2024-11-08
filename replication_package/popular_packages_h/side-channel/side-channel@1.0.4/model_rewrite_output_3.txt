@@ -1,0 +1,119 @@
+The provided Node.js code implements a utility for managing a "side channel" or auxiliary data store. This side channel can store key-value pairs using different data structures depending on the environment capabilities: it prefers to use `WeakMap`, then `Map`, and finally falls back to using a custom linked list if neither `WeakMap` nor `Map` is available.
+
+The utility includes functions to `get`, `set`, and check if a key `has` been set already, as well as an `assert` function to ensure a key exists in the side channel. The fallback linked list implementation moves accessed nodes to the head to optimize future access, effectively implementing a simple LRU (least recently used) cache mechanism.
+
+Here is a possible rewrite of the code that retains the original functionality:
+
+```javascript
+'use strict';
+
+const GetIntrinsic = require('get-intrinsic');
+const callBound = require('call-bind/callBound');
+const inspect = require('object-inspect');
+
+const $TypeError = GetIntrinsic('%TypeError%');
+const $WeakMap = GetIntrinsic('%WeakMap%', true);
+const $Map = GetIntrinsic('%Map%', true);
+
+const $weakMapGet = callBound('WeakMap.prototype.get', true);
+const $weakMapSet = callBound('WeakMap.prototype.set', true);
+const $weakMapHas = callBound('WeakMap.prototype.has', true);
+const $mapGet = callBound('Map.prototype.get', true);
+const $mapSet = callBound('Map.prototype.set', true);
+const $mapHas = callBound('Map.prototype.has', true);
+
+function listGetNode(list, key) {
+    let prev = list;
+    let curr;
+    while ((curr = prev.next) !== null) {
+        if (curr.key === key) {
+            prev.next = curr.next;
+            curr.next = list.next;
+            list.next = curr;
+            return curr;
+        }
+        prev = curr;
+    }
+}
+
+function listGet(objects, key) {
+    const node = listGetNode(objects, key);
+    return node && node.value;
+}
+
+function listSet(objects, key, value) {
+    const node = listGetNode(objects, key);
+    if (node) {
+        node.value = value;
+    } else {
+        objects.next = { key, next: objects.next, value };
+    }
+}
+
+function listHas(objects, key) {
+    return !!listGetNode(objects, key);
+}
+
+module.exports = function getSideChannel() {
+    let $wm;
+    let $m;
+    let $o;
+    const channel = {
+        assert(key) {
+            if (!this.has(key)) {
+                throw new $TypeError('Side channel does not contain ' + inspect(key));
+            }
+        },
+        get(key) {
+            if ($WeakMap && key && typeof key === 'object' || typeof key === 'function') {
+                if ($wm) {
+                    return $weakMapGet($wm, key);
+                }
+            } else if ($Map) {
+                if ($m) {
+                    return $mapGet($m, key);
+                }
+            } else {
+                if ($o) {
+                    return listGet($o, key);
+                }
+            }
+        },
+        has(key) {
+            if ($WeakMap && key && typeof key === 'object' || typeof key === 'function') {
+                if ($wm) {
+                    return $weakMapHas($wm, key);
+                }
+            } else if ($Map) {
+                if ($m) {
+                    return $mapHas($m, key);
+                }
+            } else {
+                if ($o) {
+                    return listHas($o, key);
+                }
+            }
+            return false;
+        },
+        set(key, value) {
+            if ($WeakMap && key && typeof key === 'object' || typeof key === 'function') {
+                if (!$wm) {
+                    $wm = new $WeakMap();
+                }
+                $weakMapSet($wm, key, value);
+            } else if ($Map) {
+                if (!$m) {
+                    $m = new $Map();
+                }
+                $mapSet($m, key, value);
+            } else {
+                if (!$o) {
+                    $o = { key: {}, next: null };
+                }
+                listSet($o, key, value);
+            }
+        }
+    };
+    return channel;
+};
+```

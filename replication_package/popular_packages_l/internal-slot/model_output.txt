@@ -1,0 +1,98 @@
+The `internal-slot` package provides a way to have truly private storage for objects in JavaScript, similar to internal slots used in the JavaScript specification. The package provides a consistent interface using a `WeakMap` for storing the internal slots when available, falling back to a `Map` or even a regular object for older environments. This allows developers to store private data within objects without exposing them publicly, and provides preferable garbage collection behavior with `WeakMap`.
+
+The functionality provided by the package includes:
+
+- `assert(object, slotName)`: Asserts that a given slot for an object exists.
+- `has(object, slotName)`: Checks if a specific slot is present on an object.
+- `get(object, slotName)`: Retrieves the value stored in a specific slot of an object.
+- `set(object, slotName, value)`: Assigns a value to a specific slot of an object.
+
+Here is the implementation of the package based on the explanation:
+
+```js
+// internal-slot/index.js
+'use strict';
+
+var hasWeakMap = typeof WeakMap !== 'undefined';
+var hasMap = typeof Map !== 'undefined';
+
+function createStorage() {
+    if (hasWeakMap) {
+        return new WeakMap();
+    } else if (hasMap) {
+        return new Map();
+    } else {
+        return new Object();
+    }
+}
+
+var storage = createStorage();
+
+function assert(obj, slotName) {
+    if (!has(obj, slotName)) {
+        throw new Error('Assertion failed: slot "' + slotName + '" is missing');
+    }
+}
+
+function has(obj, slotName) {
+    if (hasWeakMap || hasMap) {
+        return storage.has(obj) && storage.get(obj).hasOwnProperty(slotName);
+    } else {
+        return obj.hasOwnProperty('_internalSlots') && obj._internalSlots.hasOwnProperty(slotName);
+    }
+}
+
+function get(obj, slotName) {
+    if (hasWeakMap || hasMap) {
+        if (storage.has(obj)) {
+            return storage.get(obj)[slotName];
+        }
+        return undefined;
+    } else {
+        return obj._internalSlots ? obj._internalSlots[slotName] : undefined;
+    }
+}
+
+function set(obj, slotName, value) {
+    if (hasWeakMap || hasMap) {
+        if (!storage.has(obj)) {
+            storage.set(obj, {});
+        }
+        storage.get(obj)[slotName] = value;
+    } else {
+        if (!obj._internalSlots) {
+            obj._internalSlots = {};
+        }
+        obj._internalSlots[slotName] = value;
+    }
+}
+
+module.exports = {
+    assert: assert,
+    has: has,
+    get: get,
+    set: set
+};
+
+// test.js for running the examples in README
+const SLOT = require('./index');
+const assert = require('assert');
+
+const o = {};
+
+assert.throws(function() { SLOT.assert(o, 'foo'); });
+
+assert.equal(SLOT.has(o, 'foo'), false);
+assert.equal(SLOT.get(o, 'foo'), undefined);
+
+SLOT.set(o, 'foo', 42);
+
+assert.equal(SLOT.has(o, 'foo'), true);
+assert.equal(SLOT.get(o, 'foo'), 42);
+
+assert.doesNotThrow(function() { SLOT.assert(o, 'foo'); });
+
+console.log('All tests passed.');
+```
+
+The above implementation defines necessary methods for internal slot operations and includes example test cases similar to those in the README to demonstrate the usage of the library functions.

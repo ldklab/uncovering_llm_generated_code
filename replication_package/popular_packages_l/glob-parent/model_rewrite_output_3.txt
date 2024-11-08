@@ -1,0 +1,89 @@
+The given Node.js code defines a utility function `globParent` that extracts the non-magic parent directory path from a potentially glob-patterned string. Here's a breakdown of its functionality:
+
+- **Helper Function - `isMagicChar`**: This function checks if a character is a magic character used in glob patterns. Magic characters include `?`, `*`, `+`, `|`, `()`, `{}`, `[]`, and `!`.
+
+- **Main Function - `globParent`**:
+  - **Parameters**:
+    - `maybeGlobString`: A string potentially containing a file path with glob patterns.
+    - `options`: An optional object that can have a `flipBackslashes` property.
+  - **Functionality**:
+    - Converts backslashes to forward slashes if `flipBackslashes` is `true`, which is helpful for Windows paths.
+    - Iterates over the characters of the input string, managing escape sequences and bracket pairs, to identify the index where a glob pattern begins.
+    - Strips the string at the identified index to extract the non-magic directory path.
+    - Normalizes the resulting base path and returns the directory name. If the normalized path is empty or starts with a dot (`.`), it returns the current directory (`.`).
+
+- **Exports**: The `globParent` function is exported as a module.
+
+Below is a rewritten version of the original code with the same functionality:
+
+```javascript
+const path = require('path');
+
+/**
+ * Checks if the character is a magic character in glob patterns.
+ * @param {string} char 
+ * @returns {boolean}
+ */
+const isMagicChar = (char) => '?*+|(){}[]!'.includes(char);
+
+/**
+ * Returns the non-magic parent path from a possible glob string.
+ * @param {string} maybeGlobString - Path or glob pattern.
+ * @param {object} [options={}] - Options for parsing the path.
+ * @param {boolean} [options.flipBackslashes=true] - Convert backslashes to slashes.
+ * @returns {string} - The non-magic parent path.
+ */
+function globParent(maybeGlobString, options = {}) {
+  const { flipBackslashes = true } = options;
+
+  if (flipBackslashes) {
+    maybeGlobString = maybeGlobString.replace(/\\/g, '/');
+  }
+
+  let inEscape = false;
+  let inBrackets = 0;
+  let prevChar = '';
+  let i = 0;
+
+  for (i = 0; i < maybeGlobString.length; i++) {
+    const char = maybeGlobString[i];
+    
+    if (char === '/' && !inBrackets && !inEscape) {
+      prevChar = char;
+      continue;
+    }
+
+    if (char === '\\' && !inEscape) {
+      inEscape = true;
+      continue;
+    }
+
+    if (inEscape) {
+      inEscape = false;
+    } else if (char === '{') {
+      while (i < maybeGlobString.length && maybeGlobString[i] !== '}') i++;
+    } else if (char === '[') {
+      inBrackets++;
+    } else if (char === ']') {
+      inBrackets--;
+      if (inBrackets < 0) inBrackets = 0;
+    } else if (!inBrackets && isMagicChar(char)) {
+      break;
+    }
+
+    prevChar = char;
+  }
+
+  const stripIndex = i < maybeGlobString.length ? i : undefined;
+  const basePath = stripIndex ? maybeGlobString.slice(0, stripIndex) : maybeGlobString;
+  const normalizedPath = path.posix.normalize(basePath);
+
+  if (!normalizedPath || normalizedPath.startsWith('.')) {
+    return '.';
+  }
+
+  return path.dirname(normalizedPath);
+}
+
+module.exports = globParent;
+```

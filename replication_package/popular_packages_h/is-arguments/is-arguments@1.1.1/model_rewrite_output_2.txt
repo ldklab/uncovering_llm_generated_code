@@ -1,0 +1,37 @@
+The provided Node.js code is a module that determines whether a given value is an `arguments` object, a special type of object in JavaScript typically found in functions that allows access to the function's parameters. The code uses two functions, `isStandardArguments` and `isLegacyArguments`, to differentiate between modern environments where `Symbol.toStringTag` is supported and older environments where it is not. It uses the `Object.prototype.toString` method to determine the object's type but also checks for characteristics specific to `arguments` objects, such as the presence of a `callee` property. The module exports the appropriate detection function depending on whether the current environment supports the standard `arguments` detection.
+
+```javascript
+'use strict';
+
+const hasToStringTag = require('has-tostringtag/shams')();
+const callBound = require('call-bind/callBound');
+
+const $toString = callBound('Object.prototype.toString');
+
+const isStandardArguments = function isArguments(value) {
+    if (hasToStringTag && value && typeof value === 'object' && Symbol.toStringTag in value) {
+        return false;
+    }
+    return $toString(value) === '[object Arguments]';
+};
+
+const isLegacyArguments = function isArguments(value) {
+    if (isStandardArguments(value)) {
+        return true;
+    }
+    return value !== null &&
+        typeof value === 'object' &&
+        typeof value.length === 'number' &&
+        value.length >= 0 &&
+        $toString(value) !== '[object Array]' &&
+        $toString(value.callee) === '[object Function]';
+};
+
+const supportsStandardArguments = (() => {
+    return isStandardArguments(arguments);
+})();
+
+isStandardArguments.isLegacyArguments = isLegacyArguments; // for tests
+
+module.exports = supportsStandardArguments ? isStandardArguments : isLegacyArguments;
+```

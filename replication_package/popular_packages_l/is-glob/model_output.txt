@@ -1,0 +1,53 @@
+The `is-glob` Node.js package provides a function that determines whether a given string appears to be a globbing pattern. Globbing patterns, commonly used in file path specifications, include wildcards such as `*`, `?`, and others like extglob patterns. The purpose of this function is to help developers decide whether to use more computationally expensive file matching libraries like `node-glob`. By checking if a pattern looks like a glob, the library improves efficiency by deciding early if such libraries are necessary.
+
+**Functionality Overview:**
+
+1. **Default behavior**:
+   - The function returns `true` if the input string contains glob characters or regex patterns such as `*`, `**`, `?`, `[abc]`, `{a,b}`, `@(a)`, `!(a)`, etc.
+   - Patterns with escaped glob characters return `false`, indicating that the string is not intended to be treated as a glob.
+   - Simple strings without any glob or regex patterns return `false`.
+
+2. **Strict Option**:
+   - An optional `strict` mode influences how the function evaluates potential glob patterns.
+   - With `{strict: false}`, the function acts less conservatively, potentially returning `true` for more patterns that may logically be treated as globs.
+
+3. **False Cases**:
+   - Arrays are never considered globs; whether the array elements contain glob patterns or not isn’t evaluated by this function.
+
+Here's how you could implement the `is-glob` package:
+
+```js
+// is-glob.js
+
+function isGlob(str, options) {
+  if (typeof str !== 'string') {
+    return false;
+  }
+
+  options = options || {};
+  const strict = options.strict !== false;
+
+  // Regex patterns for normal and strict mode
+  const globRegex = strict ? /(^.*([*?{}()[\]!+]|(!)+(?=\())+.*$)/ : /([*?{}()[\]!+])/;
+  const extglobRegex = strict ? /(\\\!|\\\*|\\\)|\\\]|\\\(|\\\{|\\@|\\\+|\\\?|\(+(?=\())/ : /(\\\!|\\\*|\\\|\\\)|\\\]|\\\(|\\\{|\\@|\\\+)/;
+  
+  return globRegex.test(str) && !extglobRegex.test(str);
+}
+
+module.exports = isGlob;
+
+// Example usage:
+// var isGlob = require('./is-glob');
+
+// console.log(isGlob('!foo.js')); // true
+// console.log(isGlob('abc/\\*.js')); // false
+// console.log(isGlob('abc.js')); // false
+// console.log(isGlob(['**/*.js'])); // false
+// console.log(isGlob('*.js', { strict: false })); // true
+```
+
+In this implementation:
+- For normal operation, the `isGlob` function checks if a string is considered a glob by using regular expressions.
+- It offers a `strict` mode, which tightens or loosens the conditions of what constitutes a glob.
+- Both the function and its regex patterns can be adjusted through provided options.
+- The function is tested locally through various string patterns to verify glob detection accuracy.

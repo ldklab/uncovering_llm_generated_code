@@ -1,0 +1,50 @@
+The Node.js code is a custom module resolver intended for an ESLint plugin. It uses the `resolve` library to resolve module paths and checks whether a module is a core Node.js module. If the module is core, it returns that the module is found but specifies a `null` path. Otherwise, it attempts to resolve the module path using the `resolve.sync` method with options configured through a helper function. The options include specifics like file extensions and package directory settings based on the file being processed. This function is also using `debug` for logging purposes. A package filter function is defined to modify package.json fields to prefer 'jsnext:main' if available.
+
+Here's the rewritten code:
+
+```javascript
+const resolve = require('resolve');
+const path = require('path');
+const log = require('debug')('eslint-plugin-import:resolver:node');
+
+exports.interfaceVersion = 2;
+
+exports.resolve = function (source, file, config) {
+  log('Resolving:', source, 'from:', file);
+  let resolvedPath;
+
+  if (resolve.isCore(source)) {
+    log('resolved to core ');
+    return { found: true, path: null };
+  }
+
+  try {
+    resolvedPath = resolve.sync(source, getOptions(file, config));
+    log('Resolved to:', resolvedPath);
+    return { found: true, path: resolvedPath };
+  } catch (err) {
+    log('resolve threw error:', err);
+    return { found: false };
+  }
+};
+
+function getOptions(file, config) {
+  return Object.assign(
+    {
+      extensions: ['.mjs', '.js', '.json', '.node'],
+    },
+    config,
+    {
+      basedir: path.dirname(path.resolve(file)),
+      packageFilter: adjustPackageFilter,
+    }
+  );
+}
+
+function adjustPackageFilter(pkg) {
+  if (pkg['jsnext:main']) {
+    pkg['main'] = pkg['jsnext:main'];
+  }
+  return pkg;
+}
+```

@@ -1,0 +1,83 @@
+The provided Node.js code is a configuration file for Webpack, a popular module bundler used for bundling JavaScript and other assets for front-end development. This configuration file is set up to handle different environments: production and development.
+
+- It loads necessary dependencies such as `path` and `MiniCssExtractPlugin`.
+- The configuration is defined as a function that evaluates the environment and adjusts settings based on whether it's production or development.
+- The `mode` is determined by the `argv.mode` parameter. If it's production, the mode is set to 'production'; otherwise, it's set to 'development'.
+- The `module.rules` section specifies loaders for handling `.css` files and `.style.js` files.
+  - For `.css` files:
+    - If in production, it uses `MiniCssExtractPlugin.loader` to extract CSS into separate files; otherwise, it uses `style-loader` to inject styles into the DOM.
+    - It uses `css-loader` with specific options.
+    - The `postcss-loader` includes post-processing configuration using PostCSS plugins.
+  - For `.style.js` files:
+    - It uses a combination of `style-loader`, `css-loader`, `babel-loader`, and `postcss-loader` with appropriate options to handle JavaScript-style definitions that output CSS.
+- The `plugins` section includes the `MiniCssExtractPlugin` to manage the extraction of CSS files, using hashed filenames in production for cache busting.
+
+Here's a possible rewrite of the code following the explanation:
+
+```javascript
+// webpack.config.js
+const path = require('path');
+const MiniCssExtractPlugin = require('mini-css-extract-plugin');
+
+module.exports = (env, argv) => {
+  const isProduction = argv.mode === 'production';
+
+  const cssLoaders = [
+    isProduction ? MiniCssExtractPlugin.loader : 'style-loader',
+    {
+      loader: 'css-loader',
+      options: { importLoaders: 1 },
+    },
+    {
+      loader: 'postcss-loader',
+      options: {
+        postcssOptions: {
+          plugins: [
+            [
+              'postcss-preset-env',
+              {
+                // plugin options
+              },
+            ],
+          ],
+        },
+        sourceMap: true,
+      },
+    },
+  ];
+
+  const styleJsLoaders = [
+    'style-loader',
+    'css-loader',
+    'babel-loader',
+    {
+      loader: 'postcss-loader',
+      options: {
+        postcssOptions: { parser: 'postcss-js' },
+        execute: true,
+      },
+    },
+  ];
+
+  return {
+    mode: isProduction ? 'production' : 'development',
+    module: {
+      rules: [
+        {
+          test: /\.css$/i,
+          use: cssLoaders,
+        },
+        {
+          test: /\.style.js$/,
+          use: styleJsLoaders,
+        },
+      ],
+    },
+    plugins: [
+      new MiniCssExtractPlugin({
+        filename: isProduction ? '[name].[contenthash].css' : '[name].css',
+      }),
+    ],
+  };
+};
+```

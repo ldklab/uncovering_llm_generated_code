@@ -1,0 +1,126 @@
+The provided Node.js code is a Babel plugin that transforms JavaScript code by injecting a runtime library for certain helper functions. This plugin is useful to avoid code duplication of helper functions across multiple modules. Here is a brief explanation of the functionality:
+
+1. **Options Validation**: The code validates the provided options to ensure they have the expected types and values. Options include `version`, `absoluteRuntime`, `moduleName`, `useBuiltIns`, `polyfill`, and `useESModules`.
+
+2. **Babel API Use**: Utilizes the Babel Plugin API to declare a plugin with configuration and lifecycle hooks.
+
+3. **Conditional Logic**: Handles conditions based on Babel's behavior, runtime version compatibility, and issues warnings/errors for deprecated options (`useBuiltIns`, `polyfill`).
+
+4. **ESM Support**: Determines whether to use ES modules based on the developer specified or inferred configuration from the caller.
+
+5. **Helpers Management**: Configures the injection of helper functions from the desired runtime module, potentially using filesystem paths when `absoluteRuntime` is true.
+
+6. **Caching and Imports Management**: Caches imported helper modules for reuse and optimizes import statements with configurable settings like `blockHoist`.
+
+Here's a possible rewrite of the code:
+
+```javascript
+"use strict";
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports.default = void 0;
+
+const { declare } = require("@babel/helper-plugin-utils");
+const { addDefault, isModule } = require("@babel/helper-module-imports");
+const { types } = require("@babel/core");
+const { hasMinVersion, resolveFSPath } = require("./helpers.js");
+const getRuntimePath = require("./get-runtime-path/index.js");
+const { createPolyfillPlugins } = require("./babel-7/index.cjs");
+
+exports.default = declare((api, options, dirname) => {
+  api.assertVersion(7);
+
+  const {
+    version: runtimeVersion = "7.0.0-beta.0",
+    absoluteRuntime = false,
+    moduleName = null
+  } = options;
+
+  if (typeof absoluteRuntime !== "boolean" && typeof absoluteRuntime !== "string") {
+    throw new Error("The 'absoluteRuntime' option must be undefined, a boolean, or a string.");
+  }
+  if (typeof runtimeVersion !== "string") {
+    throw new Error(`The 'version' option must be a version string.`);
+  }
+  if (moduleName !== null && typeof moduleName !== "string") {
+    throw new Error("The 'moduleName' option must be null or a string.");
+  }
+
+  const DUAL_MODE_RUNTIME = "7.13.0";
+  const supportsCJSDefault = hasMinVersion(DUAL_MODE_RUNTIME, runtimeVersion);
+
+  if (hasOwnProperty.call(options, "useBuiltIns")) {
+    throw new Error("The 'useBuiltIns' option has been removed. Use the 'corejs' option to polyfill with `core-js` via @babel/runtime.");
+  }
+  if (hasOwnProperty.call(options, "polyfill")) {
+    throw new Error("The 'polyfill' option has been removed. Use the 'corejs' option to polyfill with `core-js` via @babel/runtime.");
+  }
+
+  const {
+    useESModules = false
+  } = options;
+  
+  if (typeof useESModules !== "boolean" && useESModules !== "auto") {
+    throw new Error("The 'useESModules' option must be undefined, or a boolean, or 'auto'.");
+  }
+
+  const esModules = useESModules === "auto" ? api.caller(caller => !!(caller && caller.supportsStaticESM)) : useESModules;
+
+  const {
+    helpers: useRuntimeHelpers = true
+  } = options;
+
+  if (typeof useRuntimeHelpers !== "boolean") {
+    throw new Error("The 'helpers' option must be undefined, or a boolean.");
+  }
+
+  const HEADER_HELPERS = new Set(["interopRequireWildcard", "interopRequireDefault"]);
+
+  return {
+    name: "transform-runtime",
+    inherits: createPolyfillPlugins(options, runtimeVersion, absoluteRuntime),
+    pre(file) {
+      if (!useRuntimeHelpers) return;
+      let modulePath;
+      file.set("helperGenerator", name => {
+        modulePath = modulePath || getRuntimePath(moduleName || file.get("runtimeHelpersModuleName") || "@babel/runtime", dirname, absoluteRuntime);
+
+        if (!file.availableHelper?.(name, runtimeVersion)) {
+          if (name === "regeneratorRuntime") {
+            return types.arrowFunctionExpression([], types.identifier("regeneratorRuntime"));
+          }
+          return;
+        }
+
+        const blockHoist = HEADER_HELPERS.has(name) && !isModule(file.path) ? 4 : undefined;
+        let helperPath = `${modulePath}/helpers/${esModules && file.path.node.sourceType === "module" ? "esm/" + name : name}`;
+        
+        if (absoluteRuntime) helperPath = resolveFSPath(helperPath);
+        
+        return addDefaultImport(helperPath, name, blockHoist, true);
+      });
+
+      const cache = new Map();
+      function addDefaultImport(source, nameHint, blockHoist, isHelper = false) {
+        const cacheKey = isModule(file.path);
+        const key = `${source}:${nameHint}:${cacheKey}`;
+        
+        let cached = cache.get(key);
+        if (cached) {
+          cached = types.cloneNode(cached);
+        } else {
+          cached = addDefault(file.path, source, {
+            importedInterop: isHelper && supportsCJSDefault ? "compiled" : "uncompiled",
+            nameHint,
+            blockHoist
+          });
+          cache.set(key, cached);
+        }
+        return cached;
+      }
+    }
+  };
+});
+```

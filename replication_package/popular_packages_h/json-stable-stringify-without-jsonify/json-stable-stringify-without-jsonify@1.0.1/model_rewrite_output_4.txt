@@ -1,0 +1,66 @@
+The Node.js code provided is a custom implementation of a JSON stringify function, similar to `JSON.stringify()`, but with additional features such as handling custom sorting, indentation, and circular references. Here's a breakdown of its functionality:
+
+- **Options Handling**: The function takes an object and options (opts) parameter. If `opts` is a function, it is assumed to be a custom comparison function for sorting object keys.
+  
+- **Spaces**: The level of indentation specified by `opts.space` is handled. It can be a number (spaces) or a string.
+
+- **Cycles**: It handles circular references in the object if `opts.cycles` is set to true, otherwise, it throws a `TypeError`.
+
+- **Replacer Function**: The `opts.replacer` allows custom modification of the object properties during stringification.
+
+- **Key Sorting**: If a comparison function is provided in `opts.cmp`, it sorts the keys of objects.
+
+- **Recursion for JSON Stringification**: The function uses a recursive `stringify` function to convert the object into a JSON string, taking into account arrays, nested objects, custom serialization with `toJSON`, and handling circular references. It supports indentation and comma-separated arrays/objects.
+
+Below is the rewritten code that maintains the same functionality:
+
+```javascript
+module.exports = function (obj, opts = {}) {
+    if (typeof opts === 'function') opts = { cmp: opts };
+    let space = typeof opts.space === 'number' ? ' '.repeat(opts.space) : opts.space || '';
+    const cycles = typeof opts.cycles === 'boolean' ? opts.cycles : false;
+    const replacer = opts.replacer || ((key, value) => value);
+
+    const cmp = opts.cmp && (function (f) {
+        return function (node) {
+            return function (a, b) {
+                return f({ key: a, value: node[a] }, { key: b, value: node[b] });
+            };
+        };
+    })(opts.cmp);
+
+    const seen = [];
+    return (function stringify(parent, key, node, level) {
+        const indent = space ? `\n${space.repeat(level)}` : '';
+        const colonSeparator = space ? ': ' : ':';
+
+        if (node && typeof node.toJSON === 'function') {
+            node = node.toJSON();
+        }
+
+        node = replacer.call(parent, key, node);
+
+        if (node === undefined) return;
+        if (typeof node !== 'object' || node === null) return JSON.stringify(node);
+
+        if (Array.isArray(node)) {
+            const out = node.map((item, i) => stringify(node, i, item, level + 1) || JSON.stringify(null));
+            return `[${out.map(item => indent + space + item).join(',')}${indent}]`;
+        } else {
+            if (seen.includes(node)) {
+                if (cycles) return JSON.stringify('__cycle__');
+                throw new TypeError('Converting circular structure to JSON');
+            } else seen.push(node);
+
+            const keys = Object.keys(node).sort(cmp && cmp(node));
+            const out = keys.reduce((acc, key) => {
+                const value = stringify(node, key, node[key], level + 1);
+                if (value) acc.push(`${indent + space + JSON.stringify(key)}${colonSeparator}${value}`);
+                return acc;
+            }, []);
+            seen.splice(seen.indexOf(node), 1);
+            return `{${out.join(',')}${indent}}`;
+        }
+    })({ '': obj }, '', obj, 0);
+};
+```

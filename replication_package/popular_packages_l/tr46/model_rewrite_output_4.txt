@@ -1,0 +1,101 @@
+The Node.js code provided is a class implementation of a TR46-compliant domain name processing tool with two primary methods: `toASCII` and `toUnicode`. 
+
+### Explanation:
+
+1. **Imports:**
+   - The code uses the `punycode` library to convert Unicode to ASCII-compatible encoding and vice versa, as part of internationalized domain name processing.
+
+2. **TR46 Class:**
+   - This class provides functionalities to convert domain names using the toASCII and toUnicode methods.
+   
+3. **toASCII(domainName, options):**
+   - Converts a Unicode domain name into Punycode ASCII format.
+   - Splits the domain name by `.` into labels and processes each.
+   - Validates hyphen positions and checks for joiner character issues as per options.
+   - Throws an error if the resultant length of the ASCII representation exceeds 253 characters when `verifyDNSLength` is true.
+   - Returns the concatenated ASCII domain name.
+
+4. **toUnicode(domainName, options):**
+   - Converts an ASCII Punycode domain name back to its Unicode format.
+   - Splits and processes each label. If Punycode is invalid and `ignoreInvalidPunycode` is set, an error is thrown.
+   - Returns the concatenated Unicode domain name.
+
+5. **processLabel(label, options):**
+   - Checks if labels start or end with hyphens if `checkHyphens` is true.
+   - Checks for improper joiner character usage if `checkJoiners` is true.
+   - Applies transitional processing of simple character replacements for some Unicode characters when `transitionalProcessing` is true.
+
+6. **hasJoinerIssues(label):**
+   - Checks for illegal sequences like zero-width joiner (ZWJ) at improper positions.
+
+7. **checkOptions(options):**
+   - Validates that provided options are within a specific set of known keys.
+
+8. **Exports:**
+   - The `TR46` class is exported for use in other parts of a Node.js application.
+
+### Rewritten Code:
+
+```javascript
+const punycode = require('punycode/');
+
+class TR46 {
+  static toASCII(domainName, options = {}) {
+    this.validateOptions(options);
+    const labels = domainName.split('.');
+    const result = labels.map(label => {
+      const processedLabel = this.processLabel(label, options);
+      return punycode.toASCII(processedLabel);
+    }).join('.');
+    if (options.verifyDNSLength && result.length > 253) {
+      throw new Error("DNS name exceeds maximum length");
+    }
+    return result;
+  }
+
+  static toUnicode(domainName, options = {}) {
+    this.validateOptions(options);
+    return domainName.split('.').map(label => {
+      try {
+        return punycode.toUnicode(label);
+      } catch {
+        if (!options.ignoreInvalidPunycode) {
+          throw new Error("Invalid Punycode detected");
+        }
+      }
+    }).filter(Boolean).join('.');
+  }
+
+  static processLabel(label, options) {
+    if (options.checkHyphens && (label.startsWith('-') || label.endsWith('-'))) {
+      throw new Error("Invalid hyphen positions");
+    }
+    if (options.checkJoiners && this.containsIllegalJoiners(label)) {
+      throw new Error("Invalid joiner characters");
+    }
+
+    if (options.transitionalProcessing) {
+      return label.replace(/[\u00DF\u03C2\u200D]/g, ''); // Example processing
+    }
+    return label;
+  }
+
+  static containsIllegalJoiners(label) {
+    return label.includes('\u200D'); // Placeholder for ZWJ check
+  }
+
+  static validateOptions(options) {
+    const validOptions = [
+      'checkBidi', 'checkHyphens', 'checkJoiners', 'ignoreInvalidPunycode', 
+      'transitionalProcessing', 'useSTD3ASCIIRules', 'verifyDNSLength'
+    ];
+    for (const key of Object.keys(options)) {
+      if (!validOptions.includes(key)) {
+        throw new Error(`Invalid option: ${key}`);
+      }
+    }
+  }
+}
+
+module.exports = TR46;
+```

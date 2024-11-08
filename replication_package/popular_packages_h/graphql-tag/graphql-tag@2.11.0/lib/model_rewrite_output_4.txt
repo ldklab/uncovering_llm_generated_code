@@ -1,0 +1,165 @@
+The provided Node.js code is a module that handles parsing and caching of GraphQL documents. Here's a breakdown of its functionality:
+
+1. **Environment Module Detection:** The module is using a common pattern for UMD (Universal Module Definition) to support various module systems, including CommonJS, AMD, or direct script loading.
+
+2. **Normalization:** The `normalize` function removes unnecessary whitespace from strings, which is helpful for consistent document key generation.
+
+3. **Caching:** It maintains two caches:
+   - `docCache` for storing parsed GraphQL documents to avoid reparsing.
+   - `fragmentSourceMap` to track unique fragment hashes to ensure only unique fragments are processed.
+
+4. **Fragment Processing:** The `processFragments` function ensures fragment names are unique and provides warnings if duplicates are detected.
+
+5. **Location Stripping:** The `stripLoc` function removes location metadata from parsed GraphQL documents to clean up the document, except for necessary locations used in fragment processing.
+
+6. **Fragment Variable feature toggle:** Functions to enable or disable experimental fragment variable support (`enableExperimentalFragmentVariables` and `disableExperimentalFragmentVariables`).
+
+7. **GraphQL Tag (`gql`) function:** Constructs a full GraphQL document from string literals and interpolated expressions and parses it, storing the result in the cache.
+
+8. **Exports:** The `gql` function is exported as the module, with additional properties for utility functions like cache resets and toggles.
+
+Here is the rewritten code:
+
+```javascript
+(function (global, factory) {
+  typeof exports === 'object' && typeof module !== 'undefined' ? factory() :
+  typeof define === 'function' && define.amd ? define(factory) :
+  (factory());
+}(this, (function () { 'use strict';
+
+const { parse } = require('graphql/language/parser');
+
+function normalize(string) {
+  return string.replace(/[\s,]+/g, ' ').trim();
+}
+
+let docCache = {};
+let fragmentSourceMap = {};
+
+function cacheKeyFromLoc(loc) {
+  return normalize(loc.source.body.substring(loc.start, loc.end));
+}
+
+function resetCaches() {
+  docCache = {};
+  fragmentSourceMap = {};
+}
+
+let printFragmentWarnings = true;
+
+function processFragments(ast) {
+  const astFragmentMap = {};
+  const definitions = [];
+
+  for (const fragmentDefinition of ast.definitions) {
+    if (fragmentDefinition.kind === 'FragmentDefinition') {
+      const fragmentName = fragmentDefinition.name.value;
+      const sourceKey = cacheKeyFromLoc(fragmentDefinition.loc);
+
+      if (fragmentSourceMap.hasOwnProperty(fragmentName) && !fragmentSourceMap[fragmentName][sourceKey]) {
+        if (printFragmentWarnings) {
+          console.warn(`Warning: fragment with name ${fragmentName} already exists.\ngraphql-tag enforces all fragment names across your application to be unique; read more about\nthis in the docs: http://dev.apollodata.com/core/fragments.html#unique-names`);
+        }
+        fragmentSourceMap[fragmentName][sourceKey] = true;
+      } else if (!fragmentSourceMap.hasOwnProperty(fragmentName)) {
+        fragmentSourceMap[fragmentName] = {};
+        fragmentSourceMap[fragmentName][sourceKey] = true;
+      }
+
+      if (!astFragmentMap[sourceKey]) {
+        astFragmentMap[sourceKey] = true;
+        definitions.push(fragmentDefinition);
+      }
+    } else {
+      definitions.push(fragmentDefinition);
+    }
+  }
+
+  ast.definitions = definitions;
+  return ast;
+}
+
+function disableFragmentWarnings() {
+  printFragmentWarnings = false;
+}
+
+function stripLoc(doc, removeLocAtThisLevel) {
+  if (Array.isArray(doc)) {
+    return doc.map(d => stripLoc(d, removeLocAtThisLevel));
+  }
+
+  if (typeof doc !== 'object' || doc === null) {
+    throw new Error('Unexpected input.');
+  }
+
+  if (removeLocAtThisLevel && doc.loc) {
+    delete doc.loc;
+  }
+
+  if (doc.loc) {
+    delete doc.loc.startToken;
+    delete doc.loc.endToken;
+  }
+
+  for (const key of Object.keys(doc)) {
+    const value = doc[key];
+    if (typeof value === 'object' && value !== null) {
+      doc[key] = stripLoc(value, true);
+    }
+  }
+
+  return doc;
+}
+
+let experimentalFragmentVariables = false;
+
+function parseDocument(doc) {
+  const cacheKey = normalize(doc);
+
+  if (docCache[cacheKey]) {
+    return docCache[cacheKey];
+  }
+
+  let parsed = parse(doc, { experimentalFragmentVariables });
+  if (!parsed || parsed.kind !== 'Document') {
+    throw new Error('Not a valid GraphQL document.');
+  }
+
+  parsed = processFragments(parsed);
+  parsed = stripLoc(parsed, false);
+  docCache[cacheKey] = parsed;
+
+  return parsed;
+}
+
+function enableExperimentalFragmentVariables() {
+  experimentalFragmentVariables = true;
+}
+
+function disableExperimentalFragmentVariables() {
+  experimentalFragmentVariables = false;
+}
+
+function gql(/* arguments */) {
+  const args = Array.from(arguments);
+  const literals = args[0];
+  let result = (typeof literals === "string") ? literals : literals[0];
+
+  for (let i = 1; i < args.length; i++) {
+    result += args[i] && args[i].kind === 'Document' ? args[i].loc.source.body : args[i];
+    result += literals[i];
+  }
+
+  return parseDocument(result);
+}
+
+gql.default = gql;
+gql.resetCaches = resetCaches;
+gql.disableFragmentWarnings = disableFragmentWarnings;
+gql.enableExperimentalFragmentVariables = enableExperimentalFragmentVariables;
+gql.disableExperimentalFragmentVariables = disableExperimentalFragmentVariables;
+
+module.exports = gql;
+
+})));
+```

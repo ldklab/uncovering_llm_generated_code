@@ -1,0 +1,98 @@
+The provided Node.js code defines a `Busboy` class, which is used to handle multipart form-data parsing. It extends a writable stream (`WritableStream`) to manage data that comes in as a stream. Here's a breakdown of its functionality:
+
+1. **Dependencies and Setup**: The code uses Node.js core modules like `fs`, `stream`, and `util`. It also imports a utility to parse parameters and two custom modules for handling multipart and URL-encoded data.
+
+2. **Constructor (`Busboy`)**: The constructor initializes an instance of `Busboy`, setting up some default properties and verifying that a `Content-Type` header is provided in the options. If a high water mark is specified, it initializes the writable stream with this value.
+
+3. **Inheritance**: The `Busboy` class inherits from `WritableStream` using `util.inherits`.
+
+4. **Event Emission**: The `emit` method is overridden to manage the `finish` event specific to the internal parser's lifecycle, ensuring proper closing and cleaning up after all data is received.
+
+5. **Header Parsing**: The `parseHeaders` method analyzes the `content-type` header from the request headers. It uses a `TYPES` array, which includes specific type handlers for multipart and URL-encoded data. Based on the detection of content types, a custom parsing configuration object is created, and an appropriate parser is initialized.
+
+6. **Writing Data**: The `_write` method is implemented as part of the writable stream interface. It delegates to an internal parser’s `write` method, assuming the parser is ready to handle the data—throwing an error otherwise when `Content-Type` is missing or not supported.
+
+7. **Supported Types**: The `TYPES` array lists available parsers, currently supporting multipart forms and URL-encoded data.
+
+Below is a rewritten version of the code incorporating the explanation:
+
+```javascript
+const fs = require('fs');
+const { Writable } = require('stream');
+const { inherits } = require('util');
+const { parseParams } = require('./utils');
+
+class Busboy extends Writable {
+  constructor(opts) {
+    super({ highWaterMark: opts.highWaterMark });
+
+    this._done = false;
+    this._parser = undefined;
+    this._finished = false;
+    this.opts = opts;
+
+    if (opts.headers && typeof opts.headers['content-type'] === 'string') {
+      this.parseHeaders(opts.headers);
+    } else {
+      throw new Error('Missing Content-Type');
+    }
+  }
+
+  emit(ev, ...args) {
+    if (ev === 'finish') {
+      if (!this._done) {
+        this._parser?.end();
+        return;
+      } else if (this._finished) {
+        return;
+      }
+      this._finished = true;
+    }
+    super.emit(ev, ...args);
+  }
+
+  parseHeaders(headers) {
+    this._parser = undefined;
+    if (headers['content-type']) {
+      const parsed = parseParams(headers['content-type']);
+      let matched = false;
+
+      for (const type of TYPES) {
+        if (typeof type.detect === 'function') {
+          matched = type.detect(parsed);
+        } else {
+          matched = type.detect.test(parsed[0]);
+        }
+        if (matched) {
+          const cfg = {
+            limits: this.opts.limits,
+            headers: headers,
+            parsedConType: parsed,
+            highWaterMark: this.opts.highWaterMark,
+            fileHwm: this.opts.fileHwm,
+            defCharset: this.opts.defCharset,
+            preservePath: this.opts.preservePath || false
+          };
+          this._parser = type(this, cfg);
+          return;
+        }
+      }
+    }
+    throw new Error(`Unsupported content type: ${headers['content-type']}`);
+  }
+
+  _write(chunk, encoding, cb) {
+    if (!this._parser) {
+      return cb(new Error('Not ready to parse. Missing Content-Type?'));
+    }
+    this._parser.write(chunk, cb);
+  }
+}
+
+const TYPES = [
+  require('./types/multipart'),
+  require('./types/urlencoded'),
+];
+
+module.exports = Busboy;
+```

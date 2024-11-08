@@ -1,0 +1,124 @@
+This Node.js code defines a utility function `runAsync` that helps to run functions either asynchronously or synchronously. It returns a function that can invoke the specified function `func` with given arguments and optionally handle the result using a callback `cb`. Here's a step-by-step explanation of the code:
+
+1. **`isPromise` function**: This helper function checks if a given object is a Promise. It returns true if the object is non-null and has a `then` function, which is characteristic of a Promise.
+
+2. **`runAsync` function**: 
+   - Designed to wrap functions for executing in either asynchronous or synchronous manner.
+   - It returns another function that:
+     - Accepts a variable number of arguments used to call the original function.
+     - Uses `Promise` for handling asynchronous operations.
+     - Uses resolved or rejected states to manage completion.
+     - Provides a mechanism (`doneFactory`) for handling asynchronous completion when a callback is involved.
+     - Uses optionally a `Proxy` object to inject `async` behavior, allowing functions to use `this.async()` for asynchronous flow.
+
+3. **Promise Handling**:
+   - A promise is created and resolved based on the execution of the original function.
+   - Uses a factory to ensure that a function can be called to signal completion (similar to Node.js callbacks).
+   - Tracks context status to warn if asynchronous flow is mishandled.
+
+4. **runAsync.cb**: 
+   - A utility for use-cases where the wrapped function expects a callback as the last argument.
+   - Automatically appends the callback to arguments when necessary.
+
+Here's a possible rewrite of the code:
+
+```javascript
+'use strict';
+
+function isPromise(obj) {
+  return !!obj && (typeof obj === 'object' || typeof obj === 'function') && typeof obj.then === 'function';
+}
+
+var runAsync = module.exports = function (func, cb, proxyProperty = 'async') {
+  if (typeof cb === 'string') {
+    proxyProperty = cb;
+    cb = undefined;
+  }
+  cb = cb || function () {};
+
+  return function () {
+    var args = arguments;
+    var originalThis = this;
+
+    var promise = new Promise(function (resolve, reject) {
+      var resolved = false;
+      const wrappedResolve = function (value) {
+        if (resolved) console.warn('Run-async promise already resolved.');
+        resolved = true;
+        resolve(value);
+      }
+
+      var rejected = false;
+      const wrappedReject = function (value) {
+        if (rejected) console.warn('Run-async promise already rejected.');
+        rejected = true;
+        reject(value);
+      }
+
+      var usingCallback = false;
+      var callbackConflict = false;
+      var contextEnded = false;
+
+      var doneFactory = function () {
+        if (contextEnded) {
+          console.warn('Run-async async() called outside a valid run-async context, callback will be ignored.');
+          return function() {};
+        }
+        if (callbackConflict) {
+          console.warn('Run-async wrapped function (async) returned a promise.\nCalls to async() callback can have unexpected results.');
+        }
+        usingCallback = true;
+        return function (err, value) {
+          if (err) wrappedReject(err);
+          else wrappedResolve(value);
+        };
+      };
+
+      var _this;
+      if (originalThis && proxyProperty && Proxy) {
+        _this = new Proxy(originalThis, {
+          get(_target, prop) {
+            if (prop === proxyProperty) {
+              if (prop in _target) console.warn(`${proxyProperty} property is shadowed by run-sync`);
+              return doneFactory;
+            }
+            return Reflect.get(...arguments);
+          },
+        });
+      } else {
+        _this = { [proxyProperty]: doneFactory };
+      }
+
+      var answer = func.apply(_this, Array.prototype.slice.call(args));
+
+      if (usingCallback) {
+        if (isPromise(answer)) {
+          console.warn('Run-async wrapped function (sync) returned a promise but async() callback must be executed to resolve.');
+        }
+      } else {
+        if (isPromise(answer)) {
+          callbackConflict = true;
+          answer.then(wrappedResolve, wrappedReject);
+        } else {
+          wrappedResolve(answer);
+        }
+      }
+      contextEnded = true;
+    });
+
+    promise.then(cb.bind(null, null), cb);
+
+    return promise;
+  }
+};
+
+runAsync.cb = function (func, cb) {
+  return runAsync(function () {
+    var args = Array.from(arguments);
+    if (args.length === func.length - 1) {
+      args.push(this.async());
+    }
+    return func.apply(this, args);
+  }, cb);
+};
+```

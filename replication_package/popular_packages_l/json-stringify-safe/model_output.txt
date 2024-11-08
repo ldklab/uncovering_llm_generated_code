@@ -1,0 +1,79 @@
+The `json-stringify-safe` package provides a function similar to `JSON.stringify`, but with the added capability of handling circular references in objects. Normally, when you attempt to stringify an object with circular references using `JSON.stringify`, it throws an error. This package prevents such errors and instead replaces circular references with a customizable placeholder.
+
+### Usage
+
+The `stringify` function provided by `json-stringify-safe` can be used in the same way as `JSON.stringify` and accepts the same first three arguments:
+
+1. `obj` - The object to stringify.
+2. `serializer` - An optional function for transforming the results.
+3. `indent` - An optional string or number for pretty-printing the result.
+
+Additionally, it includes a fourth parameter:
+
+4. `decycler` - A function to handle circular references. This function determines what to replace circular references with. By default, it returns the string `"[Circular]"`, but this can be customized by providing a different function.
+
+### Additional Functionality
+
+The package also provides a `getSerialize` function:
+
+- `getSerialize(serializer, decycler)` - Returns a serializer function which can be used with `JSON.stringify`. This returned function is stateful, meaning that it keeps track of the objects it has seen during serialization. Therefore, it should not be reused across different serialization processes.
+
+Below is the code for the `json-stringify-safe` package implementing the functionality as described:
+
+```javascript
+'use strict';
+
+function jsonStringifySafe(obj, serializer, indent, decycler) {
+    var stack = [];
+    var keys = [];
+
+    if (!decycler) {
+        decycler = function() {
+            return '[Circular]';
+        };
+    }
+
+    function serializerWrapper(key, value) {
+        if (stack.length > 0) {
+            var thisPos = stack.indexOf(this);
+            ~thisPos ? stack.splice(thisPos + 1) : stack.push(this);
+            ~thisPos ? keys.splice(thisPos, Infinity, key) : keys.push(key);
+            if (~stack.indexOf(value)) {
+                value = decycler.call(this, key, value);
+            }
+        } else stack.push(value);
+
+        return serializer == null ? value : serializer.call(this, key, value);
+    }
+
+    return JSON.stringify(obj, serializerWrapper, indent);
+}
+
+jsonStringifySafe.getSerialize = function(serializer, decycler) {
+    var stack = [];
+    var keys = [];
+
+    if (!decycler) {
+        decycler = function() {
+            return '[Circular]';
+        };
+    }
+
+    return function(key, value) {
+        if (stack.length > 0) {
+            var thisPos = stack.indexOf(this);
+            ~thisPos ? stack.splice(thisPos + 1) : stack.push(this);
+            ~thisPos ? keys.splice(thisPos, Infinity, key) : keys.push(key);
+            if (~stack.indexOf(value)) {
+                value = decycler.call(this, key, value);
+            }
+        } else stack.push(value);
+
+        return serializer == null ? value : serializer.call(this, key, value);
+    };
+};
+
+module.exports = jsonStringifySafe;
+```
+
+This code allows the user to safely convert objects with circular references into JSON strings by replacing the cycles with a specified placeholder, improving usability when dealing with complex object structures in JavaScript applications.

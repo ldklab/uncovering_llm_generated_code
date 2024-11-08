@@ -1,0 +1,88 @@
+The provided Node.js code is a custom loader for Webpack that processes TypeScript files using the TypeScript compiler. Here's a breakdown of its functionality:
+
+1. **Imports and Definitions:**
+   - Uses `path` for file path resolution and `typescript` for handling TypeScript compilation.
+   - Uses `loader-utils` to get options passed to the loader.
+   
+2. **Loader Function:**
+   - The function is called with the source code of a file.
+   - It retrieves options specified when using the loader and sets up a callback for asynchronous processing.
+
+3. **Compiler Options:**
+   - Default compiler options specify that source maps should be generated.
+   - Merges user-provided options with the default options.
+
+4. **Configuration Handling:**
+   - Determines the path to a TypeScript configuration file (`tsconfig.json`) either from user options or by searching in the context path.
+   - Parses configuration content into a TypeScript command line object which includes the options needed for compilation.
+
+5. **TypeScript Compilation:**
+   - Uses `typescript.transpileModule` to compile the source using merged compiler options.
+   - Optionally checks and reports diagnostics (compilation errors) unless `transpileOnly` is set to true.
+
+6. **Diagnostics and Error Handling:**
+   - Reports compilation errors by emitting them as Webpack errors, providing diagnostic message details and location.
+
+7. **Returning Output:**
+   - The callback function provides compiled JavaScript and source map back to Webpack.
+
+Below is the rewritten code:
+```javascript
+// File: ts-loader.js
+
+const path = require('path');
+const ts = require('typescript');
+const { getOptions, stringifyRequest } = require('loader-utils');
+
+module.exports = function(source) {
+  const options = getOptions(this) || {};
+  const callback = this.async();
+
+  // Setup compiler options with defaults
+  const defaultCompilerOptions = { sourceMap: true };
+  const compilerOptions = {
+    ...defaultCompilerOptions,
+    ...options.compilerOptions
+  };
+
+  // Resolve config path or lookup tsconfig.json
+  const configPath = options.configFile
+    ? path.resolve(this.context, options.configFile)
+    : ts.findConfigFile(this.context, ts.sys.fileExists, 'tsconfig.json');
+
+  let config = {};
+  if (configPath) {
+    const readResult = ts.readConfigFile(configPath, ts.sys.readFile);
+    if (!readResult.error) {
+      config = readResult.config;
+    }
+  }
+
+  // Parse config file and extend compiler options
+  const parsedCommandLine = ts.parseJsonConfigFileContent(
+    config,
+    ts.sys,
+    this.context
+  );
+  Object.assign(compilerOptions, parsedCommandLine.options);
+
+  // Transpile TypeScript source
+  const result = ts.transpileModule(source, {
+    compilerOptions,
+    reportDiagnostics: !options.transpileOnly,
+    fileName: this.resourcePath
+  });
+
+  // Emit errors if needed
+  if (!options.transpileOnly && result.diagnostics.length) {
+    result.diagnostics.forEach(diagnostic => {
+      const message = ts.flattenDiagnosticMessageText(diagnostic.messageText, '\n');
+      const { line, character } = diagnostic.file.getLineAndCharacterOfPosition(diagnostic.start);
+      this.emitError(new Error(`TS [${diagnostic.code}]: ${message} at ${line + 1}:${character + 1}`));
+    });
+  }
+
+  // Return the transpiled code and source map
+  callback(null, result.outputText, result.sourceMapText);
+};
+```

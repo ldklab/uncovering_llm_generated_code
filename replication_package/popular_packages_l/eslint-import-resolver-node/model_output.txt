@@ -1,0 +1,76 @@
+The `eslint-import-resolver-node` is a plugin designed to work with `eslint-plugin-import`, providing module resolution using Node.js-style functionality. This resolver enhances the ability of ESLint to locate and validate imported modules within a project, ensuring that the paths and extensions defined align with the project's structure and Node.js standards.
+
+**Functionality:**
+- **Module Resolution**: It uses Node.js's default module resolution strategy. 
+- **Configurable Options**: The configuration is passed to the `resolve` library, which determines how modules are resolved:
+  - **Extensions**: Define file extensions to consider when resolving modules. The default extension is `.js`. When specifying options, you need to explicitly include `.js` if you want it available.
+  - **Paths**: An array of absolute paths to be searched. This feature emulates `NODE_PATH`, allowing modules to be resolved from these directories.
+  - **Module Directory**: Specify directories that act like `node_modules`. It defaults to `node_modules`, but alternative locations or project directories can be added.
+  - **In-Project Aliasing**: Users can specify project-specific paths to act as source roots, facilitating in-project module imports using custom aliases instead of relative paths.
+
+Here's the code for the package:
+
+```javascript
+// index.js
+const resolve = require('resolve');
+
+function nodeResolver(customOptions = {}) {
+  const defaultOptions = {
+    extensions: ['.js'],
+    paths: [],
+    moduleDirectory: ['node_modules'],
+  };
+
+  const options = {
+    ...defaultOptions,
+    ...customOptions,
+  };
+
+  return {
+    interfaceVersion: 2,
+    resolve(source, file, config) {
+      const opts = {
+        ...options,
+        // resolve allows specifying file being resolved from
+        basedir: file ? file.substring(0, file.lastIndexOf('/')) : process.cwd(),
+      };
+
+      try {
+        return {
+          found: true,
+          path: resolve.sync(source, opts),
+        };
+      } catch (err) {
+        return {
+          found: false,
+        };
+      }
+    },
+  };
+}
+
+module.exports = { nodeResolver };
+
+// package.json
+{
+  "name": "eslint-import-resolver-node",
+  "version": "1.0.0",
+  "description": "Node-style module resolution plugin for eslint-plugin-import.",
+  "main": "index.js",
+  "keywords": [
+    "eslint",
+    "import",
+    "resolve",
+    "plugin"
+  ],
+  "dependencies": {
+    "resolve": "^1.20.0"
+  },
+  "author": "Your Name",
+  "license": "MIT"
+}
+```
+
+- This code uses the `resolve` package to attempt resolving module paths given the configuration options like file extensions, additional paths, and custom module directories.
+- The `nodeResolver` function takes custom configuration options and merges them with defaults before using them to resolve paths.
+- Module resolution is implemented in the `resolve` method, which is part of the resolver's expected interface. This method handles path resolution and returns an object indicating whether resolution succeeded and, if so, the resolved path.

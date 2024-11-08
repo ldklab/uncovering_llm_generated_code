@@ -1,0 +1,133 @@
+The given Node.js code defines a `MIMEType` class used to parse and handle MIME type strings. Here's a breakdown of its core functionalities:
+
+1. **Initialization and Parsing**: 
+   - The constructor takes a MIME type string and attempts to parse it using a `parse` function from an external module (`parser.js`). If parsing fails, it throws an error.
+   - The parsed result is used to initialize private members `_type`, `_subtype`, and `_parameters`.
+
+2. **Static Parse Method**: 
+   - Provides a way to create a `MIMEType` instance by passing a string. It returns `null` if parsing fails, rather than throwing an error.
+
+3. **Accessors for Type and Subtype**:
+   - The class has getter and setter methods for `type` and `subtype`. They ensure the values are in lowercase and adhere to HTTP token code point requirements.
+
+4. **Parameters Management**:
+   - The `_parameters` member is an instance of `MIMETypeParameters`, managing any additional parameters in the MIME type.
+
+5. **Essence and Serialization**:
+   - `essence` provides a string in the format `type/subtype`.
+   - `toString` uses a `serialize` function to convert the MIME type instance back into a string.
+
+6. **Type Checking Methods**:
+   - `isJavaScript`: Determines if the MIME type represents JavaScript. It checks both type and subtype against known JavaScript MIME types and respects the `prohibitParameters` option.
+   - `isXML`: Checks if the MIME type is XML or ends with `+xml`.
+   - `isHTML`: Determines if the MIME type is HTML.
+
+Here's a rewritten version of the Node.js code:
+
+```javascript
+"use strict";
+
+const MIMETypeParameters = require("./mime-type-parameters.js");
+const parse = require("./parser.js");
+const serialize = require("./serializer.js");
+const {
+  asciiLowercase,
+  solelyContainsHTTPTokenCodePoints
+} = require("./utils.js");
+
+module.exports = class MIMEType {
+  constructor(mimeString) {
+    mimeString = String(mimeString);
+    const parseResult = parse(mimeString);
+    if (parseResult === null) {
+      throw new Error(`Could not parse MIME type string "${mimeString}"`);
+    }
+
+    this._type = parseResult.type;
+    this._subtype = parseResult.subtype;
+    this._parameters = new MIMETypeParameters(parseResult.parameters);
+  }
+
+  static parse(mimeString) {
+    try {
+      return new this(mimeString);
+    } catch (error) {
+      return null;
+    }
+  }
+
+  get essence() {
+    return `${this.type}/${this.subtype}`;
+  }
+
+  get type() {
+    return this._type;
+  }
+
+  set type(value) {
+    value = asciiLowercase(String(value));
+
+    if (!value.length) {
+      throw new Error("Invalid type: must be a non-empty string");
+    }
+    if (!solelyContainsHTTPTokenCodePoints(value)) {
+      throw new Error(`Invalid type "${value}": must contain only HTTP token code points`);
+    }
+
+    this._type = value;
+  }
+
+  get subtype() {
+    return this._subtype;
+  }
+
+  set subtype(value) {
+    value = asciiLowercase(String(value));
+
+    if (!value.length) {
+      throw new Error("Invalid subtype: must be a non-empty string");
+    }
+    if (!solelyContainsHTTPTokenCodePoints(value)) {
+      throw new Error(`Invalid subtype "${value}": must contain only HTTP token code points`);
+    }
+
+    this._subtype = value;
+  }
+
+  get parameters() {
+    return this._parameters;
+  }
+
+  toString() {
+    return serialize(this);
+  }
+
+  isJavaScript({ prohibitParameters = false } = {}) {
+    if (this._type === "text") {
+      const validSubtypes = [
+        "ecmascript", "javascript", "javascript1.0", "javascript1.1", "javascript1.2",
+        "javascript1.3", "javascript1.4", "javascript1.5", "jscript", 
+        "livescript", "x-ecmascript", "x-javascript"
+      ];
+      if (validSubtypes.includes(this._subtype)) {
+        return !prohibitParameters || this._parameters.size === 0;
+      }
+    } else if (this._type === "application") {
+      const validSubtypes = ["ecmascript", "javascript", "x-ecmascript", "x-javascript"];
+      if (validSubtypes.includes(this._subtype)) {
+        return !prohibitParameters || this._parameters.size === 0;
+      }
+    }
+    return false;
+  }
+
+  isXML() {
+    return (this._subtype === "xml" && (this._type === "text" || this._type === "application")) ||
+           this._subtype.endsWith("+xml");
+  }
+
+  isHTML() {
+    return this._subtype === "html" && this._type === "text";
+  }
+};
+```

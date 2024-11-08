@@ -1,0 +1,85 @@
+The Node.js code defines a module for determining the length of a TypedArray. It uses several third-party packages to retrieve property descriptors, check for prototypes, and handle TypedArrays. The module exports a function called `typedArrayLength` that checks if a given value is a TypedArray and, if so, retrieves the length of the array. Here is a breakdown of the code:
+
+1. **Imports**: It imports necessary functions and libraries, including `call-bind`, `for-each`, `gopd`, `has-proto`, `is-typed-array`, and `possible-typed-array-names`.
+
+2. **TypedArray Length Getter Function**: It defines a structure called `Cache` that is used to store getter functions for retrieving the length of different types of TypedArrays.
+
+3. **Setup Getters for TypedArrays**: It creates `getter` functions for each possible TypedArray type found in the environment. For arrays with configurable `length` properties, a fallback mechanism is established.
+
+4. **Core Functionality**: The `tryTypedArrays` function iterates through each getter in the `getters` object and tries to use it to find the length of the provided TypedArray. If it succeeds, it stores the length and returns it.
+
+5. **Exported Function**: The `typedArrayLength` function first checks if the input is a TypedArray using the `isTypedArray` function. If it's true, it calls `tryTypedArrays` to find and return the length, otherwise, it returns `false`.
+
+Here's a possible rewrite of the Node.js code:
+
+```javascript
+'use strict';
+
+const callBind = require('call-bind');
+const forEach = require('for-each');
+const gOPD = require('gopd');
+const hasProto = require('has-proto')();
+const isTypedArray = require('is-typed-array');
+const typedArrayNames = require('possible-typed-array-names');
+
+/** @typedef {(value: *) => number} TypedArrayLengthGetter */
+/** @typedef {{ [k: string]: TypedArrayLengthGetter|null }} Cache */
+
+const getters = Object.create(null);
+const defineProperty = Object.defineProperty;
+
+if (gOPD) {
+    const getLength = function (x) { return x.length; };
+
+    forEach(typedArrayNames, function (typedArrayName) {
+        const TypedArrayConstructor = global[typedArrayName];
+
+        if (typeof TypedArrayConstructor === 'function' || typeof TypedArrayConstructor === 'object') {
+            const Proto = TypedArrayConstructor.prototype;
+            let descriptor = gOPD(Proto, 'length');
+
+            if (!descriptor && hasProto) {
+                const superProto = Object.getPrototypeOf(Proto);
+                descriptor = gOPD(superProto, 'length');
+            }
+
+            if (descriptor && descriptor.get) {
+                getters['$' + typedArrayName] = callBind(descriptor.get);
+            } else if (defineProperty) {
+                const instance = new TypedArrayConstructor(2);
+                descriptor = gOPD(instance, 'length');
+                if (descriptor && descriptor.configurable) {
+                    defineProperty(instance, 'length', { value: 3 });
+                }
+                if (instance.length === 2) {
+                    getters['$' + typedArrayName] = getLength;
+                }
+            }
+        }
+    });
+}
+
+const tryTypedArrays = function (value) {
+    let foundLength;
+
+    forEach(getters, function (getter) {
+        if (typeof foundLength !== 'number') {
+            try {
+                const length = getter(value);
+                if (typeof length === 'number') {
+                    foundLength = length;
+                }
+            } catch (e) {}
+        }
+    });
+
+    return foundLength;
+};
+
+module.exports = function typedArrayLength(value) {
+    if (!isTypedArray(value)) {
+        return false;
+    }
+    return tryTypedArrays(value);
+};
+```

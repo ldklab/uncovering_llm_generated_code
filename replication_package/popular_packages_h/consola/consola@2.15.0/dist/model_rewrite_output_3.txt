@@ -1,0 +1,123 @@
+The given Node.js code is a comprehensive module designed to support console logging operations with various features including colorful and formatted output, environment detection, stack trace logging, and compatibility with CI/CD environments. The code achieves the following functionalities:
+
+1. **Module Imports:** Utilizes required Node.js modules such as `util`, `path`, `fs`, `os`, and `tty`. It also uses modules for color conversion and handling terminal color outputs.
+
+2. **Environment Detection:** It detects and configures behavior based on different runtime environments like browsers, Node.js, or CI/CD pipelines. This is managed through environment variables and platform checks.
+
+3. **Logger Creation:** Defines a logger class that supports multiple logging levels (e.g., info, warn, error) and styles the output using ANSI color codes. It allows creation of custom logs with several levels and tag defaults.
+
+4. **Reporter Configuration:** Provides different reporting strategies (Basic, Fancy, JSON) with the flexibility to add or remove reporters at runtime. It supports output customization based on provided options (colors, compactness).
+
+5. **Log Level Management:** Configurable log levels based on environment variables or method calls, enabling different verbosity for different environments (development, production, CI).
+
+6. **Stack Trace Formatting:** Formats stack traces for enhanced readability and provides an option to include log dates in the output.
+
+7. **Third-party Integrations:** Offers integration hooks for third-party logger libraries such as Winston, facilitating extended logging setups beyond console output.
+
+Here is a rewritten and more structured version of the original code:
+
+```javascript
+"use strict";
+
+const util = require("util");
+const path = require("path");
+const fs = require("fs");
+const os = require("os");
+const tty = require("tty");
+const readline = require("readline");
+const chalk = require("chalk"); // For handling chalk template literals
+const supportsColor = require("supports-color");
+const { formatWithOptions } = require("util");
+
+const defaultLevel = 3; // Define default logging level
+
+/**
+ * Formatter for stack traces and log messages.
+ */
+class Formatter {
+  constructor(options = {}) {
+    this.options = {
+      dateFormat: "HH:mm:ss",
+      ...options
+    };
+  }
+
+  formatStack(stack) {
+    return stack.split("\n").map(line => `  ${chalk.grey(line.trim())}`).join("\n");
+  }
+
+  formatDate(date) {
+    return chalk.gray(date.toLocaleTimeString());
+  }
+
+  formatArgs(args) {
+    if (formatWithOptions) {
+      return util.formatWithOptions({ colors: true }, ...args);
+    }
+    return util.format(...args);
+  }
+}
+
+/**
+ * Basic Reporter
+ * Provides formatted console output with colors and labels for log levels.
+ */
+class BasicReporter extends Formatter {
+  log(logObj) {
+    const { type, date, args, level } = logObj;
+    const typeOutput = chalk.cyan(type.toUpperCase());
+
+    const dateOutput = this.formatDate(date);
+
+    const message = this.formatArgs(args);
+    console.log(`${typeOutput} - ${dateOutput}: ${message}`);
+  }
+}
+
+/**
+ * Logger class supporting different levels and styles.
+ */
+class Logger {
+  constructor(fancy = false) {
+    this.reporter = fancy ? new BasicReporter() : null; // Assuming a fancy variant could exist
+    this.level = defaultLevel;
+    this.isPaused = false;
+  }
+
+  addReporter(reporter) {
+    this.reporter = reporter;
+  }
+
+  setLevel(level) {
+    this.level = level;
+  }
+
+  log(level, type, args) {
+    if (this.isPaused || level > this.level) return;
+
+    const logObj = {
+      type, args, level,
+      date: new Date()
+    };
+
+    this.reporter && this.reporter.log(logObj);
+  }
+
+  pause() {
+    this.isPaused = true;
+  }
+
+  resume() {
+    this.isPaused = false;
+  }
+}
+
+// Create a global consola instance
+const consola = new Logger();
+global.consola = consola; 
+
+// Set default reporters
+consola.addReporter(new BasicReporter());
+
+module.exports = consola;
+```

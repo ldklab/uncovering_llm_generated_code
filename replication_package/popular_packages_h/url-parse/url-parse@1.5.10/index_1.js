@@ -1,0 +1,338 @@
+'use strict';
+
+const required = require('requires-port'), 
+      qs = require('querystringify');
+
+const controlOrWhitespace = /^[\x00-\x20\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]+/,
+      CRHTLF = /[\n\r\t]/g,
+      slashes = /^[A-Za-z][A-Za-z0-9+-.]*:\/\//,
+      port = /:\d+$/,
+      protocolre = /^([a-z][a-z0-9.+-]*:)?(\/\/)?([\\/]+)?([\S\s]*)/i,
+      windowsDriveLetter = /^[a-zA-Z]:/;
+
+class Url {
+  constructor(address, location, parser) {
+    address = Url.trimLeft(address).replace(CRHTLF, '');
+    if (!(this instanceof Url)) {
+      return new Url(address, location, parser);
+    }
+
+    let relative, extracted, parse, instruction, index, key;
+    const instructions = Url.getRules().slice();
+    const type = typeof location;
+
+    if ('object' !== type && 'string' !== type) {
+      parser = location;
+      location = null;
+    }
+    if (parser && 'function' !== typeof parser) parser = qs.parse;
+
+    location = Url.lolcation(location);
+    extracted = Url.extractProtocol(address || '', location);
+    relative = !extracted.protocol && !extracted.slashes;
+
+    this.slashes = extracted.slashes || (relative && location.slashes);
+    this.protocol = extracted.protocol || location.protocol || '';
+    address = extracted.rest;
+
+    if (
+      extracted.protocol === 'file:' && 
+      (extracted.slashesCount !== 2 || windowsDriveLetter.test(address)) ||
+      (!extracted.slashes && 
+        (extracted.protocol || extracted.slashesCount < 2 || !Url.isSpecial(this.protocol)))
+    ) {
+      instructions[3] = [/(.*)/, 'pathname'];
+    }
+
+    for (let i = 0; i < instructions.length; i++) {
+      instruction = instructions[i];
+      if (typeof instruction === 'function') {
+        address = instruction(address, this);
+        continue;
+      }
+
+      parse = instruction[0];
+      key = instruction[1];
+
+      if (parse !== parse) {
+        this[key] = address;
+      } else if ('string' === typeof parse) {
+        index = parse === '@' ? address.lastIndexOf(parse) : address.indexOf(parse);
+        if (~index) {
+          if ('number' === typeof instruction[2]) {
+            this[key] = address.slice(0, index);
+            address = address.slice(index + instruction[2]);
+          } else {
+            this[key] = address.slice(index);
+            address = address.slice(0, index);
+          }
+        }
+      } else if ((index = parse.exec(address))) {
+        this[key] = index[1];
+        address = address.slice(0, index.index);
+      }
+
+      this[key] = this[key] || (relative && instruction[3] ? location[key] || '' : '');
+
+      if (instruction[4]) this[key] = this[key].toLowerCase();
+    }
+
+    if (parser) this.query = parser(this.query);
+
+    if (
+        relative && 
+        location.slashes && 
+        this.pathname.charAt(0) !== '/' && 
+        (this.pathname !== '' || location.pathname !== '')
+    ) {
+      this.pathname = Url.resolve(this.pathname, location.pathname);
+    }
+
+    if (this.pathname.charAt(0) !== '/' && Url.isSpecial(this.protocol)) {
+      this.pathname = '/' + this.pathname;
+    }
+
+    if (!required(this.port, this.protocol)) {
+      this.host = this.hostname;
+      this.port = '';
+    }
+
+    this.username = this.password = '';
+    if (this.auth) {
+      index = this.auth.indexOf(':');
+      if (~index) {
+        this.username = this.auth.slice(0, index);
+        this.username = encodeURIComponent(decodeURIComponent(this.username));
+        this.password = this.auth.slice(index + 1);
+        this.password = encodeURIComponent(decodeURIComponent(this.password));
+      } else {
+        this.username = encodeURIComponent(decodeURIComponent(this.auth));
+      }
+      this.auth = this.password ? `${this.username}:${this.password}` : this.username;
+    }
+
+    this.origin = this.protocol !== 'file:' && Url.isSpecial(this.protocol) && this.host
+      ? `${this.protocol}//${this.host}`
+      : 'null';
+
+    this.href = this.toString();
+  }
+
+  set(part, value, fn) {
+    switch (part) {
+      case 'query':
+        if ('string' === typeof value && value.length) {
+          value = (fn || qs.parse)(value);
+        }
+        this[part] = value;
+        break;
+      case 'port':
+        this[part] = value;
+        if (!required(value, this.protocol)) {
+          this.host = this.hostname;
+          this[part] = '';
+        } else if (value) {
+          this.host = `${this.hostname}:${value}`;
+        }
+        break;
+      case 'hostname':
+        this[part] = value;
+        if (this.port) value += `:${this.port}`;
+        this.host = value;
+        break;
+      case 'host':
+        this[part] = value;
+        if (port.test(value)) {
+          value = value.split(':');
+          this.port = value.pop();
+          this.hostname = value.join(':');
+        } else {
+          this.hostname = value;
+          this.port = '';
+        }
+        break;
+      case 'protocol':
+        this.protocol = value.toLowerCase();
+        this.slashes = !fn;
+        break;
+      case 'pathname':
+      case 'hash':
+        if (value) {
+          const char = part === 'pathname' ? '/' : '#';
+          this[part] = value.charAt(0) !== char ? char + value : value;
+        } else {
+          this[part] = value;
+        }
+        break;
+      case 'username':
+      case 'password':
+        this[part] = encodeURIComponent(value);
+        break;
+      case 'auth':
+        const index = value.indexOf(':');
+        if (~index) {
+          this.username = value.slice(0, index);
+          this.username = encodeURIComponent(decodeURIComponent(this.username));
+          this.password = value.slice(index + 1);
+          this.password = encodeURIComponent(decodeURIComponent(this.password));
+        } else {
+          this.username = encodeURIComponent(decodeURIComponent(value));
+        }
+    }
+
+    for (let i = 0; i < Url.getRules().length; i++) {
+      const ins = Url.getRules()[i];
+      if (ins[4]) this[ins[1]] = this[ins[1]].toLowerCase();
+    }
+
+    this.auth = this.password ? `${this.username}:${this.password}` : this.username;
+    this.origin = this.protocol !== 'file:' && Url.isSpecial(this.protocol) && this.host
+      ? `${this.protocol}//${this.host}`
+      : 'null';
+
+    this.href = this.toString();
+    return this;
+  }
+
+  toString(stringify) {
+    if (!stringify || 'function' !== typeof stringify) stringify = qs.stringify;
+
+    let query, host = this.host, protocol = this.protocol;
+    if (protocol && protocol.charAt(protocol.length - 1) !== ':') protocol += ':';
+
+    let result = protocol +
+      ((this.protocol && this.slashes) || Url.isSpecial(this.protocol) ? '//' : '');
+
+    if (this.username) {
+      result += this.username;
+      if (this.password) result += `:${this.password}`;
+      result += '@';
+    } else if (this.password) {
+      result += `:${this.password}@`;
+    }
+
+    if (host[host.length - 1] === ':' || (port.test(this.hostname) && !this.port)) {
+      host += ':';
+    }
+
+    result += host + this.pathname;
+    query = 'object' === typeof this.query ? stringify(this.query) : this.query;
+    if (query) result += '?' !== query.charAt(0) ? `?${query}` : query;
+
+    if (this.hash) result += this.hash;
+    return result;
+  }
+
+  static trimLeft(str) {
+    return (str ? str : '').toString().replace(controlOrWhitespace, '');
+  }
+
+  static lolcation(loc) {
+    let globalVar;
+    if (typeof window !== 'undefined') globalVar = window;
+    else if (typeof global !== 'undefined') globalVar = global;
+    else if (typeof self !== 'undefined') globalVar = self;
+    else globalVar = {};
+
+    const location = globalVar.location || {};
+    loc = loc || location;
+
+    let finaldestination = {}, type = typeof loc, key;
+    if ('blob:' === loc.protocol) {
+      finaldestination = new Url(unescape(loc.pathname), {});
+    } else if ('string' === type) {
+      finaldestination = new Url(loc, {});
+      for (key in Url.ignoreRules()) delete finaldestination[key];
+    } else if ('object' === type) {
+      for (key in loc) {
+        if (key in Url.ignoreRules()) continue;
+        finaldestination[key] = loc[key];
+      }
+      if (finaldestination.slashes === undefined) {
+        finaldestination.slashes = slashes.test(loc.href);
+      }
+    }
+    return finaldestination;
+  }
+
+  static extractProtocol(address, location) {
+    address = Url.trimLeft(address).replace(CRHTLF, '');
+    location = location || {};
+
+    const match = protocolre.exec(address);
+    const protocol = match[1] ? match[1].toLowerCase() : '';
+    const forwardSlashes = !!match[2];
+    const otherSlashes = !!match[3];
+    let slashesCount = 0, rest;
+
+    if (forwardSlashes) {
+      rest = otherSlashes ? match[2] + match[3] + match[4] : match[2] + match[4];
+      slashesCount = match[2].length + (otherSlashes ? match[3].length : 0);
+    } else {
+      rest = otherSlashes ? match[3] + match[4] : match[4];
+      slashesCount = otherSlashes ? match[3].length : 0;
+    }
+
+    if (protocol === 'file:' && slashesCount >= 2) {
+      rest = rest.slice(2);
+    } else if (Url.isSpecial(protocol)) {
+      rest = match[4];
+    } else if (protocol && forwardSlashes) {
+      rest = rest.slice(2);
+    } else if (slashesCount >= 2 && Url.isSpecial(location.protocol)) {
+      rest = match[4];
+    }
+
+    return {
+      protocol: protocol,
+      slashes: forwardSlashes || Url.isSpecial(protocol),
+      slashesCount: slashesCount,
+      rest: rest
+    };
+  }
+
+  static resolve(relative, base) {
+    if (relative === '') return base;
+    const path = (base || '/').split('/').slice(0, -1).concat(relative.split('/'));
+    let i = path.length, last = path[i - 1], unshift = false, up = 0;
+
+    while (i--) {
+      if (path[i] === '.') {
+        path.splice(i, 1);
+      } else if (path[i] === '..') {
+        path.splice(i, 1);
+        up++;
+      } else if (up) {
+        if (i === 0) unshift = true;
+        path.splice(i, 1);
+        up--;
+      }
+    }
+    if (unshift) path.unshift('');
+    if (last === '.' || last === '..') path.push('');
+    return path.join('/');
+  }
+
+  static isSpecial(scheme) {
+    return ['file:', 'ftp:', 'http:', 'https:', 'ws:', 'wss:'].includes(scheme);
+  }
+
+  static ignoreRules() {
+    return { hash: 1, query: 1 };
+  }
+
+  static getRules() {
+    return [
+      ['#', 'hash'],                     
+      ['?', 'query'],                    
+      (address, url) => Url.isSpecial(url.protocol) ? address.replace(/\\/g, '/') : address,
+      ['/', 'pathname'],               
+      ['@', 'auth', 1],                 
+      [NaN, 'host', undefined, 1, 1],   
+      [/:([\d]*)$/, 'port', undefined, 1],
+      [NaN, 'hostname', undefined, 1, 1]
+    ];
+  }
+}
+
+module.exports = Url;

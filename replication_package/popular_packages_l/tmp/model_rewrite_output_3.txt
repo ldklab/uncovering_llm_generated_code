@@ -1,0 +1,117 @@
+The provided Node.js code is a module for creating temporary files and directories with specific characteristics and cleanup behavior. Here's a rundown of its functionality:
+
+1. **Dependencies:** It uses Node.js modules such as `fs` for file system operations, `path` for file path manipulations, `os` for OS-specific functions, and `crypto` for generating random bytes.
+
+2. **Defaults:** The module has default options for temporary files and directories, like the directory path (system's temp dir), file permissions, name prefix and postfix, whether to keep the file after use, and the number of tries to attempt creating a unique name.
+
+3. **Random Name Generation:** A helper function `randomChars` generates random portions of names using hex-encoded random bytes.
+
+4. **Unique Filename Generation:** `tmpNameSync` attempts to generate a unique name within the specified directory by combining the directory path, a prefix, and a random component.
+
+5. **Temporary File Operations:**
+   - `fileSync()` creates a temporary file, opens it, and returns an object containing the file name, file descriptor, and a cleanup callback.
+   - The cleanup callback handles closing the file and deleting it unless the `keep` option is set.
+
+6. **Temporary Directory Operations:**
+   - `dirSync()` creates a temporary directory and returns an object with the directory name and cleanup callback.
+   - The cleanup callback deletes the directory, employing recursive cleanup based on the `unsafeCleanup` option.
+
+7. **Graceful Cleanup:** `setGracefulCleanup()` registers an exit event handler to automatically clean up all temporary files and directories on process exit.
+
+8. **Exported Functions:** It exports `fileSync`, `dirSync`, `tmpNameSync`, and `setGracefulCleanup` for external use.
+
+9. **Example Usage:** Although commented out, there's an example usage section illustrating how to create and then manually clean up a temp file and directory.
+
+Here's a rewritten version of the Node.js code:
+
+```javascript
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
+const crypto = require('crypto');
+
+const tempFiles = [];
+const optionsDefaults = {
+  dir: os.tmpdir(),
+  mode: 0o600,
+  prefix: 'tmp-',
+  postfix: '',
+  keep: false,
+  tries: 3,
+};
+
+function randomChars() {
+  return crypto.randomBytes(3).toString('hex');
+}
+
+function tmpNameSync(options = {}) {
+  const opts = { ...optionsDefaults, ...options };
+  for (let i = 0; i < opts.tries; i++) {
+    const name = path.join(opts.dir, opts.prefix + randomChars() + opts.postfix);
+    if (!fs.existsSync(name)) {
+      return name;
+    }
+  }
+  throw new Error('Could not generate a unique tmp filename');
+}
+
+function fileSync(options = {}) {
+  const name = tmpNameSync(options);
+  const fd = fs.openSync(name, 'w', options.mode || 0o600);
+  const cleanupCallback = () => {
+    try {
+      fs.closeSync(fd);
+    } catch (err) {}
+    try {
+      if (!options.keep) fs.unlinkSync(name);
+    } catch (err) {}
+  };
+
+  if (!options.keep) {
+    tempFiles.push(cleanupCallback);
+  }
+
+  return { name, fd, cleanupCallback };
+}
+
+function dirSync(options = {}) {
+  const name = tmpNameSync(options);
+  fs.mkdirSync(name, options.mode || 0o700);
+  const cleanupCallback = () => {
+    try {
+      fs.rmdirSync(name, { recursive: options.unsafeCleanup || false });
+    } catch (err) {}
+  };
+
+  if (!options.keep) {
+    tempFiles.push(cleanupCallback);
+  }
+
+  return { name, cleanupCallback };
+}
+
+function setGracefulCleanup() {
+  process.on('exit', () => {
+    tempFiles.forEach(callback => callback());
+  });
+}
+
+module.exports = {
+  fileSync,
+  dirSync,
+  tmpNameSync,
+  setGracefulCleanup,
+};
+
+// Example usage
+const tmp = require('./tmp'); // Require the module
+tmp.setGracefulCleanup();
+
+const tmpfile = tmp.fileSync();
+console.log('Temp file created at:', tmpfile.name);
+tmpfile.cleanupCallback();
+
+const tmpdir = tmp.dirSync();
+console.log('Temp directory created at:', tmpdir.name);
+tmpdir.cleanupCallback();
+```

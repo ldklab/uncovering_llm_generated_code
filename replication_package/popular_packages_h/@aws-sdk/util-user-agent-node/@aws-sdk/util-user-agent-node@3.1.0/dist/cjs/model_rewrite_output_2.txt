@@ -1,0 +1,57 @@
+The provided Node.js code is a module that exports a function `defaultUserAgent`. This function is designed to create a detailed user agent string for AWS SDK clients in Node.js. The user agent string includes various metadata about the SDK version, operating system, Node.js version, and optionally, service and execution environment information. The function uses an async function to gather additional configuration or identifier from environment variables or configuration files if available.
+
+Here's a high-level breakdown of the functionality:
+1. It defines constants for environment and ini configuration keys to retrieve an application identifier.
+2. The `defaultUserAgent` function collects metadata including:
+   - SDK version
+   - Operating system information
+   - Programming language and environment version
+   - Optionally, service-specific and execution environment information.
+3. It checks for an application ID from environment variables or configuration files using the `loadConfig` function from `@aws-sdk/node-config-provider`.
+4. Finally, it returns an array of metadata sections that can be used for constructing a user agent string.
+
+Here is an organized rewrite of the provided code:
+
+```javascript
+"use strict";
+
+const { loadConfig } = require("@aws-sdk/node-config-provider");
+const { platform, release } = require("os");
+const { env, versions } = require("process");
+
+const UA_APP_ID_ENV_NAME = "AWS_SDK_UA_APP_ID";
+const UA_APP_ID_INI_NAME = "sdk-ua-app-id";
+
+const defaultUserAgent = ({ serviceId, clientVersion, }) => async () => {
+    const sections = [
+        ["aws-sdk-js", clientVersion],
+        [`os/${platform()}`, release()],
+        ["lang/js"],
+        ["md/nodejs", `${versions.node}`],
+    ];
+
+    if (serviceId) {
+        sections.push([`api/${serviceId}`, clientVersion]);
+    }
+
+    if (env.AWS_EXECUTION_ENV) {
+        sections.push([`exec-env/${env.AWS_EXECUTION_ENV}`]);
+    }
+
+    const appId = await loadConfig({
+        environmentVariableSelector: (env) => env[UA_APP_ID_ENV_NAME],
+        configFileSelector: (profile) => profile[UA_APP_ID_INI_NAME],
+        default: undefined,
+    })();
+
+    if (appId) {
+        sections.push([`app/${appId}`]);
+    }
+
+    return sections;
+};
+
+exports.UA_APP_ID_ENV_NAME = UA_APP_ID_ENV_NAME;
+exports.UA_APP_ID_INI_NAME = UA_APP_ID_INI_NAME;
+exports.defaultUserAgent = defaultUserAgent;
+```

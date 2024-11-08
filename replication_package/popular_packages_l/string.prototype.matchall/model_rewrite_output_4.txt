@@ -1,0 +1,90 @@
+The provided Node.js code adds a "shim" for the `String.prototype.matchAll` method, which means it provides functionality in environments where this standard method might not be available. The code does this by defining a `matchAllShim` function that mimics the behavior of the native `matchAll` method, which returns an iterator of all match results, including capturing groups, when the string is matched against a regular expression with the global flag.
+
+Here's what the code does in detail:
+- It binds functions from the prototypes of built-in JavaScript objects using `Function.prototype.call` so that they can be easily reused.
+- It checks for the presence of ES6 Symbols, which are used for certain newer functionalities.
+- It provides helper functions such as `toObject`, which ensures a value is not null or undefined before proceeding, and `toString`, which converts a given item to a string.
+- The `createMatcher` function makes sure that any provided regular expression is handled consistently with certain flags, ensuring that it operates globally (`g` flag).
+- The `matchAllShim` function takes a string and a regular expression (or string) and performs a global search for matches, collecting all results in an array and returning them. It manages the last index of the regex to handle global matches properly.
+- It attaches this shim as `matchAll` on the `String.prototype` if it's not already present, making it available for use across strings.
+- Finally, it exports the `matchAllShim` function so it can be used in other modules.
+
+Below is a possible rewrite of the code maintaining the same functionality:
+
+```javascript
+(() => {
+  'use strict';
+
+  const bindCall = Function.prototype.call.bind(Function.prototype.call);
+  const indexOf = bindCall(String.prototype.indexOf);
+
+  const hasSymbols = typeof Symbol === 'function' && typeof Symbol.iterator !== 'undefined';
+
+  const toObject = (value) => {
+    if (value == null) {
+      throw new TypeError('Cannot convert undefined or null to object');
+    }
+    return Object(value);
+  };
+
+  const toString = (item) => String(item);
+
+  const hasOwnProperty = bindCall(Object.prototype.hasOwnProperty);
+
+  const createMatcher = (regex) => {
+    const flags = 'g' + (hasOwnProperty(regex, 'flags') ? '' : 
+      (regex.ignoreCase ? 'i' : '') + 
+      (regex.multiline ? 'm' : '') + 
+      (regex.dotAll ? 's' : '') + 
+      (regex.unicode ? 'u' : '') + 
+      (regex.sticky ? 'y' : ''));
+    return new RegExp(regex.source, flags);
+  };
+
+  const matchAllShim = (string, regex) => {
+    const O = toObject(string);
+    const S = toString(O);
+    let matcher;
+
+    if (typeof regex !== 'object' || (hasSymbols && !(Symbol.matchAll in regex))) {
+      matcher = createMatcher(new RegExp(regex, 'g'));
+    } else if (!regex.global) {
+      throw new TypeError('matchAll requires a global RegExp or a non-RegExp string');
+    } else {
+      matcher = regex;
+    }
+
+    const matches = [];
+    let lastIndex = 0, match;
+
+    while ((match = matcher.exec(S)) !== null) {
+      const matchObject = Object.assign([], match);
+      matchObject.index = match.index;
+      matchObject.input = S;
+      matches.push(matchObject);
+      if (!matcher.global) {
+        break;
+      }
+      lastIndex = matcher.lastIndex;
+    }
+
+    matcher.lastIndex = lastIndex;
+    return matches;
+  };
+
+  matchAllShim.shim = () => {
+    const prototype = String.prototype;
+    if (!('matchAll' in prototype)) {
+      Object.defineProperty(prototype, 'matchAll', {
+        configurable: true,
+        writable: true,
+        value: function matchAll(regexp) {
+          return matchAllShim(this, regexp);
+        }
+      });
+    }
+  };
+
+  module.exports = matchAllShim;
+})();
+```

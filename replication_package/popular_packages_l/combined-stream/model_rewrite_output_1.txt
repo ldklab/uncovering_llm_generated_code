@@ -1,0 +1,101 @@
+The Node.js code defines a `CombinedStream` class, which is a custom implementation inheriting from the `Stream` class. It enables combining multiple smaller streams into one larger stream. The key functionalities of the `CombinedStream` class include:
+
+1. **Initialization**: Sets initial conditions for stream pausing, maximum data size, and internal storage for child streams.
+2. **Appending Streams**: Allows new streams to be added. These can be normal streams or functions that return streams.
+3. **Data Management**: It buffers data from each child stream and emits data events. It checks if the total data size exceeds a maximum limit and emits an error if it does.
+4. **Stream Transition**: Manages moving from one streamed object to the next, emitting events accordingly, and resuming/pausing streams.
+5. **Pipe Method**: Allows the concatenated output to be piped to another writable stream.
+6. **Lifecycle Management**: Provides methods to start (`resume`), pause (`pause`), end (`end`), and clean up (`destroy`) the streaming process.
+7. **Static Method**: A `create` method is included for easier instantiation of the `CombinedStream`.
+
+Here is the rewritten code:
+
+```javascript
+const { Stream } = require('stream');
+
+class CombinedStream extends Stream {
+  constructor({ maxDataSize = 2 * 1024 * 1024, pauseStreams = true } = {}) {
+    super();
+    this.pauseStreams = pauseStreams;
+    this.maxDataSize = maxDataSize;
+    this.dataSize = 0;
+    this._streams = [];
+    this._currentStream = null;
+    this.writable = true;
+    this.readable = true;
+  }
+
+  append(stream) {
+    const streamFn = typeof stream === 'function' ? stream : () => stream;
+    this._streams.push(streamFn);
+    if (this.pauseStreams && stream.pause) stream.pause();
+    return this;
+  }
+
+  _getNextStream() {
+    if (!this._streams.length) {
+      this.emit('end');
+      this.writable = false;
+      return;
+    }
+
+    const streamFactory = this._streams.shift();
+    streamFactory((stream) => {
+      this._currentStream = stream;
+      stream.on('data', this._onData.bind(this));
+      stream.on('end', this._onEnd.bind(this));
+      stream.on('error', (error) => this.emit('error', error));
+
+      if (!this.pauseStreams && stream.resume) stream.resume();
+    });
+  }
+
+  _onData(data) {
+    this.dataSize += data.length;
+    if (this.dataSize > this.maxDataSize) {
+      this.emit('error', new Error('maxDataSize exceeded'));
+      return;
+    }
+    this.emit('data', data);
+  }
+
+  _onEnd() {
+    this._getNextStream();
+  }
+
+  pipe(dest, options) {
+    super.pipe(dest, options);
+    this.resume();
+    return dest;
+  }
+
+  resume() {
+    if (this._currentStream?.resume) this._currentStream.resume();
+    else this._getNextStream();
+    this.emit('resume');
+  }
+
+  pause() {
+    if (this._currentStream?.pause) this._currentStream.pause();
+    this.emit('pause');
+  }
+
+  end() {
+    this.emit('end');
+    this.writable = false;
+    this.readable = false;
+    this._streams = [];
+  }
+
+  destroy() {
+    this.end();
+    this.emit('close');
+  }
+
+  static create(options) {
+    return new CombinedStream(options);
+  }
+}
+
+module.exports = CombinedStream;
+```

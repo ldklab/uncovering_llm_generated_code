@@ -1,0 +1,74 @@
+The given Node.js code is an implementation of a simple event emitter library called `mitt`. It provides basic event handling capabilities, allowing for the registration and removal of event handlers and emitting events. Here's a breakdown of its functionality:
+
+1. **Event Handler Storage**: Events and their associated handlers are stored in a `Map` called `all`. Each event type corresponds to an array of its handlers.
+
+2. **on(type, handler)**: This method registers a new handler for a specific event type. If handlers already exist for this type, the new handler is added to the list; otherwise, a new entry is created.
+
+3. **off(type, handler)**: This method removes a handler for a specific event type. If a specific handler is provided, only that handler is removed. If no handler is specified, all handlers for the event type are removed.
+
+4. **emit(type, evt)**: This method triggers all handlers for a specific event type, passing them the event data. Handlers registered for the global event type (`*`) will also be triggered, receiving the event type and data.
+
+5. **Usage**: The library is demonstrated by creating an `emitter`, registering event handlers, emitting events, and removing handlers.
+
+6. **Export**: The `mitt` function is exported as a default module.
+
+Here is a possible rewrite of the provided code:
+
+```javascript
+// mitt.js
+function createEventEmitter() {
+  const handlersMap = new Map();
+
+  return {
+    on(eventType, handler) {
+      if (!handlersMap.has(eventType)) {
+        handlersMap.set(eventType, []);
+      }
+      handlersMap.get(eventType).push(handler);
+    },
+    off(eventType, handler) {
+      const handlers = handlersMap.get(eventType);
+      if (handlers) {
+        if (handler) {
+          const index = handlers.indexOf(handler);
+          if (index !== -1) {
+            handlers.splice(index, 1);
+          }
+        } else {
+          handlersMap.set(eventType, []);
+        }
+      }
+    },
+    emit(eventType, event) {
+      const specificHandlers = handlersMap.get(eventType) || [];
+      const wildcardHandlers = handlersMap.get('*') || [];
+      
+      specificHandlers.slice().forEach(h => h(event));
+      wildcardHandlers.slice().forEach(h => h(eventType, event));
+    },
+    get handlers() {
+      return handlersMap;
+    }
+  };
+}
+
+// Usage example
+const emitter = createEventEmitter();
+
+// Listen to a specific event
+emitter.on('foo', event => console.log('foo', event));
+
+// Listen to all events
+emitter.on('*', (eventType, event) => console.log(eventType, event));
+
+// Emit an event
+emitter.emit('foo', { a: 'b' });
+
+// Add and remove a specific handler for an event
+function fooHandler() { console.log("foo event handler"); }
+emitter.on('foo', fooHandler);
+emitter.off('foo', fooHandler);
+
+// Default export
+module.exports = createEventEmitter;
+```

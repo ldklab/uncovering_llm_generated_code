@@ -1,0 +1,119 @@
+The provided Node.js code defines a deep merging utility for objects and arrays, called `deepmerge`. This utility is designed to recursively combine properties of two or more objects or arrays into a single object or array, ensuring that nested structures are properly merged and not simply overwritten. The `deepmerge` function handles a few special cases:
+
+1. It checks if a value is a mergeable object (e.g., not a special object like RegExp, Date, or a React element).
+2. It allows customization of the merge logic through options, such as providing a custom array merge function or a custom object merge strategy.
+3. It protects against prototype pollution by ensuring properties are safely merged.
+4. It provides a method `deepmerge.all` for merging an array of objects into a single object, sequentially applying `deepmerge` to each one.
+
+Below is a revised version of the code:
+
+```javascript
+'use strict';
+
+function isNonNullObject(value) {
+  return value !== null && typeof value === 'object';
+}
+
+function isSpecial(value) {
+  const stringValue = Object.prototype.toString.call(value);
+  return stringValue === '[object RegExp]' || stringValue === '[object Date]' || isReactElement(value);
+}
+
+function isMergeableObject(value) {
+  return isNonNullObject(value) && !isSpecial(value);
+}
+
+const canUseSymbol = typeof Symbol === 'function' && Symbol.for;
+const REACT_ELEMENT_TYPE = canUseSymbol ? Symbol.for('react.element') : 0xeac7;
+
+function isReactElement(value) {
+  return value.$$typeof === REACT_ELEMENT_TYPE;
+}
+
+function emptyTarget(value) {
+  return Array.isArray(value) ? [] : {};
+}
+
+function cloneUnlessOtherwiseSpecified(value, options) {
+  return options.clone !== false && options.isMergeableObject(value)
+    ? deepmerge(emptyTarget(value), value, options)
+    : value;
+}
+
+function defaultArrayMerge(target, source, options) {
+  return target.concat(source).map(element => cloneUnlessOtherwiseSpecified(element, options));
+}
+
+function getMergeFunction(key, options) {
+  if (!options.customMerge) return deepmerge;
+  const customMerge = options.customMerge(key);
+  return typeof customMerge === 'function' ? customMerge : deepmerge;
+}
+
+function getEnumerableOwnPropertySymbols(target) {
+  return Object.getOwnPropertySymbols
+    ? Object.getOwnPropertySymbols(target).filter(symbol => target.propertyIsEnumerable(symbol))
+    : [];
+}
+
+function getKeys(target) {
+  return Object.keys(target).concat(getEnumerableOwnPropertySymbols(target));
+}
+
+function propertyIsOnObject(object, property) {
+  try {
+    return property in object;
+  } catch (_) {
+    return false;
+  }
+}
+
+function propertyIsUnsafe(target, key) {
+  return propertyIsOnObject(target, key) &&
+         !(Object.prototype.hasOwnProperty.call(target, key) && Object.propertyIsEnumerable.call(target, key));
+}
+
+function mergeObject(target, source, options) {
+  const destination = {};
+  if (options.isMergeableObject(target)) {
+    getKeys(target).forEach(key => {
+      destination[key] = cloneUnlessOtherwiseSpecified(target[key], options);
+    });
+  }
+  getKeys(source).forEach(key => {
+    if (propertyIsUnsafe(target, key)) return;
+    if (propertyIsOnObject(target, key) && options.isMergeableObject(source[key])) {
+      destination[key] = getMergeFunction(key, options)(target[key], source[key], options);
+    } else {
+      destination[key] = cloneUnlessOtherwiseSpecified(source[key], options);
+    }
+  });
+  return destination;
+}
+
+function deepmerge(target, source, options = {}) {
+  options.arrayMerge = options.arrayMerge || defaultArrayMerge;
+  options.isMergeableObject = options.isMergeableObject || isMergeableObject;
+  options.cloneUnlessOtherwiseSpecified = cloneUnlessOtherwiseSpecified;
+
+  const sourceIsArray = Array.isArray(source);
+  const targetIsArray = Array.isArray(target);
+
+  if (sourceIsArray !== targetIsArray) {
+    return cloneUnlessOtherwiseSpecified(source, options);
+  } else if (sourceIsArray) {
+    return options.arrayMerge(target, source, options);
+  } else {
+    return mergeObject(target, source, options);
+  }
+}
+
+deepmerge.all = function (array, options) {
+  if (!Array.isArray(array)) {
+    throw new Error('first argument should be an array');
+  }
+  return array.reduce((prev, next) => deepmerge(prev, next, options), {});
+};
+
+module.exports = deepmerge;
+```

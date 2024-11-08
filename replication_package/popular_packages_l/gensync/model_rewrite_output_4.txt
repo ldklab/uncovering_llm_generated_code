@@ -1,0 +1,140 @@
+The provided Node.js code defines a module named `gensync` that allows for handling generator functions in a flexible manner by supporting synchronous, asynchronous, and callback (errback) styles of programming. It defines utility functions and structures to wrap generator functions or options to handle different execution styles. The main functions and objects involved are:
+
+- `gensync`: This is the main function exported by the module. It takes either a generator function or an options object. Depending on the type of its argument, it returns a wrapper object that can execute the function synchronously, asynchronously (returning a promise), or using an errback (callback with error handling) pattern.
+
+- `createGensyncWrapper`: Wraps a generator function by providing `sync`, `async`, and `errback` methods to handle different execution contexts.
+
+- `createGensyncWrapperFromOptions`: Similar to `createGensyncWrapper`, but it accepts an options object that specifies separate `sync`, `async`, and `errback` methods, using these methods to handle respective execution styles.
+
+- `runIteratorSync`, `runIteratorAsync`, `runIteratorErrback`: Utility functions that execute the logic of generator functions using different paradigms: synchronous, asynchronous, and errback, respectively.
+
+- `gensync.all`: A utility function that takes an iterator of sync, async, or errback-capable objects and executes all of them in the specified mode, handling results in accordance with the chosen method (sync, async, or errback).
+
+- `gensync.race`: Another utility function that runs an iterator of sync, async, or errback-capable objects, returning or resolving/rejecting with the first value or error in the case of `async` or `errback`. It throws an error if `sync` is attempted because the concept does not support racing in synchronous mode.
+
+Here is a possible rewrite of the given Node.js code:
+
+```javascript
+'use strict';
+
+module.exports = gensync;
+
+function gensync(input) {
+    return (typeof input === 'function') ? createWrapper(input) : createWrapperWithOptions(input);
+}
+
+function createWrapper(genFn) {
+    return {
+        sync(...args) {
+            const iterator = genFn(...args);
+            return executeIteratorSync(iterator);
+        },
+        async(...args) {
+            const iterator = genFn(...args);
+            return executeIteratorAsync(iterator);
+        },
+        errback(...args) {
+            const callback = args.pop();
+            const iterator = genFn(...args);
+            executeIteratorErrback(iterator, callback);
+        }
+    };
+}
+
+function createWrapperWithOptions(opts) {
+    return {
+        sync(...args) {
+            return opts.sync(...args);
+        },
+        async(...args) {
+            return opts.async ? opts.async(...args) : Promise.resolve(opts.sync(...args));
+        },
+        errback(...args) {
+            const callback = args.pop();
+            if (opts.errback) {
+                opts.errback(...args, callback);
+            } else {
+                try {
+                    const result = opts.sync(...args);
+                    callback(null, result);
+                } catch (e) {
+                    callback(e);
+                }
+            }
+        }
+    };
+}
+
+function executeIteratorSync(iterator) {
+    const { value, done } = iterator.next();
+    if (!done) throw new Error("Generator yielded without awaiting value");
+    return value;
+}
+
+function executeIteratorAsync(iterator) {
+    return new Promise((resolve, reject) => {
+        const { value, done } = iterator.next();
+        if (done) {
+            resolve(value);
+        } else {
+            Promise.resolve(value).then(resolve, reject);
+        }
+    });
+}
+
+function executeIteratorErrback(iterator, callback) {
+    try {
+        const { value, done } = iterator.next();
+        if (done) {
+            callback(null, value);
+        } else {
+            Promise.resolve(value).then(val => callback(null, val), callback);
+        }
+    } catch (err) {
+        callback(err);
+    }
+}
+
+gensync.all = function(iterator) {
+    return {
+        sync() {
+            const results = [];
+            for (const g of iterator) {
+                results.push(g.sync());
+            }
+            return results;
+        },
+        async() {
+            const itArray = Array.from(iterator, g => g.async());
+            return Promise.all(itArray);
+        },
+        errback(callback) {
+            const results = [];
+            let completed = 0;
+            const total = iterator.length;
+            iterator.forEach((g, idx) => {
+                g.errback((err, result) => {
+                    if (err) return callback(err);
+                    results[idx] = result;
+                    if (++completed === total) callback(null, results);
+                });
+            });
+        }
+    };
+};
+
+gensync.race = function(iterator) {
+    return {
+        sync() {
+            throw new Error("sync() cannot be used with race()");
+        },
+        async() {
+            const itArray = Array.from(iterator, g => g.async());
+            return Promise.race(itArray);
+        },
+        errback(callback) {
+            iterator.forEach(g => g.errback(callback));
+        }
+    };
+};
+```

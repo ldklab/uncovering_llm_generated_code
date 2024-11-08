@@ -1,0 +1,202 @@
+/**
+ * @license
+ * web-streams-polyfill v4.0.0
+ * This web streams polyfill is provided to add support for web streams functionality across different environments.
+ */
+(function (globalFactory) {
+  if (typeof exports === 'object' && typeof module !== 'undefined') {
+    // CommonJS/Node.js module
+    globalFactory(exports);
+  } else if (typeof define === 'function' && define.amd) {
+    // AMD module
+    define(['exports'], globalFactory);
+  } else {
+    // Browser global
+    var globalObject = (typeof globalThis !== 'undefined') ? globalThis : (typeof self !== 'undefined') ? self : this;
+    globalFactory(globalObject.WebStreamsPolyfill = {});
+  }
+})(function (exports) {
+  'use strict';
+
+  // Helper functions and variables
+  function noop() {}
+  function isObject(x) {
+    return typeof x === 'object' && x !== null || typeof x === 'function';
+  }
+  const internalPromise = Promise;
+  const resolvedPromise = Promise.resolve.bind(internalPromise);
+  const promiseThen = Promise.prototype.then;
+  const promiseReject = Promise.reject.bind(internalPromise);
+  const resolveAsync = resolvedPromise;
+
+  function createPromise(executor) {
+    return new internalPromise(executor);
+  }
+
+  function resolveWith(value) {
+    return createPromise(resolve => resolve(value));
+  }
+
+  function rejectWith(reason) {
+    return promiseReject(reason);
+  }
+
+  function asyncChain(promise, onFulfilled, onRejected) {
+    return promiseThen.call(promise, onFulfilled, onRejected);
+  }
+
+  function evaluateInMicrotask(fn) {
+    if (typeof queueMicrotask === 'function') {
+      evaluateInMicrotask = queueMicrotask;
+    } else {
+      const tick = resolveWith(void 0);
+      evaluateInMicrotask = task => asyncChain(tick, task);
+    }
+    return evaluateInMicrotask(fn);
+  }
+
+  class Queue {
+    constructor() {
+      this._cursor = 0;
+      this._size = 0;
+      this._front = { _elements: [], _next: undefined };
+      this._back = this._front;
+    }
+    get length() {
+      return this._size;
+    }
+    push(element) {
+      const back = this._back;
+      let newNode = back;
+      if (back._elements.length === 16383) {
+        newNode = { _elements: [], _next: undefined };
+      }
+      back._elements.push(element);
+      if (newNode !== back) {
+        this._back = newNode;
+        back._next = newNode;
+      }
+      this._size++;
+    }
+    shift() {
+      const front = this._front;
+      let currentNode = front;
+      const currentCursor = this._cursor;
+      const nextCursor = currentCursor + 1;
+      const frontElements = currentNode._elements;
+      const element = frontElements[currentCursor];
+      frontElements[currentCursor] = undefined;
+
+      if (nextCursor === 16384) {
+        currentNode = currentNode._next;
+        this._cursor = 0;
+      } else {
+        this._cursor = nextCursor;
+      }
+      
+      this._size--;
+      if (front !== currentNode) {
+        this._front = currentNode;
+      }
+      return element;
+    }
+    forEach(fn) {
+      let cursor = this._cursor;
+      let currentNode = this._front;
+      let elements = currentNode._elements;
+      while (true) {
+        if (cursor >= elements.length) {
+          if (currentNode._next === undefined) {
+            break;
+          }
+          currentNode = currentNode._next;
+          elements = currentNode._elements;
+          cursor = 0;
+          if (elements.length === 0) {
+            break;
+          }
+        }
+        fn(elements[cursor]);
+        cursor++;
+      }
+    }
+    peek() {
+      const front = this._front;
+      const currentCursor = this._cursor;
+      return front._elements[currentCursor];
+    }
+  }
+
+  // Define ReadableStream parts
+  const SYMBOL_ABORT_STEPS = Symbol('[[AbortSteps]]');
+  const SYMBOL_ERROR_STEPS = Symbol('[[ErrorSteps]]');
+  const SYMBOL_CANCEL_STEPS = Symbol('[[CancelSteps]]');
+  const SYMBOL_PULL_STEPS = Symbol('[[PullSteps]]');
+  const SYMBOL_RELEASE_STEPS = Symbol('[[ReleaseSteps]]');
+
+  function createReadableStreamReadOperations(stream, reader) {
+    reader._ownerReadableStream = stream;
+    stream._reader = reader;
+    if (stream._state === 'readable') {
+      updateReadableStreamReader(reader);
+    } else if (stream._state === 'closed') {
+      updateReadableStreamReader(reader);
+      finishStream(reader);
+    } else {
+      handleErrorStream(reader, stream._storedError);
+    }
+  }
+
+  function requestReadableStreamReadIntoReader(stream, chunk) {
+    return initiateRequestOnStream(stream._ownerReadableStream, chunk);
+  }
+
+  function releaseStreamReader(reader) {
+    const stream = reader._ownerReadableStream;
+    updateReadableStreamReader(reader, new TypeError('Reader was released and can no longer be used to monitor the stream\'s closedness'));
+    reader._ownerReadableStream = undefined;
+    stream._reader = undefined;
+    stream._readableStreamController[SYMBOL_RELEASE_STEPS]();
+  }
+
+  function createReadableStreamDefaultReaderInitialization(stream, readerFunc) {
+    const streamBack = stream._bac;
+    const reader = startDefaultReader(readerFunc, 'byte');
+    streamBack._stream = stream;
+    reader._stream = stream;
+    reader._startReading();
+    return reader;
+  }
+
+  // Define more stream parts...
+
+  exports.ByteLengthQueuingStrategy = class ByteLengthQueuingStrategy {
+    constructor({ highWaterMark }) {
+      this.highWaterMark = highWaterMark;
+    }
+    size(chunk) {
+      return chunk.byteLength;
+    }
+  };
+
+  exports.CountQueuingStrategy = class CountQueuingStrategy {
+    constructor({ highWaterMark }) {
+      this.highWaterMark = highWaterMark;
+    }
+    size() {
+      return 1;
+    }
+  };
+
+  exports.ReadableByteStreamController = ReadableByteStreamController;
+  exports.ReadableStream = ReadableStream;
+  exports.ReadableStreamBYOBReader = ReadableStreamBYOBReader;
+  exports.ReadableStreamBYOBRequest = ReadableStreamBYOBRequest;
+  exports.ReadableStreamDefaultController = ReadableStreamDefaultController;
+  exports.ReadableStreamDefaultReader = ReadableStreamDefaultReader;
+  exports.TransformStream = TransformStream;
+  exports.TransformStreamDefaultController = TransformStreamDefaultController;
+  exports.WritableStream = WritableStream;
+  exports.WritableStreamDefaultController = WritableStreamDefaultController;
+  exports.WritableStreamDefaultWriter = WritableStreamDefaultWriter;
+});

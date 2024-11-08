@@ -1,0 +1,209 @@
+The Node.js code is a configuration setup for module loading based on file extensions. This code configures how different file extensions should be handled using various registering modules to enable support for different languages or transpilers. 
+
+Here's a breakdown of the functionality:
+- The code uses the `path` module to work with file and directory paths.
+- A regex, `endsInBabelJs`, is defined to match file names ending with `.babel.js` or `.babel.ts(x)`.
+- `ignoreNonBabelAndNodeModules` is a utility function that ignores files that don't match the Babel JS pattern and are located inside `node_modules`.
+- An `extensions` object maps file extensions to specific modules and registration hooks for handling the file types. This makes use of various modules like `@babel/register`, `buble/register`, `json5`, `ts-node`, etc., depending on the file type.
+- Some extensions like `.js` and `.node` are set to `null`, implying no special handling is required.
+- A `jsVariantExtensions` array lists various JavaScript and related file extensions.
+- The module exports both the `extensions` setup and a derived `jsVariants` object containing extensions that have specific module association based on `jsVariantExtensions`.
+
+Here is a possible rewrite of the code:
+
+```javascript
+const path = require('path');
+
+const endsInBabelJs = /\.babel\.[jt]s(x)$/;
+
+const mjsStub = path.join(__dirname, 'mjs-stub');
+
+function ignoreNonBabelAndNodeModules(file) {
+  return !endsInBabelJs.test(file) &&
+         path.relative(process.cwd(), file).split(path.sep).indexOf('node_modules') >= 0;
+}
+
+const extensions = {
+  '.babel.js': createBabelExtension('.js'),
+  '.babel.ts': createBabelExtension('.ts'),
+  '.buble.js': 'buble/register',
+  '.cirru': 'cirru-script/lib/register',
+  '.cjsx': 'node-cjsx/register',
+  '.co': 'coco',
+  '.coffee': getCoffeeScriptModules(),
+  '.coffee.md': getCoffeeScriptModules(),
+  '.csv': 'require-csv',
+  '.eg': 'earlgrey/register',
+  '.esm.js': createEsmExtension(),
+  '.iced': getIcedCoffeeModules(),
+  '.iced.md': 'iced-coffee-script/register',
+  '.ini': 'require-ini',
+  '.js': null,
+  '.json': null,
+  '.json5': ['json5/lib/register', 'json5/lib/require'],
+  '.jsx': createJSXExtension(),
+  '.litcoffee': getCoffeeScriptModules(),
+  '.liticed': 'iced-coffee-script/register',
+  '.ls': ['livescript', 'LiveScript'],
+  '.mjs': mjsStub,
+  '.node': null,
+  '.toml': createTomlExtension(),
+  '.ts': createTSExtension(),
+  '.tsx': createTSXExtension(),
+  '.wisp': 'wisp/engine/node',
+  '.xml': 'require-xml',
+  '.yaml': 'require-yaml',
+  '.yml': 'require-yaml'
+};
+
+const jsVariantExtensions = [
+  '.js', '.babel.js', '.babel.ts', '.buble.js', '.cirru', '.cjsx', '.co',
+  '.coffee', '.coffee.md', '.eg', '.esm.js', '.iced', '.iced.md', '.jsx',
+  '.litcoffee', '.liticed', '.ls', '.mjs', '.ts', '.tsx', '.wisp'
+];
+
+module.exports = {
+  extensions,
+  jsVariants: jsVariantExtensions.reduce((result, ext) => {
+    result[ext] = extensions[ext];
+    return result;
+  }, {})
+};
+
+function createBabelExtension(extension) {
+  return [
+    {
+      module: '@babel/register',
+      register: (hook) => {
+        hook({
+          extensions: extension,
+          rootMode: 'upward-optional',
+          ignore: [ignoreNonBabelAndNodeModules],
+        });
+      },
+    },
+    {
+      module: 'babel-register',
+      register: (hook) => {
+        hook({ extensions: extension, ignore: ignoreNonBabelAndNodeModules });
+      },
+    },
+    {
+      module: 'babel-core/register',
+      register: (hook) => {
+        hook({ extensions: extension, ignore: ignoreNonBabelAndNodeModules });
+      },
+    },
+    {
+      module: 'babel/register',
+      register: (hook) => {
+        hook({ extensions: extension, ignore: ignoreNonBabelAndNodeModules });
+      },
+    }
+  ];
+};
+
+function createEsmExtension() {
+  return {
+    module: 'esm',
+    register: (hook) => {
+      const esmLoader = hook(module);
+      require.extensions['.js'] = esmLoader('module')._extensions['.js'];
+    },
+  };
+};
+
+function createTomlExtension() {
+  return {
+    module: 'toml-require',
+    register: (hook) => {
+      hook.install();
+    },
+  };
+};
+
+function createTSExtension() {
+  return [
+    'ts-node/register',
+    'typescript-node/register',
+    'typescript-register',
+    'typescript-require',
+    'sucrase/register/ts',
+    {
+      module: '@babel/register',
+      register: (hook) => {
+        hook({
+          extensions: '.ts',
+          rootMode: 'upward-optional',
+          ignore: [ignoreNonBabelAndNodeModules],
+        });
+      },
+    }
+  ];
+};
+
+function createTSXExtension() {
+  return [
+    'ts-node/register',
+    'typescript-node/register',
+    'sucrase/register',
+    {
+      module: '@babel/register',
+      register: (hook) => {
+        hook({
+          extensions: '.tsx',
+          rootMode: 'upward-optional',
+          ignore: [ignoreNonBabelAndNodeModules],
+        });
+      },
+    }
+  ];
+};
+
+function createJSXExtension() {
+  return [
+    {
+      module: '@babel/register',
+      register: (hook) => {
+        hook({
+          extensions: '.jsx',
+          rootMode: 'upward-optional',
+          ignore: [ignoreNonBabelAndNodeModules],
+        });
+      },
+    },
+    {
+      module: 'babel-register',
+      register: (hook) => {
+        hook({ extensions: '.jsx', ignore: ignoreNonBabelAndNodeModules });
+      },
+    },
+    {
+      module: 'babel-core/register',
+      register: (hook) => {
+        hook({ extensions: '.jsx', ignore: ignoreNonBabelAndNodeModules });
+      },
+    },
+    {
+      module: 'babel/register',
+      register: (hook) => {
+        hook({ extensions: '.jsx', ignore: ignoreNonBabelAndNodeModules });
+      },
+    },
+    {
+      module: 'node-jsx',
+      register: (hook) => {
+        hook.install({ extension: '.jsx', harmony: true });
+      },
+    }
+  ];
+};
+
+function getCoffeeScriptModules() {
+  return ['coffeescript/register', 'coffee-script/register', 'coffeescript', 'coffee-script'];
+}
+
+function getIcedCoffeeModules() {
+  return ['iced-coffee-script/register', 'iced-coffee-script'];
+}
+```

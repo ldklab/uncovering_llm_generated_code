@@ -1,0 +1,84 @@
+The Node.js code provided is a simple configuration management system class `ConfigProvider` that supports loading configuration settings from JSON or YAML files and environment variables. Here’s a breakdown of its functionality:
+
+1. **Constructor**: Initializes an empty configuration object.
+
+2. **`loadFromFile(filePath)`**: Synchronizes loading of configuration data from a specified file. The file can be in JSON or YAML format, determined by the file extension. It reads the file content, parses it accordingly, and merges it into the current configuration.
+
+3. **`loadFromEnv(prefix)`**: Loads configuration from environment variables. Optionally, it allows filtering these variables by a prefix, extracting them into configuration keys by removing the prefix.
+
+4. **`get(key, defaultValue)`**: Retrieves a configuration value by its key, returning the provided default value if the key does not exist.
+
+5. **`parseYAML(yamlString)`**: A simple parser for YAML strings, which converts them into JavaScript objects. It assumes a straightforward, non-nested YAML structure.
+
+6. **`update(key, value)`**: Updates or adds a key-value pair in the configuration.
+
+7. **`onConfigChange(callback)`**: Watches a specified directory for configuration changes (e.g., changes to files) and executes a callback function with the updated configuration when a change is detected.
+
+Below is the rewritten code:
+
+```javascript
+// index.js
+
+const fs = require('fs');
+const path = require('path');
+
+class ConfigProvider {
+  constructor() {
+    this.config = {};
+  }
+
+  loadFromFile(filePath) {
+    try {
+      const fileExt = path.extname(filePath);
+      let fileData = fs.readFileSync(filePath, 'utf8');
+      if (fileExt === '.json') {
+        fileData = JSON.parse(fileData);
+      } else if (fileExt === '.yml' || fileExt === '.yaml') {
+        fileData = this.parseYAML(fileData);
+      }
+      this.config = { ...this.config, ...fileData };
+    } catch (err) {
+      throw new Error(`Failed to load config file: ${err.message}`);
+    }
+  }
+
+  loadFromEnv(prefix = '') {
+    Object.entries(process.env).forEach(([envKey, envValue]) => {
+      if (envKey.startsWith(prefix)) {
+        const configKey = envKey.slice(prefix.length);
+        this.config[configKey] = envValue;
+      }
+    });
+  }
+
+  get(key, defaultValue = null) {
+    return key in this.config ? this.config[key] : defaultValue;
+  }
+
+  parseYAML(yamlString) {
+    const lines = yamlString.split('\n');
+    const yamlObj = {};
+    lines.forEach(line => {
+      const [key, value] = line.split(':').map(element => element.trim());
+      if (key && value) yamlObj[key] = value;
+    });
+    return yamlObj;
+  }
+
+  update(key, value) {
+    this.config[key] = value;
+  }
+
+  onConfigChange(callback) {
+    const configDirPath = 'path/to/config/dir';
+    fs.watch(configDirPath, (event, filename) => {
+      if (filename) {
+        this.loadFromFile(path.join(configDirPath, filename));
+        callback(this.config);
+      }
+    });
+  }
+}
+
+module.exports = ConfigProvider;
+```

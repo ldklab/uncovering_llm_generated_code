@@ -1,0 +1,107 @@
+The Node.js code provided is a representation of a serializer for a DOM-like structure. It transforms nodes into HTML/XML strings. Here's a breakdown of the functionality:
+
+1. **Class Definition**: The `DomSerializer` class is initialized with default and user-provided options.
+
+2. **Rendering**: The `render` method traverses the node(s). If multiple nodes (an array) are passed, it renders each node and concatenates their results.
+
+3. **Node Type Handling**: The `renderNode` method handles different node types:
+   - **Tag, Script, Style**: Uses `renderTag`.
+   - **Text**: Returns text content, optionally decoding entities.
+   - **Comment**: Wraps text in HTML comment syntax.
+   - **Directive and Doctype**: Formats as doctype/directives.
+
+4. **Tag Rendering**: `renderTag` constructs HTML/XML tags with attributes and handles self-closing tags.
+
+5. **Attributes Rendering**: `renderAttributes` converts key-value pairs from node attributes to a string format for tags.
+
+6. **Self-Closing Detection**: `isSelfClosing` checks if a node is self-closing based on the absence of children.
+
+7. **Entities Decoding**: `decodeEntities` performs simple replacements on encoded HTML entities to their corresponding characters.
+
+8. **Export**: The module exports a default function that instantiates `DomSerializer` and uses it to render nodes.
+
+Here's a possible rewrite of the code:
+
+```javascript
+// dom-serializer.js
+
+class DomSerializer {
+    constructor(options = {}) {
+        this.options = {
+            encodeEntities: 'utf8',
+            decodeEntities: true,
+            emptyAttrs: false,
+            selfClosingTags: false,
+            xmlMode: false,
+            ...options
+        };
+    }
+
+    render(node) {
+        if (Array.isArray(node)) {
+            return node.map(n => this.renderNode(n)).join('');
+        }
+        return this.renderNode(node);
+    }
+
+    renderNode(node) {
+        switch (node.type) {
+            case 'tag':
+            case 'script':
+            case 'style':
+                return this.renderTag(node);
+            case 'text':
+                return this.options.decodeEntities ? this.decodeEntities(node.data) : node.data;
+            case 'comment':
+                return `<!--${node.data}-->`;
+            case 'directive':
+            case '!doctype':
+                return `<!${node.data}>`;
+            default:
+                return '';
+        }
+    }
+
+    renderTag(node) {
+        const tagName = this.options.xmlMode === 'foreign' ? node.name.toLowerCase() : node.name;
+        let attrs = this.renderAttributes(node.attribs);
+        const hasChildren = node.children && node.children.length > 0;
+        const isSelfClosing = this.isSelfClosing(node);
+
+        if (isSelfClosing && !hasChildren) {
+            return `<${tagName}${attrs}${this.options.selfClosingTags ? ' /' : ''}>`;
+        }
+
+        return `<${tagName}${attrs}>${this.render(node.children)}</${tagName}>`;
+    }
+
+    renderAttributes(attribs = {}) {
+        return Object.entries(attribs)
+            .map(([key, value]) => {
+                if (value === "" && !this.options.emptyAttrs) {
+                    return ` ${key}`;
+                }
+                return ` ${key}="${value.replace(/\"/g, '&quot;')}"`;
+            })
+            .join('');
+    }
+
+    isSelfClosing(node) {
+        return node.name && (!node.children || node.children.length === 0);
+    }
+
+    decodeEntities(data) {
+        return data.replace(/&quot;/g, '"')
+                   .replace(/&amp;/g, '&')
+                   .replace(/&gt;/g, '>')
+                   .replace(/&lt;/g, '<');
+    }
+}
+
+module.exports = {
+    default: function(node, options) {
+        const serializer = new DomSerializer(options);
+        return serializer.render(node);
+    }
+};
+```

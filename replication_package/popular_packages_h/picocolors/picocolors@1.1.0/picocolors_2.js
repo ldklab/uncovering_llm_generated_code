@@ -1,0 +1,82 @@
+const processArgs = process.argv || [];
+const environment = process.env;
+
+const isColorEnabled = 
+    !("NO_COLOR" in environment || processArgs.includes("--no-color")) &&
+    ("FORCE_COLOR" in environment || 
+    processArgs.includes("--color") || 
+    process.platform === "win32" || 
+    (require != null && require("tty").isatty(1) && environment.TERM !== "dumb") || 
+    "CI" in environment);
+
+const formatString = (start, end, replaceWith = start) => {
+    return text => {
+        const textStr = String(text);
+        const closeIdx = textStr.indexOf(end, start.length);
+        return ~closeIdx
+            ? start + replaceEnd(textStr, end, replaceWith, closeIdx) + end
+            : start + textStr + end;
+    };
+};
+
+const replaceEnd = (textStr, end, replaceWith, position) => {
+    let result = "";
+    let cursor = 0;
+    while (~position) {
+        result += textStr.substring(cursor, position) + replaceWith;
+        cursor = position + end.length;
+        position = textStr.indexOf(end, cursor);
+    }
+    return result + textStr.substring(cursor);
+};
+
+const generateColors = (isEnabled = isColorEnabled) => {
+    const initialize = isEnabled ? formatString : () => String;
+    return {
+        isColorSupported: isEnabled,
+        reset: initialize("\x1b[0m", "\x1b[0m"),
+        bold: initialize("\x1b[1m", "\x1b[22m", "\x1b[22m\x1b[1m"),
+        dim: initialize("\x1b[2m", "\x1b[22m", "\x1b[22m\x1b[2m"),
+        italic: initialize("\x1b[3m", "\x1b[23m"),
+        underline: initialize("\x1b[4m", "\x1b[24m"),
+        inverse: initialize("\x1b[7m", "\x1b[27m"),
+        hidden: initialize("\x1b[8m", "\x1b[28m"),
+        strikethrough: initialize("\x1b[9m", "\x1b[29m"),
+        black: initialize("\x1b[30m", "\x1b[39m"),
+        red: initialize("\x1b[31m", "\x1b[39m"),
+        green: initialize("\x1b[32m", "\x1b[39m"),
+        yellow: initialize("\x1b[33m", "\x1b[39m"),
+        blue: initialize("\x1b[34m", "\x1b[39m"),
+        magenta: initialize("\x1b[35m", "\x1b[39m"),
+        cyan: initialize("\x1b[36m", "\x1b[39m"),
+        white: initialize("\x1b[37m", "\x1b[39m"),
+        gray: initialize("\x1b[90m", "\x1b[39m"),
+        bgBlack: initialize("\x1b[40m", "\x1b[49m"),
+        bgRed: initialize("\x1b[41m", "\x1b[49m"),
+        bgGreen: initialize("\x1b[42m", "\x1b[49m"),
+        bgYellow: initialize("\x1b[43m", "\x1b[49m"),
+        bgBlue: initialize("\x1b[44m", "\x1b[49m"),
+        bgMagenta: initialize("\x1b[45m", "\x1b[49m"),
+        bgCyan: initialize("\x1b[46m", "\x1b[49m"),
+        bgWhite: initialize("\x1b[47m", "\x1b[49m"),
+        blackBright: initialize("\x1b[90m", "\x1b[39m"),
+        redBright: initialize("\x1b[91m", "\x1b[39m"),
+        greenBright: initialize("\x1b[92m", "\x1b[39m"),
+        yellowBright: initialize("\x1b[93m", "\x1b[39m"),
+        blueBright: initialize("\x1b[94m", "\x1b[39m"),
+        magentaBright: initialize("\x1b[95m", "\x1b[39m"),
+        cyanBright: initialize("\x1b[96m", "\x1b[39m"),
+        whiteBright: initialize("\x1b[97m", "\x1b[39m"),
+        bgBlackBright: initialize("\x1b[100m","\x1b[49m"),
+        bgRedBright: initialize("\x1b[101m","\x1b[49m"),
+        bgGreenBright: initialize("\x1b[102m","\x1b[49m"),
+        bgYellowBright: initialize("\x1b[103m","\x1b[49m"),
+        bgBlueBright: initialize("\x1b[104m","\x1b[49m"),
+        bgMagentaBright: initialize("\x1b[105m","\x1b[49m"),
+        bgCyanBright: initialize("\x1b[106m","\x1b[49m"),
+        bgWhiteBright: initialize("\x1b[107m","\x1b[49m"),
+    };
+};
+
+module.exports = generateColors();
+module.exports.createColors = generateColors;

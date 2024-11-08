@@ -1,0 +1,88 @@
+The provided Node.js code defines a resolver for module import paths specifically tailored for TypeScript and JavaScript files. It is designed as a custom resolver to be used with ESLint to help identify and resolve module paths according to different configuration presets specified by the user or the built-in defaults. Here's a breakdown of the functionality:
+
+- **Default Settings:** The script establishes default conditions, file extensions, extension aliases, and main fields to used during module resolution.
+
+- **Enhanced Resolve:** The script utilizes the `enhanced-resolve` library to create a resolver instance. This library is capable of resolving file paths with advanced configurations, considering things like extensions and aliases.
+
+- **Resolve Function:** This function takes a `source`, `file`, and optional `config` object to attempt to resolve a module's path based on the specified or default settings. It returns a promise that resolves with the file path or rejects with an error if unable to find it.
+
+- **Interface Version:** The `interfaceVersion` function simply returns the version of the interface this resolver implements, which is `2`.
+
+- **Resolve Module Dependency:** This function utilizes the `resolve` function to attempt resolving the module path and returns an object indicating whether the module was found and its resolved path.
+
+- **Exports:** The script exports the functions and default settings, making the resolver usable as a plugin for ESLint.
+
+Below is the rewritten version of the given code:
+
+```javascript
+const path = require('path');
+const fs = require('fs');
+const enhancedResolve = require('enhanced-resolve');
+
+// Default configuration values
+const defaultConditionNames = [
+  "types", "import", "esm2020", "es2020", "es2015", "require", 
+  "node", "node-addons", "browser", "default"
+];
+
+const defaultExtensions = [
+  ".ts", ".tsx", ".d.ts", ".js", ".jsx", ".json", ".node"
+];
+
+const defaultExtensionAlias = {
+  ".js": [".ts", ".tsx", ".d.ts", ".js"],
+  ".jsx": [".tsx", ".d.ts", ".jsx"],
+  ".cjs": [".cts", ".d.cts", ".cjs"],
+  ".mjs": [".mts", ".d.mts", ".mjs"]
+};
+
+const defaultMainFields = [
+  "types", "typings", "fesm2020", "fesm2015", 
+  "esm2020", "es2020", "module", "jsnext:main", "main"
+];
+
+// Resolver function using enhanced-resolve
+function resolve(source, file, config = {}) {
+  const resolver = enhancedResolve.create({
+    extensions: config.extensions || defaultExtensions,
+    conditionNames: config.conditionNames || defaultConditionNames,
+    mainFields: config.mainFields || defaultMainFields,
+    alias: config.extensionAlias || defaultExtensionAlias,
+    ...config
+  });
+
+  return new Promise((resolve, reject) => {
+    resolver(path.dirname(file), source, (err, result) => {
+      if (err) return reject(err);
+      resolve(result);
+    });
+  });
+}
+
+// Interface version for ESLint
+function interfaceVersion() {
+  return 2;
+}
+
+// Module dependency resolver function
+function resolveModuleDependency(source, file, config) {
+  return resolve(source, file, config)
+    .then(res => ({
+      found: true,
+      path: res
+    }))
+    .catch(() => ({
+      found: false
+    }));
+}
+
+// Module exports
+module.exports = {
+  interfaceVersion,
+  resolve: resolveModuleDependency,
+  defaultConditionNames,
+  defaultExtensions,
+  defaultExtensionAlias,
+  defaultMainFields
+};
+```

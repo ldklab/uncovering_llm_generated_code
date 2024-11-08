@@ -1,0 +1,73 @@
+The `cli-width` package is a utility to determine the width of the terminal or command-line interface (CLI) in a Node.js environment. It uses a series of fallbacks to calculate the width, which are:
+
+1. Checking the width using the TTY (teletypewriter) module if the current output stream is interactive.
+2. Checking the `columns` property of the output `stream`, usually `process.stdout`.
+3. Checking an environment variable `CLI_WIDTH` if it's set by the user.
+4. Falling back to a default width, which is configurable but defaults to `0`.
+
+You can install the package using npm and use it by calling `cliWidth()` in your Node.js code. The function can be customized through options, allowing you to specify a different default width, output stream, or TTY module.
+
+Here is the complete implementation of `cli-width` package:
+
+```js
+// cli-width implementation
+
+function cliWidth(options = {}) {
+  const defaultWidth = options.defaultWidth || 0;
+  const output = options.output || process.stdout;
+  const tty = options.tty || require('tty');
+
+  // 1. Try to get from environment variable
+  if (process.env.CLI_WIDTH) {
+    const widthFromEnv = parseInt(process.env.CLI_WIDTH, 10);
+    if (!isNaN(widthFromEnv)) {
+      return widthFromEnv;
+    }
+  }
+
+  // 2. Try to get from output stream
+  if (output && typeof output.columns === 'number') {
+    return output.columns;
+  }
+
+  // 3. Try to get from tty module
+  if (tty.isatty(output.fd)) {
+    try {
+      return tty.getWindowSize(output.fd)[1];
+    } catch (e) {
+      // failed to get width from TTY
+    }
+  }
+
+  // 4. Return the default width
+  return defaultWidth;
+}
+
+module.exports = cliWidth;
+
+// Usage example
+if (require.main === module) {
+  const width = cliWidth();
+  console.log(`The CLI width is: ${width}`);
+}
+
+// To run tests
+const assert = require('assert');
+
+function testCliWidth() {
+  // Mock the environment
+  const originalEnvWidth = process.env.CLI_WIDTH;
+  process.env.CLI_WIDTH = '123';
+  assert.strictEqual(cliWidth(), 123, 'Should return width from environment variable');
+  
+  // Restore environment
+  process.env.CLI_WIDTH = originalEnvWidth;
+
+  console.log('All tests passed!');
+}
+
+if (require.main === module) {
+  testCliWidth();
+}
+```
+This package allows you to easily handle the varying scenarios you might face when dealing with different terminal environments, and it offers some configurability to adapt to specific requirements beyond the basic setup.

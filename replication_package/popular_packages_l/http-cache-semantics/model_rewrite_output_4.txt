@@ -1,0 +1,114 @@
+The provided Node.js code defines a `CachePolicy` class that helps manage HTTP caching policies. Here's a breakdown of its functionality:
+
+1. **Constructor (`constructor`)**: Initializes a cache policy instance with a request, response, and optional configuration options. The configuration includes settings for shared cache, cache heuristic, immutable min time to live, and a flag to ignore certain traditional practices ("cargo cult" headers).
+
+2. **`storable` Method**: Determines if a response is cacheable by checking its `cache-control` headers. Specifically, it checks if `no-store` or `private` (when shared) directives are present.
+
+3. **`satisfiesWithoutRevalidation` Method**: Checks if a new request matches the original request method and URL, and if the cached response is still fresh, which means it can be served without revalidation.
+
+4. **`isFresh` Method**: Calculates if the cache content is still fresh by checking the `age` and `max-age` directives from the `cache-control` header.
+
+5. **`responseHeaders` Method**: Returns a copy of the response headers suitable for caching, removing certain headers like `te` and `connection` and updating the `age`.
+
+6. **`calculateAge` Method**: Calculates the current age of the cached response by incrementing the `age` header value.
+
+7. **`timeToLive` Method**: Computes the remaining TTL (Time To Live) of the cached content by subtracting the calculated age from the `max-age`.
+
+8. **`toObject` Method**: Serializes the cache policy into a plain JavaScript object, capturing the request, response, and options.
+
+9. **Static Method `fromObject`**: Deserializes a plain object back into a `CachePolicy` instance.
+
+10. **`revalidationHeaders` Method**: Prepares headers needed for revalidation by cloning the headers from a new request.
+
+11. **`revalidatedPolicy` Method**: Creates a new cache policy based on revalidation results, indicating whether the response was modified or not.
+
+Given these functionalities, here's a possible rewrite of the `CachePolicy` class:
+
+```javascript
+class CachePolicy {
+    constructor(request, response, options = {}) {
+        this.request = request;
+        this.response = response;
+        this.shared = options.shared ?? true;
+        this.cacheHeuristic = options.cacheHeuristic || 0.1;
+        this.immutableMinTimeToLive = options.immutableMinTimeToLive || 24 * 3600 * 1000;
+        this.ignoreCargoCult = options.ignoreCargoCult || false;
+    }
+
+    storable() {
+        const cacheControl = this.response.headers['cache-control'];
+        return cacheControl && !cacheControl.includes('no-store') && !(this.shared && cacheControl.includes('private'));
+    }
+
+    satisfiesWithoutRevalidation(newRequest) {
+        return newRequest.url === this.request.url && newRequest.method === this.request.method && this.isFresh();
+    }
+
+    isFresh() {
+        const age = Number(this.response.headers['age'] || 0);
+        const maxAge = this.getMaxAge();
+        return maxAge !== null && age < maxAge;
+    }
+
+    getMaxAge() {
+        const match = this.response.headers['cache-control']?.match(/max-age=(\d+)/);
+        return match ? Number(match[1]) : null;
+    }
+
+    responseHeaders() {
+        const headers = { ...this.response.headers };
+        delete headers['te'];
+        delete headers['connection'];
+        headers['age'] = this.calculateAge().toString();
+        return headers;
+    }
+
+    calculateAge() {
+        const age = Number(this.response.headers['age'] || 0);
+        return age + 1;
+    }
+
+    timeToLive() {
+        const maxAge = this.getMaxAge();
+        return maxAge !== null ? maxAge - this.calculateAge() : 0;
+    }
+
+    toObject() {
+        return {
+            request: this.request,
+            response: this.response,
+            options: {
+                shared: this.shared,
+                cacheHeuristic: this.cacheHeuristic,
+                immutableMinTimeToLive: this.immutableMinTimeToLive,
+                ignoreCargoCult: this.ignoreCargoCult
+            }
+        };
+    }
+
+    static fromObject(obj) {
+        return new CachePolicy(obj.request, obj.response, obj.options);
+    }
+
+    revalidationHeaders(newRequest) {
+        return { ...newRequest.headers };
+    }
+
+    revalidatedPolicy(revalidationRequest, revalidationResponse) {
+        const modified = revalidationResponse.status !== 304;
+        const newPolicy = new CachePolicy(
+            revalidationRequest,
+            revalidationResponse,
+            {
+                shared: this.shared,
+                cacheHeuristic: this.cacheHeuristic,
+                immutableMinTimeToLive: this.immutableMinTimeToLive,
+                ignoreCargoCult: this.ignoreCargoCult
+            }
+        );
+        return { policy: newPolicy, modified };
+    }
+}
+
+module.exports = CachePolicy;
+```

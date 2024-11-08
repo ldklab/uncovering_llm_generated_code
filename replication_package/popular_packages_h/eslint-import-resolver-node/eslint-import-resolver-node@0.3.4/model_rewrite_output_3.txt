@@ -1,0 +1,50 @@
+The provided Node.js code acts as a custom module resolver for ESLint with the purpose of resolving import sources to their respective file paths. The core operations include checking whether a module belongs to Node.js core modules, resolving paths for non-core modules, and applying configurations during the resolution process. Here's a summary of the functionality:
+
+1. **Interface Version**: Specifies that this resolver adheres to version 2 of the ESLint resolver interface.
+2. **Core Module Check**: Uses the `resolve.isCore()` method to check if the given module is a core Node.js module. If it is, the resolver will return that the module is found, but it doesn't provide a specific file path (`null`).
+3. **Path Resolution**: Tries to resolve non-core module paths using `resolve.sync()`, which considers specified extensions (`.mjs`, `.js`, `.json`, `.node`) and base directories inferred from the source file's path.
+4. **Error Handling**: Catches any errors thrown during resolution and logs them, ultimately returning `{ found: false }` if an error occurs.
+5. **Options Configuration**: Builds a configuration object using provided configurations and defaults for path extensions and base directory setup.
+6. **Package Filter**: Modifies the package's `main` field when `jsnext:main` is present, steering resolution towards possibly ES6-friendly entry points.
+
+Here is the rewritten code organized in a single markdown code block:
+
+```javascript
+const resolve = require('resolve');
+const path = require('path');
+const log = require('debug')('eslint-plugin-import:resolver:node');
+
+exports.interfaceVersion = 2;
+
+exports.resolve = function (source, file, config) {
+  log('Resolving:', source, 'from:', file);
+  if (resolve.isCore(source)) {
+    log('resolved to core');
+    return { found: true, path: null };
+  }
+  try {
+    const resolvedPath = resolve.sync(source, createOptions(file, config));
+    log('Resolved to:', resolvedPath);
+    return { found: true, path: resolvedPath };
+  } catch (error) {
+    log('resolve threw error:', error);
+    return { found: false };
+  }
+};
+
+function createOptions(file, config) {
+  return {
+    extensions: ['.mjs', '.js', '.json', '.node'],
+    ...config,
+    basedir: path.dirname(path.resolve(file)),
+    packageFilter: updatePackageFilter,
+  };
+}
+
+function updatePackageFilter(pkg) {
+  if (pkg['jsnext:main']) {
+    pkg.main = pkg['jsnext:main'];
+  }
+  return pkg;
+}
+```

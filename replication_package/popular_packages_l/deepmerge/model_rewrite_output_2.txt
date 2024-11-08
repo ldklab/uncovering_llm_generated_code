@@ -1,0 +1,92 @@
+The provided Node.js code defines a set of functions for deep merging objects. Here's a functionality breakdown:
+
+1. **merge Function**: 
+   - **Purpose**: Recursively merges two objects (`x` and `y`) into a new object.
+   - **Parameters**: 
+     - `x`: The target object.
+     - `y`: The source object to merge into the target.
+     - An optional configuration object that includes functions for merging arrays, checking if a value is mergeable, and custom merging logic for specific keys.
+   - **Behavior**: If `x` or `y` are not mergeable objects, it clones `y`. Otherwise, it recursively merges objects, using custom logic if provided.
+
+2. **mergeAll Function**: 
+   - **Purpose**: Merges an array of objects into a single object.
+   - **Behavior**: It uses `reduce` to successively merge each object in the array with the accumulated result, using the `merge` function.
+
+3. **Helper Functions**:
+   - **defaultArrayMerge**: Concatenates arrays.
+   - **defaultIsMergeableObject**: Determines if a value is a plain object (not an array or primitive).
+   - **cloneUnlessOtherwiseSpecified**: Clones a value if specified in options.
+   - **deepClone**: Recursively clones an object or array to prevent mutation of the original object.
+
+4. **module.exports**: Exports the `merge` and `mergeAll` functions for use in other files.
+
+Here is the rewritten code:
+
+```javascript
+function merge(x, y, options = {}) {
+    const {
+        arrayMerge = defaultArrayMerge,
+        isMergeableObject = defaultIsMergeableObject,
+        customMerge
+    } = options;
+
+    if (!isMergeableObject(x) || !isMergeableObject(y)) {
+        return cloneUnlessOtherwiseSpecified(y, { clone: true });
+    }
+
+    const mergedObject = { ...cloneObject(x) };
+
+    for (const key in y) {
+        if (customMerge && customMerge(key)) {
+            mergedObject[key] = customMerge(key)(x[key], y[key]);
+        } else if (isMergeableObject(y[key])) {
+            mergedObject[key] = merge(x[key], y[key], options);
+        } else {
+            mergedObject[key] = cloneUnlessOtherwiseSpecified(y[key], { clone: true });
+        }
+    }
+
+    return mergedObject;
+}
+
+function mergeAll(arrayOfObjects, options) {
+    if (!Array.isArray(arrayOfObjects)) {
+        throw new Error('merge.all expects an array');
+    }
+    return arrayOfObjects.reduce((accumulator, currentObject) => merge(accumulator, currentObject, options), {});
+}
+
+function defaultArrayMerge(targetArray, sourceArray) {
+    return [...targetArray, ...sourceArray];
+}
+
+function defaultIsMergeableObject(value) {
+    return value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function cloneUnlessOtherwiseSpecified(value, options) {
+    return options.clone ? deepClone(value) : value;
+}
+
+function deepClone(value) {
+    if (Array.isArray(value)) {
+        return value.map(deepClone);
+    }
+    if (value && typeof value === 'object') {
+        return merge({}, value);
+    }
+    return value;
+}
+
+function cloneObject(object) {
+    return Object.entries(object).reduce((clone, [key, value]) => {
+        clone[key] = cloneUnlessOtherwiseSpecified(value, { clone: true });
+        return clone;
+    }, {});
+}
+
+module.exports = {
+    merge,
+    mergeAll,
+};
+```

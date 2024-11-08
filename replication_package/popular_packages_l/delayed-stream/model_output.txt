@@ -1,0 +1,105 @@
+The `delayed-stream` package provides a mechanism to buffer events from a stream until they are explicitly released. This is particularly useful in cases where you wish to delay processing or responding to events from a stream, such as HTTP requests. Here is a summary of the key functionalities:
+
+1. **Event Buffering**: The package intercepts and buffers all events from the input source stream until the user decides to release them.
+
+2. **Stream Proxying**: After the buffered events are released, the rest of the events are simply proxied from the source stream to the delayed stream.
+
+3. **Error Handling**: The package ensures errors from the source stream are buffered and only need to be handled on the delayed stream side.
+
+4. **Buffer Management**: The package allows setting limits on the data size that can be buffered to prevent excessive memory usage.
+
+5. **Stream Methods**:
+   - `create(source, [options])`: Creates a delayed stream from a given source.
+   - `resume()`: Releases buffered events and resumes the source stream.
+   - `pause()`: Pauses the source stream.
+   - `pipe(dest)`: Releases buffered events and pipes the delayed stream to a destination.
+   - `release()`: Emits all buffered events.
+
+Here is the implementation of the `delayed-stream` package:
+
+```javascript
+const { Stream } = require('stream');
+
+class DelayedStream extends Stream {
+  constructor(source, options = {}) {
+    super();
+    this.source = source;
+    this.paused = false;
+    this.bufferedEvents = [];
+    this.dataSize = 0;
+    this.maxDataSize = options.maxDataSize || 1024 * 1024; // 1MB default
+    this.pauseStream = options.hasOwnProperty('pauseStream') ? options.pauseStream : true;
+    
+    if (this.pauseStream) {
+      source.pause();
+    }
+    
+    source.on('data', this._onData.bind(this));
+    source.on('end', this._onEnd.bind(this));
+    source.on('error', this._onError.bind(this));
+    source.on('close', this._onClose.bind(this));
+    
+    // No-op error handler to avoid crashing if source emits an error before release
+    source.on('error', () => {});
+  }
+
+  static create(source, options) {
+    return new DelayedStream(source, options);
+  }
+
+  _onData(data) {
+    this.dataSize += data.length;
+    if (this.dataSize > this.maxDataSize) {
+      this.emit('error', new Error('Max data size exceeded'));
+    } else {
+      this.bufferedEvents.push(['data', data]);
+    }
+  }
+
+  _onEnd() {
+    this.bufferedEvents.push(['end']);
+  }
+
+  _onError(err) {
+    this.bufferedEvents.push(['error', err]);
+  }
+
+  _onClose() {
+    this.bufferedEvents.push(['close']);
+  }
+
+  _releaseBufferedEvents() {
+    for (const [event, ...args] of this.bufferedEvents) {
+      this.emit(event, ...args);
+    }
+    this.bufferedEvents = [];
+  }
+
+  resume() {
+    if (!this.released) {
+      this.release();
+    }
+    this.source.resume();
+  }
+
+  pause() {
+    this.source.pause();
+  }
+
+  pipe(dest) {
+    this.resume();
+    this.source.pipe(dest);
+  }
+
+  release() {
+    this.released = true;
+    this._releaseBufferedEvents();
+  }
+
+  get readable() {
+    return this.source.readable;
+  }
+}
+
+module.exports = DelayedStream;
+```

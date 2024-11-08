@@ -1,0 +1,93 @@
+The given Node.js code is designed to obtain the `byteOffset` of a typed array instance. Here's a breakdown of its functionality:
+
+1. **Dependencies:** It imports several modules:
+   - `for-each`: Iterates over arrays or objects.
+   - `call-bind`: Binds a function to a context.
+   - `available-typed-arrays`: Retrieves a list of available typed array constructors.
+   - `has-proto`: Checks for prototype inheritance.
+   - `gopd`: Short for `getOwnPropertyDescriptor`, to retrieve a property's descriptor.
+
+2. **Typed Arrays Handling:** The code creates a map, `getters`, to store functions that can extract the `byteOffset` from instances of various typed array types.
+
+3. **Main Logic:**
+   - It iterates over each available typed array and attempts to set up a getter function for the `byteOffset` property.
+   - It checks both the constructor's prototype and the constructor's prototype's prototype (to accommodate older or different environments, like Safari 7 or Opera 12.16).
+   - If the `byteOffset` descriptor has a getter, it uses `callBind` to create a bound function to extract the `byteOffset`.
+   - In environments where the `byteOffset` is not a prototype property but a direct instance property, it checks configurability and sets the getter accordingly.
+
+4. **Byte Offset Retrieval:** A function `tryTypedArrays` attempts to retrieve the `byteOffset` for a given value by using the stored getters. It returns the found offset value.
+
+5. **Exported Function:** The module exports a function `typedArrayByteOffset` that checks if the input is a typed array. If true, it uses `tryTypedArrays` to find the `byteOffset`; otherwise, it returns `false`.
+
+Here's a rewritten version of the code following the same logic:
+
+```javascript
+'use strict';
+
+const forEach = require('for-each');
+const callBind = require('call-bind');
+const typedArrays = require('available-typed-arrays')();
+const hasProto = require('has-proto')();
+const gOPD = require('gopd');
+const oDP = Object.defineProperty;
+const isTypedArray = require('is-typed-array');
+
+/** @typedef {Int8Array | Uint8Array | Uint8ClampedArray | Int16Array | Uint16Array | Int32Array | Uint32Array | Float32Array | Float64Array | BigInt64Array | BigUint64Array} TypedArray */
+/** @typedef {(x: TypedArray) => number} ByteOffsetGetter */
+
+/** @type {Object.<typeof typedArrays, ByteOffsetGetter>} */
+const getters = {};
+
+if (gOPD) {
+	const getByteOffset = function (x) {
+		return x.byteOffset;
+	};
+
+	forEach(typedArrays, function (typedArray) {
+		if (typeof global[typedArray] === 'function' || typeof global[typedArray] === 'object') {
+			const Proto = global[typedArray].prototype;
+			let descriptor = gOPD(Proto, 'byteOffset');
+			
+			if (!descriptor && hasProto) {
+				const superProto = Proto.__proto__;
+				descriptor = gOPD(superProto, 'byteOffset');
+			}
+			
+			if (descriptor && descriptor.get) {
+				getters[typedArray] = callBind(descriptor.get);
+			} else if (oDP) {
+				const arr = new global[typedArray](2);
+				descriptor = gOPD(arr, 'byteOffset');
+				if (descriptor && descriptor.configurable) {
+					oDP(arr, 'length', { value: 3 });
+				}
+				if (arr.length === 2) {
+					getters[typedArray] = getByteOffset;
+				}
+			}
+		}
+	});
+}
+
+const tryTypedArrays = function (value) {
+	let foundOffset;
+	forEach(getters, function (getter) {
+		if (typeof foundOffset !== 'number') {
+			try {
+				const offset = getter(value);
+				if (typeof offset === 'number') {
+					foundOffset = offset;
+				}
+			} catch (e) {}
+		}
+	});
+	return foundOffset;
+};
+
+module.exports = function typedArrayByteOffset(value) {
+	if (!isTypedArray(value)) {
+		return false;
+	}
+	return tryTypedArrays(value);
+};
+```

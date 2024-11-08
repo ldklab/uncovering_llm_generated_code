@@ -1,0 +1,100 @@
+The `core-js-compat` package provides a way to determine which `core-js` modules are required for a given set of target environments based on a `browserslist` query. This package contains data about the compatibility of JavaScript features with different environments, and it helps in generating a list of necessary polyfills. 
+
+Key functionalities include:
+
+- **Compatibility Query**: Use a `browserslist` query or an object specifying minimum versions of target environments to get a list of required modules and their corresponding target environments.
+  
+- **Filter Modules**: Optionally, provide a list or regex filter of modules you want to include or exclude in the results.
+  
+- **Versioning**: Specify the `core-js` version to consider when determining necessary modules.
+  
+- **Inverse Result**: Option to invert results to show modules that are not required for the specified environments.
+
+- **Additional API**: Access the full set of data, entry points, and more through various methods provided in the package.
+
+Here is the code for a simplified version of such a functionality:
+
+```markdown
+# core-js-compat.js
+
+const compatData = require('./compat-data.json'); // JSON file containing mock compatibility data
+const entryPoints = require('./entry-points.json'); // JSON mapping entry points to module names
+const moduleList = require('./modules-list.json'); // Array of all module names
+
+function compat({ targets, modules = [], exclude = [], version = 'latest', inverse = false }) {
+  const requiredModules = Object.keys(compatData).filter(module => {
+    if (modules.length && !matchesFilter(module, modules)) return false;
+    if (exclude.length && matchesFilter(module, exclude)) return false;
+    const targetVersions = compatData[module];
+    return Object.keys(targets).some(env => {
+      const versionNeeded = targetVersions[env];
+      return versionNeeded && targets[env] != null && compareVersions(versionNeeded, targets[env]) > 0;
+    });
+  });
+
+  const result = inverse 
+    ? moduleList.filter(module => !requiredModules.includes(module))
+    : requiredModules;
+
+  const targetsOutput = result.reduce((acc, module) => {
+    acc[module] = compatData[module];
+    return acc;
+  }, {});
+
+  return { list: result, targets: targetsOutput };
+}
+
+function matchesFilter(moduleName, filters) {
+  return filters.some(filter => {
+    if (typeof filter === 'string') return moduleName.startsWith(filter);
+    if (filter instanceof RegExp) return filter.test(moduleName);
+    return false;
+  });
+}
+
+function compareVersions(v1, v2) {
+  if (v1 === v2) return 0;
+  const v1parts = v1.split('.').map(Number);
+  const v2parts = v2.split('.').map(Number);
+  for (let i = 0; i < Math.max(v1parts.length, v2parts.length); i++) {
+    const diff = (v1parts[i] || 0) - (v2parts[i] || 0);
+    if (diff !== 0) return diff;
+  }
+  return 0;
+}
+
+// Exported API
+module.exports = {
+  compat,
+  data: compatData,
+  entries: entryPoints,
+  modules: moduleList,
+  getModulesListForTargetVersion(version) {
+    return moduleList; // Simplified; assumes all modules are available for the latest version
+  },
+};
+
+// Mock JSON files
+/* compat-data.json
+{
+  "es.error.cause": { "ios": "14.5" },
+  "es.array.includes": { "firefox": "100" },
+  // ...additional module compatibility data
+}
+*/
+
+/* entry-points.json
+{
+  "core-js/actual": ["es.error.cause", "es.array.includes"],
+  // ...
+}
+*/
+
+/* modules-list.json
+[
+  "es.error.cause",
+  "es.array.includes",
+  // ...all modules
+]
+*/
+```

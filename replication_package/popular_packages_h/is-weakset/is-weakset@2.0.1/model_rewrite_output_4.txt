@@ -1,0 +1,56 @@
+The provided Node.js code checks for the environment's support of `WeakMap` and `WeakSet`, and then defines and exports a function `isWeakSet` to determine if a given value is an instance of a `WeakSet`. Here's a breakdown of its functionality:
+
+1. It first checks if `WeakMap` and `WeakSet` are available in the current environment. If they aren't, it assigns null to them.
+2. The variable `exported` is initially undefined. It's conditionally assigned a function when `WeakMap` isn't available, which always returns false, indicating that a `WeakSet` can't exist without `WeakMap`.
+3. The `has` methods of `WeakMap` and `WeakSet` are assigned to variables `$mapHas` and `$setHas`, if available.
+4. If `WeakSet` doesn't have a `has` method (possibly indicating incomplete implementation of `WeakSet`), the module exports a function that always returns false.
+5. The final export is an `isWeakSet` function that:
+   - Returns false if the input is not an object or is falsy.
+   - Attempts to use the `has` method of `WeakSet` on the input. If this call doesn't throw an error, it checks if it belongs to `WeakSet`.
+   - Tries a similar method using `WeakMap` for old compatibility concerns. If this tries with `WeakMap` fail but passes with `WeakSet`, it's considered a `WeakSet`.
+   - Falls back to `instanceof` check if the `try-catch` blocks don't determine the outcome.
+
+Here's the rewritten code:
+
+```javascript
+'use strict';
+
+const hasWeakMap = typeof WeakMap === 'function' && WeakMap.prototype;
+const hasWeakSet = typeof WeakSet === 'function' && WeakSet.prototype;
+
+let isWeakSetFunction = null;
+
+if (!hasWeakMap) {
+	isWeakSetFunction = function isWeakSet(x) {
+		return false;
+	};
+}
+
+const weakMapHasMethod = hasWeakMap ? WeakMap.prototype.has : null;
+const weakSetHasMethod = hasWeakSet ? WeakSet.prototype.has : null;
+
+if (!isWeakSetFunction && !weakSetHasMethod) {
+	module.exports = function isWeakSet(x) {
+		return false;
+	};
+} else {
+	module.exports = function isWeakSet(x) {
+		if (!x || typeof x !== 'object') {
+			return false;
+		}
+		try {
+			weakSetHasMethod.call(x, weakSetHasMethod);
+			if (weakMapHasMethod) {
+				try {
+					weakMapHasMethod.call(x, weakMapHasMethod);
+				} catch (e) {
+					return true;
+				}
+			}
+			return x instanceof WeakSet;
+		} catch (e) {
+			return false;
+		}
+	};
+}
+```

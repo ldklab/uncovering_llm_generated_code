@@ -1,0 +1,134 @@
+"use strict";
+
+const punycode = require("punycode");
+const regexes = require("./lib/regexes.js");
+const mappingTable = require("./lib/mappingTable.json");
+const { STATUS_MAPPING } = require("./lib/statusMapping.js");
+
+function containsNonASCII(str) {
+  return /[^\x00-\x7F]/.test(str);
+}
+
+function findStatus(val, { useSTD3ASCIIRules }) {
+  let start = 0, end = mappingTable.length - 1;
+  while (start <= end) {
+    const mid = Math.floor((start + end) / 2);
+    const target = mappingTable[mid];
+    const [min, max] = Array.isArray(target[0]) ? target[0] : [target[0], target[0]];
+    if (min <= val && max >= val) {
+      if (useSTD3ASCIIRules && (target[1] === STATUS_MAPPING.disallowed_STD3_valid || target[1] === STATUS_MAPPING.disallowed_STD3_mapped)) {
+        return [STATUS_MAPPING.disallowed, ...target.slice(2)];
+      }
+      return (target[1] === STATUS_MAPPING.disallowed_STD3_valid && [STATUS_MAPPING.valid, ...target.slice(2)]) ||
+             (target[1] === STATUS_MAPPING.disallowed_STD3_mapped && [STATUS_MAPPING.mapped, ...target.slice(2)]) ||
+             target.slice(1);
+    }
+    val < min ? end = mid - 1 : start = mid + 1;
+  }
+  return null;
+}
+
+function mapChars(domainName, options) {
+  let hasError = false, processed = "";
+
+  for (const ch of domainName) {
+    const [status, mapping] = findStatus(ch.codePointAt(0), options);
+    if (status === STATUS_MAPPING.disallowed) {
+      hasError = true;
+      processed += ch;
+    } else if (status === STATUS_MAPPING.mapped || (status === STATUS_MAPPING.deviation && options.processingOption === "transitional")) {
+      processed += mapping;
+    } else if (status !== STATUS_MAPPING.ignored) {
+      processed += ch;
+    }
+  }
+
+  return { string: processed, error: hasError };
+}
+
+function validateLabel(label, options) {
+  if (label.normalize("NFC") !== label) return false;
+
+  const codePoints = Array.from(label);
+  if (options.checkHyphens && ((codePoints[2] === "-" && codePoints[3] === "-") || label.startsWith("-") || label.endsWith("-"))) {
+    return false;
+  }
+  if (label.includes(".") || (codePoints.length > 0 && regexes.combiningMarks.test(codePoints[0]))) return false;
+  
+  for (const ch of codePoints) {
+    const [status] = findStatus(ch.codePointAt(0), options);
+    if ((options.processingOption === "transitional" && status !== STATUS_MAPPING.valid) ||
+        (options.processingOption === "nontransitional" && status !== STATUS_MAPPING.valid && status !== STATUS_MAPPING.deviation)) {
+      return false;
+    }
+  }
+
+  if (options.checkJoiners) {
+    let last = 0;
+    for (const [i, ch] of codePoints.entries()) {
+      if (ch === "\u200C" || ch === "\u200D") {
+        if (i > 0 && (regexes.combiningClassVirama.test(codePoints[i - 1]) || (ch === "\u200C" && regexes.validZWNJ.test(codePoints.slice(last, codePoints.indexOf("\u200C", i + 1)).join(""))))) {
+          last = i + 1;
+          continue;
+        }
+        return false;
+      }
+    }
+  }
+
+  if (options.checkBidi) {
+    let rtl = regexes.bidiS1LTR.test(codePoints[0]) ? false : regexes.bidiS1RTL.test(codePoints[0]) ? true : null;
+    if (rtl === null || (rtl && (!regexes.bidiS2.test(label) || !regexes.bidiS3.test(label) || (regexes.bidiS4EN.test(label) && regexes.bidiS4AN.test(label)))) || 
+        (!rtl && (!regexes.bidiS5.test(label) || !regexes.bidiS6.test(label)))) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function isBidiDomain(labels) {
+  const domain = labels.map(label => label.startsWith("xn--") ? (punycode.decode(label.substring(4)) || "") : label).join(".");
+  return regexes.bidiDomain.test(domain);
+}
+
+function processing(domainName, options) {
+  let { string, error } = mapChars(domainName, options);
+  string = string.normalize("NFC");
+  const labels = string.split(".");
+  const isBidi = isBidiDomain(labels);
+
+  labels.forEach((label, i) => {
+    let curProcessing = options.processingOption;
+    if (label.startsWith("xn--")) {
+      try { label = punycode.decode(label.slice(4)); labels[i] = label; } catch { error = true; return; }
+      curProcessing = "nontransitional";
+    }
+    if (!error && !validateLabel(label, { ...options, processingOption: curProcessing, checkBidi: options.checkBidi && isBidi })) {
+      error = true;
+    }
+  });
+
+  return { string: labels.join("."), error };
+}
+
+function toASCII(domainName, options = {}) {
+  const { checkHyphens = false, checkBidi = false, checkJoiners = false, useSTD3ASCIIRules = false, processingOption = "nontransitional", verifyDNSLength = false } = options;
+  if (!["transitional", "nontransitional"].includes(processingOption)) throw new RangeError("Invalid processing option.");
+
+  const result = processing(domainName, { processingOption, checkHyphens, checkBidi, checkJoiners, useSTD3ASCIIRules });
+  let labels = result.string.split(".");
+  labels = labels.map(label => containsNonASCII(label) ? "xn--" + punycode.encode(label) : label);
+
+  if (verifyDNSLength) {
+    const total = labels.join(".").length;
+    if (total > 253 || total === 0 || labels.some(l => l.length > 63 || l.length === 0)) result.error = true;
+  }
+
+  return result.error ? null : labels.join(".");
+}
+
+function toUnicode(domainName, options = {}) {
+  return processing(domainName, options);
+}
+
+module.exports = { toASCII, toUnicode };

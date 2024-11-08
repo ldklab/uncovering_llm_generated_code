@@ -1,0 +1,104 @@
+The provided Node.js code defines a custom stream class `Minipass` which extends `EventEmitter`. The `Minipass` class mimics some behavior of readable and writable streams. Here's a breakdown of its functionality:
+
+- **Constructor**: Initializes the stream with options such as encoding, objectMode, and async indicating batching properties. It sets up a buffer to store chunks, and flags for `writable`, `readable`, and `flowing` states.
+
+- **write**: Accepts a chunk of data and an optional callback. It validates the chunk type based on the encoding and object mode settings, then stores the chunk in the buffer. If the stream is set to flow data, it emits stored data through `emitData`.
+
+- **end**: Signals the end of the writable stream. It can optionally handle a final chunk of data before the stream becomes unwritable. If the buffer is empty, it triggers `emitEnd`.
+
+- **emitData**: Processes and emits chunks from the buffer when the stream is in the flowing state. Automatically invokes `emitEnd` if the buffer is exhausted and `emitEnd` hasn't been called yet.
+
+- **emitEnd**: Safely emits the `end` event to signify there are no more data chunks to be processed, and marks the stream as no longer readable.
+
+- **pipe**: Facilitates piping data to another writable stream. It binds the 'data' and 'end' events to the corresponding destination stream methods (`write`, `end`).
+
+- **resume**: Switches the stream into the flowing state and triggers data emission if previously paused.
+
+- **pause**: Stops the stream from flowing, delaying data emission until resumed.
+
+Here is the rewritten code with the same functionality:
+
+```javascript
+const { EventEmitter } = require('events');
+
+class Minipass extends EventEmitter {
+  constructor(options = {}) {
+    super();
+    this.encoding = options.encoding || null;
+    this.objectMode = Boolean(options.objectMode);
+    this.async = Boolean(options.async);
+    this.buffer = [];
+    this.writable = true;
+    this.readable = true;
+    this.flowing = null;
+    this.emittedEnd = false;
+  }
+
+  write(chunk, encoding, cb) {
+    if (!this.writable) throw new Error('stream not writable');
+    if (!this.objectMode && !(typeof chunk === 'string' || Buffer.isBuffer(chunk))) {
+      throw new Error('invalid chunk type');
+    }
+    if (this.encoding && typeof chunk === 'string') {
+      chunk = Buffer.from(chunk, this.encoding);
+    }
+    this.buffer.push(chunk);
+    if (this.flowing === null) {
+      this.flowing = true;
+    }
+    if (this.flowing) {
+      this.emitData();
+    }
+    if (cb) cb();
+    return this.flowing;
+  }
+
+  end(chunk, encoding, cb) {
+    if (!this.writable) throw new Error('stream not writable');
+    if (chunk !== undefined) this.write(chunk, encoding);
+    this.writable = false;
+    if (cb) cb();
+    if (this.buffer.length === 0) {
+      this.emitEnd();
+    }
+  }
+
+  emitData() {
+    while (this.flowing && this.buffer.length > 0) {
+      const chunk = this.buffer.shift();
+      this.emit('data', chunk);
+    }
+
+    if (!this.emittedEnd && (this.buffer.length === 0 && this.flowing)) {
+      this.emitEnd();
+    }
+  }
+
+  emitEnd() {
+    if (this.emittedEnd) return;
+    this.emittedEnd = true;
+    this.readable = false;
+    this.emit('end');
+  }
+
+  pipe(dest) {
+    this.flowing = true;
+    this.on('data', (chunk) => dest.write(chunk));
+    this.on('end', () => dest.end());
+    return dest;
+  }
+
+  resume() {
+    if (!this.flowing) {
+      this.flowing = true;
+      this.emitData();
+    }
+  }
+
+  pause() {
+    this.flowing = false;
+  }
+}
+
+module.exports = { Minipass };
+```

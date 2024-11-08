@@ -1,0 +1,129 @@
+The Node.js code provided is a syntax highlighter function for JavaScript code. Here is a breakdown of its functionality:
+
+1. **Imports and Dependencies:** 
+   - The code imports `js-tokens` for tokenizing JavaScript code.
+   - It imports `@babel/helper-validator-identifier` to validate if tokens are JavaScript identifiers.
+   - It uses `picocolors` for colorizing text, which supports various colors depending on the type of token.
+
+2. **Color Management:**
+   - Based on environment variables (`FORCE_COLOR`), it decides whether to use colors or not.
+   - It defines a `getColors` function to return an appropriate color palette (either with or without colors).
+
+3. **Token Definitions:** 
+   - `getDefs` function maps JavaScript token types to specific colors.
+
+4. **Tokenization and Syntax Highlighting:**
+   - Uses `js-tokens` to tokenize JavaScript code into recognizable segments like keywords, identifiers, strings, etc.
+   - `highlightTokens` function applies the appropriate colors to each token based on its type.
+
+5. **Utility Functions:**
+   - `shouldHighlight` determines if highlighting should be done based on the terminal's capability to support colors and an optional `forceColor` flag.
+   - Token types are further processed in `getTokenType` to handle JSX tags and capitalize identifiers differently.
+   
+6. **Exposed Functions:**
+   - `highlight`: Main function to highlight input JavaScript code if it is not empty.
+   - `getChalk`: Function to obtain an instance of `chalk` with optional forced color support.
+
+Here's a possible rewrite of the existing code:
+
+```javascript
+"use strict";
+
+import jsTokens, { matchToToken } from "js-tokens";
+import { isKeyword, isStrictReservedWord } from "@babel/helper-validator-identifier";
+import picocolors from "picocolors";
+
+const colors = determineColors();
+const sometimesKeywords = new Set(["as", "async", "from", "get", "of", "set"]);
+const NEWLINE = /\r\n|[\n\r\u2028\u2029]/;
+const BRACKET = /^[()[\]{}]$/;
+
+function determineColors() {
+  return typeof process === "object" && (process.env.FORCE_COLOR === "0" || process.env.FORCE_COLOR === "false") 
+    ? picocolors.createColors(false) 
+    : picocolors;
+}
+
+function getDefs(colors) {
+  return {
+    keyword: colors.cyan,
+    capitalized: colors.yellow,
+    jsxIdentifier: colors.yellow,
+    punctuator: colors.yellow,
+    number: colors.magenta,
+    string: colors.green,
+    regex: colors.magenta,
+    comment: colors.gray,
+    invalid: colors.bold(colors.bgRed(colors.white))
+  };
+}
+
+function* tokenize(text) {
+  for (const match of text.matchAll(jsTokens)) {
+    const token = matchToToken(match);
+    yield {
+      type: determineTokenType(token, match.index, text),
+      value: token.value
+    };
+  }
+}
+
+function determineTokenType(token, offset, text) {
+  if (token.type === "name") {
+    if (isKeyword(token.value) || isStrictReservedWord(token.value, true) || sometimesKeywords.has(token.value)) {
+      return "keyword";
+    }
+    if (/^[a-z][\w-]*$/i.test(token.value) && (text[offset - 1] === "<" || text.slice(offset - 2, offset) === "</")) {
+      return "jsxIdentifier";
+    }
+    if (token.value[0] !== token.value[0].toLowerCase()) {
+      return "capitalized";
+    }
+  } else if (token.type === "punctuator" && BRACKET.test(token.value)) {
+    return "bracket";
+  } else if (token.type === "invalid" && (token.value === "@" || token.value === "#")) {
+    return "punctuator";
+  }
+  return token.type;
+}
+
+function highlightTokens(defs, text) {
+  let highlighted = "";
+  for (const { type, value } of tokenize(text)) {
+    const colorize = defs[type];
+    highlighted += colorize ? value.split(NEWLINE).map(colorize).join("\n") : value;
+  }
+  return highlighted;
+}
+
+export function shouldHighlight(options) {
+  return colors.isColorSupported || options.forceColor;
+}
+
+let cachedColors = undefined;
+function getColors(forceColor) {
+  if (forceColor) {
+    if (!cachedColors) cachedColors = picocolors.createColors(true);
+    return cachedColors;
+  }
+  return colors;
+}
+
+export default function highlight(code, options = {}) {
+  if (code && shouldHighlight(options)) {
+    const defs = getDefs(getColors(options.forceColor));
+    return highlightTokens(defs, code);
+  }
+  return code;
+}
+
+let chalk, forcedChalk;
+export const getChalk = ({ forceColor }) => {
+  if (!chalk) chalk = require("chalk");
+  if (forceColor) {
+    if (!forcedChalk) forcedChalk = new chalk.constructor({ enabled: true, level: 1 });
+    return forcedChalk;
+  }
+  return chalk;
+};
+```

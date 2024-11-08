@@ -1,0 +1,87 @@
+The functionality described in the README.md for the `natural-compare-lite` package is to provide a way to compare strings containing numeric parts in a natural order, which is more intuitive from a human perspective than traditional string comparison. 
+
+This natural ordering allows strings with numbers to be sorted in a way that aligns with human logic (e.g., "img2.png" should come before "img10.png"). This is implemented as a function `String.naturalCompare` which can be used with JavaScript's array `sort` function.
+
+Below are the main functionalities described in the README:
+
+1. **String Natural Compare**: A method `String.naturalCompare` checks where a reference string comes before, is the same, or comes after another string.
+
+2. **Case Sensitivity**: The default comparison is case-sensitive. For case-insensitive sorting, strings need to be converted to lowercase before comparison.
+
+3. **Object Sorting**: Natural compare can be used to sort objects by specific properties, and you can chain multiple properties to sort by using logical OR to sort by secondary criteria if the first comparison is equal.
+
+4. **Custom Alphabets**: The package allows customization of the alphabet for the comparison, which is useful for sorting in languages with different alphabets.
+
+5. **Performance Consideration**: It suggests storing transformed keys in objects if using frequently transformed text during sorting to improve performance.
+
+Here is a possible implementation of the described functionality:
+
+```javascript
+(function(global) {
+    "use strict";
+
+    // Optionally set default alphabet
+    String.alphabet = null;
+
+    function naturalCompare(a, b) {
+        var alphabet = String.alphabet;
+        var idxA = 0, idxB = 0, charA, charB, numA, numB;
+
+        function getChar(string, idx) {
+            return alphabet ? alphabet.indexOf(string.charAt(idx)) + 1 || 0 : string.charCodeAt(idx) || 0;
+        }
+
+        function isDigit(code) {
+            return code >= 48 && code <= 57;
+        }
+
+        function compareTokens(a, b) {
+            var res = 0;
+
+            while (!res && (charA = getChar(a, idxA)) && (charB = getChar(b, idxB))) {
+                if (isDigit(charA) && isDigit(charB)) {
+                    numA = numB = '';
+                    do { numA += a[idxA++]; } while (isDigit(getChar(a, idxA)));
+                    do { numB += b[idxB++]; } while (isDigit(getChar(b, idxB)));
+                    numA = parseInt(numA, 10);
+                    numB = parseInt(numB, 10);
+                    res = numA < numB ? -1 : numB < numA ? 1 : 0;
+                }
+                else {
+                    res = charA < charB ? -1 : charB < charA ? 1 : 0;
+                    idxA++;
+                    idxB++;
+                }
+            }
+            return res || (a.length - b.length);
+        }
+
+        return compareTokens(a, b);
+    }
+
+    if (typeof module !== 'undefined' && module.exports) {
+        module.exports = naturalCompare;
+    } else {
+        String.naturalCompare = naturalCompare;
+    }
+})(this);
+
+// Usage and test cases
+if (require.main === module) {
+    var arr = ["z1.doc", "z10.doc", "z17.doc", "z2.doc", "z23.doc", "z3.doc"];
+    arr.sort(String.naturalCompare);
+    console.log(arr); // ["z1.doc", "z2.doc", "z3.doc", "z10.doc", "z17.doc", "z23.doc"]
+
+    // Usage with case insensitivity
+    arr.sort(function(a, b) {
+        return String.naturalCompare(a.toLowerCase(), b.toLowerCase());
+    });
+    console.log(arr);
+
+    // Set up a custom alphabet
+    String.alphabet = "abcčdeéfghiijklmnoprstuüõöxy";
+    var alphArr = ["t", "z", "x", "õ"];
+    alphArr.sort(String.naturalCompare);
+    console.log(alphArr); // Custom order
+}
+```

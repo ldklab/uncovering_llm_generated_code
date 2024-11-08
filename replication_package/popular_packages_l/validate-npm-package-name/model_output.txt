@@ -1,0 +1,96 @@
+The `validate-npm-package-name` package is a simple utility that determines if a given string is a valid `npm` package name by evaluating it against certain rules. It provides a synchronous function that returns an object with properties indicating whether the package name is suitable for new and old packages.
+
+Here's how it works:
+
+1. **Package Name Length**: The length of the package name must be greater than zero and not exceed 214 characters.
+
+2. **Character Rules**:
+   - Only lowercase letters are allowed (no uppercase or mixed-case).
+   - Hyphens (`-`) are permissible.
+   - The name must not contain URL-unsafe characters.
+   - The name must not start with a period (`.`) or an underscore (`_`).
+   - The name must not contain leading or trailing spaces.
+   - The name must not contain any characters from this set: `~)('!*`.
+
+3. **Reserved Words**: The package name must not match any core Node.js module names or blacklisted names, such as `http`, `stream`, `node_modules`, or `favicon.ico`.
+
+Based on these rules, the function returns an object with:
+- `validForNewPackages`: A boolean indicating if the name is valid by current standards.
+- `validForOldPackages`: A boolean indicating if the name would have been valid before npm began enforcing stricter rules.
+
+Additionally, if a name is invalid for either new or old packages, the function will include an `errors` or `warnings` array to specify what rules have been violated.
+
+Here is the implementation of the described functionality:
+
+```javascript
+const nodeCoreModules = [
+  'http', 'stream', 'url', 'node_modules', 'favicon.ico'
+];
+
+function validateNpmPackageName(name) {
+  const errors = [];
+  const warnings = [];
+
+  if (typeof name !== 'string') {
+    errors.push('name must be a string');
+    return formatResult(false, false, errors);
+  }
+
+  if (name.length === 0) {
+    errors.push('name length must be greater than zero');
+  }
+
+  if (name.length > 214) {
+    errors.push('name length must not exceed 214 characters');
+    warnings.push('name can no longer contain more than 214 characters');
+  }
+
+  if (/^[._]/.test(name)) {
+    errors.push('name cannot start with a period or an underscore');
+  }
+
+  if (/\s/.test(name)) {
+    errors.push('name cannot contain leading or trailing spaces');
+  }
+
+  if (/[^a-z0-9-]/.test(name)) {
+    errors.push('name can only contain URL-friendly characters');
+  }
+
+  if (/[A-Z]/.test(name)) {
+    errors.push('name cannot contain uppercase letters');
+    warnings.push('name can no longer contain capital letters');
+  }
+
+  if (/[\~\)\(\'\!\*]/.test(name)) {
+    errors.push('name cannot contain special characters: ~)('!`*');
+  }
+
+  if (nodeCoreModules.includes(name)) {
+    errors.push('name cannot be the same as a node.js core module');
+  }
+
+  return formatResult(errors.length === 0, errors.length === 0 && warnings.length === 0, errors, warnings);
+}
+
+function formatResult(isValidForNew, isValidForOld, errors = [], warnings = []) {
+  const result = {
+    validForNewPackages: isValidForNew,
+    validForOldPackages: isValidForOld
+  };
+  if (errors.length > 0) {
+    result.errors = errors;
+  }
+  if (warnings.length > 0) {
+    result.warnings = warnings;
+  }
+  return result;
+}
+
+module.exports = validateNpmPackageName;
+
+// Example Usage
+console.log(validateNpmPackageName("some-package"));
+console.log(validateNpmPackageName("http"));
+console.log(validateNpmPackageName(" leading-space:and:weirdchars"));
+```

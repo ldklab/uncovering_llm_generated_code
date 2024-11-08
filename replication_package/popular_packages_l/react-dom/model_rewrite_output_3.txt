@@ -1,0 +1,67 @@
+The provided code consists of two files, `server.js` and `client.js`, which together create a simple server-side rendered (SSR) React application using Node.js and client-side rendering with React.
+
+1. **server.js**: 
+   - This script sets up an HTTP server using Node's native `http` module. 
+   - It uses React's `renderToPipeableStream` from `react-dom/server` to render the `App` component to a stream.
+   - The server listens for incoming requests; if the request URL is `/`, it streams the rendered React component (`App`) as an HTML response.
+   - The response is wrapped with basic HTML structure (`<html>` and `<body>` tags).
+   - If an error occurs during rendering, it logs the error and sends a 500 status code with the message 'Internal Server Error'.
+   - For any other URL, it returns a 404 status code with 'Not Found'.
+
+2. **client.js**:
+   - This script initializes the client-side of the React application.
+   - It uses React's `createRoot` from `react-dom/client` to render the `App` component into a DOM element with the ID `root`.
+   - The `App` component renders a simple 'Hello World' message encapsulated within a `div`.
+
+**Rewritten Code:**
+
+```javascript
+// server.js
+const http = require('http');
+const React = require('react');
+const { renderToPipeableStream } = require('react-dom/server');
+const { createElement } = React;
+
+function App() {
+  return createElement('div', null, 'Hello World');
+}
+
+const server = http.createServer((req, res) => {
+  if (req.url === '/') {
+    const stream = renderToPipeableStream(createElement(App), {
+      onShellReady() {
+        res.statusCode = 200;
+        res.setHeader('Content-Type', 'text/html');
+        res.write('<!DOCTYPE html><html><body>');
+        stream.pipe(res, { end: false });
+        stream.on('end', () => res.end('</body></html>'));
+      },
+      onError(error) {
+        console.error(error);
+        res.statusCode = 500;
+        res.end('Internal Server Error');
+      },
+    });
+  } else {
+    res.statusCode = 404;
+    res.end('Not Found');
+  }
+});
+
+server.listen(3000, () => {
+  console.log('Server is listening on port 3000');
+});
+
+// client.js
+import React from 'react';
+import { createRoot } from 'react-dom/client';
+
+const rootElement = document.getElementById('root');
+const root = createRoot(rootElement);
+
+function App() {
+  return React.createElement('div', null, 'Hello World');
+}
+
+root.render(React.createElement(App));
+```

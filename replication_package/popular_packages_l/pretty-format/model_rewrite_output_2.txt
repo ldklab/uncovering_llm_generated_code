@@ -1,0 +1,83 @@
+The provided Node.js code implements a simplified version of a pretty-print formatting function, "format", intended to format a variety of JavaScript data structures (arrays, objects, primitive values, and functions) into a readable string format. The code:
+
+1. Defines a default theme for styling text, although this theme is not used in the provided functions.
+2. Implements the `format` function, which applies default options for indentation and function name printing, and delegates the actual formatting to the `stringify` function.
+3. `stringify` handles different data types: 
+   - Detects and marks circular references.
+   - Delegates arrays to `formatArray`.
+   - Delegates objects to `formatObject`.
+   - Handles primitive data types directly.
+4. `formatArray` and `formatObject` functions build formatted strings for arrays and objects, respectively, applying indentation and recursively formatting nested items.
+5. `formatPrimitive` formats null, strings, numbers, booleans, and functions (with optional name printing).
+6. Exports the `format` function as the module export.
+7. A `customPlugin` example is included to customize function formatting:
+
+   a. `test` determines if a value is a function.
+   
+   b. `serialize` creates a string representation including the function's name and arity.
+   
+8. Demonstrates plugin usage by formatting an object with functions.
+
+Here is the rewritten code:
+
+```javascript
+// Elegant formatting implementation
+const DEFAULT_OPTIONS = { indent: 2, printFunctionName: true };
+
+function format(value, options = {}) {
+  const config = { ...DEFAULT_OPTIONS, ...options };
+  return serializeValue(value, config, '', 0, []);
+}
+
+function serializeValue(value, options, indent, depth, seen) {
+  if (seen.includes(value)) return '[Circular]';
+  if (Array.isArray(value)) return serializeArray(value, options, indent, depth, seen);
+  if (value && typeof value === 'object') {
+    seen.push(value);
+    return serializeObject(value, options, indent, depth, seen);
+  }
+  return serializePrimitive(value, options);
+}
+
+function serializeArray(array, options, indent, depth, seen) {
+  const nextIndent = indent + ' '.repeat(options.indent);
+  const items = array.map(item => `${nextIndent}${serializeValue(item, options, nextIndent, depth + 1, seen)}`);
+  return `[\n${items.join(',\n')}\n${indent}]`;
+}
+
+function serializeObject(obj, options, indent, depth, seen) {
+  const nextIndent = indent + ' '.repeat(options.indent);
+  const entries = Object.entries(obj).map(
+    ([key, value]) => `${nextIndent}${JSON.stringify(key)}: ${serializeValue(value, options, nextIndent, depth + 1, seen)}`
+  );
+  return `{\n${entries.join(',\n')}\n${indent}}`;
+}
+
+function serializePrimitive(value, options) {
+  if (value === null) return 'null';
+  switch (typeof value) {
+    case 'string': return JSON.stringify(value);
+    case 'number': case 'boolean': return String(value);
+    case 'function': 
+      return options.printFunctionName && value.name ? `[Function ${value.name}]` : '[Function]';
+    default: return String(value);
+  }
+}
+
+module.exports = { format };
+
+// Custom plugin example
+const customFunctionPlugin = {
+  test: (val) => typeof val === 'function',
+  serialize: (val) => `[Function ${val.name || 'anonymous'} ${val.length}]`,
+};
+
+// Example usage with custom plugin
+const { format: prettyFormat } = require('./pretty-format');
+const testObject = {
+  onClick: function(event) {},
+  render: function() {},
+};
+
+console.log(prettyFormat(testObject, { plugins: [customFunctionPlugin] }));
+```

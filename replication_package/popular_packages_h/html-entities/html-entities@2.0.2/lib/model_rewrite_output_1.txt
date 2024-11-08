@@ -1,0 +1,83 @@
+The provided Node.js code is a UMD (Universal Module Definition) module pattern implementation for a library that deals with HTML entities. It provides functions to encode and decode HTML characters into their equivalent HTML entities. The implementation allows for compatibility with different module environments, such as CommonJS, AMD, and browser globals.
+
+### Functionality Breakdown:
+1. **UMD Pattern**: The code is wrapped in a self-executing function that supports three environments:
+    - CommonJS (`module.exports` if `exports` and `module` are detected).
+    - AMD (`define([], factoryFunction)` if `define` is detected and `define.amd` is true).
+    - Browser globals (`window`, `global`, or `self` if others are not available).
+
+2. **Encoding**:
+   - Uses regular expressions to find special HTML characters and converts them to their named references or numeric values based on the specified mode.
+   - Supports modes like 'specialChars', 'nonAsciiPrintable', and 'nonAscii'.
+   - Configurable output format: decimal or hexadecimal numeric escape sequences.
+
+3. **Decoding**:
+   - Converts HTML entities back into their character analogs.
+   - Handles different scopes like strict, body, and attribute parsing.
+   - Uses maps of named and numeric references for conversion.
+
+4. **Support for Named References and Numeric Unicode Mapping**:
+   - Includes a comprehensive map of HTML named character references.
+   - Handles surrogate pairs for characters outside the BMP (Basic Multilingual Plane) using a utility for surrogate pair operations.
+
+Here's a simplified rewrite of the core functionality – focusing on the encoding and decoding mechanism and structuring it more readably:
+
+```javascript
+(function (factory) {
+    if (typeof exports === 'object' && typeof module !== 'undefined') {
+        module.exports = factory();
+    } else if (typeof define === 'function' && define.amd) {
+        define([], factory);
+    } else {
+        const globalObj = typeof window !== 'undefined' ? window : 
+                          typeof global !== 'undefined' ? global : 
+                          typeof self !== 'undefined' ? self : this;
+        globalObj.htmlEntities = factory();
+    }
+}(function () {
+
+    const namedReferences = {
+        html5: {
+            entities: { /* A map of named entities */ },
+            characters: { '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&apos;' }
+        }
+    };
+
+    const regexPatterns = {
+        specialChars: /[<>'"&]/g
+    };
+
+    function encode(input, options = { mode: 'specialChars', numeric: 'decimal', level: 'all' }) {
+        if (!input) return '';
+        const charLevel = namedReferences[options.level || 'all'].characters;
+        const isHex = options.numeric === 'hexadecimal';
+        
+        return input.replace(regexPatterns[options.mode], char => {
+            const entity = charLevel[char];
+            if (entity) return entity;
+            const codePoint = char.codePointAt(0);
+            return isHex ? `&#x${codePoint.toString(16)};` : `&#${codePoint};`;
+        });
+    }
+
+    function decode(input, options = { level: 'all', scope: 'body' }) {
+        if (!input) return '';
+        const entityMap = namedReferences[options.level].entities;
+        const regex = /&(?:#\d+|#x[\da-fA-F]+|[0-9a-zA-Z]+);?/g; // basic for demonstration
+        
+        return input.replace(regex, entity => {
+            if (entity.charAt(1) !== '#') return entityMap[entity] || entity;
+            // More complex handling for numeric entities can be placed here
+            return entity; // Placeholder for conversion logic
+        });
+    }
+
+    return {
+        encode,
+        decode
+    };
+
+}));
+```
+
+In this simplified version, we have abstracted some details and only included the essential logic to clarify encoding and decoding. This restructuring assumes understanding of `codePointAt`, etc., while omitting some complex surrogate handling and full entity list for brevity.

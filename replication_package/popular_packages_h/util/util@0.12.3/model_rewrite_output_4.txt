@@ -1,0 +1,148 @@
+The provided Node.js code is a utility module containing a variety of helper functions mainly used for formatting, inspecting, debugging, and deprecating within a Node.js environment. Here's an explanation of its main functionalities:
+
+1. **Format Strings**: The `format` function takes a string and formats it based on specific placeholders (`%s`, `%d`, `%j`, `%%`). It aims to mimic formatted string operations similar to those found in C-style languages.
+
+2. **Deprecation Warnings**: The `deprecate` function wraps a given function with a warning mechanism that triggers whenever the deprecated function is called. The behavior of the warning (throw, trace, or log) depends on process flags.
+
+3. **Debug Logging**: The `debuglog` function creates a debugging logger based on the environment variable `NODE_DEBUG`. It only logs messages if the specified environment variable pattern matches.
+
+4. **Value Inspection**: The `inspect` function provides detailed string representations of objects, supporting colorized output based on options.
+
+5. **Type Checking**: A set of utility functions checks object types (`isArray`, `isBoolean`, `isNull`, etc.), typically used for validation and ensuring type integrity in various operations.
+
+6. **Console Logging with Timestamps**: The `log` function logs messages to the console with a timestamp prefix.
+
+7. **Prototype Inheritance**: `inherits` is provided for establishing prototype inheritance between two constructor functions.
+
+8. **Promise Utilities**: The `promisify` function converts callback-based functions to return promises, while `callbackify` does the reverse, turning a promise-returning function into one that uses callbacks.
+
+Below is a rewritten version of the code, structured and explained for clarity.
+
+```javascript
+const util = {};
+
+// Polyfill for `Object.getOwnPropertyDescriptors`
+util.getOwnPropertyDescriptors = Object.getOwnPropertyDescriptors || function(obj) {
+  const keys = Object.keys(obj);
+  const descriptors = {};
+  keys.forEach(key => {
+    descriptors[key] = Object.getOwnPropertyDescriptor(obj, key);
+  });
+  return descriptors;
+};
+
+// Formatting string based on special tokens
+util.format = function(f) {
+  if (typeof f !== 'string') {
+    const objects = [];
+    for (let i = 0; i < arguments.length; i++) {
+      objects.push(util.inspect(arguments[i]));
+    }
+    return objects.join(' ');
+  }
+
+  const formatRegExp = /%[sdj%]/g;
+  let i = 1;
+  const args = arguments;
+  const len = args.length;
+  let str = String(f).replace(formatRegExp, x => {
+    if (x === '%%') return '%';
+    if (i >= len) return x;
+    switch (x) {
+      case '%s': return String(args[i++]);
+      case '%d': return Number(args[i++]);
+      case '%j':
+        try {
+          return JSON.stringify(args[i++]);
+        } catch (_) {
+          return '[Circular]';
+        }
+    }
+    return x;
+  });
+  for (let x = args[i]; i < len; x = args[++i]) {
+    str += (typeof x === 'object' ? ' ' + util.inspect(x) : ' ' + x);
+  }
+  return str;
+};
+
+// Util for creating a function that is marked as deprecated
+util.deprecate = function(fn, msg) {
+  if (process && (process.noDeprecation || typeof process === 'undefined')) {
+    return fn;
+  }
+  
+  let warned = false;
+  const deprecated = function() {
+    if (!warned) {
+      process.throwDeprecation ? throw new Error(msg) :
+      process.traceDeprecation ? console.trace(msg) : console.error(msg);
+      warned = true;
+    }
+    return fn.apply(this, arguments);
+  };
+  
+  return deprecated;
+};
+
+// Debug logging based on NODE_DEBUG environment variable
+util.debuglog = function(set) {
+  if (!process.env.NODE_DEBUG) return () => {};
+
+  const debugEnv = process.env.NODE_DEBUG.split(',')
+    .map(s => s.trim().toUpperCase())
+    .join('|') + '|';
+
+  const match = new RegExp('(?:^|\\W)' + set.toUpperCase() + '(?:\\W|$)');
+  
+  let log;
+  if (match.test(debugEnv)) {
+    log = function() {
+      console.error('%s %d: %s', set.toUpperCase(), process.pid, util.format.apply(util, arguments));
+    };
+  } else {
+    log = () => {};
+  }
+  
+  return log;
+};
+
+// Inspect function for getting string representation of objects
+util.inspect = function(object, opts = {}) {
+  const ctx = {
+    seen: [],
+    stylize: util.stylizeNoColor,
+    ...opts
+  };
+  return formatValue(ctx, object, ctx.depth || 2);
+};
+
+// Default stylization when no color support is desired
+util.stylizeNoColor = str => str;
+
+// Export all utility functions
+module.exports = util;
+
+// Function to actually format value - omitted here for brevity
+function formatValue(ctx, value, recurseTimes) {
+  /* Implementation of deeply formatting objects, taking into account styling and visibility */
+  /* Consider type, potential recursion, circular references, primitive formatting, etc. */
+}
+
+// A set of helper functions to test object types - omitted here for brevity
+function isArray(ar) { return Array.isArray(ar); }
+function isBoolean(arg) { return typeof arg === 'boolean'; }
+function isNull(arg) { return arg === null; }
+function isUndefined(arg) { return arg === undefined; }
+function isNumber(arg) { return typeof arg === 'number'; }
+function isString(arg) { return typeof arg === 'string'; }
+function isObject(arg) { return typeof arg === 'object' && arg !== null; }
+function isFunction(arg) { return typeof arg === 'function'; }
+function isRegExp(re) { return isObject(re) && Object.prototype.toString.call(re) === '[object RegExp]'; }
+function isDate(d) { return isObject(d) && Object.prototype.toString.call(d) === '[object Date]'; }
+function isError(e) { return isObject(e) && (Object.prototype.toString.call(e) === '[object Error]' || e instanceof Error); }
+
+// Additional utility, module, and polyfills - omitted for brevity
+```
+
+This rewritten version captures the essential functionalities of the original code but is structured for clarity and brevity, omitting less illustrative parts and expanded type-checking functions for explanatory purposes.

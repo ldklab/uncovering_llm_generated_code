@@ -1,0 +1,396 @@
+"use strict";
+
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.Minipass = exports.isWritable = exports.isReadable = exports.isStream = void 0;
+
+const { EventEmitter } = require("node:events");
+const Stream = __importDefault(require("node:stream"));
+const { StringDecoder } = require("node:string_decoder");
+
+// Utility to return a default value if not in node.js environment
+const proc = typeof process === 'object' && process ? process : { stdout: null, stderr: null };
+
+// Stream type checking functions
+const isStream = (s) => !!s && typeof s === 'object' && (s instanceof Minipass || s instanceof Stream.default || isReadable(s) || isWritable(s));
+exports.isStream = isStream;
+
+const isReadable = (s) => !!s && typeof s === 'object' && s instanceof EventEmitter && typeof s.pipe === 'function' && s.pipe !== Stream.default.Writable.prototype.pipe;
+exports.isReadable = isReadable;
+
+const isWritable = (s) => !!s && typeof s === 'object' && s instanceof EventEmitter && typeof s.write === 'function' && typeof s.end === 'function';
+exports.isWritable = isWritable;
+
+// Symbolic constants for internal use
+const EOF = Symbol('EOF');
+const MAYBE_EMIT_END = Symbol('maybeEmitEnd');
+const EMITTED_END = Symbol('emittedEnd');
+const FLOWING = Symbol('flowing');
+const BUFFER = Symbol('buffer');
+const BUFFERLENGTH = Symbol('bufferLength');
+const DECODER = Symbol('decoder');
+const OBJECTMODE = Symbol('objectMode');
+const DESTROYED = Symbol('destroyed');
+const EMITTED_ERROR = Symbol('emittedError');
+const SIGNAL = Symbol('signal');
+const DATALISTENERS = Symbol('dataListeners');
+const RESUME = Symbol('resume');
+const ABORTED = Symbol('aborted');
+const ABORT = Symbol('abort');
+
+// Deferred execution helpers
+const defer = (fn) => Promise.resolve().then(fn);
+const nodefer = (fn) => fn();
+
+// Utility functions for determining data types
+const isArrayBufferLike = (b) => b instanceof ArrayBuffer || (!!b && typeof b === 'object' && b.constructor && b.constructor.name === 'ArrayBuffer' && b.byteLength >= 0);
+const isArrayBufferView = (b) => !Buffer.isBuffer(b) && ArrayBuffer.isView(b);
+
+// Internal classes to help with stream piping
+class Pipe {
+    constructor(src, dest, opts) {
+        this.src = src;
+        this.dest = dest;
+        this.opts = opts;
+        this.ondrain = () => src[RESUME]();
+        this.dest.on('drain', this.ondrain);
+    }
+    unpipe() {
+        this.dest.removeListener('drain', this.ondrain);
+    }
+    end() {
+        this.unpipe();
+        if (this.opts.end) this.dest.end();
+    }
+}
+
+class PipeProxyErrors extends Pipe {
+    constructor(src, dest, opts) {
+        super(src, dest, opts);
+        this.proxyErrors = er => dest.emit('error', er);
+        src.on('error', this.proxyErrors);
+    }
+    unpipe() {
+        this.src.removeListener('error', this.proxyErrors);
+        super.unpipe();
+    }
+}
+
+// Options validation functions
+const isObjectModeOptions = (o) => !!o.objectMode;
+const isEncodingOptions = (o) => !o.objectMode && !!o.encoding && o.encoding !== 'buffer';
+
+// Minipass class extending EventEmitter
+class Minipass extends EventEmitter {
+    constructor(...args) {
+        super();
+        const options = args[0] || {};
+        if (options.objectMode && typeof options.encoding === 'string') throw new TypeError('Encoding and objectMode may not be used together');
+        
+        this[OBJECTMODE] = isObjectModeOptions(options) ? true : false;
+        this[ENCODING] = isEncodingOptions(options) ? options.encoding : null;
+        this[ASYNC] = !!options.async;
+        this[DECODER] = this[ENCODING] ? new StringDecoder(this[ENCODING]) : null;
+        this[BUFFER] = [];
+        this[BUFFERLENGTH] = 0;
+        this[FLOWING] = false;
+        this[DESTROYED] = false;
+        this[EMITTED_END] = false;
+        this[ABORTED] = false;
+        this[DATALISTENERS] = 0;
+
+        if (options.signal) {
+            this[SIGNAL] = options.signal;
+            options.signal.aborted ? this[ABORT]() : options.signal.addEventListener('abort', () => this[ABORT]());
+        }
+    }
+
+    // Properties and setter methods
+    get bufferLength() {
+        return this[BUFFERLENGTH];
+    }
+
+    get encoding() {
+        return this[ENCODING];
+    }
+
+    set encoding(_) {
+        throw new Error('Encoding must be set at instantiation time');
+    }
+
+    setEncoding(_) {
+        throw new Error('Encoding must be set at instantiation time');
+    }
+
+    get objectMode() {
+        return this[OBJECTMODE];
+    }
+
+    get ['async']() {
+        return this[ASYNC];
+    }
+
+    set ['async'](asyncValue) {
+        this[ASYNC] = this[ASYNC] || !!asyncValue;
+    }
+
+    // Abort the stream
+    [ABORT]() {
+        this[ABORTED] = true;
+        this.emit('abort', this[SIGNAL]?.reason);
+        this.destroy(this[SIGNAL]?.reason);
+    }
+
+    // Public methods and event handling
+    write(chunk, encoding, cb) {
+        if (this[ABORTED]) return false;
+        if (typeof encoding === 'function') {
+            cb = encoding;
+            encoding = 'utf8';
+        }
+        encoding = encoding || 'utf8';
+
+        const fn = this[ASYNC] ? defer : nodefer;
+
+        if (!this[OBJECTMODE] && !Buffer.isBuffer(chunk)) {
+            if (isArrayBufferView(chunk)) {
+                chunk = Buffer.from(chunk.buffer, chunk.byteOffset, chunk.byteLength);
+            } else if (isArrayBufferLike(chunk)) {
+                chunk = Buffer.from(chunk);
+            } else if (typeof chunk !== 'string') {
+                throw new Error('Non-contiguous data written to non-objectMode stream');
+            }
+        }
+        
+        if (this[OBJECTMODE]) {
+            if (this[FLOWING]) this.emit('data', chunk);
+            else this[BUFFER].push(chunk);
+            if (this[BUFFER].length !== 0) this.emit('readable');
+            if (cb) fn(cb);
+            return this[FLOWING];
+        }
+
+        if (!chunk.length) {
+            if (this[BUFFER].length !== 0) this.emit('readable');
+            if (cb) fn(cb);
+            return this[FLOWING];
+        }
+
+        if (typeof chunk === 'string' && !(encoding === this[ENCODING] && !this[DECODER]?.lastNeed)) {
+            chunk = Buffer.from(chunk, encoding);
+        }
+
+        if (Buffer.isBuffer(chunk) && this[ENCODING]) {
+            chunk = this[DECODER].write(chunk);
+        }
+
+        if (this[FLOWING] && this[BUFFER].length !== 0) this.flush(true);
+
+        if (this[FLOWING]) this.emit('data', chunk);
+        else this[BUFFER].push(chunk);
+        
+        if (this[BUFFER].length !== 0) this.emit('readable');
+        if (cb) fn(cb);
+        return this[FLOWING];
+    }
+
+    read(n) {
+        if (this[BUFFER].length === 0 || n === 0 || (n && n > this[BUFFER].length)) return null;
+        
+        if (this[OBJECTMODE]) return this[BUFFER].shift();
+
+        if (n === this[BUFFER][0].length || n === null) return this[BUFFER].shift();
+
+        let chunk = this[BUFFER][0];
+        this[BUFFER][0] = chunk.slice(n);
+        this[BUFFER].splice(0, 1, this[BUFFER][0]);
+        
+        return chunk.slice(0, n);
+    }
+
+    end(chunk, encoding, cb) {
+        if (typeof chunk === 'function') {
+            cb = chunk;
+            chunk = undefined;
+        }
+        if (typeof encoding === 'function') {
+            cb = encoding;
+            encoding = 'utf8';
+        }
+        if (chunk !== undefined) this.write(chunk, encoding);
+        if (cb) this.once('end', cb);
+
+        this[EOF] = true;
+        this.writable = false;
+        if (this[FLOWING] || !this[PAUSED]) this.maybeEmitEnd();
+        
+        return this;
+    }
+
+    pipe(dest, opts = {}) {
+        if (this[EOF]) {
+            if (opts.end) dest.end();
+        } else {
+            this[FLOWING] = true;
+            const pipeDest = this[PIPES].push(!opts.proxyErrors ? new Pipe(this, dest, opts) : new PipeProxyErrors(this, dest, opts));
+            if (this[ASYNC]) defer(() => this.resume());
+            else this.resume();
+        }
+        return dest;
+    }
+
+    unpipe(dest) {
+        const p = this[PIPES].find(p => p.dest === dest);
+        if (p) {
+            if (this[PIPES].length === 1) {
+                if (this[FLOWING] && this[DATALISTENERS] === 0) {
+                    this[FLOWING] = false;
+                }
+                this[PIPES] = [];
+            } else this[PIPES].splice(this[PIPES].indexOf(p), 1);
+            p.unpipe();
+        }
+    }
+
+    addListener(ev, handler) {
+        return this.on(ev, handler);
+    }
+
+    on(ev, handler) {
+        const ret = super.on(ev, handler);
+        if (ev === 'data') {
+            this[DATALISTENERS]++;
+            if (!this[PIPES].length && !this[FLOWING]) this.resume();
+        }
+        return ret;
+    }
+
+    removeListener(ev, handler) {
+        return this.off(ev, handler);
+    }
+
+    off(ev, handler) {
+        const ret = super.off(ev, handler);
+        if (ev === 'data') {
+            this[DATALISTENERS] = this.listeners('data').length;
+            if (this[DATALISTENERS] === 0 && !this[PIPES].length) this[FLOWING] = false;
+        }
+        return ret;
+    }
+
+    removeAllListeners(ev) {
+        const ret = super.removeAllListeners(ev);
+        if (ev === 'data' || ev === undefined) {
+            this[DATALISTENERS] = 0;
+            if (!this[PIPES].length) this[FLOWING] = false;
+        }
+        return ret;
+    }
+
+    emit(ev, ...args) {
+        if (ev === 'data') {
+            const data = args[0];
+            return this[QUEUE].push(data), false; // simulate data queue store
+        }
+        else if (ev === 'end') {
+            return this.emitEnd();
+        }
+        else if (ev === 'close') {
+            this.maybeEmitEnd();
+            super.emit('close');
+        }
+        else if (ev === 'error') {
+            const err = args[0];
+            if (!this[SIGNAL] || this.listeners('error').length) {
+                super.emit('error', err);
+            }
+            this[EMITTED_ERROR] = err;
+        }
+        else if (ev === 'finish') {
+            super.emit('finish');
+            this.removeAllListeners('finish');
+        } else {
+            super.emit(ev, ...args);
+            this.maybeEmitEnd();
+        }
+    }
+
+    emitEnd() {
+        if (this[EMITTED_END]) return false;
+        this[EMITTED_END] = true;
+        this.readable = false;
+        super.emit('end');
+        super.emit('close');
+        return false;
+    }
+
+    maybeEmitEnd() {
+        if (this[EMITTED_END] || this[BUFFER].length !== 0) return;
+        super.emit('end');
+        super.emit('close');
+    }
+
+    collect() {
+        return new Promise((resolve, reject) => {
+            const buf = [];
+            this.on('data', data => buf.push(data));
+            this.once('end', () => resolve(buf));
+            this.once('error', err => reject(err));
+        });
+    }
+
+    async promise() {
+        return await new Promise((resolve, reject) => {
+            this.once('end', resolve);
+            this.once('error', reject);
+
+            if (this[SIGNAL]) {
+                this[SIGNAL].addEventListener('abort', () => reject(new Error('Stream aborted')));
+            }
+        });
+    }
+
+    // Async iteration for await ... of
+    async *[Symbol.asyncIterator]() {
+        while (!this[EMITTED_END]) {
+            const chunk = this.read();
+            if (chunk !== null) yield chunk;
+            else await new Promise(resolve => this.once('data', resolve));
+        }
+    }
+
+    // Iterator for for ... of
+    [Symbol.iterator]() {
+        return {
+            next: () => {
+                const value = this.read();
+                return value === null ? { done: true, value } : { done: false, value };
+            },
+            [Symbol.iterator]() {
+                return this;
+            }
+        };
+    }
+
+    destroy(er) {
+        if (this[DESTROYED]) {
+            if (er) this.emit('error', er);
+            return this;
+        }
+        this[DESTROYED] = true;
+        this[BUFFER].length = 0;
+        this[BUFFERLENGTH] = 0;
+        if (er) this.emit('error', er);
+        else this.emit(DESTROYED);
+        return this;
+    }
+
+    static get isStream() {
+        return exports.isStream;
+    }
+}
+
+exports.Minipass = Minipass;

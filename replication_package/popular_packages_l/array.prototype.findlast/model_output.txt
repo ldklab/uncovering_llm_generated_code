@@ -1,0 +1,91 @@
+The `array.prototype.findlast` package provides a polyfill for the `Array.prototype.findLast` method, which is a proposed feature of JavaScript (ESNext). This method is used to find the last element in an array that satisfies a given predicate function. Since this feature may not be available in all JavaScript environments (especially older ones), the package ensures compatibility by allowing the `findLast` function to be used in any environment that supports JavaScript.
+
+### Features of the Package
+
+1. **Polyfill Functionality**: The main export function emulates the behavior of `Array.prototype.findLast`. It takes an array as its first argument and a predicate function. It returns the last element in the array that satisfies the predicate. If no element satisfies the predicate, it returns `undefined`.
+
+2. **Shim Method**: This method adds `findLast` to the `Array.prototype` for environments where it is not natively present. Using the `shim` method ensures that even older environments can access this functionality through the standard array method.
+
+3. **ES3 Compatibility**: The package is designed to work even in very old JavaScript environments (starting from ES3), making it versatile for legacy systems.
+
+4. **Test Coverage**: The package includes tests to verify that the polyfill works correctly. The tests ensure that both the standalone function and the shim behave as expected.
+
+Below is the implementation of this `array.prototype.findlast` package.
+
+```js
+// index.js
+(function() {
+  'use strict';
+
+  // Define the main function that finds the last element in the array for which the callback returns a truthy value
+  function findLast(array, predicate) {
+    if (array == null) {
+      throw new TypeError('Array.prototype.findLast called on null or undefined');
+    }
+    if (typeof predicate !== 'function') {
+      throw new TypeError('predicate must be a function');
+    }
+
+    var length = array.length >>> 0; // Convert length to a 32-bit unsigned integer
+    for (var i = length - 1; i >= 0; i--) {
+      if (i in array) {
+        var value = array[i];
+        if (predicate.call(arguments[2], value, i, array)) {
+          return value;
+        }
+      }
+    }
+    return undefined;
+  }
+
+  // Gets the polyfill function
+  function getPolyfill() {
+    return typeof Array.prototype.findLast === 'function' ? Array.prototype.findLast : findLast;
+  }
+
+  // Shim method that ensures the function is on Array.prototype
+  function shim() {
+    var polyfill = getPolyfill();
+    if (Array.prototype.findLast !== polyfill) {
+      Object.defineProperty(Array.prototype, 'findLast', {
+        value: polyfill,
+        configurable: true,
+        writable: true,
+        enumerable: false
+      });
+    }
+    return polyfill;
+  }
+
+  // Export the module
+  var mainExport = findLast;
+  mainExport.shim = shim;
+  mainExport.getPolyfill = getPolyfill;
+
+  if (typeof module !== 'undefined' && module.exports) {
+    module.exports = mainExport;
+  }
+}());
+
+// test.js
+var assert = require('assert');
+var findLast = require('./index');
+
+// Test array and predicate
+var arr = [1, [2], [], 3, [[4]]];
+var isNumber = function (x) { return typeof x === 'number' };
+
+// Test the main findLast function
+assert.deepEqual(findLast(arr, isNumber), 3);
+
+// Shim and test when not present
+delete Array.prototype.findLast;
+var shimmed = findLast.shim();
+assert.equal(shimmed, findLast.getPolyfill());
+assert.deepEqual(arr.findLast(isNumber), findLast(arr, isNumber));
+
+// Shim and test when present
+var shimmed = findLast.shim();
+assert.equal(shimmed, Array.prototype.findLast);
+assert.deepEqual(arr.findLast(isNumber), findLast(arr, isNumber));
+```

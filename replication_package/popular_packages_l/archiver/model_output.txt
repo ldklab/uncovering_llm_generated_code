@@ -1,0 +1,84 @@
+The `archiver` package provides a simple API for creating ZIP and TAR archives in Node.js. It leverages the powerful stream interfaces in Node.js to efficiently generate these archives.
+
+### Explanation of Functionality:
+
+1. **Installation:** Use npm to install the package into your Node.js project.
+
+2. **Basic Usage:** 
+   - Import the necessary modules, namely `fs` for file system interactions and `archiver` for your archive creation needs.
+   - Create a writable stream where the output archive will be saved. In this example, it saves the archive as `example.zip` in the current directory.
+   - Create an instance of the `Archiver` class by calling `archiver()` with the format ('zip' in this case) and optional configuration settings like compression level.
+   - Set up event listeners on the output stream to handle when the stream is closed or when all data has been outputted.
+   - Also, set up event listeners on the `archive` instance to handle potential warnings or errors during the archiving process.
+   - Use the `pipe` method to direct the stream from the `archiver` instance to the output file.
+
+3. **Appending Files:**
+   - Files can be appended to the archive using various methods:
+     - From a file stream: using `archive.append()` with a readable stream.
+     - Directly from a string: using `archive.append()` and a simple string.
+     - Directly from a buffer: using `archive.append()` with a Buffer.
+     - From a specified file path: using `archive.file()`.
+     - From a directory: using `archive.directory()`, you can decide to nest the directory or not in the archive.
+     - Using glob patterns for flexible file selections via `archive.glob()`.
+
+4. **Finalize the Archive:** Once all files have been appended, call `archive.finalize()`. This function call emits necessary events to indicate completion.
+
+5. **Formats:** The package supports ZIP and TAR out of the box, and more formats can be registered using `registerFormat`.
+
+Here's how you might implement this functionality:
+
+```js
+// Import necessary modules
+const fs = require('fs');
+const archiver = require('archiver');
+
+// Function to create an archive
+function createArchive() {
+  // Create a write stream for the output file
+  const output = fs.createWriteStream(__dirname + '/example.zip');
+
+  // Create an Archiver instance with ZIP format and compression level 9
+  const archive = archiver('zip', { zlib: { level: 9 } });
+
+  // Set up event listeners for the output stream
+  output.on('close', function() {
+    console.log(archive.pointer() + ' total bytes');
+    console.log('archiver has been finalized and the output file descriptor has closed.');
+  });
+
+  output.on('end', function() {
+    console.log('Data has been drained');
+  });
+
+  // Set up event listeners for archiver warnings and errors
+  archive.on('warning', function(err) {
+    if (err.code === 'ENOENT') {
+      console.warn(err);
+    } else {
+      throw err;
+    }
+  });
+
+  archive.on('error', function(err) {
+    throw err;
+  });
+
+  // Pipe the archive data to the output file
+  archive.pipe(output);
+
+  // Append files to the archive
+  archive.append(fs.createReadStream(__dirname + '/file1.txt'), { name: 'file1.txt' });
+  archive.append('string cheese!', { name: 'file2.txt' });
+  archive.append(Buffer.from('buff it!'), { name: 'file3.txt' });
+  archive.file('file1.txt', { name: 'file4.txt' });
+  archive.directory('subdir/', 'new-subdir');
+  archive.directory('subdir/', false);
+  archive.glob('file*.txt', { cwd: __dirname });
+
+  // Finalize the archive
+  archive.finalize();
+}
+
+// Call the function to create the archive
+createArchive();
+```

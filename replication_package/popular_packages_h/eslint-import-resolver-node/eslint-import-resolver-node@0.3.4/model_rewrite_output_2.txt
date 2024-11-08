@@ -1,0 +1,55 @@
+The Node.js code provided is a resolver function for ESLint that facilitates the resolution of import paths in JavaScript files using Node.js semantics. It uses the `resolve` library to handle the resolution of module paths. 
+
+Here's an explanation of its components:
+
+- The module utilizes the `resolve` package to determine the location of modules that are required or imported in JavaScript files and the `debug` package to log debug messages.
+- It defines an `interfaceVersion` property, which indicates the version of the interface this resolver implements.
+- The main `exports.resolve` function attempts to determine the file path for a module specified by `source`, potentially taking into account a particular configuration and the base file from which the module is imported.
+- It first checks if the module specified by `source` is a core Node.js module and returns `found: true` with a null path if so.
+- It uses a helper function `opts` to build options for resolving the module path, including supported file extensions and the base directory derived from the importing file.
+  
+The module deals with `packageFilter` to modify package definitions, checking for `jsnext:main` to potentially override the main file entry of a package.
+
+Here is a possible rewrite of the code:
+
+```javascript
+const resolve = require('resolve');
+const path = require('path');
+const debug = require('debug')('eslint-plugin-import:resolver:node');
+
+exports.interfaceVersion = 2;
+
+exports.resolve = function (source, file, config) {
+  debug('Resolving:', source, 'from:', file);
+  
+  if (resolve.isCore(source)) {
+    debug('resolved to core');
+    return { found: true, path: null };
+  }
+
+  try {
+    const resolvedPath = resolve.sync(source, buildOptions(file, config));
+    debug('Resolved to:', resolvedPath);
+    return { found: true, path: resolvedPath };
+  } catch (error) {
+    debug('resolve threw error:', error);
+    return { found: false };
+  }
+};
+
+function buildOptions(file, config) {
+  return Object.assign({
+    extensions: ['.mjs', '.js', '.json', '.node']
+  }, config, {
+    basedir: path.dirname(path.resolve(file)),
+    packageFilter: adjustPackage
+  });
+}
+
+function adjustPackage(package) {
+  if (package['jsnext:main']) {
+    package['main'] = package['jsnext:main'];
+  }
+  return package;
+}
+```

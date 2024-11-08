@@ -1,0 +1,78 @@
+The Node.js code provided is a module that manages environment variables using a `.env` file. It provides functionality to parse the contents of a `.env` file into an object and populate `process.env` with these key-value pairs, allowing environment configuration outside the code. It consists of two main components:
+
+1. **parse function**: This function reads and parses the content from a given string or Buffer source. It returns an object with key-value pairs derived from lines following the `KEY=VAL` pattern, handling quoted values and newline characters.
+
+2. **config function**: This function reads a `.env` file (by default located in the current working directory) and populates the `process.env` object with any variables not already defined, respecting existing variables unless debugging is enabled. File path and encoding can be customized, and logs can be enabled for debugging.
+
+Here's a rewritten version of the module:
+
+```javascript
+const fs = require('fs');
+const path = require('path');
+
+function log(message) { 
+  console.log(`[dotenv][DEBUG] ${message}`);
+}
+
+const NEWLINE = '\n';
+const RE_INI_KEY_VAL = /^\s*([\w.-]+)\s*=\s*(.*)?\s*$/;
+const RE_NEWLINES = /\\n/g;
+const NEWLINES_MATCH = /\n|\r|\r\n/;
+
+// Parse function converts the .env content into an object
+function parse(src, options) {
+  const debug = options?.debug || false;
+  const obj = {};
+
+  src.toString().split(NEWLINES_MATCH).forEach((line, idx) => {
+    const keyValueArr = line.match(RE_INI_KEY_VAL);
+    if (keyValueArr) {
+      let [ , key, val = ''] = keyValueArr;
+      const isDoubleQuoted = val.startsWith('"') && val.endsWith('"');
+      const isSingleQuoted = val.startsWith("'") && val.endsWith("'");
+
+      if (isSingleQuoted || isDoubleQuoted) {
+        val = val.slice(1, -1);
+
+        if (isDoubleQuoted) {
+          val = val.replace(RE_NEWLINES, NEWLINE);
+        }
+      } else {
+        val = val.trim();
+      }
+      
+      obj[key] = val;
+    } else if (debug) {
+      log(`did not match key and value when parsing line ${idx + 1}: ${line}`);
+    }
+  });
+
+  return obj;
+}
+
+// Config function reads .env file and populates process.env
+function config(options = {}) {
+  const dotenvPath = options.path || path.resolve(process.cwd(), '.env');
+  const encoding = options.encoding || 'utf8';
+  const debug = options.debug || false;
+
+  try {
+    const parsed = parse(fs.readFileSync(dotenvPath, { encoding }), { debug });
+
+    for (const key of Object.keys(parsed)) {
+      if (process.env[key] === undefined) {
+        process.env[key] = parsed[key];
+      } else if (debug) {
+        log(`"${key}" is already defined in \`process.env\` and will not be overwritten`);
+      }
+    }
+
+    return { parsed };
+  } catch (error) {
+    return { error };
+  }
+}
+
+module.exports.config = config;
+module.exports.parse = parse;
+```

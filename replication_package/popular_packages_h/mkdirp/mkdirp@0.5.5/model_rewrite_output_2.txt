@@ -1,0 +1,82 @@
+The given Node.js code defines a function `mkdirP` that recursively creates a directory and any non-existent parent directories along its path. The module exports both synchronous and asynchronous versions of this function. 
+
+- `mkdirP`: Asynchronously creates directories, checking if each part of the path exists before proceeding. If an error occurs, it recursively tries to create parent directories. It uses `fs.mkdir` to attempt creating a directory and handles errors to ensure directories already existing don't cause a failure, as long as they are directories.
+- `mkdirP.sync`: This is the synchronous version which performs the same operation but using `fs.mkdirSync` and `fs.statSync` for synchronous filesystem operations.
+
+The code also handles options such as the mode for directory permissions and allows the use of a custom filesystem module, provided through options. Errors are handled to check if a directory already exists when an attempt to create it fails.
+
+Here's a possible rewrite of this Node.js code:
+
+```javascript
+const path = require('path');
+const fs = require('fs');
+
+const DEFAULT_MODE = parseInt('0777', 8);
+
+module.exports = mkdirP;
+mkdirP.sync = mkdirPSync;
+
+function mkdirP(dirPath, options = {}, callback = () => {}, made = null) {
+    if (typeof options === 'function') {
+        callback = options;
+        options = {};
+    }
+
+    let mode = options.mode !== undefined ? options.mode : DEFAULT_MODE;
+    const xfs = options.fs || fs;
+    dirPath = path.resolve(dirPath);
+
+    xfs.mkdir(dirPath, mode, (error) => {
+        if (!error) {
+            return callback(null, made || dirPath);
+        }
+
+        switch (error.code) {
+            case 'ENOENT':
+                mkdirP(path.dirname(dirPath), options, (mkdirError, mkdirMade) => {
+                    if (mkdirError) {
+                        callback(mkdirError);
+                    } else {
+                        mkdirP(dirPath, options, callback, mkdirMade);
+                    }
+                });
+                break;
+            default:
+                xfs.stat(dirPath, (statError, stats) => {
+                    if (statError || !stats.isDirectory()) {
+                        callback(error);
+                    } else {
+                        callback(null, made);
+                    }
+                });
+        }
+    });
+}
+
+function mkdirPSync(dirPath, options = {}, made = null) {
+    let mode = options.mode !== undefined ? options.mode : DEFAULT_MODE;
+    const xfs = options.fs || fs;
+    dirPath = path.resolve(dirPath);
+
+    try {
+        xfs.mkdirSync(dirPath, mode);
+        made = made || dirPath;
+    } catch (error) {
+        if (error.code === 'ENOENT') {
+            made = mkdirPSync(path.dirname(dirPath), options, made);
+            mkdirPSync(dirPath, options, made);
+        } else {
+            try {
+                const stats = xfs.statSync(dirPath);
+                if (!stats.isDirectory()) {
+                    throw error;
+                }
+            } catch {
+                throw error;
+            }
+        }
+    }
+
+    return made;
+}
+```

@@ -1,0 +1,78 @@
+The provided Node.js code defines a `MuteStream` class that extends the `Duplex` stream. This custom stream allows for muting and unmuting output data. When the stream is not muted, data is passed through as usual, with an option to replace each character with a specified character. When the stream is muted, written data is not output.
+
+### Functionality Breakdown:
+
+- **Constructor**: 
+  - Accepts an options object.
+  - Initializes the `muted` flag to determine if the stream is muted.
+  - Stores a `replace` character if provided, otherwise defaults to `null`.
+  - Stores a `prompt` string though it's unused in the implementation.
+  - Checks if `process.stdout` is a TTY to handle potential terminal-specific behavior. 
+
+- **_write()**:
+  - Called when writable data is available.
+  - If `muted` is `false`, the data may be replaced with the specified `replace` character for each character in the chunk.
+  - Pushes either the original or replaced data down the stream.
+  - If `muted` is `true`, data is not pushed.
+
+- **_read()**:
+  - Defines a no-op read method fulfiling the `Duplex` interface requirements.
+
+- **mute() and unmute() Methods**:
+  - Switch the stream's `muted` state.
+
+- **isTTY**:
+  - Allows access to whether the stream is TTY or not.
+
+### Example Usage:
+- Creating a `MuteStream` instance with a replacement character.
+- Demonstrates writing data, muting the stream (where no output occurs), and unmuting the stream to resume output.
+
+```javascript
+const { Duplex } = require('stream');
+
+class MuteStream extends Duplex {
+  constructor(options = {}) {
+    super(options);
+    this.muted = false;
+    this.replace = options.replace || null;
+    this.prompt = options.prompt || '';
+    this._isTTY = process.stdout.isTTY;
+  }
+
+  _write(chunk, encoding, callback) {
+    if (!this.muted) {
+      if (this.replace) {
+        let replacedChunk = Buffer.from(String(chunk).replace(/./g, this.replace));
+        this.push(replacedChunk);
+      } else {
+        this.push(chunk);
+      }
+    }
+    callback();
+  }
+
+  _read(size) {}
+
+  mute() {
+    this.muted = true;
+  }
+
+  unmute() {
+    this.muted = false;
+  }
+
+  get isTTY() {
+    return this._isTTY;
+  }
+}
+
+// Usage example
+const ms = new MuteStream({replace: '*'});
+ms.pipe(process.stdout);
+ms.write('foo\n');    // Outputs: foo
+ms.mute();
+ms.write('bar\n');    // Outputs: nothing
+ms.unmute();
+ms.write('baz\n');    // Outputs: baz
+```

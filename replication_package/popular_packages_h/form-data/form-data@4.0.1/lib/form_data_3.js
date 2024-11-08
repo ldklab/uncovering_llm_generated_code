@@ -1,0 +1,305 @@
+const CombinedStream = require('combined-stream');
+const util = require('util');
+const path = require('path');
+const { http, https } = require('http');
+const { parse } = require('url');
+const fs = require('fs');
+const { Stream } = require('stream');
+const mime = require('mime-types');
+const asynckit = require('asynckit');
+const populate = require('./populate.js');
+
+// Exporting the FormData class
+module.exports = FormData;
+
+// Inheriting from CombinedStream
+util.inherits(FormData, CombinedStream);
+
+/**
+ * Class to handle form-data streams, extending CombinedStream.
+ * @param {Object} options - Properties for FormData and CombinedStream.
+ */
+function FormData(options) {
+  if (!(this instanceof FormData)) {
+    return new FormData(options);
+  }
+
+  this._overheadLength = 0;
+  this._valueLength = 0;
+  this._valuesToMeasure = [];
+  CombinedStream.call(this);
+
+  options = options || {};
+  Object.assign(this, options);
+}
+
+FormData.LINE_BREAK = '\r\n';
+FormData.DEFAULT_CONTENT_TYPE = 'application/octet-stream';
+
+FormData.prototype.append = function(field, value, options = {}) {
+  if (typeof options === 'string') {
+    options = { filename: options };
+  }
+
+  const append = CombinedStream.prototype.append.bind(this);
+
+  if (typeof value === 'number') {
+    value = value.toString();
+  }
+
+  if (Array.isArray(value)) {
+    this._error(new Error('Arrays are not supported.'));
+    return;
+  }
+
+  const header = this._multiPartHeader(field, value, options);
+  const footer = this._multiPartFooter();
+
+  append(header);
+  append(value);
+  append(footer);
+
+  this._trackLength(header, value, options);
+};
+
+FormData.prototype._trackLength = function(header, value, options) {
+  let valueLength = 0;
+
+  if (options.knownLength != null) {
+    valueLength += +options.knownLength;
+  } else if (Buffer.isBuffer(value)) {
+    valueLength = value.length;
+  } else if (typeof value === 'string') {
+    valueLength = Buffer.byteLength(value);
+  }
+
+  this._valueLength += valueLength;
+  this._overheadLength += Buffer.byteLength(header) + FormData.LINE_BREAK.length;
+
+  if (!value || (!value.path && !(value.readable && value.httpVersion) && !(value instanceof Stream))) {
+    return;
+  }
+
+  if (!options.knownLength) {
+    this._valuesToMeasure.push(value);
+  }
+};
+
+FormData.prototype._lengthRetriever = function(value, callback) {
+  if (value.fd) {
+    if (value.end != undefined && value.end != Infinity && value.start != undefined) {
+      callback(null, value.end + 1 - (value.start || 0));
+    } else {
+      fs.stat(value.path, (err, stat) => {
+        if (err) return callback(err);
+        callback(null, stat.size - (value.start || 0));
+      });
+    }
+  } else if (value.httpVersion) {
+    callback(null, +value.headers['content-length']);
+  } else if (value.httpModule) {
+    value.on('response', function(response) {
+      value.pause();
+      callback(null, +response.headers['content-length']);
+    });
+    value.resume();
+  } else {
+    callback('Unknown stream');
+  }
+};
+
+FormData.prototype._multiPartHeader = function(field, value, options) {
+  if (typeof options.header === 'string') {
+    return options.header;
+  }
+
+  const contentDisposition = this._getContentDisposition(value, options);
+  const contentType = this._getContentType(value, options);
+
+  const headers = {
+    'Content-Disposition': ['form-data', `name="${field}"`].concat(contentDisposition || []),
+    'Content-Type': [].concat(contentType || [])
+  };
+
+  if (typeof options.header === 'object') {
+    populate(headers, options.header);
+  }
+
+  return `--${this.getBoundary()}${FormData.LINE_BREAK}${Object.entries(headers)
+    .filter(([_, value]) => value != null && value.length)
+    .map(([key, value]) => `${key}: ${value.join('; ')}`)
+    .join(FormData.LINE_BREAK)}${FormData.LINE_BREAK}`;
+};
+
+FormData.prototype._getContentDisposition = function(value, options) {
+  let filename;
+  if (typeof options.filepath === 'string') {
+    filename = path.normalize(options.filepath).replace(/\\/g, '/');
+  } else if (options.filename || value.name || value.path) {
+    filename = path.basename(options.filename || value.name || value.path);
+  } else if (value.readable && value.httpVersion) {
+    filename = path.basename(value.client._httpMessage.path || '');
+  }
+
+  return filename ? `filename="${filename}"` : null;
+};
+
+FormData.prototype._getContentType = function(value, options) {
+  return options.contentType ||
+    (value.name && mime.lookup(value.name)) ||
+    (value.path && mime.lookup(value.path)) ||
+    (value.readable && value.httpVersion && value.headers['content-type']) ||
+    (options.filepath && mime.lookup(options.filepath)) ||
+    (options.filename && mime.lookup(options.filename)) ||
+    (typeof value === 'object' && FormData.DEFAULT_CONTENT_TYPE);
+};
+
+FormData.prototype._multiPartFooter = function() {
+  return (next) => {
+    let footer = FormData.LINE_BREAK;
+    if (this._streams.length === 0) {
+      footer += this._lastBoundary();
+    }
+    next(footer);
+  };
+};
+
+FormData.prototype._lastBoundary = function() {
+  return `--${this.getBoundary()}--${FormData.LINE_BREAK}`;
+};
+
+FormData.prototype.getHeaders = function(userHeaders) {
+  const formHeaders = {
+    'content-type': `multipart/form-data; boundary=${this.getBoundary()}`
+  };
+
+  return { ...formHeaders, ...Object.fromEntries(Object.entries(userHeaders).map(([k, v]) => [k.toLowerCase(), v])) };
+};
+
+FormData.prototype.setBoundary = function(boundary) {
+  this._boundary = boundary;
+};
+
+FormData.prototype.getBoundary = function() {
+  if (!this._boundary) {
+    this._generateBoundary();
+  }
+  return this._boundary;
+};
+
+FormData.prototype.getBuffer = function() {
+  let dataBuffer = Buffer.alloc(0);
+  const boundary = this.getBoundary();
+
+  this._streams.forEach(stream => {
+    if (typeof stream !== 'function') {
+      const streamBuffer = Buffer.isBuffer(stream) ? stream : Buffer.from(stream);
+      dataBuffer = Buffer.concat([dataBuffer, streamBuffer]);
+
+      if (typeof stream !== 'string' || stream.substring(2, boundary.length + 2) !== boundary) {
+        dataBuffer = Buffer.concat([dataBuffer, Buffer.from(FormData.LINE_BREAK)]);
+      }
+    }
+  });
+
+  return Buffer.concat([dataBuffer, Buffer.from(this._lastBoundary())]);
+};
+
+FormData.prototype._generateBoundary = function() {
+  this._boundary = '--------------------------' + Array.from({ length: 24 }).map(() => Math.floor(Math.random() * 10).toString(16)).join('');
+};
+
+FormData.prototype.getLengthSync = function() {
+  let knownLength = this._overheadLength + this._valueLength;
+
+  if (this._streams.length) {
+    knownLength += this._lastBoundary().length;
+  }
+
+  if (!this.hasKnownLength()) {
+    this._error(new Error('Cannot calculate proper length in synchronous way.'));
+  }
+
+  return knownLength;
+};
+
+FormData.prototype.hasKnownLength = function() {
+  return !this._valuesToMeasure.length;
+};
+
+FormData.prototype.getLength = function(cb) {
+  let knownLength = this._overheadLength + this._valueLength;
+
+  if (this._streams.length) {
+    knownLength += this._lastBoundary().length;
+  }
+
+  if (!this._valuesToMeasure.length) {
+    process.nextTick(cb.bind(this, null, knownLength));
+    return;
+  }
+
+  asynckit.parallel(this._valuesToMeasure, this._lengthRetriever, (err, values) => {
+    if (err) return cb(err);
+
+    knownLength += values.reduce((acc, length) => acc + length, 0);
+    cb(null, knownLength);
+  });
+};
+
+FormData.prototype.submit = function(params, cb) {
+  let request;
+  const defaults = { method: 'post' };
+
+  const parsedParams = typeof params === 'string' 
+    ? parse(params)
+    : params;
+
+  const options = {
+    ...defaults,
+    ...parsedParams,
+    port: parsedParams.port || (parsedParams.protocol === 'https:' ? 443 : 80),
+  };
+
+  options.headers = this.getHeaders(parsedParams.headers);
+
+  request = (options.protocol === 'https:') ? https.request(options) : http.request(options);
+
+  this.getLength((err, length) => {
+    if (err && err !== 'Unknown stream') {
+      return this._error(err);
+    }
+    
+    if (length) {
+      request.setHeader('Content-Length', length);
+    }
+
+    this.pipe(request);
+
+    if (cb) {
+      const callback = (error, response) => {
+        request.removeListener('error', callback);
+        request.removeListener('response', onResponse);
+        cb.call(this, error, response);
+      };
+      const onResponse = callback.bind(this, null);
+
+      request.on('error', callback);
+      request.on('response', onResponse);
+    }
+  });
+
+  return request;
+};
+
+FormData.prototype._error = function(err) {
+  if (!this.error) {
+    this.error = err;
+    this.pause();
+    this.emit('error', err);
+  }
+};
+
+FormData.prototype.toString = function () {
+  return '[object FormData]';
+};

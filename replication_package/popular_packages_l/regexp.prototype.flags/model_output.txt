@@ -1,0 +1,56 @@
+The package described above is an ES6 specification-compliant shim for `RegExp.prototype.flags`. This shim can be used to provide the `.flags` property for regular expression objects in JavaScript environments that do not natively support this feature.
+
+**Functionality Overview:**
+- **Main Functionality**: The package exports a function that accepts a regular expression and returns its flags as a string. For instance, `/a/mig` would return `'gim'`.
+- **Environment Requirements**: It requires a true ES5 environment to function correctly, particularly because it needs ES5 getters.
+- **Shim Method**: It includes a `shim` method that can be invoked to add the `.flags` property to `RegExp.prototype` in cases where it is missing. This makes the functionality available on all regular expression instances automatically.
+- **Usage Example**: The package is used by requiring it and invoking the main function on regular expression instances to retrieve their flags. If `.flags` does not exist on `RegExp.prototype`, the `shim` method can be called to patch the environment.
+
+Here is a simple implementation of this functionality:
+
+```javascript
+(function(global) {
+  'use strict';
+
+  function getRegExpFlags(re) {
+    if (!(re instanceof RegExp)) {
+      throw new TypeError('Expected a RegExp instance');
+    }
+    var flags = '';
+    if (re.global) flags += 'g';
+    if (re.ignoreCase) flags += 'i';
+    if (re.multiline) flags += 'm';
+    if (re.dotAll) flags += 's';
+    if (re.unicode) flags += 'u';
+    if (re.sticky) flags += 'y';
+    return flags;
+  }
+
+  function shimRegExpFlags() {
+    if (!Object.getOwnPropertyDescriptor(RegExp.prototype, 'flags')) {
+      Object.defineProperty(RegExp.prototype, 'flags', {
+        configurable: true,
+        get: function() {
+          return getRegExpFlags(this);
+        }
+      });
+    }
+  }
+
+  // Expose the main function and the shim method
+  var exports = function flags(re) {
+    return getRegExpFlags(re);
+  };
+  exports.shim = shimRegExpFlags;
+
+  // Module exports for Node.js, global assignment for browsers
+  if (typeof module !== 'undefined' && module.exports) {
+    module.exports = exports;
+  } else {
+    global.flags = exports;
+  }
+
+})(typeof globalThis !== 'undefined' ? globalThis : typeof window !== 'undefined' ? window : global);
+```
+
+This code provides functions to get the flags of a regular expression and optionally add a `.flags` property to all RegExp instances. It ensures compatibility with environments missing the native `.flags` property. The code checks for and respects default ES5 properties and methods like `Object.defineProperty` and `Object.getOwnPropertyDescriptor`.

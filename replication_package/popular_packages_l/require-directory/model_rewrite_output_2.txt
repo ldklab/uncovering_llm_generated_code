@@ -1,0 +1,77 @@
+The provided Node.js code defines a function `requireDirectory` that dynamically requires and exports all modules from a specified directory. The function takes three parameters: a module (`m`), a directory path (`dirPath`), and options (`options`) to customize its behavior.
+
+- **Parameters**:
+  - `m`: The current module, typically passed as `module` to resolve paths relative to the calling file.
+  - `dirPath`: The directory path to scan for modules. Defaults to the directory of the current module.
+  - `options`: An object containing several customizable properties:
+    - `include`: A regex or function to determine which files to include. Defaults to including all files.
+    - `exclude`: A regex or function to determine which files to exclude. Defaults to excluding `node_modules`.
+    - `visit`: A function to process the module before adding it to the exports.
+    - `rename`: A function to rename the module keys in the resulting object.
+    - `recurse`: A boolean indicating whether to recursively load subdirectories.
+
+- **Functions**:
+  - `isValid`: Checks if a file path should be included based on the `include` and `exclude` criteria.
+  - `loadDir`: Recursively loads modules from the directory, applying the `visit` function to each module and renaming keys using `rename`.
+
+The function returns an object containing all loaded modules, organized by their directory structure when `recurse` is true.
+
+Here's a rewritten version of the code:
+
+```javascript
+const fs = require('fs');
+const path = require('path');
+
+function requireDirectory(module, directoryPath = __dirname, options = {}) {
+  // Handle if directoryPath is actually options
+  if (typeof directoryPath === 'object') {
+    options = directoryPath;
+    directoryPath = __dirname;
+  }
+
+  // Options with default values
+  const defaults = {
+    include: /.*/,
+    exclude: /node_modules/,
+    visit: v => v,
+    rename: n => n,
+    recurse: true,
+  };
+
+  const settings = { ...defaults, ...options };
+
+  function isFileValid(filePath) {
+    const isIncluded = typeof settings.include === 'function' ? settings.include(filePath) : settings.include.test(filePath);
+    const isExcluded = typeof settings.exclude === 'function' ? !settings.exclude(filePath) : !settings.exclude.test(filePath);
+    return isIncluded && isExcluded;
+  }
+
+  function loadModules(dir) {
+    const modules = {};
+
+    fs.readdirSync(dir).forEach(file => {
+      const absolutePath = path.join(dir, file);
+      const stat = fs.statSync(absolutePath);
+
+      if (stat.isDirectory()) {
+        if (settings.recurse) {
+          const nestedModules = loadModules(absolutePath);
+          if (Object.keys(nestedModules).length) {
+            modules[settings.rename(file)] = nestedModules;
+          }
+        }
+      } else if (isFileValid(absolutePath)) {
+        const requiredModule = require(absolutePath);
+        const moduleName = settings.rename(path.basename(file, path.extname(file)));
+        modules[moduleName] = settings.visit(requiredModule);
+      }
+    });
+
+    return modules;
+  }
+
+  return loadModules(path.resolve(path.dirname(module.filename), directoryPath));
+}
+
+module.exports = requireDirectory;
+```

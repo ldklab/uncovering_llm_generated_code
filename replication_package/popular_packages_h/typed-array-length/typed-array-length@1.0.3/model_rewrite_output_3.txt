@@ -1,0 +1,111 @@
+The provided Node.js code is designed to determine the length of a typed array. It checks if a given value is a typed array and, if so, retrieves its length. Here's an explanation followed by a rewritten version of the code:
+
+### Explanation
+
+1. **Dependencies**: The code imports two modules:
+   - `foreach`: Iterates over arrays and objects.
+   - `call-bind`: Binds a function with a given context.
+   
+2. **Typed Arrays List**: A list of possible typed array constructors like `Float32Array`, `Int8Array`, etc., is defined.
+
+3. **Setup**:
+   - It initializes an empty object `getters` to store functions for obtaining the length of typed arrays.
+   - Checks for prototype inheritance using `__proto__`, and stores functions to get property descriptors.
+
+4. **Descriptor Retrieval**:
+   - If a typed array constructor is found in the global context, it tries to retrieve the `length` property descriptor of its prototype.
+   - If no descriptor is found and prototype inheritance is supported, it checks the prototype chain for the `length` property.
+   - If there's a getter for `length`, it uses `callBind` to bind the getter function.
+   - If property descriptors are defined, it checks the configurability of the `length` property and adjusts it if necessary.
+
+5. **Function `tryTypedArrays`**:
+   - Attempts to extract the length of the provided value using the stored getter functions for each typed array.
+   - Returns the length if found, or undefined if not.
+
+6. **Exported Function**:
+   - `typedArrayLength` function is exported, which first checks if a value is a typed array using `is-typed-array` module.
+   - If it is a typed array, it calls `tryTypedArrays` to get the length.
+
+### Rewrite
+
+```javascript
+'use strict';
+
+const forEach = require('foreach');
+const callBind = require('call-bind');
+const isTypedArray = require('is-typed-array');
+
+const typedArrays = [
+    'Float32Array',
+    'Float64Array',
+    'Int8Array',
+    'Int16Array',
+    'Int32Array',
+    'Uint8Array',
+    'Uint8ClampedArray',
+    'Uint16Array',
+    'Uint32Array',
+    'BigInt64Array',
+    'BigUint64Array'
+];
+
+const getters = {};
+const hasProto = [].__proto__ === Array.prototype;
+const getOwnPropertyDescriptor = Object.getOwnPropertyDescriptor;
+const defineProperty = Object.defineProperty;
+
+if (getOwnPropertyDescriptor) {
+    const getLength = (x) => x.length;
+    
+    forEach(typedArrays, (typedArray) => {
+        if (typeof global[typedArray] === 'function' || typeof global[typedArray] === 'object') {
+            const Proto = global[typedArray].prototype;
+            let descriptor = getOwnPropertyDescriptor(Proto, 'length');
+            
+            if (!descriptor && hasProto) {
+                const superProto = Proto.__proto__;
+                descriptor = getOwnPropertyDescriptor(superProto, 'length');
+            }
+            
+            if (descriptor && descriptor.get) {
+                getters[typedArray] = callBind(descriptor.get);
+            } else if (defineProperty) {
+                const instance = new global[typedArray](2);
+                descriptor = getOwnPropertyDescriptor(instance, 'length');
+                
+                if (descriptor && descriptor.configurable) {
+                    defineProperty(instance, 'length', { value: 3 });
+                }
+                
+                if (instance.length === 2) {
+                    getters[typedArray] = getLength;
+                }
+            }
+        }
+    });
+}
+
+const tryTypedArrays = (value) => {
+    let foundLength;
+    
+    forEach(getters, (getter) => {
+        if (typeof foundLength !== 'number') {
+            try {
+                const length = getter(value);
+                if (typeof length === 'number') {
+                    foundLength = length;
+                }
+            } catch (e) { }
+        }
+    });
+
+    return foundLength;
+};
+
+module.exports = function typedArrayLength(value) {
+    if (!isTypedArray(value)) {
+        return false;
+    }
+    return tryTypedArrays(value);
+};
+```

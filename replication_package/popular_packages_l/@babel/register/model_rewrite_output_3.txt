@@ -1,0 +1,56 @@
+The provided Node.js code sets up a custom require hook for handling specific file extensions (.js and .jsx by default) using Babel. This allows the automatic compilation/transformation of JavaScript files when they are imported in a Node.js environment. Here's a breakdown of the functionality:
+
+1. **Dependencies**: Imports `fs` for file system operations, `path` for working with file and directory paths, and `transformSync` from `@babel/core` to transform the content of files.
+
+2. **Cache**: An object `cache` is used to store the transformed code of each file after it is compiled once, to avoid recompiling the same file multiple times.
+
+3. **babelRegister Function**: 
+   - Accepts an options object that can specify a list of file extensions (defaulting to `.js` and `.jsx`) and Babel options for transforming the code.
+   - Saves the original `.js` require handling function from Node.js to restore it later.
+   - Overrides the require mechanisms for specified file extensions to use Babel for transforming the code before it's compiled and executed by Node.js.
+   - The transformed code for each module is cached, improving efficiency by not recompiling it.
+
+4. **Process Exit Handling**: Registers a listener on the process' exit event to restore the original require extensions for `.js` files, preventing side effects when the script is
+   done running.
+
+5. **Module Export**: The module exports a single function that initializes the Babel require hook with the provided options or defaults.
+
+Here's the rewritten code with the same functionality:
+
+```javascript
+const fs = require('fs');
+const { transformSync } = require('@babel/core');
+
+// Caching transformed modules
+const transformedCache = {};
+
+// Function to setup Babel require hooks
+function setupBabelRequire({ extensions = ['.js', '.jsx'], babelOptions = {} }) {
+  // Capture Node.js's default require for .js
+  const defaultJsHandler = require.extensions['.js'];
+
+  // Define new behavior for each supported extension
+  extensions.forEach(ext => {
+    require.extensions[ext] = (module, filename) => {
+      // Use caching to store transformed code
+      if (!transformedCache[filename]) {
+        const rawCode = fs.readFileSync(filename, 'utf8');
+        const { code: transformedCode } = transformSync(rawCode, { ...babelOptions, filename });
+        transformedCache[filename] = transformedCode;
+      }
+      // Compile module with transformed code
+      module._compile(transformedCache[filename], filename);
+    };
+  });
+
+  // Register cleanup on process exit to restore the original .js handler
+  process.on('exit', () => {
+    require.extensions['.js'] = defaultJsHandler;
+  });
+}
+
+// Export initialization function for setting up Babel hooks
+module.exports = function (options) {
+  setupBabelRequire(options || {});
+};
+```

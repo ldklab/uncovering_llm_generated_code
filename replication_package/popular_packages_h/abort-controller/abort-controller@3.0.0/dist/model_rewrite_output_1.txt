@@ -1,0 +1,112 @@
+The provided Node.js code defines two main classes, `AbortSignal` and `AbortController`, mirroring the behavior of these classes within the DOM API for handling abortable operations. Here's the functionality broken down:
+
+- **AbortSignal Class**: This class extends an `EventTarget` from the `event-target-shim` and cannot be instantiated directly. Instead, it's created internally and used to listen for abort events. It has a boolean `aborted` property (using a `WeakMap`) to indicate if its associated operation was aborted.
+
+- **createAbortSignal Function**: This function creates an `AbortSignal` instance, sets its aborted flag to `false`, and returns it.
+
+- **abortSignal Function**: This function takes an `AbortSignal` instance and marks it as `aborted` if it wasn't already, dispatching an "abort" event.
+
+- **AbortController Class**: This class manages a single `AbortSignal`. An `AbortController` can create an `AbortSignal` when constructed, and provide the signal through the `signal` getter. You can also call `abort()` on it to trigger the associated `AbortSignal`’s abort process.
+
+- **Signals and AbortedFlags**: Both classes make use of `WeakMap` to manage private state. This is particularly used for storing the signal associated with a controller and the aborted state of a signal.
+
+The module is exported under Node's module system.
+
+Here is the corrected and rewritten code based on this understanding:
+
+```javascript
+'use strict';
+
+Object.defineProperty(exports, '__esModule', { value: true });
+
+const eventTargetShim = require('event-target-shim');
+
+// Private WeakMaps to handle internal state
+const abortedFlags = new WeakMap();
+const signals = new WeakMap();
+
+class AbortSignal extends eventTargetShim.EventTarget {
+    constructor() {
+        super();
+        throw new TypeError("AbortSignal cannot be constructed directly");
+    }
+
+    get aborted() {
+        const aborted = abortedFlags.get(this);
+        if (typeof aborted !== 'boolean') {
+            throw new TypeError(`Expected 'this' to be an 'AbortSignal' object, but got ${this === null ? 'null' : typeof this}`);
+        }
+        return aborted;
+    }
+}
+
+eventTargetShim.defineEventAttribute(AbortSignal.prototype, 'abort');
+
+function createAbortSignal() {
+    const signal = Object.create(AbortSignal.prototype);
+    eventTargetShim.EventTarget.call(signal);
+    abortedFlags.set(signal, false);
+    return signal;
+}
+
+function abortSignal(signal) {
+    if (abortedFlags.get(signal) !== false) {
+        return;
+    }
+    abortedFlags.set(signal, true);
+    signal.dispatchEvent({ type: 'abort' });
+}
+
+Object.defineProperties(AbortSignal.prototype, {
+    aborted: { enumerable: true },
+});
+
+if (typeof Symbol === 'function' && typeof Symbol.toStringTag === 'symbol') {
+    Object.defineProperty(AbortSignal.prototype, Symbol.toStringTag, {
+        configurable: true,
+        value: 'AbortSignal',
+    });
+}
+
+class AbortController {
+    constructor() {
+        signals.set(this, createAbortSignal());
+    }
+
+    get signal() {
+        return getSignal(this);
+    }
+
+    abort() {
+        abortSignal(getSignal(this));
+    }
+}
+
+function getSignal(controller) {
+    const signal = signals.get(controller);
+    if (signal == null) {
+        throw new TypeError(`Expected 'this' to be an 'AbortController' object, but got ${controller === null ? 'null' : typeof controller}`);
+    }
+    return signal;
+}
+
+Object.defineProperties(AbortController.prototype, {
+    signal: { enumerable: true },
+    abort: { enumerable: true },
+});
+
+if (typeof Symbol === 'function' && typeof Symbol.toStringTag === 'symbol') {
+    Object.defineProperty(AbortController.prototype, Symbol.toStringTag, {
+        configurable: true,
+        value: 'AbortController',
+    });
+}
+
+exports.AbortController = AbortController;
+exports.AbortSignal = AbortSignal;
+exports.default = AbortController;
+
+module.exports = AbortController;
+module.exports.AbortController = module.exports['default'] = AbortController;
+module.exports.AbortSignal = AbortSignal;
+```

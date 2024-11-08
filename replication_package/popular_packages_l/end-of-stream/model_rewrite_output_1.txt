@@ -1,0 +1,69 @@
+The provided Node.js code is a function called `eos` (end-of-stream), which is designed to handle the various life-cycle events of a Node.js Stream. The function allows you to monitor when a stream has closed, finished, ended, or encountered an error, and then trigger a callback based on those events. The function allows you to specify options to determine which types of events should be monitored and whether errors should trigger the callback. It hooks into the events emitted by the Stream and manages these connections to prevent memory leaks or unwanted behavior when the stream's life-cycle stages are finalized.
+
+Here's a rewritten version of the code:
+
+```javascript
+const { Stream } = require('stream');
+
+function eos(stream, opts = {}, callback = () => {}) {
+  if (typeof opts === 'function') {
+    callback = opts;
+    opts = {};
+  }
+
+  const readable = opts.readable !== false;
+  const writable = opts.writable !== false;
+  const error = opts.error !== false;
+  
+  let closed = false;
+  let ended = false;
+
+  function cleanup() {
+    stream.removeListener('close', onClose);
+    stream.removeListener('finish', onFinish);
+    stream.removeListener('end', onEnd);
+    stream.removeListener('error', onError);
+  }
+
+  function onError(err) {
+    if (!error) return;
+    cleanup();
+    callback.call(stream, err);
+  }
+
+  function onEnd() {
+    ended = true;
+    if (writable && closed) return;
+    if (!readable) return callback.call(stream);
+    if (writable && stream.writable && !closed) return;
+    cleanup();
+    callback.call(stream);
+  }
+
+  function onClose() {
+    closed = true;
+    if (readable && ended) return;
+    if (writable && stream.writable && !ended) return;
+    cleanup();
+    callback.call(stream);
+  }
+
+  function onFinish() {
+    onEnd();
+  }
+
+  const onEndBound = onEnd.bind(stream);
+  const onFinishBound = onFinish.bind(stream);
+  const onErrorBound = onError.bind(stream);
+  const onCloseBound = onClose.bind(stream);
+
+  if (readable) stream.on('end', onEndBound);
+  if (writable) stream.on('finish', onFinishBound);
+  if (error) stream.on('error', onErrorBound);
+  stream.on('close', onCloseBound);
+
+  return stream;
+}
+
+module.exports = eos;
+```

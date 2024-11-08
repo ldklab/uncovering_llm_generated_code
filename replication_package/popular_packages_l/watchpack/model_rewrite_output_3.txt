@@ -1,0 +1,93 @@
+The provided Node.js code defines a `Watchpack` class that extends the `EventEmitter` class to watch file system changes in specified directories. Here's the functionality broken down:
+
+1. **Initialization**: 
+    - The `Watchpack` class constructor initializes various properties, including options, maps for active watchers, and sets for aggregated changes and removals. It also sets up an aggregation timer based on the options provided.
+
+2. **File Watching**:
+    - The `watch` method sets up watchers on specified directories. It first clears existing watchers and then attaches a new watcher to each directory using `fs.watch`.
+    - Each watcher tracks changes in directories and on detecting a change, invokes the `_notifyChange` method.
+
+3. **Change Notification and Aggregation**:
+    - The `_notifyChange` method handles the event of file modifications and renames, emitting a "change" event with the file path and change type. 
+    - If aggregation is enabled, it will delay the firing of an "aggregated" event by the specified timeout, at which point it emits the sets of aggregated changes and removals.
+
+4. **Control Methods**:
+    - The `pause` method stops all active watchers but keeps them in memory.
+    - The `close` method stops watchers and clears them from memory.
+    - The `getAggregated` method provides a snapshot of the current aggregated changes and removals.
+
+5. **Module Export**:
+    - The class is exported for use in other modules.
+
+Here's a possible rewrite of this Node.js code:
+
+```javascript
+const EventEmitter = require('events');
+const fs = require('fs');
+const path = require('path');
+
+class Watchpack extends EventEmitter {
+  constructor(options = {}) {
+    super();
+    this.options = options;
+    this.watchers = new Map();
+    this.aggregatedChanges = new Set();
+    this.aggregatedRemovals = new Set();
+    this.aggregateTimeout = options.aggregateTimeout || 0;
+    this.aggregationTimer = null;
+  }
+
+  watch({ files = [], directories = [], missing = [], startTime = Date.now() } = {}) {
+    this.close();
+    directories.forEach(dir => this._watchDirectory(dir));
+  }
+
+  _watchDirectory(dir) {
+    if (!this.watchers.has(dir)) {
+      const watcher = fs.watch(dir, (eventType, filename) => {
+        if (filename) {
+          this._notifyChange(path.join(dir, filename), eventType);
+        }
+      });
+      this.watchers.set(dir, watcher);
+    }
+  }
+
+  _notifyChange(filePath, eventType) {
+    const stats = fs.statSync(filePath);
+    const mtime = stats.mtimeMs;
+    
+    if (eventType === 'rename' || eventType === 'change') {
+      this.aggregatedChanges.add(filePath);
+      this.emit("change", filePath, mtime, `Detected ${eventType}`);
+    }
+
+    if (this.aggregateTimeout) {
+      clearTimeout(this.aggregationTimer);
+      this.aggregationTimer = setTimeout(() => {
+        this.emit("aggregated", this.aggregatedChanges, this.aggregatedRemovals);
+        this.aggregatedChanges.clear();
+        this.aggregatedRemovals.clear();
+      }, this.aggregateTimeout);
+    }
+  }
+
+  pause() {
+    this.watchers.forEach(watcher => watcher.close());
+  }
+
+  close() {
+    this.pause();
+    this.watchers.clear();
+  }
+
+  getAggregated() {
+    return {
+      changes: new Set(this.aggregatedChanges),
+      removals: new Set(this.aggregatedRemovals)
+    };
+  }
+}
+
+module.exports = Watchpack;
+```

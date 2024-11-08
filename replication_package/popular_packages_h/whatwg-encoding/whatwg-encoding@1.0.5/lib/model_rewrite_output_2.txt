@@ -1,0 +1,74 @@
+The provided Node.js code deals with character encoding detection and conversion. Here's a breakdown of its functionality:
+
+1. **Imports and Initialization**:
+    - `iconv-lite` library is imported to handle character encoding conversion.
+    - Two JSON files (`supported-names.json` and `labels-to-names.json`) are imported, presumably containing mappings related to encoding names and their aliases.
+
+2. **Supported Encoding Names**:
+    - A `Set` is created from `supportedNames`, which allows for efficient lookup of supported encoding names.
+
+3. **Label to Encoding Name Conversion (`labelToName`)**:
+    - This function converts a given label to its canonical encoding name using `labelsToNames`. It normalizes the label by converting it to a string, trimming whitespace, and transforming it to lowercase.
+
+4. **Decode Function (`decode`)**:
+    - This function decodes a buffer (byte array) into a string using a specified or detected character encoding.
+    - If a BOM (Byte Order Mark) is detected in the buffer, it overrides the given encoding with the BOM-detected encoding.
+    - If the provided encoding is not supported, it throws a `RangeError`.
+    - `iconv-lite` is used to perform the decoding, which also handles BOM removal.
+
+5. **BOM Encoding Detection (`getBOMEncoding`)**:
+    - This function checks a buffer for a BOM. It identifies the UTF-16BE, UTF-16LE, and UTF-8 BOMs and returns the corresponding encoding name if detected.
+
+6. **Check for Supported Encoding (`isSupported`)**:
+    - This function checks whether a given encoding name is supported by consulting the `supportedNamesSet`.
+
+Here is the rewritten code for clarity:
+
+```javascript
+"use strict";
+const iconvLite = require("iconv-lite");
+const supportedNames = require("./supported-names.json");
+const labelsToNames = require("./labels-to-names.json");
+
+const supportedNamesSet = new Set(supportedNames);
+
+// Converts a label to its canonical encoding name
+exports.labelToName = (label) => {
+  label = String(label).trim().toLowerCase();
+  return labelsToNames[label] || null;
+};
+
+// Decodes a buffer with a specified or detected encoding
+exports.decode = (buffer, fallbackEncodingName) => {
+  let encoding = fallbackEncodingName;
+
+  if (!exports.isSupported(encoding)) {
+    throw new RangeError(`"${encoding}" is not a supported encoding name`);
+  }
+
+  const bomEncoding = exports.getBOMEncoding(buffer);
+  if (bomEncoding !== null) {
+    encoding = bomEncoding;
+  }
+
+  return iconvLite.decode(buffer, encoding);
+};
+
+// Detects encoding from BOM in the buffer
+exports.getBOMEncoding = (buffer) => {
+  if (buffer[0] === 0xFE && buffer[1] === 0xFF) {
+    return "UTF-16BE";
+  } else if (buffer[0] === 0xFF && buffer[1] === 0xFE) {
+    return "UTF-16LE";
+  } else if (buffer[0] === 0xEF && buffer[1] === 0xBB && buffer[2] === 0xBF) {
+    return "UTF-8";
+  }
+
+  return null;
+};
+
+// Checks if an encoding name is supported
+exports.isSupported = (name) => {
+  return supportedNamesSet.has(String(name));
+};
+```

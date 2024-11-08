@@ -1,0 +1,131 @@
+The Node.js code provided is implementing a basic abort controller system, similar to the AbortController Web API, typically used to cancel asynchronous operations such as HTTP requests or other long-running tasks. The code includes:
+
+1. **AbortSignal class**: Implements a signal that is associated with a single event listener mechanism for the "abort" event. This class allows managing event listeners that respond to an abort operation.
+
+    - `aborted`: A getter property indicating whether the signal is currently aborted.
+    - `addEventListener`: Method to add a listener for the "abort" event.
+    - `removeEventListener`: Method to remove a listener for the "abort" event.
+    - `dispatchEvent`: A stub function for type-checking purposes only.
+    - `none`: A static property that returns a new instance of `AbortSignal` which will never be aborted.
+
+2. **AbortError class**: Subclass of JavaScript's Error object, representing an error that is thrown if an operation is aborted. Its name property is set to "AbortError".
+
+3. **abortSignal function**: A helper function to trigger the "abort" event on an `AbortSignal` instance. It sets the signal's `aborted` state to true and calls all abort event listeners.
+
+4. **AbortController class**: Manages an associated `AbortSignal` instance that allows cancelling asynchronous operations. 
+
+    - `signal`: A public method providing access to the associated `AbortSignal`.
+    - `abort`: A method to trigger the abort event and subsequently notify all listeners of the associated `AbortSignal`.
+    - `timeout`: A static method that creates an `AbortSignal` set to trigger after a specified timeout duration.
+
+5. **Module Exports**: At the end, the `AbortController`, `AbortError`, and `AbortSignal` classes are exported from the module for use elsewhere.
+
+Here's the rewritten code:
+
+```javascript
+'use strict';
+
+const { __extends } = require('tslib');
+
+const listenersMap = new WeakMap();
+const abortedMap = new WeakMap();
+
+class AbortSignal {
+    constructor() {
+        this.onabort = null;
+        listenersMap.set(this, []);
+        abortedMap.set(this, false);
+    }
+
+    get aborted() {
+        if (!abortedMap.has(this)) {
+            throw new TypeError("Expected `this` to be an instance of AbortSignal.");
+        }
+        return abortedMap.get(this);
+    }
+
+    static get none() {
+        return new AbortSignal();
+    }
+
+    addEventListener(_type, listener) {
+        if (!listenersMap.has(this)) {
+            throw new TypeError("Expected `this` to be an instance of AbortSignal.");
+        }
+        const listeners = listenersMap.get(this);
+        listeners.push(listener);
+    }
+
+    removeEventListener(_type, listener) {
+        if (!listenersMap.has(this)) {
+            throw new TypeError("Expected `this` to be an instance of AbortSignal.");
+        }
+        const listeners = listenersMap.get(this);
+        const index = listeners.indexOf(listener);
+        if (index > -1) {
+            listeners.splice(index, 1);
+        }
+    }
+
+    dispatchEvent(_event) {
+        throw new Error("This is a stub dispatchEvent implementation that should not be used. It only exists for type-checking purposes.");
+    }
+}
+
+function abortSignal(signal) {
+    if (signal.aborted) return;
+    signal.onabort?.call(signal);
+    const listeners = listenersMap.get(signal);
+    if (listeners) {
+        listeners.forEach(listener => listener.call(signal, { type: "abort" }));
+    }
+    abortedMap.set(signal, true);
+}
+
+class AbortError extends Error {
+    constructor(message) {
+        super(message);
+        this.name = "AbortError";
+    }
+}
+
+class AbortController {
+    constructor(parentSignals) {
+        this._signal = new AbortSignal();
+        if (!parentSignals) return;
+
+        if (!Array.isArray(parentSignals)) {
+            parentSignals = arguments;
+        }
+
+        for (const parentSignal of parentSignals) {
+            if (parentSignal.aborted) {
+                this.abort();
+            } else {
+                parentSignal.addEventListener("abort", () => this.abort());
+            }
+        }
+    }
+
+    get signal() {
+        return this._signal;
+    }
+
+    abort() {
+        abortSignal(this._signal);
+    }
+
+    static timeout(ms) {
+        const signal = new AbortSignal();
+        const timer = setTimeout(abortSignal, ms, signal);
+        if (typeof timer.unref === "function") {
+            timer.unref();
+        }
+        return signal;
+    }
+}
+
+exports.AbortController = AbortController;
+exports.AbortError = AbortError;
+exports.AbortSignal = AbortSignal;
+```

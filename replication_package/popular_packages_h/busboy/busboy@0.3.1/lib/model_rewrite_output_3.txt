@@ -1,0 +1,99 @@
+The Node.js code defines a `Busboy` class for handling multipart form data streams, such as file uploads. It extends the `Writable` stream and processes incoming data according to the `Content-Type` header:
+
+1. **Constructor and Initialization**: 
+   - The constructor takes an `opts` argument for settings.
+   - It sets up the instance based on options, including a highWaterMark if specified.
+   - It checks for the presence of the `Content-Type` header in order to initialize a parsing logic.
+
+2. **Inheritance**: 
+   - `Busboy` inherits from `WritableStream`.
+
+3. **Event Handling**: 
+   - Overwrites the `emit` method to manage the `finish` event, ensuring the parser ends correctly and prevents double finishing.
+
+4. **Header Parsing**: 
+   - `parseHeaders` initializes the parser based on the provided `Content-Type`.
+   - It supports `multipart` and `urlencoded` content types, using specific type handlers.
+
+5. **Writing Data**: 
+   - Implements `_write` to process data chunks with the initialized parser, throwing an error if the parser is not set up.
+
+Below is the rewritten code of the described functionality:
+
+```javascript
+const fs = require('fs');
+const { Writable } = require('stream');
+const { inherits } = require('util');
+const parseParams = require('./utils').parseParams;
+
+class Busboy extends Writable {
+  constructor(opts) {
+    if (!opts.headers || typeof opts.headers['content-type'] !== 'string') {
+      throw new Error('Missing Content-Type');
+    }
+    super({ highWaterMark: opts.highWaterMark });
+    
+    this._done = false;
+    this._parser = undefined;
+    this._finished = false;
+    this.opts = opts;
+
+    this.parseHeaders(opts.headers);
+  }
+
+  emit(ev, ...args) {
+    if (ev === 'finish') {
+      if (!this._done) {
+        this._parser?.end();
+        return;
+      } else if (this._finished) {
+        return;
+      }
+      this._finished = true;
+    }
+    super.emit(ev, ...args);
+  }
+
+  parseHeaders(headers) {
+    if (!headers['content-type']) {
+      throw new Error('Unsupported content type: ' + headers['content-type']);
+    }
+
+    const parsed = parseParams(headers['content-type']);
+    let matched = false;
+    
+    for (const type of TYPES) {
+      matched = typeof type.detect === 'function' ? type.detect(parsed) : type.detect.test(parsed[0]);
+      if (matched) {
+        const cfg = {
+          limits: this.opts.limits,
+          headers,
+          parsedConType: parsed,
+          highWaterMark: this.opts.highWaterMark,
+          fileHwm: this.opts.fileHwm,
+          defCharset: this.opts.defCharset,
+          preservePath: this.opts.preservePath,
+        };
+        this._parser = new type(this, cfg);
+        return;
+      }
+    }
+
+    throw new Error('Unsupported content type: ' + headers['content-type']);
+  }
+
+  _write(chunk, encoding, callback) {
+    if (!this._parser) {
+      return callback(new Error('Not ready to parse. Missing Content-Type?'));
+    }
+    this._parser.write(chunk, callback);
+  }
+}
+
+const TYPES = [
+  require('./types/multipart'),
+  require('./types/urlencoded'),
+];
+
+module.exports = Busboy;
+```

@@ -1,0 +1,83 @@
+This Node.js code defines a module for reading and writing JSON files. It includes both synchronous and asynchronous versions of reading and writing functions. Here's a breakdown of the functions provided:
+
+1. **readFile(filename, options, callback)**: Asynchronous function to read a JSON file. It allows specifying options such as custom `reviver` for `JSON.parse`, and a boolean flag `throws` which determines if parsing errors should be thrown or return `null`. The third argument is a callback which gets called with the parsed data or an error.
+
+2. **readFile.promises(filename, options)**: Returns a Promise-based version of `readFile`. Resolves with the JSON object or rejects with an error.
+
+3. **readFileSync(filename, options)**: Synchronous function corresponding to `readFile`. Reads and parses a JSON file, throwing an error or returning `null` on parse failure based on the `throws` option.
+
+4. **writeFile(filename, obj, options, callback)**: Asynchronous function to write a JavaScript object as a JSON file. Allows optional `replacer`, `spaces` for formatting, and other options such as `EOL` for end-of-line characters and `finalEOL` to append an EOL at the end of the file. A callback is executed upon completion.
+
+5. **writeFile.promises(filename, obj, options)**: Promised-based version of writing, wrapping the asynchronous `writeFile` with a Promise.
+
+6. **writeFileSync(filename, obj, options)**: Synchronous version of the `writeFile`.
+
+The module exports all these functions, providing both callback and Promise-based interfaces for completing JSON file operations.
+
+```javascript
+const fs = require('fs');
+
+const readFile = (filename, options = {}, callback) => {
+  if (typeof options === 'function') {
+    callback = options;
+    options = {};
+  }
+  const { throws = true, reviver, ...fsOptions } = options;
+
+  fs.readFile(filename, fsOptions, (err, data) => {
+    if (err) return callback(err);
+    try {
+      callback(null, JSON.parse(data, reviver));
+    } catch (err) {
+      callback(throws ? err : null, throws ? null : null);
+    }
+  });
+};
+
+readFile.promises = (filename, options) =>
+  new Promise((resolve, reject) => {
+    readFile(filename, options, (err, obj) => (err ? reject(err) : resolve(obj)));
+  });
+
+const readFileSync = (filename, options = {}) => {
+  const { throws = true, reviver, ...fsOptions } = options;
+  try {
+    const data = fs.readFileSync(filename, fsOptions);
+    return JSON.parse(data, reviver);
+  } catch (err) {
+    if (throws) throw err;
+    return null;
+  }
+};
+
+const writeFile = (filename, obj, options = {}, callback) => {
+  if (typeof options === 'function') {
+    callback = options;
+    options = {};
+  }
+  const { replacer, spaces, EOL = '\n', finalEOL = true, ...fsOptions } = options;
+  let json = JSON.stringify(obj, replacer, spaces) + (finalEOL ? EOL : '');
+
+  fs.writeFile(filename, json, fsOptions, callback);
+};
+
+writeFile.promises = (filename, obj, options) =>
+  new Promise((resolve, reject) => {
+    writeFile(filename, obj, options, (err) => (err ? reject(err) : resolve()));
+  });
+
+const writeFileSync = (filename, obj, options = {}) => {
+  const { replacer, spaces, EOL = '\n', finalEOL = true, ...fsOptions } = options;
+  let json = JSON.stringify(obj, replacer, spaces) + (finalEOL ? EOL : '');
+  fs.writeFileSync(filename, json, fsOptions);
+};
+
+module.exports = {
+  readFile,
+  readFileSync,
+  writeFile,
+  writeFileSync,
+  readFilePromise: readFile.promises,
+  writeFilePromise: writeFile.promises
+};
+```

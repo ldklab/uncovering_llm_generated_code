@@ -1,0 +1,48 @@
+The Node.js code provided determines whether the application is running in a Continuous Integration (CI) environment. It uses the `ci-info` package to check the presence of certain environment variables that are typically set by CI servers. If such variables are detected, the package identifies the specific CI server by name.
+
+The functionality is as follows:
+1. The `ci-info` module inspects environment variables to determine if the process is running within a CI system.
+2. It initializes `ciInfo.isCI` as `true` if any known CI environment variable is present.
+3. If running in a CI environment, it identifies which CI service by matching the environment variable and sets `ciInfo.name` to the corresponding CI server's name.
+4. It logs the name of the CI server if running on one, or it logs that the process is not running on a CI server if no CI environment is detected.
+
+Here's a rewrite of the given code:
+
+```javascript
+const ciInfo = {
+  isCI: false,
+  name: null,
+  isPR: null
+};
+
+const VENDORS = [
+  { name: 'Travis CI', constant: 'TRAVIS', env: 'TRAVIS', isPR: 'TRAVIS_PULL_REQUEST' },
+  { name: 'CircleCI', constant: 'CIRCLE', env: 'CIRCLECI', isPR: 'CIRCLE_PULL_REQUEST' },
+  { name: 'GitHub Actions', constant: 'GITHUB_ACTIONS', env: 'GITHUB_ACTIONS', isPR: 'GITHUB_EVENT_NAME' },
+  { name: 'Jenkins CI', constant: 'JENKINS', env: 'JENKINS_URL', isPR: 'CHANGE_ID' },
+  // More vendors can be added here
+];
+
+ciInfo.isCI = VENDORS.some(vendor => process.env[vendor.env] !== undefined);
+
+if (ciInfo.isCI) {
+  const currentVendor = VENDORS.find(vendor => process.env[vendor.env] !== undefined);
+  if (currentVendor) {
+    ciInfo.name = currentVendor.name;
+    ciInfo.isPR = currentVendor.isPR ? !!process.env[currentVendor.isPR] && process.env[currentVendor.isPR] !== 'false' : null;
+    VENDORS.forEach(vendor => {
+      ciInfo[vendor.constant] = vendor.name === ciInfo.name;
+    });
+  }
+} else {
+  VENDORS.forEach(vendor => {
+    ciInfo[vendor.constant] = false;
+  });
+}
+
+if (ciInfo.isCI) {
+  console.log('The name of the CI server is:', ciInfo.name);
+} else {
+  console.log('This program is not running on a CI server');
+}
+```

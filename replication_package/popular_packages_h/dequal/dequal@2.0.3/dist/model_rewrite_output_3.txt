@@ -1,0 +1,82 @@
+The given Node.js code is a utility module that provides a function, `dequal`, to perform deep equality checks between two JavaScript values. This function can check equality for various data types, including primitive types, arrays, dates, sets, maps, and typed arrays. The function considers objects and arrays equal if their corresponding properties or elements are equal when recursively checked using `dequal`. Here's a step-by-step explanation of how it works:
+
+- **Primitive and Reference Equality**: If `foo` and `bar` are the same primitive value or reference the same object, `dequal` returns `true`.
+- **Date and RegExp Equality**: Dates are considered equal if their time values (milliseconds since epoch) are the same. Regex are equal if their string representation matches.
+- **Array Equality**: If the arrays have the same length and each element is equal according to `dequal`, the function returns true.
+- **Set Equality**: Sets are equal if they contain the same size and can match each element in `foo` with an element in `bar`, with special handling if set elements are objects requiring a deep match.
+- **Map Equality**: Maps are equal if they have the same number of entries, and for each key-value pair in `foo`, a corresponding equal key-value pair exists in `bar`.
+- **ArrayBuffer and Data View Equality**: These are handled by converting them to `Uint8Array` and comparing byte-by-byte.
+- **Typed Array Equality**: Similar to array equality with byte-length checks and element-wise comparison.
+- **Object Equality**: Objects are equal if they have the same set of properties and corresponding values are deeply equal.
+- **NaN Handling**: `NaN` is uniquely equal to itself.
+
+The `find` function is a helper to locate an object in a collection with deep equality check and is used within `dequal`.
+
+Here is a rewritten version of the given code:
+
+```javascript
+var hasOwnProperty = Object.prototype.hasOwnProperty;
+
+function findKey(iterable, target) {
+	for (let key of iterable.keys()) {
+		if (dequal(key, target)) return key;
+	}
+}
+
+function dequal(a, b) {
+	if (a === b) return true;
+
+	if (a && b && a.constructor === b.constructor) {
+		switch (a.constructor) {
+			case Date:
+				return a.getTime() === b.getTime();
+			case RegExp:
+				return a.toString() === b.toString();
+			case Array:
+				if (a.length !== b.length) return false;
+				for (let i = 0; i < a.length; i++) {
+					if (!dequal(a[i], b[i])) return false;
+				}
+				return true;
+			case Set:
+				if (a.size !== b.size) return false;
+				for (let val of a) {
+					let found = (typeof val === 'object') ? findKey(b, val) : val;
+					if (!b.has(found)) return false;
+				}
+				return true;
+			case Map:
+				if (a.size !== b.size) return false;
+				for (let [key, value] of a) {
+					let matchKey = (typeof key === 'object') ? findKey(b, key) : key;
+					if (!dequal(value, b.get(matchKey))) return false;
+				}
+				return true;
+			case ArrayBuffer:
+				a = new Uint8Array(a);
+				b = new Uint8Array(b);
+				// falls through for ArrayBuffer equality
+			default:
+				if (ArrayBuffer.isView(a)) {
+					if (a.byteLength !== b.byteLength) return false;
+					for (let i = 0; i < a.byteLength; i++) {
+						if (a[i] !== b[i]) return false;
+					}
+					return true;
+				}
+				if (typeof a === 'object') {
+					let keysA = Object.keys(a);
+					if (keysA.length !== Object.keys(b).length) return false;
+					for (let key of keysA) {
+						if (!hasOwnProperty.call(b, key) || !dequal(a[key], b[key])) return false;
+					}
+					return true;
+				}
+		}
+	}
+
+	return a !== a && b !== b;
+}
+
+module.exports = { dequal };
+```

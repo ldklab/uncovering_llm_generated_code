@@ -1,0 +1,48 @@
+The Node.js code provided implements both asynchronous and synchronous versions of a directory traversing utility function named `escalade` and `escaladeSync`, respectively. These functions are designed to traverse upwards from a given directory and execute a callback function with the current directory and its contents. If the callback returns a value, this value is interpreted as the directory to be returned. If the value is not an absolute path, it is resolved relative to the current directory. Traversing continues upwards to the root if no result is returned from the callback, stopping when the root directory is reached.
+
+Here's a possible rewrite of the code:
+
+```javascript
+const { promisify } = require('util');
+const fs = require('fs');
+const path = require('path');
+
+async function escalateDirectoryAsync(startDir, callback) {
+  let currentDir = path.resolve(startDir);
+
+  while (true) {
+    const dirContents = await promisify(fs.readdir)(currentDir);
+    const result = await callback(currentDir, dirContents);
+
+    if (result) {
+      return path.isAbsolute(result) ? result : path.resolve(currentDir, result);
+    }
+
+    const parentDir = path.dirname(currentDir);
+    if (parentDir === currentDir) break;
+
+    currentDir = parentDir;
+  }
+}
+
+function escalateDirectorySync(startDir, callback) {
+  let currentDir = path.resolve(startDir);
+
+  while (true) {
+    const dirContents = fs.readdirSync(currentDir);
+    const result = callback(currentDir, dirContents);
+
+    if (result) {
+      return path.isAbsolute(result) ? result : path.resolve(currentDir, result);
+    }
+
+    const parentDir = path.dirname(currentDir);
+    if (parentDir === currentDir) break;
+
+    currentDir = parentDir;
+  }
+}
+
+module.exports = escalateDirectoryAsync;
+module.exports.sync = escalateDirectorySync;
+```

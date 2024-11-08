@@ -1,0 +1,117 @@
+The functionality of the provided Node.js code is to implement a "side channel" mechanism for storing key-value pairs. This side channel can store data associative with objects or other types. It utilizes JavaScript's `WeakMap`, `Map`, and a custom linked list to handle different types of keys, allowing garbage collection for object keys and fallback mechanisms for other types.
+
+1. **Intrinsics and Utilities**: The code imports utility functions to access intrinsic JavaScript methods and bind call methods for prototype functions.
+   
+2. **Storage Mechanisms**: It establishes different storage mechanisms:
+   - **WeakMap** for storing object-type keys, allowing garbage collection.
+   - **Map** for storing any keys where WeakMap is not suitable.
+   - **Linked List** as a fallback for non-object keys when Maps aren't available.
+   
+3. **Linked List Functions**: The `listGetNode`, `listGet`, `listSet`, and `listHas` functions manage a linked list structure for storing keys and values. The linked list provides quick access to recently used nodes by moving accessed nodes to the head of the list.
+
+4. **Channel Object**: The `getSideChannel` function returns an object (`channel`) that wraps the core functionalities:
+   - `assert`: Throws an error if the key does not exist in the side channel.
+   - `get`: Retrieves the value associated with a key.
+   - `has`: Checks if a key is present in the side channel.
+   - `set`: Associates a key with a value, choosing the appropriate storage mechanism based on key type.
+
+Overall, the side channel offers a versatile means to store key-value pairs with efficient memory handling and retrieval mechanisms.
+
+Here is a rewritten version of the code:
+
+```javascript
+'use strict';
+
+const GetIntrinsic = require('get-intrinsic');
+const callBound = require('call-bind/callBound');
+const inspect = require('object-inspect');
+
+const $TypeError = require('es-errors/type');
+const $WeakMap = GetIntrinsic('%WeakMap%', true);
+const $Map = GetIntrinsic('%Map%', true);
+
+const $weakMapGet = callBound('WeakMap.prototype.get', true);
+const $weakMapSet = callBound('WeakMap.prototype.set', true);
+const $weakMapHas = callBound('WeakMap.prototype.has', true);
+const $mapGet = callBound('Map.prototype.get', true);
+const $mapSet = callBound('Map.prototype.set', true);
+const $mapHas = callBound('Map.prototype.has', true);
+
+function listGetNode(list, key) {
+	let prev = list;
+	let curr;
+	while ((curr = prev.next) !== null) {
+		if (curr.key === key) {
+			prev.next = curr.next;
+			curr.next = list.next;
+			list.next = curr;
+			return curr;
+		}
+		prev = curr;
+	}
+}
+
+function listGet(objects, key) {
+	const node = listGetNode(objects, key);
+	return node ? node.value : undefined;
+}
+
+function listSet(objects, key, value) {
+	const node = listGetNode(objects, key);
+	if (node) {
+		node.value = value;
+	} else {
+		objects.next = { key, next: objects.next, value };
+	}
+}
+
+function listHas(objects, key) {
+	return !!listGetNode(objects, key);
+}
+
+module.exports = function getSideChannel() {
+	let $wm;
+	let $m;
+	let $o;
+
+	const channel = {
+		assert(key) {
+			if (!channel.has(key)) {
+				throw new $TypeError(`Side channel does not contain ${inspect(key)}`);
+			}
+		},
+		get(key) {
+			if ($WeakMap && key && (typeof key === 'object' || typeof key === 'function')) {
+				return $wm ? $weakMapGet($wm, key) : undefined;
+			} else if ($Map) {
+				return $m ? $mapGet($m, key) : undefined;
+			} else {
+				return $o ? listGet($o, key) : undefined;
+			}
+		},
+		has(key) {
+			if ($WeakMap && key && (typeof key === 'object' || typeof key === 'function')) {
+				return $wm ? $weakMapHas($wm, key) : false;
+			} else if ($Map) {
+				return $m ? $mapHas($m, key) : false;
+			} else {
+				return $o ? listHas($o, key) : false;
+			}
+		},
+		set(key, value) {
+			if ($WeakMap && key && (typeof key === 'object' || typeof key === 'function')) {
+				if (!$wm) $wm = new $WeakMap();
+				$weakMapSet($wm, key, value);
+			} else if ($Map) {
+				if (!$m) $m = new $Map();
+				$mapSet($m, key, value);
+			} else {
+				if (!$o) $o = { key: {}, next: null };
+				listSet($o, key, value);
+			}
+		}
+	};
+
+	return channel;
+};
+```

@@ -1,0 +1,73 @@
+The Node.js code provided defines a module for finding a "balanced" substring within a given string. The primary goal is to identify the portion of the string that starts with a specified starting delimiter and ends with a specified ending delimiter, ensuring that these delimiters are balanced (there is a matching end delimiter for each start delimiter). Here's a breakdown of the functionality:
+
+1. **Exported Function (balanced):** This is the main function exported by the module. It takes three parameters: `a`, `b`, and `str`. `a` and `b` can be strings or regular expressions that represent the starting and ending delimiters, respectively, while `str` is the string to be searched.
+
+2. **Handling Regular Expressions:** If `a` or `b` are regular expressions, the code tries to match them in `str` using the `maybeMatch` helper function, which returns the first match or `null` if no match is found.
+
+3. **Range Calculation (range function):** This function is responsible for calculating the indices within the string where the "balanced" parts are found. It determines the start and end indices of the balanced section of the entire string. It returns an array with these indices or `undefined` if no such range is found.
+
+4. **Extracting Parts:** If a balanced range is found, the function constructs an object with `start`, `end`, `pre`, `body`, and `post` properties. These represent the start and end indices of the balanced substring, the part preceding the balanced substring, the balanced substring itself, and the part following the balanced substring, respectively.
+
+5. **Helper Function (maybeMatch):** Used to extract a substring matching a regular expression from the string.
+
+Below is a possible rewrite of the provided code:
+
+```javascript
+'use strict';
+
+module.exports = findBalancedSubstring;
+
+function findBalancedSubstring(startDelimiter, endDelimiter, inputString) {
+  if (startDelimiter instanceof RegExp) startDelimiter = getMatchedString(startDelimiter, inputString);
+  if (endDelimiter instanceof RegExp) endDelimiter = getMatchedString(endDelimiter, inputString);
+
+  const rangeResult = calculateRange(startDelimiter, endDelimiter, inputString);
+
+  if (!rangeResult) return null;
+  
+  const [start, end] = rangeResult;
+  return {
+    start,
+    end,
+    pre: inputString.slice(0, start),
+    body: inputString.slice(start + startDelimiter.length, end),
+    post: inputString.slice(end + endDelimiter.length)
+  };
+}
+
+function getMatchedString(regex, str) {
+  const match = str.match(regex);
+  return match ? match[0] : null;
+}
+
+findBalancedSubstring.calculateRange = calculateRange;
+
+function calculateRange(start, end, str) {
+  let begins = [];
+  let i = str.indexOf(start);
+  let startIdx = i, endIdx = str.indexOf(end, startIdx + 1);
+  
+  if (startIdx >= 0 && endIdx > 0) {
+    let leftMost = str.length, currentStart;
+    
+    while (i >= 0) {
+      if (i === startIdx) {
+        begins.push(i);
+        startIdx = str.indexOf(start, i + 1);
+      } else if (begins.length === 1) {
+        return [begins.pop(), endIdx];
+      } else {
+        currentStart = begins.pop();
+        if (currentStart < leftMost) {
+          leftMost = currentStart;
+          endIdx = end === i ? endIdx : str.indexOf(end, i + 1);
+        }
+      }
+      i = startIdx < endIdx && startIdx >= 0 ? startIdx : endIdx;
+    }
+    if (begins.length) return [leftMost, endIdx];
+  }
+
+  return undefined;
+}
+```

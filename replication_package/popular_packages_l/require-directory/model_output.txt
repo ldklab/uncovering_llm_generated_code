@@ -1,0 +1,77 @@
+The `require-directory` package is a utility for Node.js that allows you to recursively iterate over the files in a specified directory, requiring each file, and returning a nested object structure that includes all the exported modules from those files. This can be particularly useful for organizing code in a directory-based manner, such as routing or handling different functionality modules in an application.
+
+### Key Functionalities:
+
+1. **Recursive File Requiring**: Automatically requires all files within a specified directory and subdirectories, organizing the required modules into a nested object structure that mirrors the directory layout. The root level directory is the key, and each file's export is the corresponding value.
+
+2. **Dynamic Directory Specification**: By default, it requires modules from the current directory (`__dirname`). However, you can specify another directory to require modules from.
+
+3. **Whitelisting and Blacklisting**: Allows filtering which files to include or exclude. You can specify whitelists or blacklists using regular expressions or functions:
+   - **Whitelist**: Only include files that meet certain conditions.
+   - **Blacklist**: Exclude files that meet certain conditions.
+
+4. **Visitor Functionality**: For each module loaded, you can pass a visitor function that performs operations on the loaded modules.
+
+5. **Key Renaming**: Modify how keys (file names) are represented in the nested object, for instance, transforming them to uppercase.
+
+6. **No Recursion Option**: Load only files from the specified directory without iterating into subdirectories.
+
+### Usage Examples:
+
+- Require all route handlers from a directory and structure them in a way that can be easily used in an Express.js app.
+- Filter which files to load based on naming conventions or other criteria using whitelists and blacklists.
+- Apply a function to each module as it's being added to the exports using the visitor hook.
+- Modify the keys in the export structure to meet specific application needs using the rename option.
+
+Here's the implementation of the `require-directory` package:
+
+```javascript
+const fs = require('fs');
+const path = require('path');
+
+function requireDirectory(m, dirPath = __dirname, options = {}) {
+  if (typeof dirPath === 'object') {
+    options = dirPath;
+    dirPath = __dirname;
+  }
+
+  const {
+    include = /.*/,
+    exclude = /node_modules/,
+    visit = v => v,
+    rename = n => n,
+    recurse = true,
+  } = options;
+
+  function isValid(filePath) {
+    const isIncluded = (typeof include === 'function' ? include(filePath) : include.test(filePath));
+    const isExcluded = (typeof exclude === 'function' ? !exclude(filePath) : !exclude.test(filePath));
+    return isIncluded && isExcluded;
+  }
+
+  function loadDir(dir) {
+    const modules = {};
+
+    fs.readdirSync(dir).forEach(file => {
+      const fullPath = path.join(dir, file);
+      if (fs.statSync(fullPath).isDirectory()) {
+        if (recurse) {
+          const nested = loadDir(fullPath);
+          if (Object.keys(nested).length) modules[rename(file)] = nested;
+        }
+      } else if (isValid(fullPath)) {
+        const mod = require(fullPath);
+        modules[rename(path.basename(file, path.extname(file)))] = visit(mod);
+      }
+    });
+
+    return modules;
+  }
+
+  return loadDir(path.resolve(m.filename, dirPath));
+}
+
+module.exports = requireDirectory;
+```
+
+This code implements the described functionality by reading through a given directory structure (files and subdirectories), requiring files into Node.js modules, and then assembling them into an accessible nested object structure with configurable options for filtering, renaming, and custom processing.

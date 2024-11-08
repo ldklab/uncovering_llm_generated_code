@@ -1,0 +1,140 @@
+The `jest-mock` package provides a comprehensive API to create and manage mock functions, primarily used for testing purposes. Let's break down the functionality described in the `README.md`:
+
+- **Module Import**: You can import the `ModuleMocker` class from `jest-mock` to start using its functionalities.
+
+- **Global Context**: The `ModuleMocker` can be constructed with a given global object, allowing it to create mock environments replicating specific global contexts.
+
+- **Metadata Handling**: 
+  - The `generateFromMetadata(metadata)` function constructs mocks based on a predefined metadata structure. This metadata outlines the properties and types of a component, allowing for advanced mocking strategies.
+  - `getMetadata(component)` is used to retrieve the metadata schema of any given component, which includes its type and members. This schema is recursive, supporting nested structures and object references.
+
+- **Function Mocks**: 
+  - You can create mock functions using `fn(implementation?)`. These functions record information about their calls, including argument lists (`calls`), the `this` context of each call (`instances`), and the call order (`invocationCallOrder`).
+  - Various utilities are available to customize the behavior of mock functions:
+    - **Return Value Management**:
+      - `.mockReturnValueOnce(value)` to queue a specific return value for just one invocation.
+      - `.mockReturnValue(value)` to set a default return value for subsequent invocations.
+    - **Implementation Simulations**:
+      - `.mockImplementationOnce(function)` queues a one-time mock implementation.
+      - `.mockImplementation(function)` sets a persistent mock implementation.
+    - **Return This Context**: 
+      - `.mockReturnThis()` makes the mock function return `this`, useful for chaining.
+    - **Override & Restore**:
+      - `.withImplementation(function, callback)`: Temporarily override a function's implementation during a callback's execution, handy for specific test scenarios.
+
+Here's the outline code implementing the described package:
+
+```javascript
+class ModuleMocker {
+  constructor(global) {
+    this.global = global;
+    this._mockFunctionCallOrder = 1;
+    this._mockInstances = new Map();
+  }
+
+  generateFromMetadata(metadata) {
+    if (metadata.type !== 'function') {
+      return () => {};
+    }
+
+    const mock = this.fn();
+    if (metadata.members) {
+      for (const memberName in metadata.members) {
+        if (memberName === 'prototype') {
+          mock.prototype = this._generateMockPrototype(metadata.members.prototype);
+        } else {
+          mock[memberName] = this.generateFromMetadata(metadata.members[memberName]);
+        }
+      }
+    }
+
+    return mock;
+  }
+
+  getMetadata(component) {
+    if (Array.isArray(component)) {
+      return {type: 'array'};
+    }
+    if (typeof component === 'function') {
+      return {type: 'function'};
+    }
+    if (typeof component === 'object') {
+      return {type: 'object', members: {}};
+    }
+    return {type: 'ref'};
+  }
+
+  fn(implementation = () => {}) {
+    const mockFn = (...args) => {
+      mockFn.mock.calls.push(args);
+      mockFn.mock.instances.push(this);
+      mockFn.mock.invocationCallOrder.push(this._mockFunctionCallOrder++);
+      const returnVal = this._mockReturnValueQueue.length
+        ? this._mockReturnValueQueue.shift()
+        : this._defaultReturnValue;
+      return returnVal === undefined ? mockFn._defaultImplementation(...args) : returnVal;
+    };
+    
+    mockFn.mock = {
+      calls: [],
+      instances: [],
+      invocationCallOrder: [],
+    };
+    mockFn._defaultImplementation = implementation;
+    mockFn._defaultReturnValue = undefined;
+    mockFn._mockReturnValueQueue = [];
+    mockFn._mockImplementationQueue = [];
+    
+    mockFn.mockReturnValueOnce = (value) => {
+      mockFn._mockReturnValueQueue.push(value);
+      return mockFn;
+    };
+
+    mockFn.mockReturnValue = (value) => {
+      mockFn._defaultReturnValue = value;
+      return mockFn;
+    };
+
+    mockFn.mockImplementationOnce = (fn) => {
+      mockFn._mockImplementationQueue.push(fn);
+      return mockFn;
+    };
+
+    mockFn.mockImplementation = (fn) => {
+      mockFn._defaultImplementation = fn;
+      return mockFn;
+    };
+
+    mockFn.mockReturnThis = () => {
+      return mockFn.mockImplementation(function() {
+        return this;
+      });
+    };
+
+    mockFn.withImplementation = (fn, callback) => {
+      const originalImplementation = mockFn._defaultImplementation;
+      mockFn.mockImplementation(fn);
+      const result = callback();
+      if (result && typeof result.then === 'function') {
+        return result.finally(() => mockFn.mockImplementation(originalImplementation));
+      }
+      mockFn.mockImplementation(originalImplementation);
+      return result;
+    };
+
+    return mockFn;
+  }
+
+  _generateMockPrototype(protoMetadata) {
+    const protoMock = {};
+    if (protoMetadata.members) {
+      for (const memberName in protoMetadata.members) {
+        protoMock[memberName] = this.generateFromMetadata(protoMetadata.members[memberName]);
+      }
+    }
+    return protoMock;
+  }
+}
+
+export { ModuleMocker };
+```

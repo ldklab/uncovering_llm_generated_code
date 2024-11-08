@@ -1,0 +1,76 @@
+The `raf` package provides a polyfill for the `requestAnimationFrame` function, making it compatible across different environments, including Node.js and web browsers. The package allows you to schedule a function to be executed in the next frame of your animation loop.
+
+Here’s a breakdown of its functionality:
+
+1. **Installation and Usage**:
+   - You can install `raf` via npm and integrate it into your project using CommonJS, AMD, or as a standalone script with a `<script>` tag in an HTML document.
+   - Once required or imported into your project, you can use it similarly to the native `requestAnimationFrame`.
+
+2. **API**:
+   - `raf(callback)`: This function schedules the `callback` to be executed in the next animation frame and returns a handle used to identify this callback.
+   - `raf.cancel(handle)`: This function cancels a previously scheduled callback using the handle returned by `raf()`.
+   - `raf.polyfill([object])`: This method polyfills the `requestAnimationFrame` and `cancelAnimationFrame` methods onto either the global object or a provided object.
+
+3. **Polyfill Details**:
+   - If the native `requestAnimationFrame` is not available, it falls back to using `setTimeout` to approximate the behavior.
+   - The polyfill adjusts the execution time to fit within approximately 16 milliseconds, simulating a 60fps frame rate.
+
+Now, here's the code for the Node.js package implementing the described functionality:
+
+```javascript
+// raf.js
+(function(global) {
+  var rafPrefix;
+  var vendors = ['ms', 'moz', 'webkit', 'o'];
+  var lastTime = 0;
+
+  // Try to find native raf
+  for (var x = 0; x < vendors.length && !global.requestAnimationFrame; ++x) {
+    rafPrefix = vendors[x];
+    global.requestAnimationFrame = global[rafPrefix + 'RequestAnimationFrame'];
+    global.cancelAnimationFrame = global[rafPrefix + 'CancelAnimationFrame'] ||
+                                  global[rafPrefix + 'CancelRequestAnimationFrame'];
+  }
+
+  // Fallback to setTimeout when raf not supported
+  if (!global.requestAnimationFrame) {
+    global.requestAnimationFrame = function(callback) {
+      var currTime = new Date().getTime();
+      var timeToCall = Math.max(0, 16 - (currTime - lastTime));
+      var id = global.setTimeout(function() { callback(currTime + timeToCall); }, timeToCall);
+      lastTime = currTime + timeToCall;
+      return id;
+    };
+  }
+
+  if (!global.cancelAnimationFrame) {
+    global.cancelAnimationFrame = function(id) {
+      clearTimeout(id);
+    };
+  }
+
+  function raf(callback) {
+    return global.requestAnimationFrame(callback);
+  }
+
+  raf.cancel = function(handle) {
+    global.cancelAnimationFrame(handle);
+  };
+
+  raf.polyfill = function(object) {
+    if (!object) {
+      object = typeof window !== 'undefined' ? window : global;
+    }
+    object.requestAnimationFrame = global.requestAnimationFrame;
+    object.cancelAnimationFrame = global.cancelAnimationFrame;
+  };
+
+  if (typeof module !== 'undefined' && module.exports) {
+    module.exports = raf;
+  } else {
+    global.raf = raf;
+  }
+})(typeof window !== 'undefined' ? window : global);
+```
+
+This code will help you use `requestAnimationFrame` in both browser and Node.js environments while providing a way to polyfill the necessary functions when they aren't natively available.

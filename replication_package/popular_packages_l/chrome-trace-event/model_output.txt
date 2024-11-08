@@ -1,0 +1,79 @@
+The functionality described in the `chrome-trace-event` package README.md is to create trace event logs of program execution in accordance with Google's Trace Event format. These logs can be used to analyze and visualize program execution patterns using tools like the trace-viewer or Chrome DevTools. 
+
+1. **Installation**: The package can be installed using npm with the command `npm install chrome-trace-event`.
+
+2. **Usage**: 
+   - The package provides a `Tracer` class which is used to create a new tracing instance. 
+   - After creating a `Tracer` instance, it can be piped to a writable stream, for example, a file stream where the trace logs will be stored.
+   - The `flush()` method is used to ensure that all trace data is written to the output.
+
+In summary, this package is used to instrument Node.js applications to record and output event logging in a format that helps developers understand and visualize program behavior and performance patterns.
+
+Here is an example implementation of the Node.js package `chrome-trace-event` based on the description given:
+
+```javascript
+// chrome-trace-event.js
+
+const fs = require('fs');
+const { Writable } = require('stream');
+
+// Tracer class definition
+class Tracer {
+  constructor(options = {}) {
+    this.noStream = options.noStream || false;
+    this.events = [];
+    this.stream = null;
+    
+    if (!this.noStream) {
+      this.stream = new Writable({
+        write(chunk, encoding, callback) {
+          process.stdout.write(chunk);
+          callback();
+        }
+      });
+    }
+  }
+
+  pipe(destination) {
+    if (this.stream) {
+      this.stream.pipe(destination);
+    }
+  }
+
+  addEvent(event) {
+    this.events.push(event);
+  }
+
+  flush() {
+    const data = JSON.stringify(this.events, null, 2);
+    
+    if (this.stream) {
+      this.stream.write(data);
+    } else {
+      fs.writeFileSync('trace.json', data);
+    }
+  }
+}
+
+// Sample usage of Tracer
+const trace = new Tracer({
+  noStream: true
+});
+
+trace.addEvent({
+  ph: 'X', // Event type
+  pid: 1234, // Process ID
+  tid: 5678, // Thread ID
+  ts: Date.now(), // Timestamp
+  dur: 5, // Duration
+  name: 'Sample Event' // Name of the event
+});
+
+const outPath = 'trace_output.json';
+trace.pipe(fs.createWriteStream(outPath));
+trace.flush();
+
+module.exports = { Tracer };
+```
+
+In the code, a `Tracer` class initializes with options and provides methods to add events and flush them into a JSON file. The `pipe()` method directs the collected trace data to an output stream, which may be a file stream or standard output based on configuration.

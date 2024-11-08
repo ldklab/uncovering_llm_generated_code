@@ -1,0 +1,79 @@
+The `to-regex-range` library is a Node.js package designed to generate regular expression source strings that match a numeric range between two numbers. Its primary functionality includes creating efficient regular expressions to accurately match a specified range of numbers, from a minimum to a maximum value, formatted as strings or numbers. The library optimizes the generated regex by using quantifiers to reduce duplicate sequences and takes into account positive or negative values. Additionally, the library provides options for altering the default behavior, such as wrapping the regex in parentheses, using shorthand character classes, and adjusting the handling of leading zeros.
+
+### Key Features:
+
+1. **Convenience**: It simplifies the creation of regex for numeric ranges, which can be complex to build manually.
+2. **Testing**: The library is heavily tested to ensure correctness.
+3. **Optimization**: It generates regex with reduced size for efficiency.
+4. **Options**: Provides various configuration options like capture groups, shorthand usage, and zero padding relaxation.
+
+### Usage:
+
+- To use, you must first import the library and then create the regex source string by calling `toRegexRange` with the minimum and maximum values of the range.
+- The source can be further transformed or directly used to create a RegExp object.
+
+### Options:
+
+- **capture**: Whether to wrap the regex in parentheses for capturing groups.
+- **shorthand**: Whether to use shorthand character classes like `\d` instead of `[0-9]`.
+- **relaxZeros**: Controls how leading zeros are treated (strict or relaxed).
+
+### Additional Features:
+
+- Handling input ranges in any order and flipping if necessary.
+- The library does not support increments or step intervals.
+
+Below is the implementation of this library as a Node.js package:
+
+```javascript
+// to-regex-range.js
+
+function toRegexRange(min, max, options = {}) {
+  if (typeof min !== 'number' || typeof max !== 'number') {
+    throw new TypeError('Expected min and max to be numbers');
+  }
+  
+  if (min > max) [min, max] = [max, min];
+
+  const { capture, shorthand, relaxZeros = true } = options;
+  const zeroPad = relaxZeros ? `{0,}` : `{}`;
+
+  const rangeSegments = (range) => {
+    if (range.length === 1) {
+      return `[${range[0]}]`;
+    } 
+    return `[${range[0]}-${range[1]}]`;
+  };
+
+  const buildRange = (min, max) => {
+    if (min === max) {
+      return min.toString();
+    }
+    const lengthDiff = max.toString().length - min.toString().length;
+    if (lengthDiff === 0) {
+      return `[${min}-${max}]`;
+    }
+    return `${zeroPad}${min}-${max}`;
+  };
+
+  let source = '';
+  if (min < 1) {
+    source += '-?';
+  }
+  if (!shorthand) {
+    source += buildRange(min, max);
+  } else {
+    source += `\\d{${min.toString().length},${max.toString().length}}`;
+  }
+
+  if (capture && source !== '' && source[0] !== '(') {
+    source = `(${source})`;
+  }
+
+  return source;
+}
+
+module.exports = toRegexRange;
+```
+
+This function can be utilized in a JavaScript application to generate regex strings that match specific numeric ranges effectively.

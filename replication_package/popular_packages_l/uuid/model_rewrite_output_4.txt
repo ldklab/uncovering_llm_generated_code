@@ -1,0 +1,108 @@
+The provided Node.js code is an implementation for generating, parsing, validating, and handling UUIDs (Universally Unique Identifiers). The primary exported functions are as follows:
+
+1. **NIL_UUID & MAX_UUID**: Constants representing a UUID with all zeros and a UUID with all maximum values, respectively.
+
+2. **rng**: Generates random bytes for UUID generation using Node.js's `crypto` module.
+
+3. **stringify**: Converts an array of bytes into a UUID string by formatting it into the standard UUID template with dashes.
+
+4. **parse**: Converts a UUID string into an array of bytes, stripping out the dashes and decoding the hexadecimal values.
+
+5. **v4**: Generates a version 4 UUID, optionally taking random bytes and a buffer/offset to write the UUID to, modifying the random UUID byte layout accordingly.
+
+6. **validate**: Checks if a given string is a valid UUID by matching against a regular expression corresponding to the UUID format.
+
+7. **version**: Returns the version number of a given UUID, validating it first, and parsing the UUID to extract the version digit.
+
+8. Declared but not implemented: `v1`, `v3`, `v5`, `v6`, `v1ToV6`, `v6ToV1`, `v7`: These functions are placeholders for other UUID versions and conversions, which are noted by ToDo comments indicating intent for future implementation.
+
+9. **byteToHex**: A helper array that precomputes and stores hexadecimal string representations for byte values `0-255`.
+
+```javascript
+// uuid.js
+
+import crypto from 'crypto';
+
+const NIL_UUID = '00000000-0000-0000-0000-000000000000';
+const MAX_UUID = 'ffffffff-ffff-ffff-ffff-ffffffffffff';
+
+const byteToHex = Array.from({ length: 256 }, (_, i) => (i + 0x100).toString(16).substr(1));
+
+function rng() {
+  return crypto.randomBytes(16);
+}
+
+function stringify(arr, offset = 0) {
+  return [
+    byteToHex[arr[offset++]], byteToHex[arr[offset++]],
+    byteToHex[arr[offset++]], byteToHex[arr[offset++]], '-',
+    byteToHex[arr[offset++]], byteToHex[arr[offset++]], '-',
+    byteToHex[arr[offset++]], byteToHex[arr[offset++]], '-',
+    byteToHex[arr[offset++]], byteToHex[arr[offset++]], '-',
+    byteToHex[arr[offset++]], byteToHex[arr[offset++]],
+    byteToHex[arr[offset++]], byteToHex[arr[offset++]],
+    byteToHex[arr[offset++]], byteToHex[arr[offset++]]
+  ].join('');
+}
+
+function parse(uuid) {
+  const arr = new Uint8Array(16);
+  for (let i = 0, j = 0, v; i < 36; ++i) {
+    if (uuid[i] === '-') continue;
+    v = parseInt(uuid[i], 16);
+    arr[j >> 1] |= (i & 1) ? v : v << 4;
+    j++;
+  }
+  return arr;
+}
+
+function v4(options = {}, buf, offset) {
+  if (typeof options === 'undefined') options = {};
+  const i = buf && offset || 0;
+  const b = buf || new Array(16);
+  const random = options.random || options.rng || rng();
+
+  b[i] = random[0] | 0x40;
+  for (let x = 1; x < 16; ++x) {
+    b[i + x] = random[x] | 0x80 >> ((x & 0x03) << 1);
+  }
+  return buf ? buf : stringify(b);
+}
+
+function validate(uuid) {
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8]{1}[0-9a-f]{3}-[89ab]{1}[0-9a-f]{3}-[0-9a-f]{12}$/i;
+  return uuidRegex.test(uuid);
+}
+
+function version(uuid) {
+  if (!validate(uuid)) {
+    throw TypeError('Invalid UUID');
+  }
+  return parseInt(uuid.charAt(14), 16);
+}
+
+const v1 = () => {}; // ToDo: Implement function
+const v3 = () => {}; // ToDo: Implement function
+const v5 = () => {}; // ToDo: Implement function
+const v6 = () => {}; // ToDo: Implement function
+const v1ToV6 = () => {}; // ToDo: Implement function
+const v6ToV1 = () => {}; // ToDo: Implement function
+const v7 = () => {}; // ToDo: Implement function
+
+export {
+  NIL_UUID,
+  MAX_UUID,
+  stringify,
+  parse,
+  v1,
+  v3,
+  v4,
+  v5,
+  v6,
+  v1ToV6,
+  v6ToV1,
+  v7,
+  validate,
+  version
+};
+```

@@ -1,0 +1,85 @@
+The `listr2` package serves as a tool for creating interactive command-line interfaces composed of task lists. It enables developers to define sequences of tasks that are executed in a specified order, providing real-time feedback and interaction in the terminal. This package is designed to enhance the user experience by making command-line operations feel dynamic, engaging, and efficiently managed.
+
+### Features:
+- **Task Management**: Define and execute tasks sequentially in the order they are listed.
+- **Interactivity**: Provide live feedback on each task's status (pending, running, completed, failed).
+- **Customization**: Customize the behavior and appearance of task outputs.
+- **Error Handling**: Gracefully handle and display any errors that occur during task execution.
+- **Concurrency**: Option to run tasks concurrently, leveraging asynchronous execution where needed.
+  
+The primary utility of `listr2` lies in its ability to make terminal scripts more user-friendly by presenting execution processes in a visually appealing and informative manner.
+
+Below is the code for a basic implementation of a Node.js package that encapsulates these features:
+
+```javascript
+const EventEmitter = require('events');
+
+class Task {
+  constructor(title, task) {
+    this.title = title;
+    this.task = task;
+    this.state = 'pending';
+  }
+
+  async run(ctx) {
+    this.state = 'running';
+    try {
+      await this.task(ctx);
+      this.state = 'completed';
+    } catch (error) {
+      this.state = 'failed';
+      throw error;
+    }
+  }
+}
+
+class Listr2 extends EventEmitter {
+  constructor(tasks = [], options = { concurrent: false }) {
+    super();
+    this.tasks = tasks.map(t => new Task(t.title, t.task));
+    this.options = options;
+  }
+
+  async run(context = {}) {
+    const executions = this.tasks.map(task => this.executeTask(task, context));
+    if (this.options.concurrent) {
+      await Promise.all(executions);
+    } else {
+      for (let exec of executions) {
+        await exec();
+      }
+    }
+  }
+
+  executeTask(task, context) {
+    return async () => {
+      this.emit('stateChange', task);
+      try {
+        await task.run(context);
+        this.emit('stateChange', task);
+      } catch (error) {
+        this.emit('stateChange', task);
+        throw error;
+      }
+    };
+  }
+}
+
+// Example usage
+const tasks = [
+  { title: 'Task 1', task: async (ctx) => { /* perform task 1 */ } },
+  { title: 'Task 2', task: async (ctx) => { /* perform task 2 */ } }
+];
+
+const list = new Listr2(tasks, { concurrent: false });
+
+list.on('stateChange', (task) => {
+  console.log(`${task.title} is ${task.state}`);
+});
+
+list.run().catch(error => console.error(error));
+
+module.exports = Listr2;
+```
+
+This code provides the foundation for implementing tasks in a specified sequence, with state changes emitted to allow dynamic updating of task status in a command-line interface. Users can register listeners for state changes to display task progress. This basic implementation can be expanded to include features such as more granular control of task concurrency, logging, and custom rendering of task outputs.

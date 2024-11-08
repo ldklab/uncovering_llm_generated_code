@@ -1,0 +1,73 @@
+The provided Node.js code defines a function `promiseRetry` that facilitates retry logic for a given asynchronous function `fn`, supporting Promise-based operations. It uses the `retry` module to implement a retry mechanism with customizable options for the number of retries, backoff strategy, and whether attempts are randomized.
+
+### Functionality Explained:
+
+1. **Parameter Handling**: 
+   - `options`: An optional configuration object that allows customization of retry behavior. If the first argument is a function, it's assumed to be `fn`, and `options` is set to an empty object.
+   - `fn`: A function that returns a Promise and accepts a callback to be called on error or success.
+
+2. **Retry Configuration**: Setting defaults for various options such as:
+   - `retries`: Defaults to 10 attempts.
+   - `factor`: The exponential factor, defaulting to 2.
+   - `minTimeout`: The minimum wait time between retries, defaulting to 1000 milliseconds.
+   - `maxTimeout`: The maximum wait time between retries, defaulting to Infinity.
+   - `randomize`: Determines if wait times should be randomized, defaulting to false.
+
+3. **Operation Execution**: 
+   - A new `retry` operation is created with the configured settings.
+   - The asynchronous function `fn` is executed within a retryable context. The function receives:
+     - A callback triggered on error, which decides whether to retry based on the error condition.
+     - The current number of attempts made.
+
+4. **Promise Handling**: 
+   - The Promise is resolved if `fn` completes successfully.
+   - If `fn` fails and the retry logic decides not to retry further, the Promise is rejected with the main error encountered during attempts.
+
+5. **Module Export**: The function is exported to be used elsewhere in the application.
+
+### Rewritten Code:
+
+```javascript
+const retry = require('retry');
+
+function promiseRetry(options, fn) {
+    if (typeof options === 'function') {
+        fn = options;
+        options = {};
+    }
+
+    options = options || {};
+    const {
+        retries = 10,
+        factor = 2,
+        minTimeout = 1000,
+        maxTimeout = Infinity,
+        randomize = false
+    } = options;
+
+    return new Promise((resolve, reject) => {
+        const operation = retry.operation({
+            retries,
+            factor,
+            minTimeout,
+            maxTimeout,
+            randomize
+        });
+
+        operation.attempt(() => {
+            fn((err) => {
+                if (operation.retry(err)) {
+                    return;
+                }
+                reject(operation.mainError());
+            }, operation.attempts()).then(resolve).catch((err) => {
+                if (!operation.retry(err)) {
+                    reject(operation.mainError());
+                }
+            });
+        });
+    });
+}
+
+module.exports = promiseRetry;
+```

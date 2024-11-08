@@ -1,0 +1,121 @@
+The provided Node.js code is a utility for managing environment variables with functionalities for loading, parsing, encrypting, and decrypting them. Here's a breakdown of its core functionalities:
+
+1. **Loading Environment Variables**: 
+   - `loadEnvFile(filePath)`: Reads an environment file, parses its contents, and assigns the variables to `process.env`.
+
+2. **Parsing Content**:
+   - `parse(content)`: Given the content of an environment file as a string, it processes each line to extract key-value pairs and return them as an object.
+
+3. **Encrypting Environment Variables**:
+   - `encryptEnvFile(filePath)`: Reads and encrypts the content of an environment file using AES-256-GCM, then saves it to a `.env.vault` file.
+
+4. **Encrypt Function**:
+   - `encrypt(text, key)`: Encrypts text with a given key and returns a JSON object containing the initialization vector, encrypted content, and authentication tag.
+  
+5. **Decrypting Environment Variables**:
+   - `decryptEnvFile()`: Reads the `.env.vault` file, decrypts its content using the stored encryption key, parses it, and assigns the variables to `process.env`.
+
+6. **Decrypt Function**:
+   - `decrypt(encrypted, key)`: Decrypts the encrypted object back to plain text using AES-256-GCM.
+   
+7. **Key Management**:
+   - `getKey()`: Retrieves the encryption key from `process.env.DOTENV_KEY`. Throws an error if the key is missing.
+
+8. **Command-Line Interface (CLI)**:
+   - `runCLI(args)`: CLI interface to execute the `run`, `encrypt` commands to load or encrypt environment files, respectively.
+
+9. **Module Export and Execution**:
+   - The functions are exported for potential use in other modules, and if executed directly, it processes command-line arguments using `runCLI`.
+
+```javascript
+const fs = require('fs');
+const path = require('path');
+const crypto = require('crypto');
+
+function loadEnvFile(filePath) {
+  const envContent = fs.readFileSync(filePath, 'utf8');
+  const envVariables = parse(envContent);
+  Object.assign(process.env, envVariables);
+}
+
+function parse(content) {
+  return content.split('\n').reduce((envVars, line) => {
+    const match = line.match(/^([\w.-]+)\s*=\s*(.*)?$/);
+    if (match) {
+      let [key, value] = [match[1], match[2] || ''];
+      if (value.startsWith('"') && value.endsWith('"')) {
+        value = value.slice(1, -1).replace(/\\n/g, '\n');
+      }
+      envVars[key] = value;
+    }
+    return envVars;
+  }, {});
+}
+
+function encryptEnvFile(filePath) {
+  const envContent = fs.readFileSync(filePath, 'utf8');
+  const encryptedContent = encrypt(envContent, getKey());
+  fs.writeFileSync('.env.vault', encryptedContent, 'base64');
+}
+
+function encrypt(text, key) {
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
+  let encrypted = cipher.update(text, 'utf8', 'base64') + cipher.final('base64');
+  return JSON.stringify({
+    iv: iv.toString('base64'),
+    content: encrypted,
+    tag: cipher.getAuthTag().toString('base64')
+  });
+}
+
+function decryptEnvFile() {
+  const encryptedContent = fs.readFileSync('.env.vault', 'utf8');
+  const decryptedContent = decrypt(encryptedContent, getKey());
+  const envVariables = parse(decryptedContent);
+  Object.assign(process.env, envVariables);
+}
+
+function decrypt(encrypted, key) {
+  const { iv, content, tag } = JSON.parse(encrypted);
+  const decipher = crypto.createDecipheriv('aes-256-gcm', key, Buffer.from(iv, 'base64'));
+  decipher.setAuthTag(Buffer.from(tag, 'base64'));
+  return decipher.update(content, 'base64', 'utf8') + decipher.final('utf8');
+}
+
+function getKey() {
+  const key = process.env.DOTENV_KEY;
+  if (!key) {
+    throw new Error('DOTENV_KEY is required for decryption');
+  }
+  return Buffer.from(key, 'hex');
+}
+
+function runCLI(args) {
+  const command = args[2];
+  const fileArgs = args.filter(arg => arg.startsWith('--env-file=')).map(arg => arg.split('=')[1]);
+  switch (command) {
+    case 'run':
+      fileArgs.forEach(loadEnvFile);
+      require(path.resolve(args[args.length - 1]));
+      break;
+    case 'encrypt':
+      fileArgs.forEach(encryptEnvFile);
+      console.log('Environment variables encrypted to .env.vault');
+      break;
+    default:
+      console.log('Invalid command');
+  }
+}
+
+module.exports = {
+  loadEnvFile,
+  encryptEnvFile,
+  decryptEnvFile,
+  runCLI
+};
+
+if (require.main === module) {
+  runCLI(process.argv);
+}
+```

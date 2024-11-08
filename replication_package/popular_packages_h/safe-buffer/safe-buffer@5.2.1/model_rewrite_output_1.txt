@@ -1,0 +1,79 @@
+The provided Node.js code is a module that serves as a polyfill for the `Buffer` class, which is used for handling binary data in Node.js. It's specifically designed to maintain compatibility with environments that may not support some newer Buffer API methods such as `Buffer.from`, `Buffer.alloc`, `Buffer.allocUnsafe`, and `Buffer.allocUnsafeSlow`. The code defines a `SafeBuffer` class that mimics the behavior of the native `Buffer` class, including similar static methods while adding some additional type-checks.
+
+Here's a brief breakdown of the code functionality:
+
+1. **Compatibility Checks**: The code checks if the current Node.js environment provides the modern `Buffer` API methods. If these are available, it exports the `buffer` module directly. If not, it defines a custom buffer implementation via the `SafeBuffer` function.
+
+2. **Copying Properties**: An auxiliary function, `copyProps`, copies all properties from a source object to a destination object, aiding in creating the `SafeBuffer` object with similar properties to the native `Buffer`.
+
+3. **SafeBuffer Function and Class**: The `SafeBuffer` function emulates the behavior of `Buffer` using several static methods (`from`, `alloc`, `allocUnsafe`, `allocUnsafeSlow`) while providing additional type-checks for arguments to prevent common errors.
+
+4. **Static Methods**: Each of the static methods (`SafeBuffer.from`, `SafeBuffer.alloc`, etc.) checks its input types and attempts to replicate the behaviors of their `Buffer` counterparts.
+
+Here's a rewritten version of the given Node.js code:
+
+```javascript
+/*! safe-buffer. MIT License. Feross Aboukhadijeh <https://feross.org/opensource> */
+const { Buffer, SlowBuffer, kMaxLength } = require('buffer');
+
+// Helper function to copy properties from source to destination object
+function copyProps(src, dst) {
+  for (const key in src) {
+    if (Object.prototype.hasOwnProperty.call(src, key)) {
+      dst[key] = src[key];
+    }
+  }
+}
+
+if (Buffer.from && Buffer.alloc && Buffer.allocUnsafe && Buffer.allocUnsafeSlow) {
+  module.exports = { Buffer, SlowBuffer, kMaxLength };
+} else {
+  // Extend exports with the properties of the required buffer module
+  copyProps({ Buffer, SlowBuffer, kMaxLength }, exports);
+  exports.Buffer = SafeBuffer;
+}
+
+// SafeBuffer function to mimic the Buffer function
+function SafeBuffer(arg, encodingOrOffset, length) {
+  return new Buffer(arg, encodingOrOffset, length);
+}
+
+SafeBuffer.prototype = Object.create(Buffer.prototype);
+
+// Extend SafeBuffer with Buffer static methods
+copyProps(Buffer, SafeBuffer);
+
+SafeBuffer.from = function(arg, encodingOrOffset, length) {
+  if (typeof arg === 'number') {
+    throw new TypeError('Argument must not be a number');
+  }
+  return new Buffer(arg, encodingOrOffset, length);
+};
+
+SafeBuffer.alloc = function(size, fill, encoding) {
+  if (typeof size !== 'number') {
+    throw new TypeError('Argument must be a number');
+  }
+  const buf = Buffer(size);
+  if (fill !== undefined) {
+    buf.fill(fill, encoding);
+  } else {
+    buf.fill(0);
+  }
+  return buf;
+};
+
+SafeBuffer.allocUnsafe = function(size) {
+  if (typeof size !== 'number') {
+    throw new TypeError('Argument must be a number');
+  }
+  return Buffer(size);
+};
+
+SafeBuffer.allocUnsafeSlow = function(size) {
+  if (typeof size !== 'number') {
+    throw new TypeError('Argument must be a number');
+  }
+  return SlowBuffer(size);
+};
+```

@@ -1,0 +1,85 @@
+The provided Node.js code defines a module that can be used to join multiple URL components into a single, well-formed URL string. The module is designed to work in various environments, including Node.js and AMD (Asynchronous Module Definition). It uses an immediately-invoked function expression (IIFE) to determine the context in which it is running and exports the functionality accordingly.
+
+### Explanation:
+1. **Environment Detection and Exporting:**
+   - Detects if the environment supports CommonJS modules, such as Node.js, and exports the function using `module.exports`.
+   - Checks if AMD is available and defines the module using `define`.
+   - If neither is available, assigns the function to the global context.
+
+2. **Functionality (`urljoin`):**
+   - It accepts an arbitrary number of URL components as arguments.
+   - Processes the components through a `normalize` function that:
+     - Validates type ensuring each component is a string.
+     - Handles different URL protocol specifications (e.g., `http` vs `file`).
+     - Removes unnecessary slashes between components and at the ends.
+     - Ensures a single slash separation between components after normalization.
+     - Corrects trailing slashes before query parameters or fragments.
+     - Adjusts concatenated query parameters, replacing `?` with `&` when necessary.
+
+3. **Usage:**
+   - Can be used to join several URL parts into a single string that is properly formatted and normalized, handling edge cases around slashes and query parameters.
+
+### Rewritten Code:
+
+```javascript
+(function(name, context, definition) {
+  if (typeof module !== 'undefined' && module.exports) {
+    module.exports = definition();
+  } else if (typeof define === 'function' && define.amd) {
+    define(definition);
+  } else {
+    context[name] = definition();
+  }
+})('urljoin', this, function() {
+  
+  function normalize(strArray) {
+    if (strArray.length === 0) return '';
+    if (typeof strArray[0] !== 'string') {
+      throw new TypeError(`Url must be a string. Received ${strArray[0]}`);
+    }
+
+    if (/^[^/:]+:\/*$/.test(strArray[0]) && strArray.length > 1) {
+      let first = strArray.shift();
+      strArray[0] = first + strArray[0];
+    }
+
+    if (/^file:\/\/\//.test(strArray[0])) {
+      strArray[0] = strArray[0].replace(/^([^/:]+):\/*/, '$1:///');
+    } else {
+      strArray[0] = strArray[0].replace(/^([^/:]+):\/*/, '$1://');
+    }
+
+    const resultArray = [];
+    for (let i = 0; i < strArray.length; i++) {
+      let component = strArray[i];
+      if (typeof component !== 'string') {
+        throw new TypeError(`Url must be a string. Received ${component}`);
+      }
+      if (component === '') continue;
+
+      if (i > 0) {
+        component = component.replace(/^[\/]+/, '');
+      }
+      if (i < strArray.length - 1) {
+        component = component.replace(/[\/]+$/, '');
+      } else {
+        component = component.replace(/[\/]+$/, '/');
+      }
+      resultArray.push(component);
+    }
+
+    let str = resultArray.join('/');
+    str = str.replace(/\/(\?|&|#[^!])/g, '$1');
+    
+    const parts = str.split('?');
+    str = parts.shift() + (parts.length > 0 ? '?' : '') + parts.join('&');
+
+    return str;
+  }
+
+  return function(...args) {
+    const input = Array.isArray(args[0]) ? args[0] : args.slice();
+    return normalize(input);
+  };
+});
+```

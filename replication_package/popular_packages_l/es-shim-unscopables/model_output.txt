@@ -1,0 +1,73 @@
+The `es-shim-unscopables` Node.js package is a utility designed to modify the behavior of JavaScript's `Array.prototype[Symbol.unscopables]`. This is used to control what properties and methods are visible within a `with` statement when your code is working with arrays.
+
+### Functionality
+
+1. **Purpose**: The main goal of the package is to "shim" or add specific methods into the list of unscopables for an array. This list, stored under `Symbol.unscopables` on `Array.prototype`, determines which array methods and properties are masked within a `with` statement.
+
+2. **Modification**: By default, several methods are already unscopable in JavaScript environments, meaning they won't automatically show up in the scope of a `with` block using an array. This package allows you to add more methods to this unscopables list programmatically.
+
+3. **Use Case in Example**: In the example provided, before calling `shimUnscopables('concat')`, the method `concat` is available within the `with` block and directly accessed from the array's scope. After calling the function, `concat` becomes unscopable, and thus any reference to `concat` inside the `with` block will not resolve to `Array.prototype.concat`.
+
+### Code Implementation
+
+Here's a simple implementation of this functionality in a single markdown code block:
+
+```javascript
+// es-shim-unscopables.js
+function shimUnscopables(methodName) {
+    if (typeof methodName !== 'string') {
+        throw new TypeError('Method name must be a string');
+    }
+    if (!Array.prototype.hasOwnProperty(methodName)) {
+        throw new Error(`Array prototype does not have a method named "${methodName}"`);
+    }
+    
+    // Retrieve the current unscopables or create a new empty object if it doesn't exist
+    const unscopables = Array.prototype[Symbol.unscopables] || {};
+    
+    // Add the method to the list of unscopables
+    unscopables[methodName] = true;
+    
+    // Update the unscopables property on Array.prototype
+    Array.prototype[Symbol.unscopables] = unscopables;
+}
+
+module.exports = shimUnscopables;
+
+// test.js
+const assert = require('assert');
+const shimUnscopables = require('./es-shim-unscopables');
+
+let copyWithin;
+let concat;
+
+with ([]) {
+    assert.equal(concat, Array.prototype.concat);
+    assert.notEqual(copyWithin, Array.prototype.copyWithin);
+}
+
+shimUnscopables('concat');
+
+with ([]) {
+    assert.notEqual(concat, Array.prototype.concat);
+    assert.notEqual(copyWithin, Array.prototype.copyWithin);
+}
+
+// package.json
+{
+  "name": "es-shim-unscopables",
+  "version": "1.0.0",
+  "description": "Helper package to shim a method into Array.prototype[Symbol.unscopables]",
+  "main": "es-shim-unscopables.js",
+  "scripts": {
+    "test": "node test"
+  },
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "assert": "^1.5.0"
+  }
+}
+```
+
+To use this package, you would include it in your Node.js project, require it as shown in the example, and use `shimUnscopables` to mark methods as unscopable within array contexts. This allows for explicit control over method visibility inside `with` blocks.

@@ -1,0 +1,211 @@
+The Node.js code is a custom loader for Babel (mostly used within a Webpack configuration) that aims to handle the transformation of JavaScript files using Babel. This loader checks for the presence of appropriate versions of Babel, and if specific conditions aren't met, it throws informative errors. It supports asynchronous operations, allowing Babel transformations to be handled with proper plugin configurations, caching mechanisms, and options validations through `schema-utils`.
+
+Here's an explanation of each part:
+1. **Dependency Check**: The code tries to require `@babel/core`. If not found, it provides an error message suggesting the right version of `babel-loader`.
+2. **Version Validation**: Ensures that only compatible Babel versions (7.12+) are used.
+3. **Loader Creation**: The `makeLoader` function is the core part, allowing the customization and standardization of Babel processing.
+4. **Loader Functionality**: Performs Babel transformation of source files, handles caching, and validates configurations.
+5. **Options and Configuration**: Validates loader options; applies custom overrides if provided.
+6. **Dependency Management**: Adds file dependencies to Webpack and ensures cache mechanisms are enabled if specified.
+
+The rewritten version is below:
+
+```javascript
+const {
+  validate
+} = require('schema-utils');
+const {
+  isAbsolute
+} = require('path');
+let babel;
+
+// Try to require @babel/core and handle errors if the package is missing
+try {
+  babel = require('@babel/core');
+} catch (err) {
+  if (err.code === 'MODULE_NOT_FOUND') {
+    err.message += "\n babel-loader@9 requires Babel 7.12+ ('@babel/core'). Install 'babel-loader@7' for Babel 6.x.";
+  }
+  throw err;
+}
+
+// Check that the version of @babel/core is compatible
+if (/^6\./.test(babel.version)) {
+  throw new Error("babel-loader@9 will not work with '@babel/core@6' bridge package. Use 'babel-loader@7' instead.");
+}
+
+const { version } = require('../package.json');
+const cache = require('./cache');
+const transform = require('./transform');
+const injectCaller = require('./injectCaller');
+const schema = require('./schema');
+
+module.exports = createLoader();
+module.exports.custom = createLoader;
+
+function createLoader(customCallback) {
+  const customOverrides = customCallback ? customCallback(babel) : undefined;
+
+  return function (source, inputSourceMap) {
+    const callback = this.async();
+    runLoader(this, source, inputSourceMap, customOverrides)
+      .then(response => callback(null, ...response))
+      .catch(error => callback(error));
+  };
+}
+
+async function runLoader(context, source, inputSourceMap, customOverrides) {
+  const filename = context.resourcePath;
+  const logger = context.getLogger ? context.getLogger('babel-loader') : { debug: () => {} };
+
+  let options = context.getOptions();
+  validateOptions(schema, options, { name: 'Babel loader' });
+
+  if (options.customize) {
+    validateCustomizeOption(options, customOverrides);
+    logger.debug(`loading customize override: '${options.customize}'`);
+    customOverrides = requireCustomOverride(options.customize)(babel);
+  }
+
+  let customOptions;
+  if (customOverrides && customOverrides.customOptions) {
+    const result = await customOverrides.customOptions.call(context, options, { source, map: inputSourceMap });
+    customOptions = result.custom;
+    options = result.loader;
+  }
+
+  handleDeprecatedOptions(options, logger);
+
+  const programmaticOptions = normalizeLoaderOptions(context, options, filename, inputSourceMap);
+
+  logger.debug('resolving Babel configs');
+  const config = await babel.loadPartialConfigAsync(injectCaller(programmaticOptions, context.target));
+
+  if (config) {
+    let babelOptions = config.options;
+
+    if (customOverrides && customOverrides.config) {
+      logger.debug('applying overrides config() to Babel config');
+      babelOptions = await customOverrides.config.call(context, config, {
+        source,
+        map: inputSourceMap,
+        customOptions
+      });
+    }
+
+    if (babelOptions.sourceMaps === 'inline') {
+      babelOptions.sourceMaps = true;
+    }
+
+    const { cacheDirectory = null, cacheIdentifier, cacheCompression, metadataSubscribers = [] } = options;
+    let result;
+
+    if (cacheDirectory) {
+      logger.debug('cache is enabled');
+      result = await cacheBabelTransform({ source, options: babelOptions, cacheDirectory, cacheIdentifier, cacheCompression, logger });
+    } else {
+      logger.debug('cache is disabled, applying Babel transform');
+      result = await transform(source, babelOptions);
+    }
+
+    config.files.forEach(configFile => {
+      context.addDependency(configFile);
+      logger.debug(`added '${configFile}' to webpack dependencies`);
+    });
+
+    return handleBabelResult(result, customOverrides, context, {
+      source,
+      inputSourceMap,
+      customOptions,
+      config,
+      options: babelOptions,
+      metadataSubscribers
+    });
+  }
+
+  return [source, inputSourceMap];
+}
+
+function validateCustomizeOption(options, customOverrides) {
+  if (typeof options.customize !== 'string') {
+    throw new Error('Customized loaders must be standalone modules.');
+  }
+  if (!isAbsolute(options.customize)) {
+    throw new Error('Customized loaders must be absolute paths, as babel-loader cannot resolve relative paths.');
+  }
+  if (customOverrides) {
+    throw new Error("babel-loader's 'customize' option is unavailable with an existing babel-loader wrapper.");
+  }
+}
+
+function requireCustomOverride(path) {
+  let override = require(path);
+  return override.__esModule ? override.default : override;
+}
+
+function handleDeprecatedOptions(options, logger) {
+  if ('forceEnv' in options) {
+    console.warn("The 'forceEnv' option is removed. Use 'envName' with Babel 7.");
+  }
+  if (typeof options.babelrc === 'string') {
+    console.warn("The 'babelrc' option should be a boolean. Use 'extends' for specific config files.");
+  }
+  logger.debug('normalizing loader options');
+}
+
+function normalizeLoaderOptions(context, options, filename, inputSourceMap) {
+  const standardizedOptions = Object.assign({}, options, {
+    filename,
+    inputSourceMap: inputSourceMap || options.inputSourceMap,
+    sourceMaps: options.sourceMaps === undefined ? context.sourceMap : options.sourceMaps,
+    sourceFileName: filename
+  });
+
+  ['customize', 'cacheDirectory', 'cacheIdentifier', 'cacheCompression', 'metadataSubscribers'].forEach(option => delete standardizedOptions[option]);
+
+  if (Object.prototype.hasOwnProperty.call(options, 'sourceMap') && !Object.prototype.hasOwnProperty.call(options, 'sourceMaps')) {
+    standardizedOptions.sourceMaps = options.sourceMap;
+    delete standardizedOptions.sourceMap;
+  }
+
+  return standardizedOptions;
+}
+
+function handleBabelResult(result, customOverrides, context, data) {
+  if (result && customOverrides && customOverrides.result) {
+    context.getLogger('babel-loader').debug('applying overrides result() to Babel transform results');
+    result = await customOverrides.result.call(context, result, data);
+  }
+
+  const { code, map, metadata, externalDependencies } = result;
+  externalDependencies?.forEach(dep => {
+    context.addDependency(dep);
+    context.getLogger('babel-loader').debug(`added '${dep}' to webpack dependencies`);
+  });
+
+  data.metadataSubscribers.forEach(subscriber => {
+    if (context[subscriber]) {
+      context[subscriber](metadata);
+      context.getLogger('babel-loader').debug(`invoked metadata subscriber '${String(subscriber)}'`);
+    }
+  });
+
+  return [code, map];
+}
+
+async function cacheBabelTransform(data) {
+  return cache({
+    source: data.source,
+    options: data.options,
+    transform: transform,
+    cacheDirectory: data.cacheDirectory,
+    cacheIdentifier: data.cacheIdentifier || JSON.stringify({
+      options: data.options,
+      '@babel/core': transform.version,
+      '@babel/loader': version
+    }),
+    cacheCompression: data.cacheCompression,
+    logger: data.logger
+  });
+}
+```

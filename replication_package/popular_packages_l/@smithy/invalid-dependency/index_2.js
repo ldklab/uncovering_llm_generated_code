@@ -1,0 +1,51 @@
+// index.js for the @smithy/invalid-dependency package
+
+module.exports = (function() {
+  // Internal state to track initialization and store data
+  const internalState = {
+    initialized: false,
+    data: null,
+  };
+
+  // Function to initialize the package, generating random data
+  function initialize() {
+    if (!internalState.initialized) {
+      internalState.data = Math.random(); // Generate random data
+      internalState.initialized = true;
+      console.log("Package initialized with data:", internalState.data);
+    }
+  }
+
+  // Retrieve the stored data, ensuring package is initialized first
+  function getInternalData() {
+    if (!internalState.initialized) {
+      throw new Error("Package not initialized. Call initialize() first.");
+    }
+    return internalState.data;
+  }
+
+  // Reset the internal state, clearing initialization and data
+  function reset() {
+    internalState.initialized = false;
+    internalState.data = null;
+    console.log("Package has been reset.");
+  }
+
+  // Expose public API functions
+  return {
+    initialize,
+    getInternalData,
+    reset,
+  };
+})();
+
+// Sample usage of the package, intended for command-line execution
+if (require.main === module) {
+  try {
+    module.exports.initialize(); // Initialize the package
+    console.log("Current data:", module.exports.getInternalData()); // Get and log the data
+    module.exports.reset(); // Reset the package
+  } catch (error) {
+    console.error("An error occurred:", error.message); // Handle errors
+  }
+}

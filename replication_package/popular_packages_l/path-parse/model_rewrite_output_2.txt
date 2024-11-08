@@ -1,0 +1,56 @@
+The provided Node.js code defines a module named `pathParse` that is used to parse file paths into their components, such as root, directory, base name, extension, and name. It works for both Windows and POSIX file systems. The key functionality includes:
+
+1. **Path Parsing**: The `pathParse` function takes a path string and an optional options object to specify the platform (either 'win32' or 'posix'). It defaults to the current platform as determined by `process.platform`.
+
+2. **Regular Expression Splitting**: Based on the specified platform, the function uses different regular expressions to split the path string into parts.
+
+3. **Result Construction**: After splitting the path, it constructs an object containing:
+   - `root`: The root of the path.
+   - `dir`: The directory part of the path, without the base file name.
+   - `base`: The base file name, including extension if present.
+   - `ext`: The extension of the file, if any.
+   - `name`: The name of the file without the extension.
+
+4. **Platform-specific Functions**: It provides `posix` and `win32` static methods to explicitly handle paths for POSIX and Windows platforms respectively.
+
+Below is a rewritten version of the original code:
+
+```javascript
+// path-parse/index.js
+
+function pathParse(pathString, options = { platform: process.platform }) {
+    const isWin = options.platform === 'win32';
+
+    function splitPath(path) {
+        const winSplit = /^(?:(\/?|)([\w ]:|\\|\\\\)(?:([^\\\/:*?"<>|\r\n]+(?:\\|\\\\))*)([^\\\/:*?"<>|\r\n]*))$/;
+        const posixSplit = /^((?:\/|)(?:[^\/]+(?:\/|))*)([^\/]*)$/;
+        return path.match(isWin ? winSplit : posixSplit).slice(1);
+    }
+
+    const result = splitPath(pathString);
+
+    const root = isWin ? (result[1] ? result[1].replace(/\\/g, '/') : '') : '/';
+    const base = result[3] || result[2];
+    const dir = result[1] ? result[1] : (base ? '' : root);
+    const ext = base.includes('.') ? '.' + base.split('.').pop() : '';
+    const name = base.slice(0, base.length - ext.length);
+
+    return {
+        root,
+        dir,
+        base,
+        ext,
+        name
+    };
+}
+
+pathParse.posix = function(pathString) {
+    return pathParse(pathString, { platform: 'posix' });
+};
+
+pathParse.win32 = function(pathString) {
+    return pathParse(pathString, { platform: 'win32' });
+};
+
+module.exports = pathParse;
+```

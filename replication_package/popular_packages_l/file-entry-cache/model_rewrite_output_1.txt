@@ -1,0 +1,111 @@
+The provided Node.js code defines a `FileEntryCache` class that is primarily used to cache file information, such as modification time, size, and optionally a checksum, to determine if a file has changed since it was last checked. Here is a breakdown of its functionality:
+
+1. **Constructor**: Initializes the cache with user-defined options, such as cache identifier (`cacheId`), cache directory (`cacheDirectory`), whether to use checksums (`useCheckSum`), and the hashing algorithm for checksums (`hashAlgorithm`).
+
+2. **Load Cache**: `_loadCacheFromFile()` attempts to load a JSON file that contains the cached information from the specified `cacheDirectory`.
+
+3. **Save Cache**: `_saveCacheToFile()` writes the current cache state to a file in JSON format in the `cacheDirectory`.
+
+4. **Cache File Path**: `_cacheFilePath()` constructs the path for the cache file using the cache directory and cache ID.
+
+5. **Get File Descriptor**: `getFileDescriptor()` provides a descriptor for a file, determining if it has changed based on file metadata such as modification time or checksum, updating the internal cache with the latest data.
+
+6. **Generate Hash**: `_generateHash()` generates a hash value for file content using the specified hashing algorithm.
+
+7. **Reconcile Cache**: `reconcile()` removes cached entries for files that no longer exist on the filesystem and saves the updated cache back to the file.
+
+8. **Static Methods**: `create()` and `createFromFile()` are used to instantiate `FileEntryCache` objects with either direct input parameters or by inferring them from a file path.
+
+Here is a potential rewrite of the provided code with the same functionality:
+
+```javascript
+import fs from 'fs';
+import path from 'path';
+import crypto from 'crypto';
+
+class FileEntryCache {
+  constructor({ cacheId = 'default-cache', cacheDirectory = './cache', useCheckSum = false, hashAlgorithm = 'md5', currentWorkingDirectory = process.cwd() } = {}) {
+    this.cache = {};
+    this.cacheId = cacheId;
+    this.cacheDirectory = cacheDirectory;
+    this.useCheckSum = useCheckSum;
+    this.hashAlgorithm = hashAlgorithm;
+    this.currentWorkingDirectory = currentWorkingDirectory;
+    this._loadCacheFromFile();
+  }
+
+  _loadCacheFromFile() {
+    try {
+      const cacheFilePath = this._cacheFilePath();
+      if (fs.existsSync(cacheFilePath)) {
+        this.cache = JSON.parse(fs.readFileSync(cacheFilePath, 'utf-8'));
+      }
+    } catch (err) {
+      console.error('Error loading cache:', err);
+    }
+  }
+
+  _cacheFilePath() {
+    return path.join(this.cacheDirectory, `${this.cacheId}.json`);
+  }
+
+  _saveCacheToFile() {
+    try {
+      if (!fs.existsSync(this.cacheDirectory)) {
+        fs.mkdirSync(this.cacheDirectory, { recursive: true });
+      }
+      fs.writeFileSync(this._cacheFilePath(), JSON.stringify(this.cache, null, 2));
+    } catch (err) {
+      console.error('Error saving cache:', err);
+    }
+  }
+
+  getFileDescriptor(filePath, { useCheckSum = this.useCheckSum } = {}) {
+    const absolutePath = path.resolve(this.currentWorkingDirectory, filePath);
+
+    if (!fs.existsSync(absolutePath)) {
+      return { key: absolutePath, notFound: true };
+    }
+
+    const stats = fs.statSync(absolutePath);
+    const mtime = stats.mtime.getTime();
+    const size = stats.size;
+    const fileHash = useCheckSum ? this._generateHash(fs.readFileSync(absolutePath)) : null;
+
+    const cacheEntry = this.cache[absolutePath] || {};
+    const changed = (cacheEntry.mtime !== mtime || (useCheckSum && cacheEntry.hash !== fileHash));
+
+    this.cache[absolutePath] = { mtime, size, hash: fileHash, meta: cacheEntry.meta || {} };
+    return { key: absolutePath, changed, notFound: false, meta: this.cache[absolutePath].meta };
+  }
+
+  _generateHash(buffer) {
+    return crypto.createHash(this.hashAlgorithm).update(buffer).digest('hex');
+  }
+
+  reconcile() {
+    Object.keys(this.cache).forEach(filePath => {
+      if (!fs.existsSync(filePath)) {
+        delete this.cache[filePath];
+      }
+    });
+    this._saveCacheToFile();
+  }
+
+  static create(cacheId, cacheDirectory, useCheckSum = false, currentWorkingDirectory = '') {
+    return new FileEntryCache({ cacheId, cacheDirectory, useCheckSum, currentWorkingDirectory });
+  }
+
+  static createFromFile(cacheFilePath, useCheckSum = false, currentWorkingDirectory = '') {
+    const cacheOptions = {
+      cacheId: path.basename(cacheFilePath, '.json'),
+      cacheDirectory: path.dirname(cacheFilePath),
+      useCheckSum,
+      currentWorkingDirectory
+    };
+    return new FileEntryCache(cacheOptions);
+  }
+}
+
+export default FileEntryCache;
+```

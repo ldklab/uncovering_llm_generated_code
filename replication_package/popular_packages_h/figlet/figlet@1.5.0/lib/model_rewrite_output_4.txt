@@ -1,0 +1,60 @@
+The Node.js code defines a plugin for the `figlet.js` library to handle font loading and management tasks. The code provides both asynchronous and synchronous methods for these tasks:
+
+1. **Font Loading**: 
+   - `figlet.loadFont(name, next)`: Loads a font asynchronously. It first checks if the font is already loaded in memory (`figlet.figFonts`). If not, it reads the font file from the `/fonts/` directory. If an error occurs or the font cannot be found, it passes the error to the callback function `next`. Otherwise, it parses the font data and calls the callback with the parsed font details.
+   - `figlet.loadFontSync(name)`: Loads a font synchronously. It performs actions similar to `loadFont` but in a synchronous manner, directly returning the font details instead of using a callback.
+
+2. **Font Listing**:
+   - `figlet.fonts(next)`: Asynchronously retrieves a list of all available font names from the `/fonts/` directory. It reads all `.flf` font files, extracts their names, and passes the list to a callback.
+   - `figlet.fontsSync()`: Synchronously retrieves a list of all font names, similar to `fonts`, and returns it directly.
+
+Below is the rewritten version of the code:
+
+```javascript
+const figlet = require('./figlet.js');
+const fs = require('fs');
+const path = require('path');
+const fontDir = path.join(__dirname, '/../fonts/');
+
+figlet.loadFont = function(name, callback) {
+    if (figlet.figFonts[name]) {
+        callback(null, figlet.figFonts[name].options);
+    } else {
+        fs.readFile(path.join(fontDir, `${name}.flf`), { encoding: 'utf-8' }, (err, fontData) => {
+            if (err) {
+                return callback(err);
+            }
+            try {
+                callback(null, figlet.parseFont(name, fontData));
+            } catch (error) {
+                callback(error);
+            }
+        });
+    }
+};
+
+figlet.loadFontSync = function(name) {
+    if (figlet.figFonts[name]) {
+        return figlet.figFonts[name].options;
+    }
+    const fontData = fs.readFileSync(path.join(fontDir, `${name}.flf`), { encoding: 'utf-8' });
+    return figlet.parseFont(name, fontData);
+};
+
+figlet.fonts = function(callback) {
+    fs.readdir(fontDir, (err, files) => {
+        if (err) {
+            return callback(err);
+        }
+        const fontList = files.filter(file => file.endsWith('.flf')).map(file => file.replace(/\.flf$/, ''));
+        callback(null, fontList);
+    });
+};
+
+figlet.fontsSync = function() {
+    const files = fs.readdirSync(fontDir);
+    return files.filter(file => file.endsWith('.flf')).map(file => file.replace(/\.flf$/, ''));
+};
+
+module.exports = figlet;
+```

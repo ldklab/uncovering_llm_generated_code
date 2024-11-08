@@ -1,0 +1,81 @@
+The provided Node.js code implements a simple event emitter called `mitt`. This event emitter allows registering event handlers, removing them, and emitting events. 
+
+### Functionality:
+
+1. **Initialization**:
+   - The function `mitt` initializes a `Map` to store event handlers unless an existing map is provided.
+   
+2. **Event Registration (`on`)**:
+   - Allows adding a handler function for a specific event type.
+   - If handlers for the event type already exist, it appends the new handler; otherwise, it creates a new array for that event type.
+
+3. **Event Removal (`off`)**:
+   - Removes a specific handler for a specific event type.
+   - If no handler is provided to remove, it removes all handlers for that event type.
+
+4. **Event Emission (`emit`)**:
+   - Executes all handlers associated with a given event type.
+   - Additionally, executes any handlers registered for all events (using the wildcard `'*'`).
+
+5. **Wildcard Support**:
+   - Supports a wildcard `'*'` to handle all event emissions regardless of the event type.
+
+Here is the rewritten code:
+
+```javascript
+function createEventEmitter(storedEvents) {
+  const events = storedEvents || new Map();
+
+  return {
+    events,
+    
+    subscribe(eventType, callback) {
+      const eventCallbacks = events.get(eventType);
+      if (eventCallbacks) {
+        eventCallbacks.push(callback);
+      } else {
+        events.set(eventType, [callback]);
+      }
+    },
+    
+    unsubscribe(eventType, callback) {
+      const eventCallbacks = events.get(eventType);
+      if (eventCallbacks) {
+        if (!callback) {
+          events.set(eventType, []);
+        } else {
+          const callbackIndex = eventCallbacks.indexOf(callback) >>> 0;
+          eventCallbacks.splice(callbackIndex, 1);
+        }
+      }
+    },
+    
+    dispatch(eventType, data) {
+      const specificListeners = events.get(eventType) || [];
+      const wildcardListeners = events.get('*') || [];
+      
+      specificListeners.slice().forEach(listener => listener(data));
+      wildcardListeners.slice().forEach(listener => listener(eventType, data));
+    }
+  };
+}
+
+// Usage example
+const eventEmitter = createEventEmitter();
+
+// Subscribe to a specific event
+eventEmitter.subscribe('exampleEvent', (data) => console.log('exampleEvent', data));
+
+// Subscribe to all events
+eventEmitter.subscribe('*', (eventType, data) => console.log(eventType, data));
+
+// Dispatch an event
+eventEmitter.dispatch('exampleEvent', { exampleKey: 'exampleValue' });
+
+// Unsubscribing a specific callback from an event
+function exampleCallback() { console.log("exampleEvent callback executed"); }
+eventEmitter.subscribe('exampleEvent', exampleCallback);
+eventEmitter.unsubscribe('exampleEvent', exampleCallback);
+
+module.exports = createEventEmitter;
+```

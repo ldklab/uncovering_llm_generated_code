@@ -1,0 +1,51 @@
+The Node.js package `agent-base` provides a lightweight framework to create custom HTTP agents. The primary function of this package is to extend the base `http.Agent` class, making it capable of turning a function into an `http.Agent` instance. Users can define a `connect()` function within their custom agent class, which is tasked with creating the underlying socket (either a `net.Socket` or `tls.Socket`) required for HTTP client requests.
+
+The `connect()` function has the flexibility to return either a `Duplex` stream, another reusable `http.Agent` instance, or operate asynchronously by using `async`. This mechanism allows developers to write agents that determine the type of socket connection based on the request context (e.g., whether it's HTTP or HTTPS). The decision is aided by the `opts.secureEndpoint` property passed to the `connect()` function, which indicates if the request is secure (HTTPS).
+
+The package is designed to interoperate with built-in Node.js HTTP and HTTPS modules by creating customized sockets for managing connections. By specifying the agent in HTTP request options, a developer can leverage custom connection logic, enabling advanced scenarios like proxy handling, load balancing, or custom socket implementations.
+
+The package is useful for implementing various agent subtypes, such as HTTP proxy agents, HTTPS proxy agents, PAC file proxy agents, and SOCKS proxy agents. These allow for more specialized HTTP request handling like routing through proxies or interpreting network proxy configurations from PAC files.
+
+Here's how you can implement a basic MyAgent class that extends `Agent` from `agent-base` to intelligently decide whether to create a normal TCP connection, or a secure TLS connection:
+
+```javascript
+// agent-base.js - A basic implementation of the agent-base functionality.
+
+const net = require('net');
+const tls = require('tls');
+const http = require('http');
+const { Agent: BaseAgent } = require('http');
+
+/**
+ * Custom agent class extending the built-in http.Agent using agent-base logic.
+ */
+class MyAgent extends BaseAgent {
+  constructor(options = {}) {
+    super(options);
+  }
+
+  /**
+   * Overridden method to create socket connections based on the request options.
+   * @param {Object} req - The request object.
+   * @param {Object} opts - Options for the connection, containing secureEndpoint.
+   */
+  connect(req, opts) {
+    if (opts.secureEndpoint) {
+      // Create a TLS connection for HTTPS requests.
+      return tls.connect(opts);
+    } else {
+      // Create a TCP connection for HTTP requests.
+      return net.connect(opts);
+    }
+  }
+}
+
+// Usage example
+const agent = new MyAgent({ keepAlive: true });
+
+http.get('http://nodejs.org/api/', { agent }, (res) => {
+  console.log('"response" event!', res.headers);
+  res.pipe(process.stdout);
+});
+```
+This code extends the HTTP Agent to create connections based on whether the endpoint is secure (HTTPS) or not (HTTP), which allows it to work seamlessly with both the `http` and `https` modules in Node.js. The `keepAlive` option ensures efficient reuse of connections, reducing overhead.

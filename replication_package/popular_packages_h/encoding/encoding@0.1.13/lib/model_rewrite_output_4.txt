@@ -1,0 +1,98 @@
+The provided code is a Node.js module that offers functionality to convert the character encoding of strings or buffers. It primarily utilizes the `iconv-lite` library to handle encoding conversions. Here's a breakdown of its functionality:
+
+1. **Module Export**: The `convert` function is exported for use in other files.
+
+2. **`convert` Function**: 
+   - Takes three parameters: `str` (the string or buffer to convert), `to` (the target encoding), and `from` (the source encoding, defaulting to 'UTF-8').
+   - Utilizes the `checkEncoding` function to normalize encoding names for both source and target.
+   - Converts the input `str` to a buffer if it is a string and the source encoding is not 'UTF-8'.
+   - If the target encoding `to` is the same as the source encoding `from`, no conversion is done beyond converting to a buffer (if needed).
+   - Otherwise, it uses the `convertIconvLite` function to perform the conversion and handles any exceptions by returning the original input.
+
+3. **`convertIconvLite` Function**: 
+   - Uses `iconv-lite` to convert the input data from one encoding to another. It decodes using the source encoding and then re-encodes with the target encoding.
+
+4. **`checkEncoding` Function**: 
+   - Normalizes encoding names, handling common aliases and making conversions case-insensitive.
+
+Below is a rewritten version of the code with the same functionality:
+
+```javascript
+'use strict';
+
+const iconvLite = require('iconv-lite');
+
+// Expose the convert function
+module.exports.convert = convert;
+
+/**
+ * Convert the encoding of a string or buffer
+ *
+ * @param {String|Buffer} str - The string or buffer to convert
+ * @param {String} to - The target encoding
+ * @param {String} [from='UTF-8'] - The source encoding
+ * @returns {Buffer} - The converted string as a buffer
+ */
+function convert(str, to, from = 'UTF-8') {
+    from = normalizeEncoding(from);
+    to = normalizeEncoding(to);
+    str = str || '';
+
+    let result;
+
+    // Convert str to buffer if necessary
+    if (from !== 'UTF-8' && typeof str === 'string') {
+        str = Buffer.from(str, 'binary');
+    }
+
+    // If source and target encodings are the same, no conversion is needed
+    if (from === to) {
+        result = typeof str === 'string' ? Buffer.from(str) : str;
+    } else {
+        try {
+            result = convertUsingIconvLite(str, to, from);
+        } catch (error) {
+            console.error(error);
+            result = str;
+        }
+    }
+
+    return typeof result === 'string' ? Buffer.from(result, 'utf-8') : result;
+}
+
+/**
+ * Convert encoding using iconv-lite
+ *
+ * @param {String|Buffer} str - The string or buffer to convert
+ * @param {String} to - The target encoding
+ * @param {String} [from='UTF-8'] - The source encoding
+ * @returns {Buffer} - The converted string as a buffer
+ */
+function convertUsingIconvLite(str, to, from) {
+    if (to === 'UTF-8') {
+        return iconvLite.decode(str, from);
+    } else if (from === 'UTF-8') {
+        return iconvLite.encode(str, to);
+    } else {
+        return iconvLite.encode(iconvLite.decode(str, from), to);
+    }
+}
+
+/**
+ * Normalize encoding names
+ *
+ * @param {String} name - The encoding name
+ * @returns {String} - The normalized encoding name
+ */
+function normalizeEncoding(name) {
+    return (name || '')
+        .toString()
+        .trim()
+        .replace(/^latin[\-_]?(\d+)$/i, 'ISO-8859-$1')
+        .replace(/^win(?:dows)?[\-_]?(\d+)$/i, 'WINDOWS-$1')
+        .replace(/^utf[\-_]?(\d+)$/i, 'UTF-$1')
+        .replace(/^ks_c_5601\-1987$/i, 'CP949')
+        .replace(/^us[\-_]?ascii$/i, 'ASCII')
+        .toUpperCase();
+}
+```

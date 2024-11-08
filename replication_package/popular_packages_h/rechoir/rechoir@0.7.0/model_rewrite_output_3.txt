@@ -1,0 +1,69 @@
+The code defines a function `prepare` that is meant to dynamically load and register modules based on the file extension of a given `filepath`. It uses helper functions from external modules to achieve this. Here is a breakdown of its functionality:
+
+1. **Require Necessary Modules**: It uses Node.js built-in `path` module and requires three helper modules: `extension`, `normalize`, and `register`.
+2. **Determine Extensions of a File**: The `extension` module helps determine the possible extensions for a given file path.
+3. **Normalize Extensions**: Uses `normalize` to standardize the configuration for the detected file extension.
+4. **Check Extension Support**: Checks if the module extension is already supported by Node.js by checking `require.extensions`.
+5. **Handle Configurations**: If the `normalize` function returns no configuration for the given extension, an error is thrown (unless `nothrow` is set).
+6. **Computing the Current Working Directory**: Uses Node.js path utilities to compute the directory of the given `filepath`.
+7. **Registration Attempts**: Attempts to register each module option provided in the configurations. Uses the `register` function which may return errors if the registration fails.
+8. **Error Handling**: If all registration attempts fail, the function either throws an error or returns it, based on the `nothrow` flag.
+9. **Return**: Returns an array of successful and failed module registration attempts.
+
+Here's a possible rewrite of the code while maintaining its functionality:
+
+```javascript
+const path = require('path');
+
+const extension = require('./lib/extension');
+const normalize = require('./lib/normalize');
+const register = require('./lib/register');
+
+exports.prepare = function(extensions, filepath, cwd, nothrow) {
+  let config;
+  let usedExtension;
+  let attempts = [];
+  let onlyErrors = true;
+
+  const exts = extension(filepath);
+  if (exts) {
+    exts.some(ext => {
+      usedExtension = ext;
+      config = normalize(extensions[ext]);
+      return !!config;
+    });
+  }
+
+  if (require.extensions[usedExtension]) {
+    return true;
+  }
+
+  if (!config) {
+    if (nothrow) return;
+    throw new Error(`No module loader found for "${usedExtension}".`);
+  }
+
+  cwd = cwd || path.dirname(path.resolve(filepath));
+  config = Array.isArray(config) ? config : [config];
+
+  for (const option of config) {
+    const attempt = register(cwd, option.module, option.register);
+    const error = attempt instanceof Error ? attempt : null;
+    attempts.push({ moduleName: option.module, module: attempt, error });
+
+    if (!error) {
+      onlyErrors = false;
+      break;
+    }
+  }
+
+  if (onlyErrors) {
+    const err = new Error(`Unable to use specified module loaders for "${usedExtension}".`);
+    err.failures = attempts;
+    if (nothrow) return err;
+    throw err;
+  }
+
+  return attempts;
+};
+```

@@ -1,0 +1,85 @@
+The Node.js code defines a module that exports a `declare` function, which is intended to be used for declaring plugins or presets in a specific environment such as Babel (a JavaScript compiler). Here is the breakdown of the code:
+
+1. **declare Function**: 
+   - Takes a `builder` function as an argument and returns another function accepting `api`, `options`, and `dirname`.
+   - Checks if `api` has a method called `assertVersion`. If not, it augments `api` by adding `assertVersion` which throws a version error by calling `throwVersionError`.
+   - Finally, calls and returns the result of `builder` with `api`, `options`, and `dirname`.
+
+2. **copyApiObject Function**:
+   - Clones the `api` object, including certain prototype properties if the `api.version` matches a specific condition (starting with "7.").
+   - Ensures that the prototype includes properties like `version`, `transform`, `template`, and `types`.
+
+3. **has Function**:
+   - Utility to check if an object has a specific property.
+
+4. **throwVersionError Function**:
+   - Throws a formatted error if the loaded version of Babel does not match the expected range.
+   - Adjusts `Error.stackTraceLimit` for detailed stack traces and constructs the error message based on the Babel version discrepancy.
+
+Here's a possible rewrite of the code:
+
+```javascript
+"use strict";
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports.declare = declare;
+
+function declare(builder) {
+  return (api, options = {}, dirname) => {
+    if (!api.assertVersion) {
+      api = { ...copyApiObject(api), assertVersion(range) {
+        throwVersionError(range, api.version);
+      }};
+    }
+    return builder(api, options, dirname);
+  };
+}
+
+function copyApiObject(api) {
+  let proto = api.version.startsWith("7.") ? Object.getPrototypeOf(api) : null;
+
+  if (proto && !['version', 'transform', 'template', 'types'].every(key => has(proto, key))) {
+    proto = null;
+  }
+
+  return { ...proto, ...api };
+}
+
+function has(obj, key) {
+  return Object.prototype.hasOwnProperty.call(obj, key);
+}
+
+function throwVersionError(range, version) {
+  if (typeof range === "number") {
+    if (!Number.isInteger(range)) {
+      throw new Error("Expected string or integer value.");
+    }
+    range = `^${range}.0.0-0`;
+  }
+  
+  if (typeof range !== "string") {
+    throw new Error("Expected string or integer value.");
+  }
+
+  const originalLimit = Error.stackTraceLimit;
+  if (typeof originalLimit === "number" && originalLimit < 25) {
+    Error.stackTraceLimit = 25;
+  }
+
+  const err = version.startsWith("7.")
+    ? new Error(`Requires Babel "^7.0.0-beta.41", but was loaded with "${version}". You'll need to update your @babel/core version.`)
+    : new Error(`Requires Babel "${range}", but was loaded with "${version}". If you are sure you have a compatible version of @babel/core, it is likely that something in your build process is loading the wrong version. Inspect the stack trace of this error to look for the first entry that doesn't mention "@babel/core" or "babel-core" to see what is calling Babel.`);
+
+  if (typeof originalLimit === "number") {
+    Error.stackTraceLimit = originalLimit;
+  }
+
+  throw Object.assign(err, {
+    code: "BABEL_VERSION_UNSUPPORTED",
+    version,
+    range
+  });
+}
+```

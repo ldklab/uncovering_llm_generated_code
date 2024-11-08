@@ -1,0 +1,104 @@
+The Node.js code provides a set of utilities for working with JavaScript abstract syntax trees (ASTs). It includes functions for parsing JavaScript code into an AST, traversing and modifying that AST, and printing the AST back into JavaScript code. 
+
+### Key Components:
+1. **Types and AST Manipulation**:
+   - `ast-types` is imported to help traverse and modify the AST.
+   - The `visit` function allows traversal of an AST with handlers for different node types.
+
+2. **Parsing and Printing**:
+   - `parse`: Parses JavaScript code into an AST using a custom parser.
+   - `print`: Prints an AST back to JavaScript code, aiming to preserve as much of the original source code format as possible.
+   - `prettyPrint`: Prints an AST without attempting to preserve the original source code formatting.
+
+3. **Command-Line Interface**:
+   - `run`: Provides a CLI to run transformations on JavaScript files.
+   - `runFile`: Reads a file, parses its content, applies a transformation, and prints the result.
+   - `runString`: Similar to `runFile`, but operates on a string of JavaScript code instead of a file.
+
+The module exports the main functionalities to be used in other files or modules.
+
+```javascript
+"use strict";
+const { parse } = require("./lib/parser");
+const { Printer } = require("./lib/printer");
+const fs = require("fs");
+const astTypes = require("ast-types");
+const types = require("ast-types");
+exports.types = types;
+
+// Parsing utility
+exports.parse = parse;
+
+// AST visiting utility
+exports.visit = astTypes.visit;
+
+/**
+ * Function to print an AST into code, preserving original formatting
+ * @param {*} node - The AST node to print
+ * @param {*} options - Printing options
+ * @returns Printed code
+ */
+function print(node, options) {
+    return new Printer(options).print(node);
+}
+exports.print = print;
+
+/**
+ * Function to pretty-print an AST into code without preserving original formatting
+ * @param {*} node - The AST node to print
+ * @param {*} options - Printing options
+ * @returns Printed code
+ */
+function prettyPrint(node, options) {
+    return new Printer(options).printGenerically(node);
+}
+exports.prettyPrint = prettyPrint;
+
+/**
+ * Run a transformation on a file specified via command line
+ * @param {*} transformer - The transformer function
+ * @param {*} options - Options for reading/writing
+ * @returns Result of the transformation
+ */
+function run(transformer, options) {
+    return runFile(process.argv[2], transformer, options);
+}
+exports.run = run;
+
+/**
+ * Read a file and run a transformation on its contents
+ * @param {*} path - Path to the file
+ * @param {*} transformer - The transformer function
+ * @param {*} options - Options for reading/writing
+ */
+function runFile(path, transformer, options) {
+    fs.readFile(path, "utf-8", (err, code) => {
+        if (err) {
+            console.error(err);
+            return;
+        }
+        runString(code, transformer, options);
+    });
+}
+
+/**
+ * Default function to handle the output
+ * @param {*} output - The output to write
+ */
+function defaultWriteback(output) {
+    process.stdout.write(output);
+}
+
+/**
+ * Run a transformation on a string of code
+ * @param {*} code - The code to transform
+ * @param {*} transformer - The transformer function
+ * @param {*} options - Options for reading/writing
+ */
+function runString(code, transformer, options) {
+    const writeback = (options && options.writeback) || defaultWriteback;
+    transformer(parse(code, options), (node) => {
+        writeback(print(node, options).code);
+    });
+}
+```

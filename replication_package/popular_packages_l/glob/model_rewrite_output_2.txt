@@ -1,0 +1,50 @@
+The provided Node.js code defines a class `SimpleGlob` that mimics a simple globbing functionality to match file paths against a specified pattern. It processes directories recursively, using a pattern to filter files similar to how basic glob syntax works. The class allows matching files based on patterns containing wildcard characters like `"*"` and `"?"`, translating these to regex equivalents. The `glob` method processes directories beginning from a `basePath`, collects file paths, and returns those that match the pattern. The static `glob` method offers a direct way to initiate the process.
+
+Here's the rewritten code:
+
+```javascript
+const fs = require('fs').promises;
+const path = require('path');
+
+class SimpleGlob {
+  constructor(pattern, options = {}) {
+    this.pattern = pattern;
+    this.basePath = options.basePath || '.';
+  }
+
+  async glob() {
+    const files = await this.walk(this.basePath);
+    return files.filter(file => this.isMatch(file));
+  }
+
+  async walk(dir) {
+    try {
+      const entries = await fs.readdir(dir, { withFileTypes: true });
+      const results = await Promise.all(entries.map(entry => {
+        const resPath = path.resolve(dir, entry.name);
+        return entry.isDirectory() ? this.walk(resPath) : [resPath];
+      }));
+      return results.flat();
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  isMatch(filePath) {
+    const regex = new RegExp(this.pattern.replace(/\./g, '\\.').replace(/\*/g, '.*').replace(/\?/g, '.'));
+    return regex.test(filePath);
+  }
+
+  static async glob(pattern, options) {
+    const instance = new SimpleGlob(pattern, options);
+    return await instance.glob();
+  }
+}
+
+// Usage example:
+SimpleGlob.glob('**/*.js', { basePath: './my-project' })
+  .then(files => console.log(files))
+  .catch(err => console.error(err));
+```
+
+In this version, `fs.promises` is used to enable async/await syntax directly with `fs` operations, simplifying the code structure. The `options` default to an empty object during object instantiation, providing cleaner parameter handling. Also, error handling is concise with a standard try-catch block in the `walk` method.

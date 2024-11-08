@@ -1,0 +1,51 @@
+The given Node.js code defines a module that exports a function `isMap`. This function determines whether a given value `x` is a Map instance. Here's the functionality breakdown:
+
+1. The code first checks if `Map` and `Set` are available in the environment. If they are, it assigns their constructors to variables `$Map` and `$Set`.
+
+2. It defines a variable `exported` meant to hold the function that will be exported.
+
+3. If `Map` is not available in the environment (`$Map` is falsy), the `exported` function is defined to always return `false`.
+
+4. It checks if the `has` method is available on Map and Set prototypes. If neither `$mapHas` nor `exported` is truthy, the `exported` function is defined to always return `false` (since it implies `Map` is present but does not support the `has` method).
+
+5. The module exports the `exported` function, or if it's not defined, a default function. This default function:
+   - Checks if the input `x` is a non-null object.
+   - Attempts to use the `has` method of a Map on `x`; if `Set`'s `has` method is available, it tries to use it on `x` and if it throws an error, it returns `true`.
+   - Finally, it checks if `x` is an instance of `$Map`, which acts as a workaround for older `core-js` versions.
+
+Here's a rewritten version of the code:
+
+```javascript
+'use strict';
+
+var $Map = typeof Map === 'function' ? Map : null;
+var $Set = typeof Set === 'function' ? Set : null;
+
+var exported = function isAlwaysFalse() { return false; };
+
+if ($Map) {
+	var $mapHas = Map.prototype.has;
+
+	if ($mapHas) {
+		exported = function isMap(x) {
+			if (!x || typeof x !== 'object') {
+				return false;
+			}
+			try {
+				$mapHas.call(x);
+				if ($Set) {
+					try {
+						Set.prototype.has.call(x);
+					} catch (e) {
+						return true;
+					}
+				}
+				return x instanceof $Map; // core-js workaround, pre-v2.5.0
+			} catch (e) {}
+			return false;
+		};
+	}
+}
+
+module.exports = exported;
+```

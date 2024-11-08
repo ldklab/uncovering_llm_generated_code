@@ -1,0 +1,95 @@
+The provided Node.js code defines a utility class `Utf8Utils` with two static methods, `encode` and `decode`, to handle UTF-8 encoding and decoding of strings.
+
+1. **Encoding (`encode` method)**:
+   - The method takes a string as its input.
+   - It iterates over each character in the string, converts it to a corresponding UTF-8 byte sequence, and appends it to an array.
+   - If the character code is less than 0x80, it is added directly.
+   - If it's less than 0x800, it is encoded in two bytes.
+   - If it's a typical Unicode character (not a surrogate pair), it uses three bytes.
+   - In the case of surrogate pairs (used for encoding characters outside the Basic Multilingual Plane), it converts them into an astral point and encodes it in four bytes.
+   - Finally, the array of bytes is returned as a `Uint8Array`.
+
+2. **Decoding (`decode` method)**:
+   - The method takes a `Uint8Array` representing a UTF-8 encoded sequence.
+   - It processes the array, reading one to four bytes at a time, depending on the encoded value.
+   - For each sequence, it calculates the Unicode code point and appends the corresponding character to a string.
+   - For sequences requiring surrogate pairs, it reconstructs the original Unicode scalar value.
+   - Returns the resulting decoded string.
+
+The code uses JavaScript's `String.fromCharCode` and `String.charCodeAt`, combined with bitwise operators, to handle the conversion between strings and byte sequences.
+
+```javascript
+class Utf8Utils {
+  /**
+   * Encodes a given string into a UTF-8 byte array.
+   * @param {string} str - The input string to encode.
+   * @returns {Uint8Array} - The UTF-8 encoded byte array.
+   */
+  static encode(str) {
+    const utf8 = [];
+    for (let i = 0; i < str.length; i++) {
+      let charcode = str.charCodeAt(i);
+      if (charcode < 0x80) utf8.push(charcode);
+      else if (charcode < 0x800) {
+        utf8.push(
+          0xc0 | (charcode >> 6),
+          0x80 | (charcode & 0x3f)
+        );
+      } else if (charcode < 0xd800 || charcode >= 0xe000) {
+        utf8.push(
+          0xe0 | (charcode >> 12),
+          0x80 | ((charcode >> 6) & 0x3f),
+          0x80 | (charcode & 0x3f)
+        );
+      } else {
+        i++;
+        charcode = 0x10000 + (((charcode & 0x3ff) << 10) | (str.charCodeAt(i) & 0x3ff));
+        utf8.push(
+          0xf0 | (charcode >> 18),
+          0x80 | ((charcode >> 12) & 0x3f),
+          0x80 | ((charcode >> 6) & 0x3f),
+          0x80 | (charcode & 0x3f)
+        );
+      }
+    }
+    return new Uint8Array(utf8);
+  }
+
+  /**
+   * Decodes a UTF-8 byte array back into a string.
+   * @param {Uint8Array} bytes - The UTF-8 byte array to decode.
+   * @returns {string} - The decoded string.
+   */
+  static decode(bytes) {
+    let str = "";
+    for (let i = 0; i < bytes.length;) {
+      let byte1 = bytes[i++];
+      if (byte1 < 0x80) str += String.fromCharCode(byte1);
+      else if (byte1 < 0xe0) {
+        const byte2 = bytes[i++];
+        str += String.fromCharCode(
+          ((byte1 & 0x1f) << 6) | (byte2 & 0x3f)
+        );
+      } else if (byte1 < 0xf0) {
+        const byte2 = bytes[i++];
+        const byte3 = bytes[i++];
+        str += String.fromCharCode(
+          ((byte1 & 0x0f) << 12) | ((byte2 & 0x3f) << 6) | (byte3 & 0x3f)
+        );
+      } else {
+        const byte2 = bytes[i++];
+        const byte3 = bytes[i++];
+        const byte4 = bytes[i++];
+        let charCode = (((byte1 & 0x07) << 18) | 
+                        ((byte2 & 0x3f) << 12) | 
+                        ((byte3 & 0x3f) << 6) | 
+                        (byte4 & 0x3f)) - 0x10000;
+        str += String.fromCharCode((charCode >> 10) + 0xd800, (charCode & 0x3ff) + 0xdc00);
+      }
+    }
+    return str;
+  }
+}
+
+module.exports = Utf8Utils;
+```

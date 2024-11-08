@@ -1,0 +1,162 @@
+The Node.js code appears to be a module designed for loading and processing PostCSS configurations. Here's a breakdown of the code's functionality:
+
+1. **Dependencies**: It imports several dependencies:
+   - `lilconfig` for configuration loading.
+   - `path` module for file path resolution.
+   - Local modules `options.js`, `plugins.js`, and `req.js`.
+
+2. **`interopRequireDefault` Function**: This utility function ensures compatibility with ES module imports by returning the default export when available.
+
+3. **`processResult` Function**: Takes a configuration context and a resultant configuration from `lilconfig`. It processes this result to identify the PostCSS config file, handle default exports, support function-based config, and ensure the presence of a `plugins` array. It utilizes helper functions `loadOptions` and `loadPlugins` to prepare the options and plugins for PostCSS.
+
+4. **`createContext` Function**: Initializes and returns a configuration context setting defaults for working directory (`cwd`) and environment (`env`).
+
+5. **File Loaders**: 
+   - General `loader`: Loads a file using the `req` module.
+   - `yamlLoader`: Dynamically loads and parses YAML content using the 'yaml' library, throwing an error if 'yaml' is not installed.
+
+6. **`withLoaders` Function**: Configures custom loaders for various file extensions as supported by 'lilconfig', including JavaScript, TypeScript, and YAML files. It also defines default search places for configuration files.
+
+7. **`rc` Function**: Core function that initializes the config context, resolves the path, and searches for the PostCSS config using `lilconfig` with custom loaders. It throws an error if no config is found and processes the result using `processResult`.
+
+8. **Exports**: The `rc` function is exported to be used as a module.
+
+Here's a possible rewrite of the code organized in a single markdown code block:
+
+```javascript
+// @ts-check
+const { resolve } = require('node:path');
+const config = require('lilconfig');
+const loadOptions = require('./options.js');
+const loadPlugins = require('./plugins.js');
+const req = require('./req.js');
+
+const interopRequireDefault = obj => obj && obj.__esModule ? obj : { default: obj };
+
+/**
+ * Process the result from cosmiconfig
+ * @param {Object} ctx Config Context
+ * @param {Object} result Cosmiconfig result
+ * @return {Promise<Object>} PostCSS Config
+ */
+async function processResult(ctx, result) {
+  let file = result.filepath || '';
+  let projectConfig = interopRequireDefault(result.config).default || {};
+
+  if (typeof projectConfig === 'function') {
+    projectConfig = projectConfig(ctx);
+  } else {
+    projectConfig = { ...projectConfig, ...ctx };
+  }
+
+  if (!projectConfig.plugins) {
+    projectConfig.plugins = [];
+  }
+
+  let res = {
+    file,
+    options: await loadOptions(projectConfig, file),
+    plugins: await loadPlugins(projectConfig, file),
+  };
+  delete projectConfig.plugins;
+  return res;
+}
+
+/**
+ * Builds the Config Context
+ * @param {Object} ctx Config Context
+ * @return {Object} Config Context
+ */
+function createContext(ctx) {
+  ctx = { cwd: process.cwd(), env: process.env.NODE_ENV, ...ctx };
+
+  if (!ctx.env) {
+    process.env.NODE_ENV = 'development';
+  }
+
+  return ctx;
+}
+
+async function loader(filepath) {
+  return req(filepath);
+}
+
+let yaml;
+async function yamlLoader(_, content) {
+  if (!yaml) {
+    try {
+      yaml = await import('yaml');
+    } catch (e) {
+      throw new Error(
+        `'yaml' is required for the YAML configuration files. Make sure it is installed\nError: ${e.message}`
+      );
+    }
+  }
+  return yaml.parse(content);
+}
+
+/** @return {import('lilconfig').Options} */
+const withLoaders = (options = {}) => {
+  const moduleName = 'postcss';
+
+  return {
+    ...options,
+    loaders: {
+      ...options.loaders,
+      '.cjs': loader,
+      '.cts': loader,
+      '.js': loader,
+      '.mjs': loader,
+      '.mts': loader,
+      '.ts': loader,
+      '.yaml': yamlLoader,
+      '.yml': yamlLoader,
+    },
+    searchPlaces: [
+      ...(options.searchPlaces || []),
+      'package.json',
+      `.${moduleName}rc`,
+      `.${moduleName}rc.json`,
+      `.${moduleName}rc.yaml`,
+      `.${moduleName}rc.yml`,
+      `.${moduleName}rc.ts`,
+      `.${moduleName}rc.cts`,
+      `.${moduleName}rc.mts`,
+      `.${moduleName}rc.js`,
+      `.${moduleName}rc.cjs`,
+      `.${moduleName}rc.mjs`,
+      `${moduleName}.config.ts`,
+      `${moduleName}.config.cts`,
+      `${moduleName}.config.mts`,
+      `${moduleName}.config.js`,
+      `${moduleName}.config.cjs`,
+      `${moduleName}.config.mjs`,
+    ],
+  };
+};
+
+/**
+ * Load Config
+ * @method rc
+ * @param {Object} ctx Config Context
+ * @param {String} path Config Path
+ * @param {Object} options Config Options
+ * @return {Promise} config PostCSS Config
+ */
+function rc(ctx, path, options) {
+  ctx = createContext(ctx);
+  path = path ? resolve(path) : process.cwd();
+
+  return config
+    .lilconfig('postcss', withLoaders(options))
+    .search(path)
+    .then(result => {
+      if (!result) {
+        throw new Error(`No PostCSS Config found in: ${path}`);
+      }
+      return processResult(ctx, result);
+    });
+}
+
+module.exports = rc;
+```

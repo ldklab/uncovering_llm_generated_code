@@ -1,0 +1,79 @@
+// run-async.js
+
+// Polyfill for Promise support if it's not natively available
+if (typeof Promise === 'undefined') {
+  var Promise = require('es6-promise').Promise;
+}
+
+function runAsync(func, customAsync) {
+  return function() {
+    var self = this;
+    var args = Array.prototype.slice.call(arguments);
+
+    function createCallback() {
+      var promise = new Promise(function (resolve, reject) {
+        var callback = function(err, result) {
+          if (err) {
+            return reject(err);
+          }
+          resolve(result);
+        };
+        callback.promise = { resolve, reject };
+        return callback;
+      });
+      
+      return promise;
+    }
+
+    var callback = createCallback();
+
+    Object.defineProperty(self, 'async', {
+      value: function() {
+        return callback;
+      },
+      enumerable: false
+    });
+
+    if (customAsync) {
+      Object.defineProperty(self, customAsync, {
+        value: function() {
+          return callback;
+        },
+        enumerable: false
+      });
+    }
+
+    try {
+      var result = func.apply(self, args);
+      if (result && result.then && typeof result.then === 'function') {
+        result.then(callback.resolve, callback.reject);
+      } else if (!customAsync && func.length < args.length + 1) {
+        callback.resolve(result);
+      }
+    } catch (error) {
+      callback.reject(error);
+    }
+
+    return callback;
+  };
+}
+
+function runAsyncCb(func, callback) {
+  return function() {
+    var self = this;
+    var args = Array.prototype.slice.call(arguments);
+    var hasCallback = typeof args[args.length - 1] === 'function';
+
+    if (hasCallback) {
+      callback = args.pop();
+    }
+
+    runAsync(func).apply(self, args).then(function(result) {
+      callback(null, result);
+    }, callback);
+  };
+}
+
+runAsync.cb = runAsyncCb;
+
+module.exports = runAsync;

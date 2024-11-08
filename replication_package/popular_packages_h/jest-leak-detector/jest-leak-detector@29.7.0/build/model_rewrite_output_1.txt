@@ -1,0 +1,73 @@
+The Node.js code provides a LeakDetector class designed to detect memory leaks by observing if an object is eligible for garbage collection. Here’s a breakdown of its functionality:
+
+1. **Imports and Setup**:
+   - The code imports various modules like `util`, `v8`, `vm`, `jest-get-type`, and `pretty-format` using functions that lazy-load these modules to optimize performance.
+   - It sets the exports of the module and includes a copyright notice.
+
+2. **Async Utility**:
+   - It utilizes `util.promisify` to convert `setImmediate` into an async-compatible function called `tick`.
+
+3. **LeakDetector Class**:
+   - Contains a constructor that accepts an object `value`. If `value` is a primitive, it throws a `TypeError` because primitives cannot be leaked.
+   - Leverages `FinalizationRegistry` to track when the object can be garbage collected. It sets `_isReferenceBeingHeld` to `false` when the object is cleaned up.
+
+4. **Public Method - isLeaking**:
+   - Runs the garbage collector and waits a few ticks to ensure the GC has time to process.
+   - Returns whether the object is still being held in memory (i.e., whether it's leaking).
+
+5. **Private Method - _runGarbageCollector**:
+   - Exposes the garbage collector via the `v8` module and executes it in a new context.
+   - Ensures the process hides the garbage collector after its execution, if it was initially hidden.
+
+Below is a revised version of the original code:
+
+```javascript
+'use strict';
+
+const util = require('util');
+const v8 = require('v8');
+const vm = require('vm');
+const { isPrimitive } = require('jest-get-type');
+const { format } = require('pretty-format');
+
+const tick = util.promisify(setImmediate);
+
+class LeakDetector {
+  constructor(value) {
+    if (isPrimitive(value)) {
+      throw new TypeError(
+        `Primitives cannot leak memory. You passed a ${typeof value}: <${format(value)}>`
+      );
+    }
+    
+    this._isReferenceBeingHeld = true;
+    this._finalizationRegistry = new FinalizationRegistry(() => {
+      this._isReferenceBeingHeld = false;
+    });
+    
+    this._finalizationRegistry.register(value, undefined);
+    value = null;
+  }
+
+  async isLeaking() {
+    this._runGarbageCollector();
+    for (let i = 0; i < 10; i++) {
+      await tick();
+    }
+    return this._isReferenceBeingHeld;
+  }
+
+  _runGarbageCollector() {
+    const isGCHidden = globalThis.gc == null;
+
+    v8.setFlagsFromString('--expose-gc');
+    vm.runInNewContext('gc')();
+
+    if (isGCHidden) {
+      v8.setFlagsFromString('--no-expose-gc');
+    }
+  }
+}
+
+module.exports = LeakDetector;
+```

@@ -1,0 +1,116 @@
+The provided Node.js code is a Universal Module Definition (UMD) pattern for loading a JavaScript module in different environments, including Node.js, AMD (such as RequireJS), and browser globals. The code defines an `async` library that provides a collection of utility functions for handling asynchronous JavaScript.
+
+Key functionalities and structure of the code:
+1. **UMD Wrapper Structure**: The top-level function is structured to load the module based on the environment:
+   - If `exports` and `module` are available, it exports the module for Node.js.
+   - If `define` and `define.amd` exist, it defines an AMD module.
+   - Otherwise, it attaches the module to the global object.
+
+2. **Library Functions**: Inside the factory function, the `exports` object is populated with various utility functions for async operations:
+   - Control flow functions (e.g., `series`, `parallel`, `auto`)
+   - Collection operations (`map`, `each`, `filter`, etc.)
+   - Utility functions for working with async functions (e.g., `asyncify`, `memoize`, `retry`, `waterfall`)
+   
+3. **Functionality Examples**:
+   - **apply**: Partially applies a function with given arguments.
+   - **asyncify**: Converts sync functions to async, suitable for piping into async workflows.
+   - **parallel**: Runs functions in parallel and collects their results.
+   - **series**: Runs functions in series, where one function’s output is the next function's input.
+   - **auto** and **autoInject**: Manage asynchronous tasks with dependencies.
+
+The entire library is structured to provide a robust toolset for managing async JavaScript in various execution environments.
+
+Here’s the code rewrite to follow the explanation:
+
+```javascript
+(function (global, factory) {
+    if (typeof exports === 'object' && typeof module !== 'undefined') {
+        factory(exports);
+    } else if (typeof define === 'function' && define.amd) {
+        define(['exports'], factory);
+    } else {
+        let globalObj = typeof globalThis !== 'undefined' ? globalThis : global || self;
+        factory(globalObj.async = {});
+    }
+})(this, function (exports) {
+    'use strict';
+
+    function apply(fn, ...args) {
+        return (...callArgs) => fn(...args, ...callArgs);
+    }
+
+    function applyEach(eachFn, fns, callback) {
+        return function (...args) {
+            eachFn(fns.map(fn => fn(...args)), callback);
+        };
+    }
+
+    function asyncify(func) {
+        return function (...args) {
+            const callback = args.pop();
+            try {
+                const result = func.apply(this, args);
+                if (result && typeof result.then === 'function') {
+                    result.then(val => callback(null, val), err => callback(err || new Error(err)));
+                } else {
+                    callback(null, result);
+                }
+            } catch (e) {
+                callback(e);
+            }
+        };
+    }
+
+    function series(tasks, callback) {
+        const results = [];
+        let index = 0;
+
+        function iterator() {
+            if (index >= tasks.length) return callback(null, results);
+            tasks[index]((err, result) => {
+                if (err) return callback(err);
+                results.push(result);
+                index++;
+                iterator();
+            });
+        }
+
+        iterator();
+    }
+
+    function parallel(tasks, callback) {
+        const results = [];
+        let completed = 0;
+
+        tasks.forEach((task, index) => {
+            task((err, result) => {
+                if (err) return callback(err);
+                results[index] = result;
+                completed++;
+                if (completed === tasks.length) callback(null, results);
+            });
+        });
+    }
+
+    function waterfall(tasks, callback) {
+        function iterate(index, ...args) {
+            if (index >= tasks.length) return callback(null, ...args);
+            tasks[index](...args, (err, ...results) => {
+                if (err) return callback(err);
+                iterate(index + 1, ...results);
+            });
+        }
+
+        iterate(0);
+    }
+
+    exports.apply = apply;
+    exports.applyEach = applyEach;
+    exports.asyncify = asyncify;
+    exports.series = series;
+    exports.parallel = parallel;
+    exports.waterfall = waterfall;
+
+    Object.defineProperty(exports, '__esModule', { value: true });
+});
+```

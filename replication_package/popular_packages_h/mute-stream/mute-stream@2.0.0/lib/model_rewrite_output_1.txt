@@ -1,0 +1,140 @@
+The provided Node.js code defines a custom stream class named `MuteStream` which extends the Node.js built-in `Stream` class. The `MuteStream` class is designed to allow muting of a stream's data output. Here's a breakdown of its functionality:
+
+1. **Initialization**: The constructor accepts an optional options object. It initializes the stream as both readable and writable, sets the `muted` property to false (indicating whether the output should be suppressed), and handles replacement options for character redrawing, useful in terminal applications.
+   
+2. **TTY Properties**: The class includes methods to access and set the TTY (Teletypewriter) properties, `isTTY`, `rows`, and `columns`, by checking the destination or source streams.
+
+3. **Muting and Unmuting**: Methods `mute()` and `unmute()` are provided to toggle the `muted` state.
+
+4. **Piping**: The `_onpipe` method is attached to the 'pipe' event to capture source streams, and the `pipe` method overrides the superclass method to capture destination streams.
+
+5. **Data Handling**: The `write` method is overridden to manage data transmission:
+   - When muted, it replaces outgoing characters with a specified replacement character, if defined.
+   - It checks for control sequences and, when in such a sequence, manages the prompt display without showing actual characters.
+   - Emits modified data events when muted, or transfers unmuted data normally.
+
+6. **Stream Control**: Methods such as `pause()` and `resume()` control the flow of the source stream, if defined.
+
+7. **Lifecycle Management**: The class provides encapsulated methods like `destroy()`, `destroySoon()`, and `close()` to handle stream end-to-end processes and ensure that associated source or destination streams are similarly managed.
+
+Below is a possible rewrite of the original code:
+
+```javascript
+const { Stream } = require('stream');
+
+class MuteStream extends Stream {
+  #isTTY = null;
+
+  constructor(options = {}) {
+    super(options);
+    this.writable = this.readable = true;
+    this.muted = false;
+    this.on('pipe', this._onPipe);
+    this.replace = options.replace;
+    this._prompt = options.prompt || null;
+    this._hadControl = false;
+  }
+
+  #getPropertyFromSrcDest(property, defaultValue) {
+    return this._dest?.[property] ?? this._src?.[property] ?? defaultValue;
+  }
+
+  #invokeOnSrcDest(method, ...args) {
+    if (typeof this._dest?.[method] === 'function') {
+      this._dest[method](...args);
+    }
+    if (typeof this._src?.[method] === 'function') {
+      this._src[method](...args);
+    }
+  }
+
+  get isTTY() {
+    return this.#isTTY !== null ? this.#isTTY : this.#getPropertyFromSrcDest('isTTY', false);
+  }
+
+  set isTTY(value) {
+    this.#isTTY = value;
+  }
+
+  get rows() {
+    return this.#getPropertyFromSrcDest('rows');
+  }
+
+  get columns() {
+    return this.#getPropertyFromSrcDest('columns');
+  }
+
+  mute() {
+    this.muted = true;
+  }
+
+  unmute() {
+    this.muted = false;
+  }
+
+  _onPipe(source) {
+    this._src = source;
+  }
+
+  pipe(destination, options) {
+    this._dest = destination;
+    return super.pipe(destination, options);
+  }
+
+  pause() {
+    this._src?.pause();
+  }
+
+  resume() {
+    this._src?.resume();
+  }
+
+  write(chunk) {
+    if (this.muted) {
+      if (!this.replace) {
+        return true;
+      }
+      if (/^\u001b/.test(chunk)) {
+        if (chunk.startsWith(this._prompt)) {
+          chunk = this._prompt + chunk.slice(this._prompt.length).replace(/./g, this.replace);
+        }
+        this._hadControl = true;
+        return this.emit('data', chunk);
+      }
+      if (this._prompt && this._hadControl && chunk.startsWith(this._prompt)) {
+        this._hadControl = false;
+        this.emit('data', this._prompt);
+        chunk = chunk.slice(this._prompt.length);
+      }
+      chunk = chunk.replace(/./g, this.replace);
+    }
+    this.emit('data', chunk);
+  }
+
+  end(chunk) {
+    if (this.muted && chunk && this.replace) {
+      chunk = chunk.replace(/./g, this.replace);
+    } else {
+      chunk = null;
+    }
+    if (chunk) {
+      this.emit('data', chunk);
+    }
+    this.emit('end');
+  }
+
+  destroy(...args) {
+    this.#invokeOnSrcDest('destroy', ...args);
+  }
+
+  destroySoon(...args) {
+    this.#invokeOnSrcDest('destroySoon', ...args);
+  }
+
+  close(...args) {
+    this.#invokeOnSrcDest('close', ...args);
+  }
+}
+
+module.exports = MuteStream;
+```

@@ -1,0 +1,123 @@
+The `sax js` Node.js package is a SAX-style parser designed for parsing XML and HTML. It is a simple tool that reads XML strings and emits events for different components of the XML, like elements opening and closing tags, text, comments, and various other components.
+
+### Features:
+- **Event-Driven SAX Parsing**: It is built around SAX (Simple API for XML) parsing, where it processes XML data sequentially and triggers events like `opentag`, `text`, `closetag`, `attribute`, etc.
+- **XML Handling**: It can handle XML parsing with options for strict or loose parsing modes. In strict mode, it performs basic validation and strict syntax rule checking.
+- **Stream-Based Parsing**: Supports stream parsing, making it suitable for parsing large files efficiently.
+- **Basic Entity Handling**: Understands predefined XML entities (`&amp;`, `&lt;`, etc.) within text and attributes, with limited support for user-defined entities.
+
+### Usage:
+- **Setup**: The user creates a parser by calling `sax.parser(strict, options)`.
+- **Event Registration**: Users can register event handlers like `onopentag`, `ontext`, `onerror` to handle various stages of parsing.
+- **Writing Data**: The `write()` method processes the XML data, and `close()` ends the parsing process.
+- **Stream Usage**: The parser can be hooked into a stream using `createStream(strict, options)` and integrated with Node.js streams for reading from files.
+
+### Customization Options:
+- Support options for case sensitivity (`lowercase`), whitespace normalization (`normalize`), trimming text nodes (`trim`), and namespace handling (`xmlns`).
+- Settings like `strictEntities`, `unquotedAttributeValues`, `position` help control parser behaviors.
+
+### Code Example:
+The following code block implements the functionality described above:
+
+```javascript
+const EventEmitter = require('events');
+
+class SAXParser extends EventEmitter {
+  constructor(strict, options = {}) {
+    super();
+    this.strict = strict || false;
+    this.opt = options;
+    this.reset();
+  }
+
+  // Method to reset the parser
+  reset() {
+    this.line = 1;
+    this.column = 0;
+    this.position = 0;
+    this.error = null;
+    this.closed = false;
+  }
+
+  // Method to handle incoming data for parsing
+  write(data) {
+    try {
+      this.parse(data);
+      return this;
+    } catch (err) {
+      this.emit('error', err);
+    }
+  }
+
+  // Method to end the stream
+  close() {
+    this.closed = true;
+    this.emit('end');
+  }
+
+  // Dummy parse method for demonstration
+  parse(data) {
+    let match;
+    const tagOpen = /<([^>\/\s]+)[^>]*>/g;
+    const tagClose = /<\/([^>]+)>/g;
+    const textMatch = />([^<]+)</g;
+    const commentMatch = /<!--(.*?)-->/g;
+    const attrMatch = /(\w+)=["']?((?:.(?!["']?\s+(?:\S+)=|["']))+.)["']?/g;
+
+    while ((match = tagOpen.exec(data))) {
+      const tagName = match[1];
+      this.emit('opentagstart', { name: tagName, attributes: {} });
+      
+      const attributes = {};
+      let attr;
+      while ((attr = attrMatch.exec(match[0]))) {
+        attributes[attr[1]] = attr[2];
+        this.emit('attribute', { name: attr[1], value: attr[2] });
+      }
+      this.emit('opentag', { name: tagName, attributes });
+    }
+
+    while ((match = tagClose.exec(data))) {
+      const tagName = match[1];
+      this.emit('closetag', tagName);
+    }
+
+    while ((match = textMatch.exec(data))) {
+      const text = match[1].trim();
+      if (text) this.emit('text', text);
+    }
+
+    while ((match = commentMatch.exec(data))) {
+      this.emit('comment', match[1].trim());
+    }
+  }
+}
+
+// Factory functions to create parsers
+function parser(strict, opt = {}) {
+  return new SAXParser(strict, opt);
+}
+
+function createStream(strict, opt = {}) {
+  const parser = new SAXParser(strict, opt);
+  
+  const stream = new EventEmitter();
+  stream.write = (data) => parser.write(data);
+  stream.end = () => parser.close();
+
+  // Pipe interface compliance
+  stream.pipe = function (dest) {
+    this.on('data', (data) => dest.write(data));
+    return dest;
+  };
+
+  parser.on('end', () => stream.emit('end'));
+  parser.on('error', (e) => stream.emit('error', e));
+  
+  return stream;
+}
+
+module.exports = { parser, createStream };
+```
+
+This code implements a basic SAX parser with event emission for parsing XML data. It initializes with options, processes XML input sequentially, and provides an interface to handle elements, attributes, text, comments, and errors. This minimal implementation can be expanded with more sophisticated parsing as needed.

@@ -1,0 +1,79 @@
+The given Node.js code defines a class `Int64`, which encapsulates a 64-bit integer value and provides various ways to initialize, manipulate, and represent it. The class can take a number, a hexadecimal string, or a Buffer as input to initialize the 64-bit integer:
+
+1. **Initialization:**
+   - If initialized with a number, it checks if the number is larger than the maximum safe integer in JavaScript and sets it to `Infinity` if so. It then converts this number into an 8-byte buffer (octets).
+   - If initialized with a hexadecimal string, it converts the string into an 8-byte buffer.
+   - If initialized with a Buffer, it extracts 8 bytes starting from a specified offset.
+
+2. **Methods:**
+   - `_numberToOctets`: Converts a number to an 8-byte Big Endian buffer.
+   - `_stringToOctets`: Converts a hexadecimal string to an 8-byte buffer, padding if necessary.
+   - `_octetsToNumber`: Converts an 8-byte buffer back into a number.
+   - `toString`: Returns the string representation of the Int64 value in the specified base.
+   - `toOctetString`: Returns the hexadecimal string representation of the buffer.
+   - `toBuffer`: Returns the buffer representation of Int64.
+   - `copy`: Copies the Int64 buffer to another buffer at a specified offset.
+
+This class provides functionality to handle 64-bit integers efficiently within JavaScript's limitations, preserving as much of their full representation as possible through Buffer manipulation.
+
+Here’s a possible rewrite based on this explanation:
+
+```javascript
+const isBuffer = (input) => input instanceof Buffer;
+
+class Int64 {
+  constructor(arg1, arg2) {
+    let buffer;
+    if (typeof arg1 === 'number') {
+      this._value = arg1 > Number.MAX_SAFE_INTEGER ? Infinity : arg1;
+      buffer = this._numberToOctets(this._value);
+    } else if (typeof arg1 === 'string') {
+      buffer = this._stringToOctets(arg1);
+      this._value = this._octetsToNumber(buffer);
+    } else if (isBuffer(arg1)) {
+      const offset = arg2 || 0;
+      buffer = arg1.slice(offset, offset + 8);
+      this._value = this._octetsToNumber(buffer);
+    }
+    this._octets = buffer;
+  }
+
+  _numberToOctets(number) {
+    const buffer = Buffer.allocUnsafe(8);
+    buffer.writeUInt32BE(number >>> 32, 0);
+    buffer.writeUInt32BE(number & 0xFFFFFFFF, 4);
+    return buffer;
+  }
+
+  _stringToOctets(hexString) {
+    const buffer = Buffer.from(hexString, 'hex');
+    return buffer.length === 8 ? buffer : Buffer.concat([Buffer.alloc(8 - buffer.length), buffer], 8);
+  }
+
+  _octetsToNumber(buffer) {
+    return buffer.readUInt32BE(0) * 0x100000000 + buffer.readUInt32BE(4);
+  }
+
+  toString(base = 10) {
+    return this._value === Infinity ? 'Infinity' : this._value.toString(base);
+  }
+
+  toOctetString() {
+    return this._octets.toString('hex');
+  }
+
+  toBuffer() {
+    return this._octets;
+  }
+
+  copy(destinationBuffer, offset = 0) {
+    this._octets.copy(destinationBuffer, offset);
+  }
+
+  get value() {
+    return this._value;
+  }
+}
+
+module.exports = Int64;
+```

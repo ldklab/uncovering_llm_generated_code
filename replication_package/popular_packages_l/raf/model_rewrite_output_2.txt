@@ -1,0 +1,58 @@
+The given Node.js code defines a function that polyfills the `requestAnimationFrame` and `cancelAnimationFrame` methods, which are used to schedule smooth animations in a web browser. It checks if these functions exist in the global scope, and if not, it attempts to assign them from vendor-prefixed versions (`ms`, `moz`, `webkit`, `o`). If vendor-prefixed versions aren't available, it falls back to using `setTimeout` to simulate the frame scheduling.
+
+The code also exports or assigns this polyfill function `raf` to the module exports, or attaches it to the global object, allowing other scripts to use it. Additionally, it provides a `raf.polyfill` method to apply the polyfill to a specific object (defaulting to `window` or `global`).
+
+Here's a succinct rewrite of the same functionality:
+
+```javascript
+// raf.js
+(function(globalScope) {
+  const vendors = ['ms', 'moz', 'webkit', 'o'];
+  let lastTime = 0;
+
+  // Find a prefixed version of requestAnimationFrame if available
+  for (let vendor of vendors) {
+    if (!globalScope.requestAnimationFrame) {
+      globalScope.requestAnimationFrame = globalScope[`${vendor}RequestAnimationFrame`];
+      globalScope.cancelAnimationFrame = globalScope[`${vendor}CancelAnimationFrame`] ||
+                                         globalScope[`${vendor}CancelRequestAnimationFrame`];
+    }
+  }
+
+  // Use setTimeout if requestAnimationFrame is unavailable
+  if (!globalScope.requestAnimationFrame) {
+    globalScope.requestAnimationFrame = (callback) => {
+      const currTime = Date.now();
+      const timeToCall = Math.max(0, 16 - (currTime - lastTime));
+      const id = globalScope.setTimeout(() => callback(currTime + timeToCall), timeToCall);
+      lastTime = currTime + timeToCall;
+      return id;
+    };
+  }
+
+  if (!globalScope.cancelAnimationFrame) {
+    globalScope.cancelAnimationFrame = (id) => {
+      globalScope.clearTimeout(id);
+    };
+  }
+
+  function raf(callback) {
+    return globalScope.requestAnimationFrame(callback);
+  }
+
+  raf.cancel = function(handle) {
+    globalScope.cancelAnimationFrame(handle);
+  };
+
+  raf.polyfill = function(object = (typeof window !== 'undefined' ? window : globalScope)) {
+    object.requestAnimationFrame = globalScope.requestAnimationFrame;
+    object.cancelAnimationFrame = globalScope.cancelAnimationFrame;
+  };
+
+  if (typeof module !== 'undefined' && module.exports) {
+    module.exports = raf;
+  } else {
+    globalScope.raf = raf;
+  }
+})(typeof window !== 'undefined' ? window : global);
+```

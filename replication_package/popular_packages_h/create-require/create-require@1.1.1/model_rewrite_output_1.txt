@@ -1,0 +1,61 @@
+The provided Node.js code defines a function `createRequire` that acts as a utility to obtain a require function similar to how modules are loaded natively in Node.js. It is designed to handle cases where the standard Node.js `require` functionality needs to be available based on different Node.js versions. Here are the key points and steps the code performs:
+
+1. **Input Handling**: The `createRequire` function accepts a filename. If no filename is passed, it defaults to the current working directory.
+
+2. **Directory Handling**: The code handles the case if a directory path is given by appending 'index.js' to create a path for the required file.
+
+3. **Node.js Version Compatibility**: 
+   - Utilizes `nativeModule.createRequire` if available (added in Node.js v12.2.0).
+   - Falls back to `nativeModule.createRequireFromPath` if available (added in Node.js v10.12.0 and deprecated since v12.2.0).
+   - Uses a custom polyfill `_createRequire` if neither method is available.
+
+4. **Polyfill Method**: The `_createRequire` function emulates the behavior of the native require by creating a new `Module` instance and compiling a wrapper function to export the standard `require`.
+
+5. **Directory Detection**: Helper function `isDir` checks if a given path is a directory to adjust the `filename` correctly when it's a directory.
+
+Below is a possible rewrite of the Node.js code:
+
+```javascript
+const { Module: NativeModule } = require('module');
+const { join, dirname } = require('path');
+const { lstatSync } = require('fs');
+
+function createRequire(filename = process.cwd()) {
+  if (isDirectory(filename)) {
+    filename = join(filename, 'index.js');
+  }
+
+  // Check the available methods for require creation in the order they're added.
+  // Node v12.2.0 introduced createRequire 
+  if (NativeModule.createRequire) {
+    return NativeModule.createRequire(filename);
+  }
+  
+  // Node v10.12.0 introduced createRequireFromPath
+  if (NativeModule.createRequireFromPath) {
+    return NativeModule.createRequireFromPath(filename);
+  }
+
+  // Use custom polyfill for older Node versions
+  return customCreateRequire(filename);
+}
+
+function customCreateRequire(filename) {
+  const mod = new NativeModule(filename, null);
+  mod.filename = filename;
+  mod.paths = NativeModule._nodeModulePaths(dirname(filename));
+  mod._compile('module.exports = require;', filename);
+  return mod.exports;
+}
+
+function isDirectory(path) {
+  try {
+    const stats = lstatSync(path);
+    return stats.isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+module.exports = createRequire;
+```

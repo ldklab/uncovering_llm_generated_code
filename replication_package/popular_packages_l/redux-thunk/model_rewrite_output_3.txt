@@ -1,0 +1,51 @@
+The provided Node.js code sets up a Redux store with thunk middleware, which allows for writing action creators that return functions instead of action objects. This middleware supports asynchronous actions by enabling the dispatch of functions which can be delayed or carry out side effects. The code also implements a custom middleware `withExtraArgument` which extends functionality by allowing an extra argument to be passed to action creators. The root reducer handles a simple state with an `INCREMENT` action type while the store is configured with middleware to handle additional use cases like asynchronous incrementation and conditional incrementing based on the state. Finally, a couple of actions using the thunk pattern are demonstrated: incrementing asynchronously and incrementing only if the current count is odd.
+
+```javascript
+const { createStore, applyMiddleware } = require('redux');
+
+// Custom thunk middleware allowing an extra argument
+const thunkWithExtraArgument = extraArgument => ({ dispatch, getState }) => next => action => {
+  if (typeof action === 'function') {
+    return action(dispatch, getState, extraArgument);
+  }
+  return next(action);
+};
+
+// Basic root reducer with an 'INCREMENT' case
+const rootReducer = (state = { count: 0 }, action) => {
+  switch(action.type) {
+    case 'INCREMENT':
+      return { count: state.count + 1 };
+    default:
+      return state;
+  }
+};
+
+// Creation of Redux store with thunk middleware attached
+const store = createStore(
+  rootReducer,
+  applyMiddleware(thunkWithExtraArgument({ apiService: /* your service layer */ }))
+);
+
+// Synchronous action creator
+const increment = () => ({ type: 'INCREMENT' });
+
+// Asynchronous action creator using thunk
+const incrementAsync = () => dispatch => {
+  setTimeout(() => {
+    dispatch(increment());
+  }, 1000);
+};
+
+// Conditional action creator based on current state
+const incrementIfOdd = () => (dispatch, getState) => {
+  const { count } = getState();
+  if (count % 2 !== 0) {
+    dispatch(increment());
+  }
+};
+
+// Dispatching actions to demonstrate functionality
+store.dispatch(incrementAsync());
+store.dispatch(incrementIfOdd());
+```

@@ -1,0 +1,129 @@
+The provided Node.js code consists of a simple module handling cookie parsing and serialization, along with an example HTTP server that uses this module. Here's a breakdown of the functionality:
+
+1. **Module Export**: The module exports two functions, `parse` and `serialize`.
+
+2. **parse Function**: This function takes a `cookieHeader` string and an optional `options` object. It splits the `cookieHeader` into individual cookies, decodes each using `decodeURIComponent` (or a custom decoder from `options`), and returns an object mapping cookie names to their values.
+
+3. **serialize Function**: This function takes a cookie name and value, along with optional settings (`options`) such as `maxAge`, `domain`, `path`, etc. It encodes the value using `encodeURIComponent` (or a custom encoder) and constructs a string suitable for setting a cookie header, which includes various attributes according to the options provided.
+
+4. **HTTP Server Example**: 
+   - Sets up a basic HTTP server that listens on port 3000.
+   - Parses query parameters and cookies from the request.
+   - If a "name" is provided in the query, it sets a "name" cookie and redirects to the root URL.
+   - Otherwise, it greets the user using the "name" cookie or indicates a new visitor.
+   - The server also includes an input form allowing users to set their name.
+
+Here is the rewritten code:
+
+```javascript
+// cookie.js
+module.exports = {
+  parse,
+  serialize
+};
+
+function parse(cookieHeader, options = {}) {
+  const decode = options.decode || decodeURIComponent;
+  const cookies = {};
+
+  if (!cookieHeader) {
+    return cookies;
+  }
+
+  cookieHeader.split(';').forEach(cookie => {
+    const [name, ...rest] = cookie.split('=');
+    const value = rest.join('=').trim();
+    if (!cookies[name.trim()]) {
+      try {
+        cookies[name.trim()] = decode(value);
+      } catch {
+        cookies[name.trim()] = value;
+      }
+    }
+  });
+
+  return cookies;
+}
+
+function serialize(name, value, options = {}) {
+  const encode = options.encode || encodeURIComponent;
+  const pairs = [`${name}=${encode(value)}`];
+
+  if (options.maxAge) {
+    pairs.push(`Max-Age=${Math.floor(options.maxAge)}`);
+  }
+
+  if (options.domain) {
+    pairs.push(`Domain=${options.domain}`);
+  }
+
+  if (options.path) {
+    pairs.push(`Path=${options.path}`);
+  }
+
+  if (options.expires) {
+    pairs.push(`Expires=${options.expires.toUTCString()}`);
+  }
+
+  if (options.httpOnly) {
+    pairs.push('HttpOnly');
+  }
+
+  if (options.secure) {
+    pairs.push('Secure');
+  }
+
+  if (options.partitioned) {
+    pairs.push('Partitioned');
+  }
+
+  if (options.priority) {
+    const priorityOption = { low: 'Low', medium: 'Medium', high: 'High' };
+    pairs.push(`Priority=${priorityOption[options.priority] || 'Medium'}`);
+  }
+
+  if (typeof options.sameSite === 'string') {
+    pairs.push(`SameSite=${options.sameSite.charAt(0).toUpperCase() + options.sameSite.slice(1)}`);
+  } else if (options.sameSite === true) {
+    pairs.push('SameSite=Strict');
+  }
+
+  return pairs.join('; ');
+}
+
+// Example of usage in a simple HTTP server (app.js)
+const http = require('http');
+const url = require('url');
+const escapeHtml = require('escape-html');
+const cookie = require('./cookie');
+
+const server = http.createServer((req, res) => {
+  const query = url.parse(req.url, true).query;
+  let cookies = cookie.parse(req.headers.cookie || '');
+  
+  if (query.name) {
+    res.setHeader('Set-Cookie', cookie.serialize('name', String(query.name), {
+      httpOnly: true,
+      maxAge: 7 * 24 * 60 * 60 // 1 week
+    }));
+    res.writeHead(302, { Location: '/' });
+    res.end();
+    return;
+  }
+
+  res.setHeader('Content-Type', 'text/html; charset=UTF-8');
+  if (cookies.name) {
+    res.write(`<p>Welcome back, <b>${escapeHtml(cookies.name)}</b>!</p>`);
+  } else {
+    res.write('<p>Hello, new visitor!</p>');
+  }
+
+  res.write('<form method="GET">');
+  res.write('<input placeholder="enter your name" name="name"><input type="submit" value="Set Name">');
+  res.end('</form>');
+});
+
+server.listen(3000, () => {
+  console.log('Server running at http://localhost:3000/');
+});
+```

@@ -1,0 +1,107 @@
+The `recast` package provides functionality for parsing, manipulating, and regenerating JavaScript code. It allows you to reshape code using abstract syntax trees (ASTs), enabling complex transformations while preserving formatting as much as possible.
+
+### Key Features:
+
+1. **Parsing and Printing**: Recast allows you to parse JavaScript code into an AST and then print it back into readable code. This is achieved with the `parse` and `print` methods. When code is parsed, a structural representation (AST) is created, which you can then manipulate programmatically. 
+
+2. **AST Manipulation**: Users can manipulate the AST to change the structure of code (e.g., transforming function declarations into variable declarations). The library provides utilities for building and modifying nodes within the AST.
+
+3. **Preservation of Formatting**: A significant feature of Recast is its ability to preserve the original formatting of code wherever possible. It identifies modified parts of the AST and retains the formatting for unchanged sections.
+
+4. **Integration with Custom Parsers**: By default, Recast uses the Esprima parser. However, it supports integrating other parsers (like Acorn, Babel, TypeScript parser) if specific language features (such as TypeScript or Flow) need to be parsed.
+
+5. **Source Maps**: Recast can generate source maps, which are useful for mapping segments of transformed code back to the original source. This feature helps in debugging transformed code in browsers, maintaining links between the original and modified code.
+
+6. **Configurable**: Users can provide options to configure the parsing and printing processes.
+
+### Example Use Case:
+
+- Parse a JavaScript function, manipulate it by changing the function into a variable declaration, and then print this modified code while retaining the original code formatting.
+
+### Implementation:
+
+Here's a simplified implementation of the Recast library's basic functionality:
+
+```javascript
+const esprima = require('esprima');
+const escodegen = require('escodegen');
+const sourceMap = require('source-map');
+
+class Recast {
+  static parse(source, options = {}) {
+    const ast = esprima.parseModule(source, options);
+    this._annotateOriginal(ast);
+    return ast;
+  }
+
+  static print(ast, options = {}) {
+    const code = escodegen.generate(ast, options);
+    return { code };
+  }
+
+  static prettyPrint(ast, options = {}) {
+    options.format = options.format || {};
+    options.format.indent = {
+      style: options.tabWidth ? ' '.repeat(options.tabWidth) : '  '
+    };
+    const code = escodegen.generate(ast, options);
+    return { code };
+  }
+
+  static _annotateOriginal(ast) {
+    const queue = [ast];
+    while (queue.length > 0) {
+      const node = queue.shift();
+      node.original = Object.assign({}, node);
+      for (let child in node) {
+        if (node[child] && typeof node[child] === 'object') {
+          queue.push(node[child]);
+        }
+      }
+    }
+  }
+
+  static transform(ast, modifyFn) {
+    modifyFn(ast);
+  }
+}
+
+// Usage Example
+const source = `
+  function add(a, b) {
+    return a +
+      // Weird formatting, huh?
+      b;
+  }
+`;
+
+const ast = Recast.parse(source);
+Recast.transform(ast, (astNode) => {
+  // Assuming modifyFn is a function that modifies the AST
+  const n = astNode.body[0];
+  const b = escodegen;
+
+  if (n.type === 'FunctionDeclaration') {
+    astNode.body[0] = {
+      type: 'VariableDeclaration',
+      declarations: [{
+        type: 'VariableDeclarator',
+        id: n.id,
+        init: {
+          type: 'FunctionExpression',
+          id: null,
+          params: n.params,
+          body: n.body
+        }
+      }],
+      kind: 'var'
+    };
+  }
+});
+
+const output = Recast.print(ast).code;
+console.log(output);
+
+```
+
+In this code, the `Recast` class encapsulates methods for parsing and printing code. The `parse` method uses Esprima to produce an AST from source code, and `print` uses Escodegen to convert the AST back to code. AST nodes are annotated with original data to facilitate detecting changes for preserving formatting.

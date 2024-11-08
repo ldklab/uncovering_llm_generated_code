@@ -1,0 +1,162 @@
+The provided Node.js module is a plugin for integrating into a PostCSS workflow to automatically add vendor prefixes to CSS rules using the Autoprefixer tool. It leverages Browserslist to determine the necessary browser support. Here's a breakdown of its functionality:
+
+1. **Dependencies**: 
+   - It imports several modules from Autoprefixer, Browserslist, Can I Use database, and a color utility for console output.
+   - It fetches browser data and prefix data to be used in processing CSS.
+
+2. **Warning Message**:
+   - The module contains a constant `WARNING` string to instruct users to configure browser options through Browserslist instead of directly through Autoprefixer options, offering URLs for more details.
+
+3. **Utility Functions**:
+   - `isPlainObject`: Checks if a given object is a plain JavaScript object.
+   - `timeCapsule`: Issues a warning if the target browsers do not need any prefixes, essentially stating that Autoprefixer is not needed based on the current Browserslist configuration.
+
+4. **Main Functionality (`plugin` function)**:
+   - Parses function arguments into `reqs` (requested browsers) and `options`.
+   - Throws errors if deprecated options such as `browser` or `browserslist` are used.
+   - Issues a console warning if the `browsers` option is used instead of `overrideBrowserslist`.
+   - Defines a `loadPrefixes` function to cache and return prefix details based on the given browsers list and options.
+
+5. **Integration with PostCSS**:
+   - Exposes a `postcssPlugin` object to integrate as a PostCSS plugin.
+   - Within the `prepare` hook, it accomplishes tasks such as removing redundant prefixes and adding necessary ones to the CSS AST (Abstract Syntax Tree).
+
+6. **Exported Properties**:
+   - `plugin.postcss`: Indicates compatibility with PostCSS.
+   - `plugin.data`: Provides access to Autoprefixer data.
+   - `plugin.defaults`: Default Browserslist queries.
+   - `plugin.info`: A shortcut to inspect the default configuration.
+
+Here is the refactored version of the code based on the explanation:
+
+```javascript
+const browserslist = require('browserslist');
+const { agents } = require('caniuse-lite/dist/unpacker/agents');
+const pico = require('picocolors');
+
+const Browsers = require('./browsers');
+const Prefixes = require('./prefixes');
+const dataPrefixes = require('../data/prefixes');
+const getInfo = require('./info');
+
+const autoprefixerData = { browsers: agents, prefixes: dataPrefixes };
+
+const WARNING_MESSAGE = `
+  Replace Autoprefixer \`browsers\` option with Browserslist config.
+  Use \`browserslist\` key in \`package.json\` or \`.browserslistrc\` file.
+  Using \`browsers\` option can cause errors. Switch to Browserslist config for compatibility with tools like Babel and postcss-normalize.
+  Rename \`browsers\` option to \`overrideBrowserslist\` if necessary.
+  
+  Learn more at:
+  https://github.com/browserslist/browserslist#readme
+  https://twitter.com/browserslist
+`;
+
+function isPlainObject(obj) {
+  return Object.prototype.toString.call(obj) === '[object Object]';
+}
+
+let cache = new Map();
+
+function timeCapsule(result, prefixes) {
+  if (
+    prefixes.browsers.selected.length === 0 ||
+    prefixes.add.selectors.length > 0 ||
+    Object.keys(prefixes.add).length > 2
+  ) {
+    return;
+  }
+  
+  result.warn(`
+    Autoprefixer target browsers do not need any prefixes. You may not need Autoprefixer anymore.
+    Verify your Browserslist config is correct.
+    
+    Learn more at:
+    https://github.com/postcss/autoprefixer#readme
+    https://github.com/browserslist/browserslist#readme
+  `);
+}
+
+module.exports = plugin;
+
+function plugin(...reqs) {
+  let options = {};
+
+  // Determine `options` and `reqs` based on arguments provided
+  if (reqs.length === 1 && isPlainObject(reqs[0])) {
+    options = reqs[0];
+    reqs = undefined;
+  } else if (!reqs.length || (reqs.length === 1 && !reqs[0])) {
+    reqs = undefined;
+  } else if (reqs.length <= 2 && (Array.isArray(reqs[0]) || !reqs[0])) {
+    options = reqs[1];
+    reqs = reqs[0];
+  } else if (typeof reqs[reqs.length - 1] === 'object') {
+    options = reqs.pop();
+  }
+
+  // Handle deprecated or incorrect options
+  if (options.browser || options.browserslist) {
+    throw new Error('Use `overrideBrowserslist` instead of deprecated options in Autoprefixer');
+  }
+
+  if (options.overrideBrowserslist) {
+    reqs = options.overrideBrowserslist;
+  } else if (options.browsers && console && console.warn) {
+    console.warn(pico.red(WARNING_MESSAGE.replace(/`[^`]+`/g, (i) => pico.yellow(i.slice(1, -1)))));
+    reqs = options.browsers;
+  }
+
+  const brwlstOpts = {
+    env: options.env,
+    ignoreUnknownVersions: options.ignoreUnknownVersions,
+    stats: options.stats,
+  };
+
+  function loadPrefixes(opts) {
+    let d = autoprefixerData;
+    let browsers = new Browsers(d.browsers, reqs, opts, brwlstOpts);
+    let key = `${browsers.selected.join(', ')}${JSON.stringify(options)}`;
+
+    if (!cache.has(key)) {
+      cache.set(key, new Prefixes(d.prefixes, browsers, options));
+    }
+
+    return cache.get(key);
+  }
+
+  return {
+    browsers: reqs,
+    info(opts = {}) {
+      opts.from = opts.from || process.cwd();
+      return getInfo(loadPrefixes(opts));
+    },
+    options,
+    postcssPlugin: 'autoprefixer',
+    prepare(result) {
+      const prefixes = loadPrefixes({
+        env: options.env,
+        from: result.opts.from,
+      });
+
+      return {
+        OnceExit(root) {
+          timeCapsule(result, prefixes);
+
+          if (options.remove !== false) {
+            prefixes.processor.remove(root, result);
+          }
+          if (options.add !== false) {
+            prefixes.processor.add(root, result);
+          }
+        }
+      };
+    }
+  };
+}
+
+plugin.postcss = true;
+plugin.data = autoprefixerData;
+plugin.defaults = browserslist.defaults;
+plugin.info = () => plugin().info();
+```

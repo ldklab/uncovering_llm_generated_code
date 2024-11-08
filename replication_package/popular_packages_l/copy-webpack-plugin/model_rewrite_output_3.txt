@@ -1,0 +1,81 @@
+The given Node.js code is a custom implementation of a simplified version of a Webpack plugin named `CopyWebpackPlugin`. This plugin is used to copy files or directories from a source location `from` to a destination location `to` during a Webpack build process. Here's a detailed explanation of the functionalities:
+
+1. **Plugin Initialization**: The `CopyWebpackPlugin` class is initialized with `options` which contain `patterns` that describe the files to be copied.
+
+2. **Webpack `apply` Method**: The `apply` method hooks into Webpack's emit phase using `compiler.hooks.emit.tapAsync`. It processes each pattern specified in the configuration.
+
+3. **Handling File Patterns**: The `handlePattern` method is responsible for resolving the file paths using the project's context, reading the specified files using `fast-glob` for pattern matching, and handling each file using the `copyFile` method.
+
+4. **Copying Files**: The `copyFile` method involves reading the file content using `fs.readFile`. It determines the output path, optionally transforms the content if a `transform` function is provided in the pattern, and adds the file content to Webpack's compilation assets.
+
+5. **Asynchronous Flow**: The plugin uses Promises to ensure asynchronous copying, transforming, and writing operations, allowing for catching and handling errors efficiently.
+
+Below is the rewritten version of the code:
+
+```javascript
+const fs = require('fs');
+const path = require('path');
+const glob = require('fast-glob');
+
+class CopyWebpackPlugin {
+  constructor(options) {
+    this.options = options || {};
+  }
+
+  apply(compiler) {
+    compiler.hooks.emit.tapAsync('CopyWebpackPlugin', (compilation, callback) => {
+      const context = compiler.options.context;
+      const patterns = this.options.patterns || [];
+
+      Promise.all(patterns.map(pattern => this.processPattern(pattern, context, compilation)))
+        .then(() => callback())
+        .catch(callback);
+    });
+  }
+
+  processPattern(pattern, context, compilation) {
+    const { from, to } = pattern;
+    const resolvedFrom = path.resolve(context, from);
+    const matchedFiles = glob.sync(resolvedFrom);
+
+    return Promise.all(matchedFiles.map(file => this.copyAndTransformFile(file, to, compilation, pattern)));
+  }
+
+  copyAndTransformFile(from, to, compilation, pattern) {
+    return new Promise((resolve, reject) => {
+      fs.readFile(from, (err, content) => {
+        if (err) return reject(err);
+
+        let targetPath = typeof to === 'function' ? to({ context: path.dirname(from), absoluteFilename: from }) : path.join(to, path.basename(from));
+
+        if (pattern.transform) {
+          content = pattern.transform(content, from);
+        }
+
+        compilation.assets[targetPath] = {
+          source: () => content,
+          size: () => content.length,
+        };
+
+        resolve();
+      });
+    });
+  }
+}
+
+module.exports = CopyWebpackPlugin;
+
+// Example Webpack configuration utilizing CopyWebpackPlugin
+// const CopyWebpackPlugin = require('./copy-webpack-plugin');
+
+// module.exports = {
+//   plugins: [
+//     new CopyWebpackPlugin({
+//       patterns: [
+//         { from: 'source', to: 'dest' },
+//         { from: 'other', to: 'public' },
+//       ],
+//     }),
+//   ],
+// };
+```

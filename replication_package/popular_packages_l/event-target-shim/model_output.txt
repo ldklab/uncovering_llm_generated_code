@@ -1,0 +1,90 @@
+The Node.js package `event-target-shim` implements the WHATWG `EventTarget` and `Event` interfaces. It provides a way to create and manage events using a standardized API across both browser and Node.js environments. Here is a breakdown of the functionality provided:
+
+1. **EventTarget Interface**: 
+   - This is a constructor used to create an instance of an event target, which can handle events.
+   
+2. **Event Interface**: 
+   - An implementation of the Event interface which represents occurrences that happen within the system you can handle.
+   
+3. **addEventListener**: 
+   - Allows adding an event listener to the device that will be called upon the event being dispatched.
+   - Supports options such as:
+     - `passive`: Indicates that the function specified by the listener will never call `preventDefault()`. If a passive listener does call `preventDefault()`, the user agent will do nothing other than generating a warning in the console.
+     - `once`: If true, indicates that the listener should be invoked at most once after being added. If it is invoked, the listener will be removed automatically.
+     - `signal`: Allows using an `AbortController`'s signal to remove the event listener if the signal is aborted.
+
+4. **dispatchEvent**: 
+   - Used to dispatch an event to the registered listeners.
+
+5. **Integration and Compatibility**: 
+   - The package works both in Node.js and browsers. For older browsers like IE11, a specific ES5 version is provided.
+   - It provides TypeScript compatibility for type safety.
+
+6. **AbortController**: 
+   - Although not directly implemented, the package allows integration with the `AbortController` to control event listeners through a signal.
+
+Here's an implementation of this functionality:
+
+```javascript
+// event-target-shim.js
+
+class EventShim {
+  constructor(type, options = {}) {
+    this.type = type;
+    this.cancelable = Boolean(options.cancelable);
+    this.defaultPrevented = false;
+  }
+  
+  preventDefault() {
+    if (this.cancelable) {
+      this.defaultPrevented = true;
+    } else {
+      console.warn('Ignored as event is passive.');
+    }
+  }
+}
+
+class EventTargetShim {
+  constructor() {
+    this.listeners = {};
+  }
+  
+  addEventListener(type, listener, options = {}) {
+    if (!this.listeners[type]) this.listeners[type] = [];
+
+    const listenerOptions = typeof options === 'boolean' ? { capture: options } : options;
+
+    if (listenerOptions.signal) {
+      listenerOptions.signal.addEventListener('abort', () => {
+        this.removeEventListener(type, listener);
+      });
+    }
+
+    this.listeners[type].push({ listener, options: listenerOptions });
+  }
+  
+  removeEventListener(type, listener) {
+    if (!this.listeners[type]) return;
+    this.listeners[type] = this.listeners[type].filter(
+      (obj) => obj.listener !== listener
+    );
+  }
+  
+  dispatchEvent(event) {
+    const listeners = this.listeners[event.type] || [];
+    for (const { listener, options } of listeners) {
+      if (options.once) {
+        this.removeEventListener(event.type, listener);
+      }
+      listener.call(this, event);
+    }
+  }
+}
+
+module.exports = {
+  EventShim,
+  EventTargetShim,
+};
+```
+
+This code simulates the WHATWG Event and EventTarget interfaces. It includes functionality for handling passive, once, and signal options. However, it is a basic representation and does not cover all intricacies of the actual EventTarget specification. The consumers of this module can use the `EventShim` for creating events and `EventTargetShim` to create objects that can listen to and dispatch those events.

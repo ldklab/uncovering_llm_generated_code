@@ -1,0 +1,70 @@
+The provided Node.js code implements a `parallel` function that executes multiple asynchronous tasks concurrently. The tasks can be provided either as an array or an object, and the function collects the results of all tasks once they complete. If any task passes an error to its callback, the `parallel` function immediately stops further execution and passes the error to the final callback.
+
+### Explanation
+1. **Checking Input**: The function first checks whether the `tasks` is an object or an array. If not, it throws an error.
+2. **Initialization**: Variables are initialized to keep track of results and remaining tasks.
+3. **Base Case**: If there are no tasks, it immediately invokes the callback with an empty result.
+4. **Task Completion**: A `taskCallback` function is defined to handle task completion or errors, updating results accordingly and invoking the final callback when all tasks are done.
+5. **Executing Tasks**: The function iterates through each task, executing them and using `taskCallback` to handle their results.
+
+Here's a rewrite of the provided code:
+
+```javascript
+function parallel(tasks, callback = () => {}) {
+  if (typeof tasks !== 'object' || tasks === null) {
+    throw new Error('First argument to parallel must be an object or array');
+  }
+
+  const isArray = Array.isArray(tasks);
+  const results = isArray ? [] : {};
+  const keys = Object.keys(tasks);
+  let pendingTasks = keys.length;
+
+  if (pendingTasks === 0) {
+    return callback(null, results);
+  }
+
+  function handleTaskCompletion(indexOrKey, err, result) {
+    if (err) {
+      callback(err);
+      callback = () => {}; // Ensures that callback is called only once
+      return;
+    }
+    
+    results[indexOrKey] = result;
+    pendingTasks -= 1;
+
+    if (pendingTasks === 0) {
+      callback(null, results);
+    }
+  }
+
+  keys.forEach((key, index) => {
+    const task = tasks[key];
+    try {
+      task((err, result) => handleTaskCompletion(isArray ? index : key, err, result));
+    } catch (err) {
+      handleTaskCompletion(isArray ? index : key, err);
+    }
+  });
+}
+
+module.exports = parallel;
+
+// Example usage:
+parallel([
+  callback => setTimeout(() => callback(null, 'one'), 200),
+  callback => setTimeout(() => callback(null, 'two'), 100)
+], (err, results) => {
+  if (err) return console.error(err);
+  console.log(results); // ['one', 'two']
+});
+
+parallel({
+  task1: callback => setTimeout(() => callback(null, 'one'), 200),
+  task2: callback => setTimeout(() => callback(null, 'two'), 100)
+}, (err, results) => {
+  if (err) return console.error(err);
+  console.log(results); // { task1: 'one', task2: 'two' }
+});
+```

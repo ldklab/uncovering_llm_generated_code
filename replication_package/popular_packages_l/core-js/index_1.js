@@ -1,0 +1,124 @@
+// index.js
+
+// Custom implementations of several JavaScript features with basic functionality
+
+// Implementation of a custom promise with a resolve method
+class CustomPromise {
+  static resolve(value) {
+    return new Promise((resolve) => resolve(value));
+  }
+}
+
+// Custom implementation of ES6 Set with an additional union method
+class CustomSet extends Set {
+  union(otherSet) {
+    return new CustomSet([...this, ...otherSet]);
+  }
+}
+
+// Custom implementation of array utilities
+class CustomArray {
+  // Simulates Array.from method
+  static from(iterable) {
+    return Array.from(iterable);
+  }
+
+  // Custom flatMap method implementation
+  static flatMap(array, callback) {
+    return array.reduce((acc, value) => acc.concat(callback(value)), []);
+  }
+}
+
+// Custom implementation of structured cloning using JSON
+function structuredClone(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
+// Custom iterator implementation
+class CustomIterator {
+  constructor(iterable) {
+    this.iterable = iterable;
+  }
+
+  // Static method to create an iterator from a generator
+  static from(generator) {
+    return new CustomIterator(generator);
+  }
+
+  // Drops the first n elements
+  drop(n) {
+    const result = [];
+    for (const item of this.iterable) {
+      if (n-- > 0) continue;
+      result.push(item);
+    }
+    return new CustomIterator(result);
+  }
+
+  // Takes the first n elements
+  take(n) {
+    const result = [];
+    for (const item of this.iterable) {
+      if (n-- <= 0) break;
+      result.push(item);
+    }
+    return new CustomIterator(result);
+  }
+
+  // Filters elements using the provided callback
+  filter(callback) {
+    const result = [];
+    for (const item of this.iterable) {
+      if (callback(item)) result.push(item);
+    }
+    return new CustomIterator(result);
+  }
+
+  // Maps over the elements using the provided callback
+  map(callback) {
+    const result = [];
+    for (const item of this.iterable) {
+      result.push(callback(item));
+    }
+    return new CustomIterator(result);
+  }
+
+  // Converts the iterator to an array
+  toArray() {
+    return [...this.iterable];
+  }
+}
+
+// Exporting the custom implementations
+export {
+  CustomPromise as Promise,
+  CustomSet as Set,
+  CustomArray as Array,
+  structuredClone,
+  CustomIterator as Iterator,
+};
+
+// Example usage
+
+import { Promise, Set, Array, structuredClone, Iterator } from './index.js';
+
+// Resolving a promise and logging the value
+Promise.resolve(42).then(it => console.log(it)); // => 42
+
+// Union of two sets and converting to an array
+console.log(Array.from(new Set([1, 2, 3]).union(new Set([3, 4, 5])))); // => [1, 2, 3, 4, 5]
+
+// Using flatMap on an array
+console.log(Array.flatMap([1, 2], it => [it, it])); // => [1, 1, 2, 2]
+
+// Using custom iterator with generator, drop, take, filter, map and converting to an array
+console.log(
+  Iterator.from(function* (i) { while (true) yield i++; }(1))
+    .drop(1).take(5)
+    .filter(it => it % 2)
+    .map(it => it ** 2)
+    .toArray()
+); // => [9, 25]
+
+// Cloning a set with structuredClone function
+console.log(structuredClone([...new Set([1, 2, 3])])); // => [1, 2, 3]

@@ -1,0 +1,67 @@
+The given Node.js code is a module that exports various functionalities for parsing and handling HTML documents and feeds. The primary functions and exports include a parser and DOM handler, as well as utility functions for parsing documents and streams. It also maintains backwards compatibility by providing deprecated methods and imports. Let’s break down some key elements:
+
+- **Custom Export Bindings**: It uses a polyfill for creating bindings between module exports, accommodating both ES Module and CommonJS formats.
+- **Functionality**: 
+  - `parseDocument`: Parses a string and returns a document object.
+  - `parseDOM`: Similar to `parseDocument`, but returns the root nodes of the document. Deprecated in favor of `parseDocument`.
+  - `createDocumentStream` & `createDomStream`: Create a streaming parser with a callback for when parsing completes. The latter is deprecated.
+  - `parseFeed`: Parses an RSS/Atom feed, using the `parseDOM` function and additional options.
+- **Exported Objects**: Modules from files such as `Parser.js`, `Tokenizer.js`, and libraries like `domhandler`, `domelementtype`, and `domutils` are imported and conditionally exported.
+  
+In essence, the module is designed to handle document parsing in both synchronous and streaming manners while maintaining flexibility and compatibility with older systems and third-party utilities.
+
+Here is the rewritten version of the code:
+
+```javascript
+"use strict";
+
+const { Parser as ImportedParser } = require("./Parser.js");
+const { DomHandler: ImportedDomHandler } = require("domhandler");
+const { default: Tokenizer, QuoteType } = require("./Tokenizer.js");
+const ElementType = require("domelementtype");
+const domUtils = require("domutils");
+const { getFeed } = require("domutils");
+
+Object.defineProperty(exports, "__esModule", { value: true });
+
+exports.Parser = ImportedParser;
+exports.DomHandler = ImportedDomHandler;
+exports.DefaultHandler = ImportedDomHandler;
+exports.Tokenizer = Tokenizer;
+exports.QuoteType = QuoteType;
+exports.ElementType = ElementType;
+
+const parseFeedDefaultOptions = { xmlMode: true };
+
+function parseDocument(data, options) {
+    const handler = new ImportedDomHandler(undefined, options);
+    new ImportedParser(handler, options).end(data);
+    return handler.root;
+}
+exports.parseDocument = parseDocument;
+
+function parseDOM(data, options) {
+    return parseDocument(data, options).children;
+}
+exports.parseDOM = parseDOM;
+
+function createDocumentStream(callback, options, elementCallback) {
+    const handler = new ImportedDomHandler((error) => callback(error, handler.root), options, elementCallback);
+    return new ImportedParser(handler, options);
+}
+exports.createDocumentStream = createDocumentStream;
+
+function createDomStream(callback, options, elementCallback) {
+    const handler = new ImportedDomHandler(callback, options, elementCallback);
+    return new ImportedParser(handler, options);
+}
+exports.createDomStream = createDomStream;
+
+function parseFeed(feed, options = parseFeedDefaultOptions) {
+    return getFeed(parseDOM(feed, options));
+}
+exports.parseFeed = parseFeed;
+
+exports.DomUtils = domUtils;
+exports.getFeed = getFeed;
+```

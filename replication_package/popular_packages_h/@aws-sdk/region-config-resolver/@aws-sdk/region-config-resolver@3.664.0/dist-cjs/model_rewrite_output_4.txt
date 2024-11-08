@@ -1,0 +1,94 @@
+The Node.js code provided is a module responsible for resolving AWS region configurations for applications. The code does the following:
+
+1. **Exports several methods and constants** related to AWS region resolution:
+   - `NODE_REGION_CONFIG_FILE_OPTIONS` and `NODE_REGION_CONFIG_OPTIONS`: Configuration options for determining the AWS region.
+   - `REGION_ENV_NAME` and `REGION_INI_NAME`: Constants representing environment and configuration file keys for the AWS region.
+   - `getAwsRegionExtensionConfiguration` and `resolveAwsRegionExtensionConfiguration`: Functions for getting and resolving AWS region configurations.
+   - `resolveRegionConfig`: A function to resolve configuration including handling special "FIPS" regions.
+
+2. **Handles dynamic AWS region configuration**:
+   - Uses closures and async functions to dynamically determine and validate the AWS region.
+   - Facilitates switching and evaluating provided region values, supporting both string and callable region configurations.
+   
+3. **Utility functions**:
+   - `isFipsRegion`: Identifies if a given region name is a "FIPS" designated region.
+   - `getRealRegion`: Processes and derives the actual AWS region, especially handling "FIPS" modifications.
+
+The module implements export compatibility for both CommonJS and ESModule imports using helper functions for property definition and copying. Here's a rewritten version of the same functionality:
+
+```javascript
+"use strict";
+
+// Constants for region configuration
+const REGION_ENV_NAME = "AWS_REGION";
+const REGION_INI_NAME = "region";
+const NODE_REGION_CONFIG_OPTIONS = {
+  environmentVariableSelector: env => env[REGION_ENV_NAME],
+  configFileSelector: profile => profile[REGION_INI_NAME],
+  default: () => { throw new Error("Region is missing"); }
+};
+const NODE_REGION_CONFIG_FILE_OPTIONS = {
+  preferredFile: "credentials"
+};
+
+// Utility to detect FIPS region
+function isFipsRegion(region) {
+  return typeof region === "string" && (region.startsWith("fips-") || region.endsWith("-fips"));
+}
+
+// Utility to get the real AWS region, handling FIPS modifications
+function getRealRegion(region) {
+  if (!isFipsRegion(region)) return region;
+  return ["fips-aws-global", "aws-fips"].includes(region) ? "us-east-1" : region.replace(/fips-(dkr-|prod-)?|-fips/, "");
+}
+
+// Function to get AWS region extension configuration
+function getAwsRegionExtensionConfiguration(runtimeConfig) {
+  let runtimeConfigRegion = async () => {
+    if (runtimeConfig.region === undefined) throw new Error("Region is missing from runtimeConfig");
+    const region = runtimeConfig.region;
+    return typeof region === "string" ? region : region();
+  };
+
+  return {
+    setRegion(region) { runtimeConfigRegion = region; },
+    region() { return runtimeConfigRegion; }
+  };
+}
+
+// Function to resolve AWS region extension configuration
+function resolveAwsRegionExtensionConfiguration(awsRegionExtensionConfiguration) {
+  return { region: awsRegionExtensionConfiguration.region() };
+}
+
+// Function to resolve region configuration
+function resolveRegionConfig(input) {
+  const { region, useFipsEndpoint } = input;
+  if (!region) throw new Error("Region is missing");
+
+  return {
+    ...input,
+    region: async () => {
+      if (typeof region === "string") return getRealRegion(region);
+      const providedRegion = await region();
+      return getRealRegion(providedRegion);
+    },
+    useFipsEndpoint: async () => {
+      const providedRegion = typeof region === "string" ? region : await region();
+      return isFipsRegion(providedRegion) || (typeof useFipsEndpoint !== "function"
+        ? Promise.resolve(!!useFipsEndpoint) : useFipsEndpoint());
+    }
+  };
+}
+
+// Export all functions and constants
+module.exports = {
+  getAwsRegionExtensionConfiguration,
+  resolveAwsRegionExtensionConfiguration,
+  REGION_ENV_NAME,
+  REGION_INI_NAME,
+  NODE_REGION_CONFIG_OPTIONS,
+  NODE_REGION_CONFIG_FILE_OPTIONS,
+  resolveRegionConfig
+};
+```

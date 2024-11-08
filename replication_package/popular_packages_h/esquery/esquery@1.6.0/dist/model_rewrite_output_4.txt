@@ -1,0 +1,98 @@
+The provided Node.js code is a Universal Module Definition (UMD) wrapper for a library called "esquery". This library is used for querying the Abstract Syntax Tree (AST) of JavaScript code using a CSS-like selector language. Let's break down its functionality:
+
+1. **UMD Wrapper**: The initial function checks the environment in which the code is running. It supports CommonJS (for Node.js), AMD (Asynchronous Module Definition, for module systems like RequireJS), and as a global variable in the browser (by attaching it to the global object, like `window` or `global`).
+
+2. **Type Checking Functions**: The code defines utility functions to check types, such as `typeof` checks, handling iterable objects, and differentiating between various AST node types.
+
+3. **AST Node Processing**: Functions are provided to traverse, replace, and analyze AST nodes. It handles different node types such as literal, identifier, or function and supports operations like checking for children or performing matches based on selectors.
+
+4. **Visitor Pattern**: The core of the code involves a visitor pattern, allowing one to perform operations on each node of the AST. It maintains a stack of nodes currently being processed.
+
+5. **Selectors and Matching**: At its core, the library lets users write queries to describe which nodes to select in the AST, akin to how CSS selectors target HTML elements.
+
+6. **Error Handling**: The code includes a custom `SyntaxError` for parsing-related issues, used to generate informative error messages if a query is malformed.
+
+7. **Parsing Functionality**: The library includes a parser to interpret the selector queries. This involves tokenizing and defining the grammar for the query strings, ensuring they can be processed in a structured manner.
+
+8. **WeakMap and Caching**: The code makes use of JavaScript's `WeakMap` for caching and optimizing the selector compilation process, which improves performance by preventing repetitive work.
+
+Let's rewrite this UMD pattern into a simpler form by focusing on the core esquery functionalities:
+
+```javascript
+(function(global, factory) {
+    if (typeof module === "object" && typeof module.exports === "object") {
+        // Node/CommonJS
+        module.exports = factory();
+    } else if (typeof define === "function" && define.amd) {
+        // AMD
+        define(factory);
+    } else {
+        // Browser globals
+        global.esquery = factory();
+    }
+}(this, function() {
+    'use strict';
+
+    function typeofEx(obj) {
+        return typeof obj === "object" && obj !== null ? "object" : typeof obj;
+    }
+    
+    function astTraverse(ast, visitFn, opts) {
+        let stack = [ast];
+        while (stack.length) {
+            let current = stack.pop();
+            if (visitFn.enter) visitFn.enter(current);
+            let keys = Object.keys(current);
+            for (let key of keys) {
+                let value = current[key];
+                if (Array.isArray(value)) {
+                    stack.push(...value);
+                } else if (typeofEx(value) === "object") {
+                    stack.push(value);
+                }
+            }
+            if (visitFn.leave) visitFn.leave(current);
+        }
+    }
+
+    function selectorMatch(node, selector, context) {
+        // A simplified matcher, replace with a more complex logic if needed
+        if (selector.type === 'wildcard') return true;
+        if (selector.type === 'identifier' && node.type === selector.value) return true;
+        return false;
+    }
+
+    function astQuery(ast, query, context) {
+        let results = [];
+        astTraverse(ast, {
+            enter: function(node) {
+                if (selectorMatch(node, query, context)) {
+                    results.push(node);
+                }
+            }
+        });
+        return results;
+    }
+
+    function parseSelector(selector) {
+        // Mock parse function. Replace with actual parsing logic if needed
+        return { type: 'identifier', value: selector };
+    }
+
+    function query(ast, selector) {
+        let parsedSelector = parseSelector(selector);
+        return astQuery(ast, parsedSelector);
+    }
+
+    return {
+        query: query,
+        parseSelector: parseSelector,
+        astTraverse: astTraverse
+    };
+}));
+```
+
+In this simplified version:
+- We maintain the core functionality of querying an AST with a parsed selector.
+- Removed complex parsing, visitor options, custom error handling for simplicity.
+- Used basic structure to understand concepts without handling actual AST parsing and selector matching logic, focusing on the logic structure.

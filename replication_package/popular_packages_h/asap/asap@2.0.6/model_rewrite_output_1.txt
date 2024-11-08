@@ -1,0 +1,53 @@
+The code is a scheduling utility that allows tasks to be executed as soon as possible, with a higher priority than IO events. This is achieved by using a task queue and raw scheduling functionality provided by the hypothetical `rawAsap` module. The tasks are handled with special consideration for Node.js domains, which are used to manage error scopes. If an error occurs in a task, Node.js's error-handling mechanisms such as `process.on("uncaughtException")` or `domain.on("error")` can catch it, otherwise, the process will crash. Completed tasks are returned to a pool for reuse to optimize memory usage.
+
+Here's a rewritten version of the code:
+
+```javascript
+"use strict";
+
+const rawAsap = require("./raw");
+const freeTasks = [];
+
+/**
+ * Schedules a task to be executed as soon as possible, with high priority.
+ * If an exception occurs, it needs to be handled by Node.js error listeners.
+ *
+ * @param {Function} task - A callable object, typically a function with no arguments.
+ */
+module.exports = asap;
+
+function asap(task) {
+    let rawTask = freeTasks.length ? freeTasks.pop() : new RawTask();
+    rawTask.task = task;
+    rawTask.domain = process.domain;
+    rawAsap(rawTask);
+}
+
+class RawTask {
+    constructor() {
+        this.task = null;
+        this.domain = null;
+    }
+
+    call() {
+        let threw = true;
+        if (this.domain) {
+            this.domain.enter();
+        }
+        try {
+            this.task.call();
+            threw = false;
+            if (this.domain) {
+                this.domain.exit();
+            }
+        } finally {
+            if (threw) {
+                rawAsap.requestFlush();
+            }
+            this.task = null;
+            this.domain = null;
+            freeTasks.push(this);
+        }
+    }
+}
+```

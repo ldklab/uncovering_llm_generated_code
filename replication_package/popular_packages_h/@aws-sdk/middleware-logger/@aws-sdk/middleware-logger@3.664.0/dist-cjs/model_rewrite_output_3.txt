@@ -1,0 +1,74 @@
+The Node.js code is a custom middleware implementation for AWS SDK clients, specifically DynamoDB Document Client, which logs requests and responses or errors. It exports three main components: `loggerMiddleware`, `loggerMiddlewareOptions`, and `getLoggerPlugin`.
+
+1. **`loggerMiddleware`**:
+   - It is an asynchronous function that intercepts the client's request flow.
+   - On successful response, it logs the client and command name, filtered input and output, and metadata using the provided logger.
+   - On error, it logs the client and command name, filtered input, the error object, and any error metadata.
+
+2. **`loggerMiddlewareOptions`**:
+   - This object configures how the middleware integrates with the SDK's middleware stack, specifying the middleware name, tags, execution phase (`initialize`), and override rules.
+
+3. **`getLoggerPlugin`**:
+   - A function that returns an object with an `applyToStack` method.
+   - This method adds the `loggerMiddleware` to a given client stack, using the configuration in `loggerMiddlewareOptions`.
+
+The custom constructs like `__export`, `__copyProps`, `__toCommonJS`, and `__name` are utility functions for module export and property definition, facilitating compatibility with both CommonJS and ESM module systems.
+
+Here's the rewritten version:
+
+```javascript
+"use strict";
+
+const loggerMiddleware = () => (next, context) => async (args) => {
+  const { clientName, commandName, logger, dynamoDbDocumentClientOptions = {} } = context;
+  const inputFilterSensitiveLog = dynamoDbDocumentClientOptions.overrideInputFilterSensitiveLog ?? context.inputFilterSensitiveLog;
+  const outputFilterSensitiveLog = dynamoDbDocumentClientOptions.overrideOutputFilterSensitiveLog ?? context.outputFilterSensitiveLog;
+
+  try {
+    const response = await next(args);
+    const { $metadata, ...outputWithoutMetadata } = response.output;
+
+    if (logger?.info) {
+      logger.info({
+        clientName,
+        commandName,
+        input: inputFilterSensitiveLog(args.input),
+        output: outputFilterSensitiveLog(outputWithoutMetadata),
+        metadata: $metadata
+      });
+    }
+
+    return response;
+  } catch (error) {
+    if (logger?.error) {
+      logger.error({
+        clientName,
+        commandName,
+        input: inputFilterSensitiveLog(args.input),
+        error,
+        metadata: error.$metadata
+      });
+    }
+    throw error;
+  }
+};
+
+const loggerMiddlewareOptions = {
+  name: "loggerMiddleware",
+  tags: ["LOGGER"],
+  step: "initialize",
+  override: true
+};
+
+const getLoggerPlugin = (options) => ({
+  applyToStack: (clientStack) => {
+    clientStack.add(loggerMiddleware(), loggerMiddlewareOptions);
+  }
+});
+
+module.exports = {
+  loggerMiddleware,
+  loggerMiddlewareOptions,
+  getLoggerPlugin
+};
+```

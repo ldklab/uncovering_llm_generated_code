@@ -1,0 +1,72 @@
+The `asap` package in Node.js is designed for scheduling tasks to be executed "as soon as possible" but not before the currently executing task completes, somewhat akin to `setImmediate` or the microtask queue process (`process.nextTick` in Node.js). The main goal of the package is to allow for the high-priority execution of asynchronous tasks once the current event loop action is completed, without introducing the delays caused by IO or rendering like `setTimeout`.
+
+### Functional Overview:
+1. **Task Scheduling**: The `asap` function enqueues tasks that need to be executed after the current JavaScript turn but before the IO tasks like rendering. Its prioritization is similar to what promises do where microtasks are concerned, fitting into the task queue seamlessly.
+
+2. **High-priority Execution**: ASAP ensures that tasks are executed at a high-priority non-blocking level while maintaining the execution order according to scheduling.
+
+3. **Task Queue Management**: It maintains an internal queue for tasks and ensures that tasks within the queue are processed before allowing any input event handling. So, once a sequence of tasks begins execution, it finishes without any external interruptions.
+
+4. **Exception Handling**: The package implements different modes: the standard `asap` which handles exceptions by catching and postponing the error handling, and `asap/raw`, a lower-level module that executes tasks without any safety checks, suitable for environments where tasks guarantee not to throw exceptions.
+
+5. **Refresh Strategies**: Various internal techniques (like mutation observers, message channels, etc.) are used depending on the browser environment to execute the task queue with minimum delay.
+
+Here's the implementation of a simplified version of such functionality, including both `asap` and `rawAsap`:
+
+```markdown
+// asap.js
+let queue = [];
+let flushing = false;
+let index = 0;
+
+function asap(task) {
+  queue.push(task);
+  if (!flushing) {
+    flushing = true;
+    requestFlush();
+  }
+}
+
+function rawAsap(task) {
+  queue.push(task);
+  if (!flushing) {
+    flushing = true;
+    requestFlush();
+  }
+}
+
+function flush() {
+  while (index < queue.length) {
+    let currentTask = queue[index];
+    index++;
+    try {
+      currentTask();
+    } catch (e) {
+      setTimeout(() => { throw e; }, 0); // In browsers, rethrow caught exceptions later.
+    }
+  }
+  index = 0;
+  queue.length = 0;
+  flushing = false;
+}
+
+function requestFlush() {
+  if (typeof MutationObserver !== 'undefined') {
+    let iterations = 0;
+    let node = document.createTextNode('');
+    new MutationObserver(flush).observe(node, { characterData: true });
+    node.data = (iterations = ++iterations % 2);
+  } else if (typeof MessageChannel !== 'undefined') {
+    const channel = new MessageChannel();
+    channel.port1.onmessage = flush;
+    channel.port2.postMessage(0);
+  } else {
+    setTimeout(flush, 0); // Fallback to setTimeout in non-supporting environments.
+  }
+}
+
+module.exports = asap;
+module.exports.raw = rawAsap;
+```
+
+This implementation uses `MutationObserver` and `MessageChannel` to schedule the task flush efficiently. It tries available methods starting from the most performant (`MutationObserver`) and falls back to `setTimeout` where necessary, fitting various environments like browsers and Node.js.

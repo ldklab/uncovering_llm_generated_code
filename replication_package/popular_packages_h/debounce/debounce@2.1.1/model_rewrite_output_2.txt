@@ -1,0 +1,106 @@
+The provided Node.js code implements a debounce utility function, which is an advanced version of a commonly used method in JavaScript to limit the rate at which a function can fire. This debounce function delays invoking the provided function until after a specified wait time has passed since the last time the debounced function was invoked. It includes additional features for handling special options and methods for controlling the debounced behavior.
+
+### Key Aspects of the Code:
+1. **Function Parameters:**
+   - `function_`: The function to debounce.
+   - `wait`: The number of milliseconds to delay function invocations. Default is 100 ms.
+   - `options`: An optional configuration object, which may include:
+     - `immediate`: A boolean that indicates if the function should be triggered immediately on the first call.
+
+2. **Functionality:**
+   - If `immediate` is true, the function executes immediately the first time it's called, and then subsequent calls are debounced.
+   - It maintains the execution context and arguments of the function for correctness.
+   - Provides methods `clear()`, `flush()`, and `trigger()` to manage the scheduled function execution:
+     - `clear()`: Cancels any pending execution.
+     - `flush()`: Forces immediate execution if a call is pending.
+     - `trigger()`: Executes the function immediately and cancels any pending execution.
+
+3. **Error Handling:**
+   - Throws errors for incorrect parameter types or negative `wait` values.
+   - Ensures execution context consistency for class methods by throwing an error if the context deviates.
+
+4. **Compatibility:**
+   - Allow for use as a module export for requiring the debounce method in other files.
+
+Here is a possible rewrite:
+
+```javascript
+function debounce(func, wait = 100, options = {}) {
+    if (typeof func !== 'function') {
+        throw new TypeError(`Expected the first parameter to be a function, got \`${typeof func}\`.`);
+    }
+
+    if (wait < 0) {
+        throw new RangeError('`wait` must not be negative.');
+    }
+
+    const { immediate } = (typeof options === 'boolean') ? { immediate: options } : options;
+
+    let context, args, timeoutId, lastCall, result;
+
+    const execute = () => {
+        const thisContext = context;
+        const thisArgs = args;
+        context = args = undefined;
+        return func.apply(thisContext, thisArgs);
+    };
+
+    const later = () => {
+        const last = Date.now() - lastCall;
+
+        if (last < wait && last >= 0) {
+            timeoutId = setTimeout(later, wait - last);
+        } else {
+            timeoutId = undefined;
+            if (!immediate) {
+                result = execute();
+            }
+        }
+    };
+
+    const debounced = function (...arguments_) {
+        if (context && this !== context && Object.getPrototypeOf(this) === Object.getPrototypeOf(context)) {
+            throw new Error('Debounced method called with different contexts of the same prototype.');
+        }
+
+        context = this;
+        args = arguments_;
+        lastCall = Date.now();
+
+        const callImmediately = immediate && !timeoutId;
+
+        if (!timeoutId) {
+            timeoutId = setTimeout(later, wait);
+        }
+
+        if (callImmediately) {
+            result = execute();
+        }
+
+        return result;
+    };
+
+    debounced.clear = () => {
+        if (timeoutId) {
+            clearTimeout(timeoutId);
+            timeoutId = undefined;
+        }
+    };
+
+    debounced.flush = () => {
+        if (timeoutId) {
+            debounced.trigger();
+        }
+    };
+
+    debounced.trigger = () => {
+        result = execute();
+        debounced.clear();
+    };
+
+    return debounced;
+}
+
+module.exports.debounce = debounce;
+module.exports = debounce;
+```

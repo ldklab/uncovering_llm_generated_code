@@ -1,0 +1,115 @@
+```json
+// package.json
+{
+  "name": "babel-traverse-sim",
+  "version": "1.0.0",
+  "description": "A simplified Node.js package simulating Babel Traverse functionality",
+  "main": "index.js",
+  "scripts": {
+    "test": "node test.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "babylon": "^7.0.0-beta.44"
+  }
+}
+```
+
+```javascript
+// index.js
+const babylon = require('babylon');
+
+class NodePath {
+  constructor(node) {
+    this.node = node;
+  }
+
+  replaceWith(newNode) {
+    Object.assign(this.node, newNode);
+  }
+
+  remove() {
+    delete this.node.type;
+  }
+
+  insertAfter(newNode) {
+    if (this.node.body && Array.isArray(this.node.body)) {
+      this.node.body.push(newNode);
+    }
+  }
+}
+
+function traverse(ast, visitor) {
+  function visit(node) {
+    if (!node) return;
+    const nodePath = new NodePath(node);
+
+    if (visitor[node.type]) {
+      visitor[node.type](nodePath);
+    }
+
+    for (let key in node) {
+      const child = node[key];
+      if (Array.isArray(child)) {
+        child.forEach(n => visit(n));
+      } else if (typeof child === 'object' && child !== null) {
+        visit(child);
+      }
+    }
+  }
+
+  visit(ast);
+}
+
+module.exports = {
+  traverse
+};
+```
+
+```javascript
+// test.js
+const { traverse } = require('./index');
+const babylon = require('babylon');
+
+const code = `function square(n) { return n * n; }`;
+const ast = babylon.parse(code, { sourceType: 'module' });
+
+traverse(ast, {
+  FunctionDeclaration(path) {
+    console.log('Found a FunctionDeclaration');
+    const newNode = {
+      type: 'FunctionDeclaration',
+      id: { type: 'Identifier', name: 'cube' },
+      params: [{ type: 'Identifier', name: 'x' }],
+      body: {
+        type: 'BlockStatement',
+        body: [{
+          type: 'ReturnStatement',
+          argument: { type: 'BinaryExpression', operator: '*', left: { type: 'Identifier', name: 'x' }, right: { type: 'Identifier', name: 'x' } }
+        }]
+      }
+    };
+    path.replaceWith(newNode);
+  }
+});
+
+console.log(JSON.stringify(ast, null, 2));
+```
+
+### Explanation:
+The code in this simulation example is implementing a simplified version of Babel's AST traversal functionality using Node.js.
+
+- **Package Configuration (`package.json`):**
+  - The project is named `babel-traverse-sim` and is setup to run Javascript tests via the `node test.js` command.
+  - It depends on the `babylon` package for parsing JavaScript code into an Abstract Syntax Tree (AST).
+
+- **AST Handling (`index.js`):**
+  - **`NodePath` class:** Manages changes within nodes by providing methods to replace or remove nodes and insert nodes after certain nodes.
+  - **`traverse` function:** Recursively visits nodes in the AST. If a node type matches an entry in the visitor object, it runs the corresponding visitor function.
+
+- **Testing (`test.js`):**
+  - A JavaScript function `square` is parsed into an AST.
+  - `traverse` is called on the AST with a visitor that looks for `FunctionDeclaration` nodes and replaces them with a new function `cube` that returns the square of its parameter, effectively changing the function's name and parameter.
+  - The transformed AST is output as a stringified JSON to check the transformation.

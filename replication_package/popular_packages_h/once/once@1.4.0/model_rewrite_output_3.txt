@@ -1,0 +1,61 @@
+The given Node.js code defines a utility that allows a function to be executed only once. It uses a helper library called `wrappy` to wrap the core functionality. The module exports two versions of the 'once' functionality: a regular one, which ignores subsequent calls, and a strict one, which throws an error if called more than once. Additionally, it modifies the `Function.prototype` to add `once` and `onceStrict` methods, allowing functions to be wrapped directly by invoking these methods.
+
+Here's a possible rewrite of the code:
+
+```javascript
+const wrappy = require('wrappy');
+
+// Expose the once function wrapped with wrappy as the main module export
+const once = wrappy(makeOnce);
+const onceStrict = wrappy(makeOnceStrict);
+module.exports = once;
+module.exports.strict = onceStrict;
+
+// Add methods to Function.prototype to enable function wrapping
+once.proto = once(function () {
+  Object.defineProperties(Function.prototype, {
+    'once': {
+      value: function () {
+        return once(this);
+      },
+      configurable: true
+    },
+    'onceStrict': {
+      value: function () {
+        return onceStrict(this);
+      },
+      configurable: true
+    }
+  });
+});
+
+// A generic function wrapper that ensures the passed function runs only once
+function makeOnce(fn) {
+  let called = false;
+  let value;
+
+  return function wrappedOnce() {
+    if (called) return value;
+    called = true;
+    value = fn.apply(this, arguments);
+    return value;
+  };
+}
+
+// A strict variant of the once wrapper that throws an error on subsequent calls
+function makeOnceStrict(fn) {
+  let called = false;
+  const functionName = fn.name || 'Function wrapped with `onceStrict`';
+  const onceError = `${functionName} shouldn't be called more than once`;
+  let value;
+
+  return function wrappedOnceStrict() {
+    if (called) {
+      throw new Error(onceError);
+    }
+    called = true;
+    value = fn.apply(this, arguments);
+    return value;
+  };
+}
+```

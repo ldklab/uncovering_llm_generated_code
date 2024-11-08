@@ -1,0 +1,123 @@
+The provided Node.js code is an implementation of a task distribution system using worker threads. It includes two main files: `parent.js` and `worker.js`.
+
+### Functionality Overview:
+
+1. **JestWorker Class**:
+   - **Initialization**: 
+     - Takes a path to a worker script and an options object.
+     - Determines methods to expose based on options or reflection.
+     - Initializes a pool of worker threads based on the number of CPU cores.
+   - **Worker Setup**: Starts multiple worker threads specified by `numWorkers`.
+   - **Method Execution**: 
+     - Executes specified methods (`foo` or `bar`) on workers.
+     - Uses a round-robin or key-based (customizable via `computeWorkerKey`) approach to choose a worker.
+   - **Termination**: Provides a method to gracefully shut down all workers.
+
+2. **String Hashing**:
+   - Extends the native `String` prototype to introduce a simple hash function for load balancing purposes when deciding which worker to allocate a task to.
+
+3. **Example Usage**:
+   - In `main()`, demonstrates creating an instance of `JestWorker` with a worker script and options for exposed methods and key computation.
+   - Shows executing methods `foo` and `bar` on the worker and prints the results.
+   - Ensures to terminate all worker threads at the end of execution.
+
+4. **worker.js Script**:
+   - Listens for messages containing tasks.
+   - Executes the specified method (`foo` or `bar`) from a defined `workerMethods` object and responds with the result.
+   - Handles both synchronous and asynchronous method results and error capturing.
+
+Below is a possible rewrite of this code:
+
+```javascript
+// parent.js
+const { Worker, isMainThread, workerData, parentPort } = require('worker_threads');
+const os = require('os');
+const path = require('path');
+
+class TaskWorkerManager {
+  constructor(workerScript, options = {}) {
+    this.workerScript = workerScript;
+    this.options = options;
+    this.methodNames = options.exposedMethods || this.detectExposedMethods();
+    this.workers = [];
+    this.createWorkers();
+  }
+
+  createWorkers() {
+    const workerCount = this.options.numWorkers || os.cpus().length - 1;
+    for (let i = 0; i < workerCount; i++) {
+      this.workers.push(new Worker(this.workerScript, { workerData: { options: this.options } }));
+    }
+  }
+
+  detectExposedMethods() {
+    const workerModule = require(this.workerScript);
+    return Object.keys(workerModule).filter((key) => typeof workerModule[key] === 'function');
+  }
+
+  executeMethod(methodName, ...args) {
+    return new Promise((resolve, reject) => {
+      const worker = this.selectWorker(methodName, args);
+      worker.once('message', resolve);
+      worker.once('error', reject);
+      worker.postMessage({ methodName, args });
+    });
+  }
+
+  selectWorker(methodName, args) {
+    if (this.options.computeKey) {
+      const key = this.options.computeKey(methodName, ...args);
+      const index = key ? (key.hashCode() % this.workers.length) : Math.floor(Math.random() * this.workers.length);
+      return this.workers[index];
+    }
+    return this.workers[Math.floor(Math.random() * this.workers.length)];
+  }
+
+  terminateAllWorkers() {
+    return Promise.all(this.workers.map(worker => worker.terminate()));
+  }
+}
+
+String.prototype.hashCode = function() {
+  let hash = 0;
+  for (let i = 0; i < this.length; i++) {
+    hash = ((hash << 5) - hash) + this.charCodeAt(i);
+    hash |= 0;
+  }
+  return hash;
+};
+
+async function main() {
+  const workerScriptPath = path.resolve(__dirname, 'worker.js');
+  const taskManager = new TaskWorkerManager(workerScriptPath, {
+    exposedMethods: ['foo', 'bar'],
+    computeKey: (method, name) => name
+  });
+
+  console.log(await taskManager.executeMethod('foo', 'Alice'));
+  console.log(await taskManager.executeMethod('bar', 'Bob'));
+
+  await taskManager.terminateAllWorkers();
+}
+
+if (isMainThread) {
+  main();
+}
+
+// worker.js
+if (!isMainThread) {
+  parentPort.on('message', async ({ methodName, args }) => {
+    try {
+      const result = availableMethods[methodName](...args);
+      parentPort.postMessage(result instanceof Promise ? await result : result);
+    } catch (err) {
+      parentPort.postMessage({ error: err.message });
+    }
+  });
+
+  const availableMethods = {
+    foo: (name) => `Hello from foo: ${name}`,
+    bar: (name) => `Hello from bar: ${name}`
+  };
+}
+```

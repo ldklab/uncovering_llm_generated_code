@@ -1,0 +1,72 @@
+The given Node.js code provides a mechanism for determining configuration defaults in a Node.js environment, specifically relating to AWS settings. It utilizes various utility functions to deal with JavaScript object properties and export management to handle module system differences between CommonJS and ESM. The code achieves several tasks:
+
+1. **Utility Functions:** The code defines a series of utility functions (`__create`, `__defProp`, etc.) for working with object properties and managing module exports.
+2. **Environment and Config Defaults:** It defines constants for various AWS environment variables and configuration options.
+3. **Config Resolution:** The primary export of the code is a function called `resolveDefaultsModeConfig`. This function is responsible for resolving the defaults mode of AWS configurations based on certain criteria such as region and environment variables.
+4. **Default Modes:** The function supports different defaults modes (`in-region`, `cross-region`, `mobile`, `standard`, `legacy`), and employs a "legacy" mode by default.
+5. **Auto Mode Resolution:** If the defaults mode is set to "auto," it uses the `resolveNodeDefaultsModeAuto` function to determine the correct mode based on region information.
+6. **Infer Physical Region:** The `inferPhysicalRegion` function attempts to determine the physical AWS region, based on environment variables or by querying the instance metadata if accessible.
+
+The central task of the code is to dynamically decide on AWS operational modes based on the user's environment settings and configuration, making it flexible for varying deployment contexts.
+
+```javascript
+const { loadConfig } = require('@smithy/node-config-provider');
+const { memoize } = require('@smithy/property-provider');
+const { NODE_REGION_CONFIG_OPTIONS } = require('@smithy/config-resolver');
+
+const AWS_EXECUTION_ENV = "AWS_EXECUTION_ENV";
+const AWS_REGION_ENV = "AWS_REGION";
+const AWS_DEFAULT_REGION_ENV = "AWS_DEFAULT_REGION";
+const ENV_IMDS_DISABLED = "AWS_EC2_METADATA_DISABLED";
+const DEFAULTS_MODE_OPTIONS = ["in-region", "cross-region", "mobile", "standard", "legacy"];
+const IMDS_REGION_PATH = "/latest/meta-data/placement/region";
+
+const resolveDefaultsModeConfig = ({
+  region = loadConfig(NODE_REGION_CONFIG_OPTIONS),
+  defaultsMode = loadConfig(NODE_DEFAULTS_MODE_CONFIG_OPTIONS)
+} = {}) => memoize(async () => {
+  const mode = typeof defaultsMode === "function" ? await defaultsMode() : defaultsMode;
+  if (!mode) return "legacy";
+  switch (mode.toLowerCase()) {
+    case "auto":
+      return resolveNodeDefaultsModeAuto(region);
+    case "in-region":
+    case "cross-region":
+    case "mobile":
+    case "standard":
+    case "legacy":
+      return Promise.resolve(mode.toLocaleLowerCase());
+    default:
+      throw new Error(
+        `Invalid parameter for "defaultsMode", expect ${DEFAULTS_MODE_OPTIONS.join(", ")}, got ${mode}`
+      );
+  }
+});
+
+const resolveNodeDefaultsModeAuto = async (clientRegion) => {
+  if (clientRegion) {
+    const resolvedRegion = typeof clientRegion === "function" ? await clientRegion() : clientRegion;
+    const inferredRegion = await inferPhysicalRegion();
+    if (!inferredRegion) return "standard";
+    return resolvedRegion === inferredRegion ? "in-region" : "cross-region";
+  }
+  return "standard";
+};
+
+const inferPhysicalRegion = async () => {
+  if (process.env[AWS_EXECUTION_ENV] && (process.env[AWS_REGION_ENV] || process.env[AWS_DEFAULT_REGION_ENV])) {
+    return process.env[AWS_REGION_ENV] ?? process.env[AWS_DEFAULT_REGION_ENV];
+  }
+  if (!process.env[ENV_IMDS_DISABLED]) {
+    try {
+      const { getInstanceMetadataEndpoint, httpRequest } = require('@smithy/credential-provider-imds');
+      const endpoint = await getInstanceMetadataEndpoint();
+      return (await httpRequest({ ...endpoint, path: IMDS_REGION_PATH })).toString();
+    } catch (e) {
+      return undefined;
+    }
+  }
+};
+
+module.exports = { resolveDefaultsModeConfig };
+```

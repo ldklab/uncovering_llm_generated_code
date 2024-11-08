@@ -1,0 +1,83 @@
+The functionality of the `define-properties` package is to define multiple non-enumerable properties on an object at once using `Object.defineProperty`. This method is used to ensure that the properties are non-enumerable, configurable, and non-writable unless overridden by conditions. The properties will not be overwritten if they already exist in the object unless a predicate for the specific property is provided and returns true. The package checks whether `Object.defineProperty` is supported by the current environment and falls back to standard property assignment if it isn't.
+
+Here's how the package works:
+1. Takes an object and a properties object as input, where properties are to be defined.
+2. Optionally, accepts a third argument, predicates object, which contains functions that dictate if an existing property should be overridden.
+3. For each property in the properties object:
+   - If the property already exists on the input object, it is not overridden unless the corresponding predicate for that property returns true.
+   - If `Object.defineProperty` is supported, the non-enumerable, configurable, and non-writable attributes are used to define the new properties.
+   - Existing property descriptors are not overridden based on the predicates input.
+4. If `Object.defineProperty` is not supported, it defaults to simple assignment of the property value.
+
+Here is a Node.js package implementing this functionality:
+
+```javascript
+// define-properties/index.js
+
+function defineProperties(target, properties, predicates = {}) {
+    if (!target || typeof target !== 'object') {
+        throw new TypeError('Target must be an object');
+    }
+    if (!properties || typeof properties !== 'object') {
+        throw new TypeError('Properties must be an object');
+    }
+
+    const supportsDescriptors = (() => {
+        try {
+            Object.defineProperty({}, 'test', { value: 42 });
+            return true;
+        } catch (e) {
+            return false;
+        }
+    })();
+
+    for (const key in properties) {
+        if (properties.hasOwnProperty(key)) {
+            const shouldOverride = predicates[key] ? !!predicates[key]() : false;
+            if (!shouldOverride && key in target) {
+                continue;
+            }
+            if (supportsDescriptors) {
+                Object.defineProperty(target, key, {
+                    configurable: true,
+                    enumerable: false,
+                    value: properties[key],
+                    writable: false
+                });
+            } else {
+                target[key] = properties[key];
+            }
+        }
+    }
+    
+    defineProperties.supportsDescriptors = supportsDescriptors;
+    return target;
+}
+
+module.exports = defineProperties;
+
+// Usage example:
+
+const define = require('./index');
+const assert = require('assert');
+
+const obj1 = define({ a: 1, b: 2 }, { a: 10, b: 20, c: 30 });
+assert(obj1.a === 1);
+assert(obj1.b === 2);
+assert(obj1.c === 30);
+
+const obj2 = define({ a: 1, b: 2, c: 3 }, { a: 10, b: 20, c: 30 }, {
+    a: () => false,
+    b: () => true
+});
+assert(obj2.a === 1);
+assert(obj2.b === 20);
+assert(obj2.c === 3);
+
+if (define.supportsDescriptors) {
+    console.log(Object.keys(obj1)); // Output: ['a', 'b']
+    console.log(Object.getOwnPropertyDescriptor(obj1, 'c')); // Output: { configurable: true, enumerable: false, value: 30, writable: false }
+}
+```
+
+This code provides an implementation of the `define-properties` module as described in the README file. It includes functionalities to define non-enumerable, non-writable properties unless the environment lacks support, in which case it assigns values directly.

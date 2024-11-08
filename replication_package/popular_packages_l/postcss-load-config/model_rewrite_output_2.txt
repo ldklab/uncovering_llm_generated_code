@@ -1,0 +1,59 @@
+The given Node.js code is designed to read, process, and output CSS content using the PostCSS library. It also includes functionalities for loading PostCSS configurations through the `cosmiconfig` package, which facilitates the discovery of configuration settings in various formats (e.g., JSON, YAML). The key functionalities of the code are as follows:
+
+1. **Load PostCSS Configuration**:
+   - The function `loadPostCSSConfig(ctx)` uses `cosmiconfigSync` to search for PostCSS configuration files.
+   - If a configuration is found, it checks if it's a function; if so, it executes it with the given context (`ctx`). Otherwise, it returns the configuration directly.
+   - Throws an error if the configuration is not found.
+
+2. **Process CSS**:
+   - The function `processCSS(cssFilePath, options)` reads a CSS file from the specified path.
+   - It constructs a context `ctx` from the provided options, including the current environment (`NODE_ENV`).
+   - Loads PostCSS plugins, parser, and source map settings from the configuration.
+   - Uses PostCSS to process the CSS with these settings and outputs the processed CSS to the console.
+   - Handles errors that occur during the process.
+
+3. **Example Usage**:
+   - Example usage of the `processCSS` function is demonstrated with a sample CSS file path `styles.css` and options for inline source mapping.
+
+Below is the rewritten version of the code, maintaining similar functionality:
+
+```javascript
+const fs = require('fs');
+const path = require('path');
+const postcss = require('postcss');
+const { cosmiconfigSync } = require('cosmiconfig');
+
+// Load PostCSS configuration
+function getPostCSSConfig(context = {}) {
+  const configExplorer = cosmiconfigSync('postcss');
+  const result = configExplorer.search();
+
+  if (result) {
+    const { config } = result;
+    return typeof config === 'function' ? config(context) : config;
+  } else {
+    throw new Error('Unable to locate PostCSS configuration.');
+  }
+}
+
+// Process the CSS file
+function handleCSSProcessing(filePath, customOptions = {}) {
+  const cssContent = fs.readFileSync(filePath, 'utf8');
+  const context = { env: process.env.NODE_ENV || 'development', ...customOptions };
+
+  const { parser, map, plugins } = getPostCSSConfig(context);
+
+  postcss(plugins)
+    .process(cssContent, { from: filePath, map, parser })
+    .then(result => {
+      console.log(result.css);
+    })
+    .catch(error => {
+      console.error('CSS processing failed:', error);
+    });
+}
+
+// Demonstration of command line usage
+const resolvedCssPath = path.resolve(__dirname, 'styles.css');
+handleCSSProcessing(resolvedCssPath, { map: 'inline' });
+```

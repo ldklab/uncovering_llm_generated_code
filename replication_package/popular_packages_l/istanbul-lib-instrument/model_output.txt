@@ -1,0 +1,75 @@
+The `istanbul-lib-instrument` package is an Istanbul instrumenter library that helps in instrumenting code coverage in JavaScript applications. The library employs the `Babel` tool to perform code instrumentation, and it features two main ways of operation:
+
+1. **Old API Mode**: This is the traditional method of instrumentation where the API uses Babel as a dependency to perform the instrumentation process. The API here remains largely the same as in earlier versions, with adjustments made for compatibility.
+
+2. **Program Visitor Function**: This function provides an interface for the Babel Abstract Syntax Tree (AST). It's designed for use within a Babel plugin, specifically the `babel-plugin-istanbul`. It allows for the instrumentation of ES6 and beyond JavaScript code directly without needing to process source maps. This method is recommended for users utilizing Babel in their projects.
+
+Here is the implementation of a simple Node.js package that mock the functionality of `istanbul-lib-instrument`:
+
+```javascript
+// istanbul-lib-instrument/index.js
+const babel = require('@babel/core');
+const generate = require('@babel/generator').default;
+const traverse = require('@babel/traverse').default;
+const template = require('@babel/template').default;
+const types = require('@babel/types');
+
+class Instrumenter {
+    constructor() {
+        // Initialization to set up Instrumenter state, options etc.
+    }
+
+    instrumentSync(code, filename) {
+        // Use Babel to parse the code and traverse its AST 
+        const ast = babel.parse(code, {
+            sourceType: 'module',
+            plugins: ['jsx', 'flow', 'typescript']
+        });
+
+        // Default visitor function to mock behavior similar to `__coverage__`
+        function visitor(path) {
+            if (path.isFunctionDeclaration()) {
+                const entryCounter = template.statement(`
+                    if (typeof __coverage__ !== 'undefined') {
+                        __coverage__["counter"]++;
+                    }
+                `);
+                path.get('body').unshiftContainer('body', entryCounter());
+            }
+        }
+        
+        // Traverse and modify the AST
+        traverse(ast, {
+            Program(path) {
+                visitor(path);
+            }
+        });
+
+        // Generate code from the modified AST
+        const { code: transformedCode } = generate(ast);
+        return transformedCode;
+    }
+
+    programVisitor() {
+        // Program visitor accessible for Babel plugin implementation
+        return {
+            visitor: {
+                Program(path) {
+                    // Direct ES6+ instrumentation logic here...
+                    console.log('Instrumenting:', path.toString());
+                }
+            }
+        };
+    }
+}
+
+module.exports = {
+    Instrumenter
+};
+```
+
+To use this implementation:
+
+1. Instantiate an instance of `Instrumenter`.
+2. Call `instrumentSync` with JavaScript code and a filename to get the instrumented code.
+3. Use `programVisitor` if you are developing a Babel plugin and want to instrument code directly in the AST traversal phase.

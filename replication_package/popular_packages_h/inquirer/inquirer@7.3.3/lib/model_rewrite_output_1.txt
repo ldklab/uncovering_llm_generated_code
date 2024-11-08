@@ -1,0 +1,83 @@
+The provided Node.js code is a module setup for `inquirer.js`, a library used to create interactive command-line interfaces. Here's a breakdown of the code functionality:
+
+1. **Module Exports**: The main `inquirer` object is exported, which organizes several functionalities related to the inquirer library.
+
+2. **Client Interfaces**: 
+   - `inquirer.prompts`: An object to contain various prompt types.
+   - `inquirer.Separator`: A utility object imported from `./objects/separator` used to add separators in lists of options.
+   - `inquirer.ui`: An object containing user interface classes, specifically `BottomBar` and `Prompt`.
+
+3. **Prompt Module Creation**: `inquirer.createPromptModule` is a function that creates independent prompt modules with:
+   - A method to execute prompts (`run`) and handle their promise-based output.
+   - The ability to register new prompts (`registerPrompt`).
+   - A method to restore default prompt types (`restoreDefaultPrompts`).
+
+4. **Register and Restore Prompts**: The ability to register custom prompt types and restore default ones, which include 'list', 'input', 'number', 'confirm', etc.
+
+5. **Public Interface**: 
+   - `inquirer.prompt`: A high-level function for interacting with the user via predefined prompt modules.
+   - Methods `registerPrompt` and `restoreDefaultPrompts` are exposed publicly for ease of registering or restoring default prompt types.
+
+Here's the rewritten code:
+
+```javascript
+'use strict';
+
+const inquirer = module.exports;
+
+inquirer.prompts = {};
+
+inquirer.Separator = require('./objects/separator');
+
+inquirer.ui = {
+  BottomBar: require('./ui/bottom-bar'),
+  Prompt: require('./ui/prompt'),
+};
+
+inquirer.createPromptModule = function (opt) {
+  const promptModule = function (questions, answers) {
+    let uiInstance;
+    try {
+      uiInstance = new inquirer.ui.Prompt(promptModule.prompts, opt);
+    } catch (error) {
+      return Promise.reject(error);
+    }
+    const executionPromise = uiInstance.run(questions, answers);
+    executionPromise.ui = uiInstance;
+    return executionPromise;
+  };
+
+  promptModule.prompts = {};
+
+  promptModule.registerPrompt = function (name, prompt) {
+    this.prompts[name] = prompt;
+    return this;
+  };
+
+  promptModule.restoreDefaultPrompts = function () {
+    this.registerPrompt('list', require('./prompts/list'));
+    this.registerPrompt('input', require('./prompts/input'));
+    this.registerPrompt('number', require('./prompts/number'));
+    this.registerPrompt('confirm', require('./prompts/confirm'));
+    this.registerPrompt('rawlist', require('./prompts/rawlist'));
+    this.registerPrompt('expand', require('./prompts/expand'));
+    this.registerPrompt('checkbox', require('./prompts/checkbox'));
+    this.registerPrompt('password', require('./prompts/password'));
+    this.registerPrompt('editor', require('./prompts/editor'));
+  };
+
+  promptModule.restoreDefaultPrompts();
+
+  return promptModule;
+};
+
+inquirer.prompt = inquirer.createPromptModule();
+
+inquirer.registerPrompt = function (name, prompt) {
+  inquirer.prompt.registerPrompt(name, prompt);
+};
+
+inquirer.restoreDefaultPrompts = function () {
+  inquirer.prompt.restoreDefaultPrompts();
+};
+```

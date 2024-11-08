@@ -1,0 +1,112 @@
+The `tar-stream` package offers a way to create and parse tar archives purely using Node.js streams, without requiring interaction with the file system. The package focuses on handling tar archives but does not support `.tar.gz` files directly, although it can be used in conjunction with a package like `gunzip-maybe` for handling gzip compression.
+
+**Key Functionalities:**
+
+1. **Packing**: 
+   - The `pack` stream is used for creating tar archives. You can add entries (files or folders) to the tar by calling `pack.entry(header, [data], [callback])`. 
+   - The header contains metadata about the entry, such as its name, size, and type (e.g., file or directory).
+   - For data in stream form, you must provide the stream data to `pack.entry` and finalize the stream once all entries are added using `pack.finalize()`.
+   - The packed stream can be piped to an output destination (e.g., `process.stdout` or a file).
+
+2. **Extracting**:
+   - The `extract` stream is used to read and process entries from a tar archive.
+   - You handle entries using an 'entry' event. You receive the header and content stream of each entry. To proceed, you must call the `next()` function after processing an entry.
+   - Once all entries are processed, the 'finish' event is emitted.
+
+3. **Modifying Existing Tarballs**:
+   - By utilizing both `pack` and `extract`, you can read entries from an existing tarball, modify them (e.g., changing file paths), and write them to a new tarball.
+
+4. **Async Iterator for Extracting**:
+   - The extract stream can be used as an async iterator, providing an alternative method for handling entries without explicitly dealing with events.
+
+5. **Headers**:
+   - The header object determines metadata for each entry such as file path, size, permissions (mode), and modification time.
+
+6. **Saving a Tarball to a File**:
+   - You can use Node's `fs` module to write the packed tar stream to the file system.
+
+Below is the code implementation for the features described above in a Node.js package:
+
+```js
+// tar-stream.js
+const { PassThrough, Writable } = require('stream');
+
+// Simulated header and entry for packing example
+class Entry extends PassThrough {
+  constructor(header, callback) {
+    super();
+    this.header = header;
+    process.nextTick(callback);
+  }
+}
+
+// Packing stream creation
+const pack = () => {
+  const output = new PassThrough();
+
+  output.entry = (header, data, callback) => {
+    const entryStream = new Entry(header, callback);
+    if (data) {
+      entryStream.end(data);
+    }
+    entryStream.pipe(output, { end: false });
+    return entryStream;
+  };
+
+  output.finalize = () => {
+    output.end();
+  };
+
+  return output;
+};
+
+// Extracting simulation
+const extract = () => {
+  const extractStream = new Writable({ objectMode: true });
+
+  extractStream.entries = [];
+
+  extractStream._write = (entry, encoding, callback) => {
+    extractStream.entries.push(entry);
+    entry.resume();
+    entry.on('end', callback);
+  };
+
+  extractStream.on('pipe', (src) => {
+    src.unpipe(extractStream);
+    for (const entry of src.entries) {
+      extractStream.write(entry);
+    }
+    extractStream.end();
+  });
+
+  return extractStream;
+};
+
+module.exports = { pack, extract };
+
+// Example usage
+const fs = require('fs');
+
+// Packing example
+const p = pack();
+p.entry({ name: 'hello.txt', size: 11 }, 'Hello world', (err) => {
+  if (err) throw err;
+  p.finalize();
+});
+
+p.pipe(fs.createWriteStream('example.tar'));
+
+// Extracting example - placeholder for actual entry streams
+const e = extract();
+const source = pack();
+source.entry({ name: 'test.txt' }, 'Test content').end();
+source.finalize();
+
+source.pipe(e);
+e.on('finish', () => {
+  console.log('Extracted entries:', e.entries.map(e => e.header.name));
+});
+```
+
+This implementation provides a basic scaffold of how `tar-stream` logically handles packing and extracting tar archives using Node.js streams. Since we are simulating the packer's behavior, the code uses Node.js streams to mimic packing and piping operations.

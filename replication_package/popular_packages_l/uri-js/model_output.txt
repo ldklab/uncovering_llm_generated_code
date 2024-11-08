@@ -1,0 +1,111 @@
+The package described, URI.js, is a comprehensive JavaScript library designed to handle Uniform Resource Identifiers (URIs) and Internationalized Resource Identifiers (IRIs). It is equipped with the capability to parse, serialize, resolve, normalize, and compare URIs, while also incorporating support for IP normalization and various URI schemes such as HTTP, WS, Mailto, and URN.
+
+Key features of URI.js include:
+
+1. **Parsing**: Converts a URI string into a structured object containing its various components like scheme, host, path, etc.
+   
+2. **Serializing**: Constructs a URI string from a given object of URI components.
+
+3. **Resolving**: Combines a base URI with a reference string to a new absolute URI, adhering to proper URI resolution rules.
+
+4. **Normalizing**: Standardizes URIs by lowercasing the scheme and host, resolving default ports, and encoding/decoding reserved characters.
+
+5. **Comparison**: Determines whether two URIs reference the same resource by applying specific normalization and comparison rules.
+
+6. **IP Support**: Normalizes IP addresses within URIs, supporting both IPv4 and IPv6 formats, including zone identifiers.
+
+7. **IRI Support**: Converts between URI and IRI formats, handling international characters and encoding.
+
+8. **Options**: Allows customization of URI processing with optional parameters, such as treating URIs as a specific scheme or supporting IRI/unicode encoding.
+
+9. **Scheme Extendable**: Provides built-in support and custom processing rules for various URI schemes.
+
+10. **Built-in Scheme Handlers**: Includes specific support for common protocols such as HTTP, HTTPS, WS/WSS, Mailto, and URNs, each with specialized parsing and serialization rules.
+
+Here is the Node.js package code that implements the described functionality:
+
+```javascript
+class URI {
+    static parse(uriString) {
+        const parser = /^(?<scheme>[a-z][\w.-]+):\/\/(?<userinfo>[^@]+@)?(?<host>[\w.-]+)(:(?<port>\d+))?(?<path>[\/\w.-]*)\??(?<query>[\w=&]*)#?(?<fragment>\w*)/i;
+        const matched = uriString.match(parser);
+        if (!matched) return null;
+        const { scheme, userinfo, host, port, path, query, fragment } = matched.groups;
+        return {
+            scheme: scheme.toLowerCase(),
+            userinfo: userinfo ? userinfo.slice(0, -1) : undefined,
+            host: host.toLowerCase(),
+            port: port ? parseInt(port) : undefined,
+            path: path || '/',
+            query,
+            fragment
+        };
+    }
+
+    static serialize(uriComponents, options = {}) {
+        const { scheme, userinfo, host, port, path = '/', query, fragment } = uriComponents;
+        let serializedURI = `${scheme}://`;
+        if (userinfo) serializedURI += `${userinfo}@`;
+        serializedURI += `${host}`;
+        if (port) serializedURI += `:${port}`;
+        serializedURI += path;
+        if (query) serializedURI += `?${query}`;
+        if (fragment) serializedURI += `#${fragment}`;
+        return serializedURI;
+    }
+
+    static resolve(baseURI, relativeURI) {
+        const base = URI.parse(baseURI);
+        const relative = URI.parse(relativeURI);
+        // resolution logic simplified for demonstration purposes
+        const resolvedPath = base.path.split('/').slice(0, -1).concat(relative.path.split('/')).filter(Boolean).join('/');
+        return `${base.scheme}://${base.host}/${resolvedPath}`;
+    }
+
+    static normalize(uriString) {
+        const parsed = URI.parse(uriString);
+        if (parsed.scheme) {
+            parsed.scheme = parsed.scheme.toLowerCase();
+        }
+        if (parsed.host) {
+            parsed.host = parsed.host.toLowerCase();
+        }
+        const path = parsed.path.split('/').map(decodeURIComponent).join('/');
+        parsed.path = path;
+        return URI.serialize(parsed);
+    }
+
+    static equal(uri1, uri2) {
+        return URI.normalize(uri1) === URI.normalize(uri2);
+    }
+
+    // Example implementations for special supports
+    static normalizeIP(host) {
+        // Simplified normalization for IPv4/IPv6 demonstration
+        return host.replace(/^0+/, '').toLowerCase();
+    }
+
+    static parseMailto(uriString) {
+        const mailtoParser = /^mailto:(?<to>[^?]+)\??(?<query>.*)$/i;
+        const matched = uriString.match(mailtoParser);
+        if (!matched) return null;
+        const { to, query } = matched.groups;
+        const params = new URLSearchParams(query);
+        return {
+            scheme: "mailto",
+            to: to.split(','),
+            subject: params.get('subject'),
+            body: params.get('body')
+        };
+    }
+}
+
+module.exports = URI;
+
+// Usage example:
+// const URI = require('./uri');
+// console.log(URI.parse("http://user:pass@example.com:8080/path/to/resource?search=query#fragment"));
+// console.log(URI.serialize({ scheme: 'https', host: 'example.com', path: '/path', query: 'query=test', fragment: 'footer' }));
+```
+
+This code provides a foundational implementation for URI parsing, serializing, resolving, normalization, and comparison, along with some specific handling for different schemes as outlined in the description. It simplifies the complexities involved, focusing on key functionality that aligns with the described attributes and operations of the URI.js library.

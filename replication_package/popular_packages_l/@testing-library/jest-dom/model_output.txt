@@ -1,0 +1,91 @@
+The `jest-dom` package provides custom Jest matchers that allow developers to write tests for DOM elements in a declarative manner. These matchers extend Jest's default assertions, offering a more readable and semantic way to test elements' attributes, states, visibility, and accessibility features. Some of the matchers provided by this package include:
+
+1. `toBeDisabled` and `toBeEnabled`: Checks if an element is disabled or enabled based on its attributes and whether it resides within a disabled parent element.
+2. `toBeEmptyDOMElement`: Validates whether an element has no child nodes with visible content.
+3. `toBeInTheDocument`: Ensures an element is present within the document's body.
+4. Accessibility features like `toHaveAccessibleDescription`, `toHaveAccessibleErrorMessage`, and `toHaveAccessibleName` to test ARIA attributes.
+5. `toHaveClass`, `toHaveStyle`, `toHaveAttribute`: Checks for the presence and values of specific classes, styles, and attributes on DOM elements.
+6. `toHaveTextContent`: Asserts that an element contains a particular text node or text content.
+7. `toHaveValue`, `toHaveFormValues`: Validates form input element values, including for specific types like radio buttons and checkboxes.
+8. `toBeVisible`: Checks if an element would be visible to a user based on CSS properties like visibility, display, opacity, and HTML attributes like `hidden`.
+9. Role-based checks with `toHaveRole`, to ensure elements have the expected ARIA roles, either explicitly set or implicitly understood.
+
+The package is designed to integrate seamlessly with Jest and can be adapted for use with Vitest and TypeScript projects by following specific import guidelines. Additionally, deprecated matchers are documented with guidance on their replacements, promoting best practices and compatibility with evolving standards.
+
+The following is an implementation of a Node.js package that delivers the described functionality:
+
+```javascript
+// jest-dom.js
+const { matcherHint, printReceived } = require('jest-matcher-utils');
+
+// Utility function to check element visibility
+const isVisible = (element) => {
+  if (!element || !(element instanceof Element) || element.hidden) return false;
+  const style = getComputedStyle(element);
+  return style.visibility !== 'hidden' && style.display !== 'none' && style.opacity !== '0';
+};
+
+// Custom matcher implementation
+const matchers = {
+  toBeDisabled(element) {
+    const isDisabled = element.disabled || element.closest('[disabled]');
+    return {
+      pass: Boolean(isDisabled),
+      message: () => matcherHint('.not.toBeDisabled', 'element', '') +
+        '\n\n' + 'Received: ' + printReceived(element),
+    };
+  },
+  toBeEnabled(element) {
+    const isDisabled = element.disabled || element.closest('[disabled]');
+    return {
+      pass: !Boolean(isDisabled),
+      message: () => matcherHint('.toBeEnabled', 'element', '') +
+        '\n\n' + 'Received: ' + printReceived(element),
+    };
+  },
+  toBeEmptyDOMElement(element) {
+    return {
+      pass: element.innerHTML.trim() === '',
+      message: () => matcherHint('.not.toBeEmptyDOMElement', 'element', '') +
+        '\n\n' + 'Received: ' + printReceived(element),
+    };
+  },
+  toBeInTheDocument(element) {
+    return {
+      pass: document.body.contains(element),
+      message: () => matcherHint('.not.toBeInTheDocument', 'element', '') +
+        '\n\n' + 'Received: ' + printReceived(element),
+    };
+  },
+  toBeVisible(element) {
+    return {
+      pass: isVisible(element),
+      message: () => matcherHint('.not.toBeVisible', 'element', '') +
+        '\n\n' + 'Received: ' + printReceived(element),
+    };
+  },
+  // Implement more matchers as described in the README...
+};
+
+expect.extend(matchers);
+
+// Usage example
+(async function testSuite() {
+  // You would typically write these in separate test files
+  // Importing '@testing-library/jest-dom' in test setup files
+  document.body.innerHTML = `
+    <button type="button" disabled>Click me</button>
+    <div style="display:none;">Invisible</div>
+  `;
+  
+  const button = document.querySelector('button');
+  const hiddenDiv = document.querySelector('div');
+
+  expect(button).toBeDisabled();
+  expect(button).not.toBeEnabled();
+  expect(hiddenDiv).not.toBeVisible();
+  expect(button).toBeInTheDocument();
+})();
+```
+
+This code demonstrates implementing and extending Jest's expect function to include a handful of DOM-related matchers. The `expect.extend` method is essential for making these matchers available in Jest's testing framework. Sync the matcher functions to align the logic and expectations specified in the provided README documentation, making sure each implements checks for elements' attributes, styles, and visibility accordingly.

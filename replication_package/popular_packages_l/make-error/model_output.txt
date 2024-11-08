@@ -1,0 +1,88 @@
+The `make-error` package is a utility to create custom error types in JavaScript, both in Node.js and in browsers. This package allows developers to define custom error classes that behave like native error instances, with full `instanceof` support, meaning custom errors will properly extend from the built-in `Error` class. Additionally, these errors have the correct `error.name` and `error.stack` properties, and it is designed to be compatible with Content Security Policy (CSP) environments as it does not use `eval()`. 
+
+Here's a breakdown of the package features and usage:
+- **Compatibility**: It supports both Node.js and browsers, working seamlessly across different environments. 
+- **Instanceof Support**: Custom errors can be identified using the `instanceof` operator.
+- **Error Properties**: Supports `error.name` and `error.stack`, so the custom errors have all the standard properties of JavaScript errors.
+- **CSP Compliance**: The library is designed to avoid using eval, so it's safe to use in environments with strict CSP policies.
+
+### How to use `make-error`:
+
+1. **Basic Named Error**: You can create a simple custom error by calling `makeError` with a string representing the error name.
+2. **Advanced Error Class**: You can also define complex error types with additional properties and methods, using function syntax to define the constructor and enhance the prototype.
+3. **Specialized Error**: You can create specialized errors that extend other custom errors, thereby inheriting their properties.
+4. **Inheritance for ES2015+**: For environments that support ES2015 (ES6) or later, using class syntax can simplify custom error creation by extending the provided `BaseError` class.
+
+Here's the implementation code for the `make-error` package:
+
+```javascript
+// make-error.js
+
+class BaseError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = this.constructor.name;
+
+    if (Error.captureStackTrace) {
+      Error.captureStackTrace(this, this.constructor);
+    }
+  }
+}
+
+function makeError(nameOrConstructor, SuperError = BaseError) {
+  let Constructor;
+  
+  if (typeof nameOrConstructor === 'string') {
+    const name = nameOrConstructor;
+    Constructor = function(...args) {
+      SuperError.apply(this, args);
+      this.name = name;
+    };
+    Constructor.prototype = Object.create(SuperError.prototype);
+    Constructor.prototype.constructor = Constructor;
+  } else {
+    Constructor = nameOrConstructor;
+    Object.setPrototypeOf(Constructor.prototype, SuperError.prototype);
+  }
+
+  return Constructor;
+}
+
+// Exporting BaseError and makeError
+module.exports = {
+  BaseError,
+  makeError
+};
+
+// Usage Example
+/*
+var makeError = require('./make-error');
+
+var CustomError = makeError('CustomError');
+
+class InheritedCustomError extends makeError(BaseError) {
+  constructor(message) {
+    super(message || 'Inherited Custom Error occurred');
+  }
+}
+
+// Testing
+try {
+  throw new CustomError('A custom error message');
+} catch (error) {
+  console.log(error instanceof CustomError); // true
+  console.log(error.name); // CustomError
+  console.log(error.message); // A custom error message
+}
+
+try {
+  throw new InheritedCustomError();
+} catch (error) {
+  console.log(error instanceof InheritedCustomError); // true
+  console.log(error.name); // InheritedCustomError
+  console.log(error.message); // Inherited Custom Error occurred
+}
+*/
+```
+
+This code provides the foundation to easily create and handle custom error classes that behave as expected with standard JavaScript error handling practices.

@@ -1,0 +1,68 @@
+The provided Node.js code is a utility for loading and expanding environment variables from a `.env` file, allowing for the use of variable references and default values. Here's a breakdown of the main functionalities:
+
+1. **`expand` Function**: It processes the parsed environment variables and expands them by replacing any references to other variables with their corresponding values. This also supports a default value in case the referenced variable is not present.
+
+   - The `parseVariables` function uses a regular expression to find variable patterns in the form `$VARIABLE`, `${VARIABLE}`, or `${VARIABLE:-default}` and replaces them with the actual environment variable value or the default value if provided.
+
+2. **`config` Function**: This is a wrapper that reads a `.env` file, parses its content using `dotenv`, and then uses the `expand` function to expand the parsed variables.
+
+   - It accepts an `options` parameter for specifying custom configurations like file path and encoding.
+   - It reads the `.env` file from the specified path, parses it to get the variables, and performs expansion.
+
+3. **Export and Usage Example**: The module exports both `expand` and `config` functions. A usage example is provided where, if the script is run directly, it loads and logs the expanded environment variables.
+
+Let's rewrite this functionality in a single markdown code block:
+
+```javascript
+// dotenv-expand.js
+
+const path = require('path');
+const fs = require('fs');
+const dotenv = require('dotenv');
+
+function expand(env) {
+  const parseVariables = (str) => {
+    const regex = /\$(?:\{([^}]+)\}|([A-Z0-9_]+))/gi;
+    return str.replace(regex, (_, $1, $2) => {
+      if ($1) {
+        const [variable, defaultValue] = $1.split(':-');
+        return process.env[variable] || defaultValue || '';
+      }
+      return process.env[$2] || '';
+    });
+  };
+
+  if (env.parsed) {
+    for (const key in env.parsed) {
+      if (env.parsed.hasOwnProperty(key)) {
+        env.processEnv[key] = parseVariables(env.parsed[key]);
+      }
+    }
+  }
+  return env;
+};
+
+function config(options = {}) {
+  const configOptions = {
+    path: path.resolve(process.cwd(), '.env'),
+    encoding: 'utf8',
+    processEnv: process.env,
+    ...options
+  };
+
+  try {
+    const parsed = dotenv.parse(fs.readFileSync(configOptions.path, { encoding: configOptions.encoding }));
+    const env = { parsed, processEnv: configOptions.processEnv };
+    return expand(env);
+  } catch (err) {
+    return { error: err };
+  }
+}
+
+module.exports = { expand, config };
+
+if (require.main === module) {
+  const example = config();
+  console.log(example.processEnv);
+}
+```

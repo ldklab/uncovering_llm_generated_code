@@ -1,0 +1,98 @@
+The `regenerator-transform` package is a Babel plugin designed to transform async and generator functions into a format compatible with older JavaScript environments that do not support these features natively. The package uses the `regenerator` tool to achieve this transformation.
+
+### Installation
+To use `regenerator-transform`, you need to install it via npm:
+```sh
+$ npm install regenerator-transform
+```
+
+### Usage
+
+#### Via `.babelrc` Configuration
+The preferred way to integrate this plugin is through a `.babelrc` configuration file, which is a standard Babel configuration file. 
+
+- **Without Options:** Just include `regenerator-transform` in the "plugins" array.
+  ```json
+  {
+    "plugins": ["regenerator-transform"]
+  }
+  ```
+
+- **With Options:** You can pass options to control the transformation process. The options include:
+  - `asyncGenerators`: Whether to transform async generator functions. Defaults to `true`.
+  - `generators`: Whether to transform generator functions. Defaults to `true`.
+  - `async`: Whether to transform async functions. Defaults to `true`.
+
+  Example with options:
+  ```json
+  {
+    "plugins": [
+      ["regenerator-transform", {
+        "asyncGenerators": false,
+        "generators": false,
+        "async": false
+      }]
+    ]
+  }
+  ```
+
+#### Via CLI
+You can also use the plugin directly from the command line by specifying it with the `--plugins` flag when running Babel:
+```sh
+$ babel --plugins regenerator-transform script.js
+```
+
+#### Via Node API
+The plugin can also be used programmatically via the Babel Node API:
+```javascript
+require("@babel/core").transformSync("code", {
+  plugins: ["regenerator-transform"]
+});
+```
+
+```javascript
+const { transformSync } = require("@babel/core");
+const regenerator = require("regenerator");
+
+function regeneratorTransformPlugin(api, options = {}) {
+  api.assertVersion(7);
+
+  const { asyncGenerators = true, generators = true, async = true } = options;
+
+  return {
+    visitor: {
+      Function(path) {
+        if (path.node.async && async) regenerator.async(path.node, api);
+        if (path.node.generator) {
+          if (path.node.async && asyncGenerators) {
+            regenerator.asyncGenerator(path.node, api);
+          } else if (generators) {
+            regenerator.generator(path.node, api);
+          }
+        }
+      }
+    }
+  };
+}
+
+module.exports = function (api) {
+  return regeneratorTransformPlugin(api, {
+    asyncGenerators: true,
+    generators: true,
+    async: true
+  });
+};
+
+// CLI Usage Example
+if (require.main === module) {
+  const fs = require("fs");
+  const path = process.argv[2];
+  const code = fs.readFileSync(path, "utf8");
+
+  const output = transformSync(code, {
+    plugins: [module.exports]
+  });
+
+  console.log(output.code);
+}
+```

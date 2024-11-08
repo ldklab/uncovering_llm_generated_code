@@ -1,0 +1,104 @@
+The `detect-libc` package is a Node.js module designed to detect the C standard library (libc) implementation used by a Linux system. It specifically identifies whether the system uses GNU glibc or MUSL libc, providing both the libc family and version. The module provides both asynchronous and synchronous functions for these purposes.
+
+Here's a summary of the functionalities:
+
+1. **Constants**: 
+   - `GLIBC`: A constant string that represents the `glibc` library.
+   - `MUSL`: A constant string that represents the `musl` library.
+
+2. **Functions**:
+   - `family()`: Asynchronously determines the libc family. Returns a promise that resolves to `'glibc'`, `'musl'`, or `null` if undetermined or not on Linux.
+   - `familySync()`: Synchronously determines the libc family, returning the same possible values as `family()`.
+   - `version()`: Asynchronously finds the version of the detected libc. Returns a promise resolving to the version string or `null`.
+   - `versionSync()`: Synchronous version of `version()`.
+   - `isNonGlibcLinux()`: Asynchronously checks if the libc is not `glibc`. Resolves to `true` if not `glibc` or not on Linux, otherwise `false`.
+   - `isNonGlibcLinuxSync()`: Synchronous check if libc is not `glibc`.
+
+Below is the code implementation for the `detect-libc` package:
+
+```javascript
+// detect-libc.js
+
+const fs = require('fs');
+const { execSync } = require('child_process');
+
+const GLIBC = 'glibc';
+const MUSL = 'musl';
+
+function checkLibcContent(content) {
+  if (content.includes('GNU')) {
+    return GLIBC;
+  }
+  if (/musl/.test(content)) {
+    return MUSL;
+  }
+  return null;
+}
+
+function getLibcFromLdd() {
+  try {
+    const lddPath = execSync('which ldd').toString().trim();
+    const lddContent = fs.readFileSync(lddPath, 'utf8');
+    return checkLibcContent(lddContent);
+  } catch {
+    return null;
+  }
+}
+
+function getLibcVersion(family) {
+  try {
+    const result = execSync(
+      `${family === GLIBC ? 'ldd' : 'ldd --version'}`
+    ).toString();
+    const versionMatch = result.match(/(\d+\.\d+(\.\d+)?)/);
+    return versionMatch ? versionMatch[0] : null;
+  } catch {
+    return null;
+  }
+}
+
+async function family() {
+  return getLibcFromLdd();
+}
+
+function familySync() {
+  return getLibcFromLdd();
+}
+
+async function version() {
+  const libcFamily = await family();
+  if (libcFamily) {
+    return getLibcVersion(libcFamily);
+  }
+  return null;
+}
+
+function versionSync() {
+  const libcFamily = familySync();
+  if (libcFamily) {
+    return getLibcVersion(libcFamily);
+  }
+  return null;
+}
+
+async function isNonGlibcLinux() {
+  const libcFamily = await family();
+  return libcFamily !== GLIBC;
+}
+
+function isNonGlibcLinuxSync() {
+  const libcFamily = familySync();
+  return libcFamily !== GLIBC;
+}
+
+module.exports = {
+  GLIBC,
+  MUSL,
+  family,
+  familySync,
+  version,
+  versionSync,
+  isNonGlibcLinux,
+  isNonGlibcLinuxSync
+};
+```

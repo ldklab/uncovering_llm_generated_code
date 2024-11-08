@@ -1,0 +1,96 @@
+The provided Node.js script is a utility for gathering and displaying various system information. Here's an explanation of the main functionalities:
+
+1. **System Information Gathering**: 
+   - `gatherSystemInfo` function collects basic system information such as the operating system type and release, CPU model, total memory (converted to gigabytes), and the shell environment.
+   
+2. **Command Execution**:
+   - `runCommand` tries to run a shell command using `execSync` to retrieve information about installed software. If the command fails, it returns 'Not Found'.
+
+3. **Information Gathering for Binaries**:
+   - `gatherBinaryInfo` checks for versions of Node.js, npm, and Yarn by executing respective version commands.
+
+4. **Information Gathering for Browsers**:
+   - `gatherBrowserInfo` attempts to determine versions of popular browsers: Chrome, Firefox, and Safari.
+
+5. **Output Formatting**:
+   - `formatAsJson` takes an information object and formats it as a prettified JSON string.
+
+6. **Running the Utility**:
+   - `run` function compiles the collected information as per the provided configuration (which parts of information to gather) and optionally formats it in JSON.
+   - `displayInfo` is a helper function to run the information gathering with a default configuration that includes system info, binaries, and browsers, and outputs it in JSON format.
+   
+7. **Execution Entry Point**:
+   - The script checks if it's executed as the main module, and if so, calls `displayInfo`.
+
+A possible rewrite of this code keeping similar functionality is:
+
+```javascript
+const { execSync } = require('child_process');
+const os = require('os');
+
+function getSystemDetails() {
+  return {
+    OS: `${os.type()} ${os.release()}`,
+    CPU: os.cpus()[0].model,
+    Memory: `${(os.totalmem() / (1024 ** 3)).toFixed(2)} GB`,
+    Shell: process.env.SHELL || 'N/A',
+  };
+}
+
+function executeCommand(command) {
+  try {
+    return execSync(command, { encoding: 'utf8' }).trim();
+  } catch {
+    return 'Not Found';
+  }
+}
+
+function fetchBinaryDetails() {
+  return {
+    Node: executeCommand('node -v'),
+    npm: executeCommand('npm -v'),
+    Yarn: executeCommand('yarn -v'),
+  };
+}
+
+function fetchBrowserDetails() {
+  return {
+    Chrome: executeCommand("google-chrome --version || chrome --version"),
+    Firefox: executeCommand("firefox --version"),
+    Safari: executeCommand("safaridriver --version"),
+  };
+}
+
+function convertToJson(data) {
+  return JSON.stringify(data, null, 2);
+}
+
+async function gatherInformation(config, options = {}) {
+  const details = {};
+
+  if (config.System) {
+    details.System = getSystemDetails();
+  }
+
+  if (config.Binaries) {
+    details.Binaries = fetchBinaryDetails();
+  }
+
+  if (config.Browsers) {
+    details.Browsers = fetchBrowserDetails();
+  }
+  
+  return options.json ? convertToJson(details) : details;
+}
+
+function showInformation() {
+  const config = { System: true, Binaries: true, Browsers: true };
+  gatherInformation(config, { json: true }).then(console.log);
+}
+
+if (require.main === module) {
+  showInformation();
+}
+
+module.exports = { gatherInformation };
+```

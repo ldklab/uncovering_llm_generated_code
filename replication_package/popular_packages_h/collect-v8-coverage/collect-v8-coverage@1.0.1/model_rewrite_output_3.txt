@@ -1,0 +1,55 @@
+The provided Node.js code defines a class `CoverageInstrumenter` that uses the Node.js Inspector's `Session` to collect precise code coverage data. Here's a breakdown of its functionality:
+
+1. **Session Initialization**: The constructor initializes a new session via the Inspector module and promisifies the session's `post` method to use async/await for clean asynchronous code.
+
+2. **Starting the Coverage Instrumentation**:
+   - Connects the session to the Node.js instance.
+   - Enables the Profiler for gathering execution data about the code.
+   - Starts the precise coverage collection with options that include `callCount` and `detailed` to gather comprehensive execution metrics.
+
+3. **Stopping the Coverage Instrumentation**:
+   - Collects the coverage details by calling `Profiler.takePreciseCoverage`.
+   - Stops the precise coverage session and disables the Profiler.
+   - Returns the collected coverage result for further processing or storage.
+
+The `CoverageInstrumenter` class is exported as a module, allowing other files to import and utilize it for code coverage analysis.
+
+Here is the rewritten code:
+
+```javascript
+'use strict';
+
+const { Session } = require('inspector');
+const { promisify } = require('util');
+
+class CoverageInstrumenter {
+  constructor() {
+    this.session = new Session();
+    this.postSession = promisify(this.session.post.bind(this.session));
+  }
+
+  async startInstrumenting() {
+    // Connect the session
+    this.session.connect();
+    // Enable the Profiler
+    await this.postSession('Profiler.enable');
+    // Start collecting coverage with detailed call metrics
+    await this.postSession('Profiler.startPreciseCoverage', {
+      callCount: true,
+      detailed: true,
+    });
+  }
+
+  async stopInstrumenting() {
+    // Collect precise coverage data
+    const { result } = await this.postSession('Profiler.takePreciseCoverage');
+    // Stop and disable the profilers
+    await this.postSession('Profiler.stopPreciseCoverage');
+    await this.postSession('Profiler.disable');
+    // Return the coverage data
+    return result;
+  }
+}
+
+module.exports.CoverageInstrumenter = CoverageInstrumenter;
+```

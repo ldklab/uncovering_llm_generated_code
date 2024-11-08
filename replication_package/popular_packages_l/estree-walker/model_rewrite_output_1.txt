@@ -1,0 +1,103 @@
+The Node.js code provided defines a module that walks through an Abstract Syntax Tree (AST), which is a tree representation of source code. This module allows for custom 'enter' and 'leave' functions to be executed at each node of the tree. Here's how it works:
+
+- **`walk(ast, { enter, leave })`**: This is the main function that initiates the tree traversal starting from the root node, specified by `ast`. Users can specify `enter` and `leave` callback functions to perform actions when entering or leaving a node during the traversal.
+
+- **`visit(node, parent, prop, index)`**: This function is invoked recursively to visit each node in the AST. It manages node operations like skipping, removing, or replacing nodes.
+
+- **Context Controls**: Each node visit is accompanied by a context object that has:
+  - `skip()`: Skip processing the current node's children.
+  - `remove()`: Remove the current node from the AST.
+  - `replace(newNode)`: Replace the current node with `newNode`.
+
+- **Traversal Logic**:
+  - **Enter Stage**: If an `enter` function is provided, it is called before visiting the node's children. If a node is marked for replacement or removal, or if skipping is indicated, the traversal adjusts accordingly.
+  - **Leave Stage**: After visiting a node's children, if a `leave` function is provided, it is called. The node can again be replaced or removed at this stage.
+
+- **Node Replacement/Removal Functions**:
+  - **`replaceNode(parent, prop, index, newNode)`**: Replaces the current node in its parent context with `newNode`.
+  - **`removeNode(parent, prop, index)`**: Removes the current node from its parent context.
+
+- **`module.exports = { walk }`**: Exports the `walk` function so it can be used in other parts of a Node.js application.
+
+Here's the rewritten code based on the above understanding:
+
+```javascript
+// estree-walker/index.js
+
+function walk(ast, { enter, leave }) {
+
+    function visit(node, parent = null, prop = null, index = null) {
+        if (!node) return;
+
+        const context = {
+            skip() { this.shouldSkip = true; },
+            remove() { this.removed = true; },
+            replace(newNode) {
+                this.replaced = true;
+                this.newNode = newNode;
+            },
+            shouldSkip: false,
+            removed: false,
+            replaced: false,
+            newNode: null
+        };
+
+        if (enter) {
+            enter.call(context, node, parent, prop, index);
+            if (context.replaced) {
+                replaceNode(parent, prop, index, context.newNode);
+            }
+            if (context.removed || context.shouldSkip) {
+                return;
+            }
+        }
+
+        for (const key of Object.keys(node)) {
+            const value = node[key];
+            if (Array.isArray(value)) {
+                for (let i = 0; i < value.length; i++) {
+                    if (value[i] && typeof value[i].type === 'string') {
+                        visit(value[i], node, key, i);
+                    }
+                }
+            } else if (value && typeof value.type === 'string') {
+                visit(value, node, key);
+            }
+        }
+
+        if (leave && !context.removed && !context.replaced) {
+            leave.call(context, node, parent, prop, index);
+            if (context.replaced) {
+                replaceNode(parent, prop, index, context.newNode);
+            }
+            if (context.removed) {
+                removeNode(parent, prop, index);
+            }
+        }
+    }
+
+    function replaceNode(parent, prop, index, newNode) {
+        if (parent) {
+            if (index !== null) {
+                parent[prop][index] = newNode;
+            } else {
+                parent[prop] = newNode;
+            }
+        }
+    }
+
+    function removeNode(parent, prop, index) {
+        if (parent) {
+            if (index !== null) {
+                parent[prop].splice(index, 1);
+            } else {
+                delete parent[prop];
+            }
+        }
+    }
+
+    visit(ast);
+}
+
+module.exports = { walk };
+```

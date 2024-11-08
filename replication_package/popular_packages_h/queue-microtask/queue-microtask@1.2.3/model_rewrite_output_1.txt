@@ -1,0 +1,27 @@
+The provided Node.js code is a module that exports a function for queuing a microtask, which is a small task that runs after the currently executing script, once the current call stack is empty, before any I/O tasks or timers. The code checks if the environment supports the `queueMicrotask` function natively. If it does, it uses the native `queueMicrotask` binding it to either the `window` or `global` object depending on the environment. If `queueMicrotask` is not available, it falls back to using a resolved `Promise` to queue the microtask, ensuring any error is caught and thrown in a setTimeout to prevent unhandled promise rejections.
+
+Here is a possible rewrite of the given code:
+
+```javascript
+/*! queue-microtask. MIT License. Feross Aboukhadijeh <https://feross.org/opensource> */
+let resolvedPromise;
+
+function queueMicrotaskPolyfill(callback) {
+  if (!resolvedPromise) {
+    resolvedPromise = Promise.resolve();
+  }
+  resolvedPromise.then(callback).catch(error => {
+    setTimeout(() => { throw error; }, 0);
+  });
+}
+
+const microtaskQueue = (() => {
+  if (typeof queueMicrotask === 'function') {
+    return queueMicrotask.bind(typeof window !== 'undefined' ? window : global);
+  } else {
+    return queueMicrotaskPolyfill;
+  }
+})();
+
+module.exports = microtaskQueue;
+```

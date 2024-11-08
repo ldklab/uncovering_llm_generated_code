@@ -1,0 +1,102 @@
+The provided Node.js code is an implementation of an `XMLSerializer` class, which converts DOM nodes into XML strings. The serializer supports multiple node types such as element, text, and comment nodes, and ensures that the nodes are serialized correctly, according to certain criteria. The serializer has functionality to ensure the well-formedness of nodes if needed. The primary methods within this class perform tasks such as:
+
+1. **serializeToString**: This method serves as the entry point, which checks for the `requireWellFormed` option before serializing the node.
+2. **serializeNode**: This method determines how to serialize a node based on its type (element, text, comment).
+3. **serializeElement**: Specifically serializes element nodes, handling attributes, namespaces, and child nodes.
+4. **escapeXML** and **escapeAttributeValue**: These are utility functions to escape character entities to ensure XML syntax is respected.
+5. **isWellFormed**: Checks basic name constraints to ascertain if the node structure is well-formed.
+
+Below is a possible rewrite of the Node.js code that functions equivalently to the original:
+
+```javascript
+// xml-serializer.js
+
+class XMLSerializer {
+  serializeToString(node, options = {}) {
+    const requireWellFormed = !!options.requireWellFormed;
+
+    if (requireWellFormed && !this.isWellFormed(node)) {
+      throw new Error("Node is not well-formed");
+    }
+
+    return this.serializeNode(node);
+  }
+
+  serializeNode(node) {
+    switch (node.nodeType) {
+      case Node.ELEMENT_NODE:
+        return this.serializeElement(node);
+      case Node.TEXT_NODE:
+        return this.escapeXML(node.nodeValue);
+      case Node.COMMENT_NODE:
+        return `<!--${node.nodeValue}-->`;
+      default:
+        return '';
+    }
+  }
+
+  serializeElement(element) {
+    const tagName = element.tagName.toLowerCase();
+    let result = `<${tagName}`;
+    const namespaceURI = 'http://www.w3.org/1999/xhtml';
+
+    if (!element.hasAttribute('xmlns')) {
+      result += ` xmlns="${namespaceURI}"`;
+    }
+
+    for (const attr of Array.from(element.attributes)) {
+      result += ` ${attr.name}="${this.escapeAttributeValue(attr.value)}"`;
+    }
+
+    if (element.childNodes.length === 0) {
+      return `${result}></${tagName}>`;
+    }
+
+    result += '>';
+    for (const child of Array.from(element.childNodes)) {
+      result += this.serializeNode(child);
+    }
+    
+    return `${result}</${tagName}>`;
+  }
+
+  escapeXML(value) {
+    return value.replace(/[<>&'"]/g, char => {
+      const entities = { '<': '&lt;', '>': '&gt;', '&': '&amp;', "'": '&apos;', '"': '&quot;' };
+      return entities[char] || char;
+    });
+  }
+
+  escapeAttributeValue(value) {
+    return this.escapeXML(value.replace(/"/g, '&quot;'));
+  }
+
+  isWellFormed(node) {
+    const namePattern = /^[A-Za-z_][\w.-]*$/;
+
+    if (node.nodeType === Node.ELEMENT_NODE) {
+      if (!namePattern.test(node.tagName)) {
+        return false;
+      }
+      for (const attr of Array.from(node.attributes)) {
+        if (!namePattern.test(attr.name)) {
+          return false;
+        }
+      }
+    }
+
+    for (const child of Array.from(node.childNodes)) {
+      if (!this.isWellFormed(child)) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+}
+
+module.exports = function(node, options) {
+  const serializer = new XMLSerializer();
+  return serializer.serializeToString(node, options);
+};
+```

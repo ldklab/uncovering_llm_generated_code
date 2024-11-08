@@ -1,0 +1,42 @@
+function normalizePath(path, stripTrailing = true) {
+  // Ensure the path input is a string
+  if (typeof path !== 'string') {
+    throw new TypeError('Expected a string');
+  }
+
+  // Determine if the path starts with a Windows namespace
+  const isWinNamespace = path.startsWith('\\\\.\\') || path.startsWith('\\\\?\\');
+  
+  if (isWinNamespace) {
+    // Normalize any backslashes to forward slashes if using a Windows namespace
+    path = path.replace(/\\/g, '/');
+  } else {
+    // Convert all backslashes or consecutive slashes to a single forward slash
+    path = path.replace(/[\\/]+/g, '/');
+  }
+
+  // Remove any trailing slash unless stripTrailing is set to false
+  if (stripTrailing) {
+    path = path.replace(/\/$/, '');
+  }
+
+  // Return the normalized path
+  return path;
+}
+
+module.exports = normalizePath;
+
+// Usage example of the normalizePath function
+const normalize = require('./normalize-path');
+
+console.log(normalize('\\foo\\bar\\baz\\')); 
+// Expected output: '/foo/bar/baz'
+
+console.log(normalize('\\\\?\\UNC\\Server01\\user\\docs\\Letter.txt')); 
+// Expected output: '//?/UNC/Server01/user/docs/Letter.txt'
+
+console.log(normalize('.//foo//bar///////baz/')); 
+// Expected output: './foo/bar/baz'
+
+console.log(normalize('foo\\bar\\baz\\', false)); 
+// Expected output: 'foo/bar/baz/'

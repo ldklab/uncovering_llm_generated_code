@@ -1,0 +1,80 @@
+The given Node.js code provides a simplified implementation of the `rimraf` utility, which is used to recursively delete files and directories. The main functionalities in the code are:
+
+1. **rimraf**: An asynchronous function that deletes specified paths (files or directories) recursively. It takes an array of paths or a single path and optional options. It returns a promise that resolves to a boolean indicating success.
+
+2. **removeRecursively**: A helper function that supports the asynchronous `rimraf` function to perform recursive deletion using promises, handling both directories and files. It returns a promise that resolves to `true` if successful or catches and returns `false` if the path doesn't exist.
+
+3. **rimrafSync**: A synchronous version of `rimraf`, working the same way but does not return a promise. Instead, it directly returns a boolean indicating success or failure.
+
+4. **removeSync**: A helper function that supports `rimrafSync` to perform recursive deletion synchronously.
+
+5. **CLI Interface**: Code to handle command line interface execution, allowing the script to be used from the command line to delete files or directories specified as arguments.
+
+Here is a possible rewrite of the provided code:
+
+```javascript
+import fs from 'fs/promises';
+import path from 'path';
+
+async function rimraf(paths, opts = {}) {
+  if (!Array.isArray(paths)) paths = [paths];
+  const results = await Promise.all(paths.map(p => removeRecursively(p, opts)));
+  return results.every(Boolean);
+}
+
+async function removeRecursively(targetPath, opts = {}) {
+  try {
+    const stats = await fs.lstat(targetPath);
+    if (stats.isDirectory()) {
+      const entries = await fs.readdir(targetPath);
+      await Promise.all(entries.map(entry => 
+        removeRecursively(path.join(targetPath, entry), opts)
+      ));
+      await fs.rmdir(targetPath);
+    } else {
+      await fs.unlink(targetPath);
+    }
+    return true;
+  } catch (err) {
+    if (err.code === 'ENOENT') return false;
+    throw err;
+  }
+}
+
+function rimrafSync(paths, opts = {}) {
+  if (!Array.isArray(paths)) paths = [paths];
+  return paths.every(p => removeSync(p, opts));
+}
+
+function removeSync(targetPath, opts = {}) {
+  try {
+    const stats = fs.statSync(targetPath);
+    if (stats.isDirectory()) {
+      const entries = fs.readdirSync(targetPath);
+      entries.forEach(entry => removeSync(path.join(targetPath, entry), opts));
+      fs.rmdirSync(targetPath);
+    } else {
+      fs.unlinkSync(targetPath);
+    }
+    return true;
+  } catch (err) {
+    if (err.code === 'ENOENT') return false;
+    throw err;
+  }
+}
+
+export {
+  rimraf,
+  rimrafSync,
+};
+
+if (require.main === module) {
+  const args = process.argv.slice(2);
+  const paths = args.filter(arg => !arg.startsWith('--'));
+  rimraf(paths).then(result => {
+    console.log('Finished deleting files:', result);
+  }).catch(err => {
+    console.error('Error deleting files:', err);
+  });
+}
+```

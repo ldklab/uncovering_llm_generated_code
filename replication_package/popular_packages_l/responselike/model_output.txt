@@ -1,0 +1,57 @@
+The `responselike` package in Node.js is designed to create objects that mimic the behavior of HTTP response streams. This is particularly useful when you want to simulate or mock HTTP responses, for instance, when working with cached data or testing.
+
+Here is a summary of the functionality provided by the package:
+
+1. **Response Object Creation**: You can create an instance of a response-like object using the `Response` class provided by the `responselike` package. The constructor for this class requires four parameters:
+   - `statusCode`: A number representing the HTTP status code of the response.
+   - `headers`: An object representing the HTTP headers. The keys for the headers will be automatically converted to lowercase.
+   - `body`: A Buffer containing the body of the response. This Buffer is streamable and can be accessed directly via the `response.body` property.
+   - `url`: A string representing the URL associated with the response.
+
+2. **Properties and Methods**:
+   - **Properties**:
+     - `statusCode`: Stores and gives access to the HTTP status code.
+     - `headers`: Stores and allows access to the HTTP headers as an object.
+     - `body`: Direct access to the Buffer storing body content.
+     - `url`: Accesses the request URL as a string.
+   - **Methods**:
+     - The `pipe()` method is available to pipe the response to writable streams, similar to Node.js's HTTP response streams. This enables you to stream the body content seamlessly, like writing to `stdout`.
+
+Here's the implementation code for the functionality described:
+
+```js
+const { PassThrough } = require('stream');
+
+class Response extends PassThrough {
+  constructor(statusCode, headers, body, url) {
+    super();
+    
+    this.statusCode = statusCode;
+    this.headers = {};
+    for (const [key, value] of Object.entries(headers)) {
+      this.headers[key.toLowerCase()] = value;
+    }
+    this.body = body;
+    this.url = url;
+
+    // Create a stream with the body content
+    process.nextTick(() => {
+      this.end(body);
+    });
+  }
+}
+
+module.exports = Response;
+
+// Usage example
+const responseExample = new Response(200, { foo: 'bar' }, Buffer.from('Hi!'), 'https://example.com');
+
+console.log(responseExample.statusCode); // 200
+console.log(responseExample.headers); // { foo: 'bar' }
+console.log(responseExample.body); // <Buffer 48 69 21>
+console.log(responseExample.url); // 'https://example.com'
+
+responseExample.pipe(process.stdout); // Hi!
+```
+
+This code defines a `Response` class that extends the Node.js `PassThrough` stream. It creates a response-like object that simulates an HTTP response stream, complete with status code, headers, body, and an associated URL. The body is immediately ended to the stream, making it available to be consumed via streaming interfaces.

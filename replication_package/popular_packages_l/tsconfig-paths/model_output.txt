@@ -1,0 +1,114 @@
+The `tsconfig-paths` package is designed to help Node.js resolve modules based on the `paths` defined in a TypeScript configuration file (`tsconfig.json` or `jsconfig.json`). TypeScript allows path mapping to specify non-relative module paths, but this can cause issues at runtime when those paths need to be resolved by Node.js. The package provides functionality to map these types of paths to actual file paths on the filesystem, emulating TypeScript's functionality at runtime.
+
+Here's a breakdown of its primary features:
+
+1. **Runtime Path Mapping**: You can use `tsconfig-paths` to resolve module paths defined in `tsconfig.json` or `jsconfig.json` at runtime. It effectively intercepts Node's module loading mechanism to account for the path aliases defined in the TypeScript configuration.
+
+2. **API Usage**: The package exposes several APIs, including:
+   - `register`: Installs a custom module loader to resolve paths using tsconfig paths.
+   - `loadConfig`: Loads the TypeScript configuration from a specified directory.
+   - `createMatchPath`: Returns a function to match paths using configuration paths.
+   - `matchFromAbsolutePaths`: Matches a requested module to a path using pre-resolved configuration paths.
+   - Asynchronous versions of `createMatchPath` and `matchFromAbsolutePaths`.
+
+3. **Bootstrap and Global Configuration Options**: 
+   - Environment variables can be used to customize how `tsconfig-paths` operates, such as `TS_NODE_BASEURL` and `TS_NODE_PROJECT`.
+   - You can create a custom bootstrapping process if you need to execute the resolving logic with specific parameters.
+
+4. **Compatibility with Other Tools**: 
+   - You can utilize `tsconfig-paths` with `ts-node` and debugging tools like VSCode, as they support loading required modules upon startup.
+   - It can also integrate with build tools like Webpack via plugins specifically designed to handle tsconfig paths.
+
+Here's the implementation of the `tsconfig-paths` package:
+
+```javascript
+const fs = require('fs');
+const path = require('path');
+
+function loadConfig(cwd = process.cwd()) {
+  const configPath = path.resolve(cwd, 'tsconfig.json');
+  if (fs.existsSync(configPath)) {
+    const config = require(configPath);
+    const { baseUrl, paths } = config.compilerOptions || {};
+    if (baseUrl && paths) {
+      return { resultType: 'success', absoluteBaseUrl: path.resolve(cwd, baseUrl), paths };
+    }
+  }
+  return { resultType: 'failed', message: `Cannot find tsconfig.json in ${cwd}` };
+}
+
+function register({ baseUrl, paths }) {
+  const originalResolveFilename = require('module')._resolveFilename;
+  require('module')._resolveFilename = function (request, parent) {
+    for (const alias in paths) {
+      if (new RegExp(`^${alias}`).test(request)) {
+        const aliasedPaths = paths[alias];
+        for (const aliasedPath of aliasedPaths) {
+          const resolvedPath = path.resolve(baseUrl, aliasedPath.replace('*', request.replace(alias, '')));
+          if (fs.existsSync(resolvedPath)) {
+            return originalResolveFilename.call(this, resolvedPath, parent);
+          }
+        }
+      }
+    }
+    return originalResolveFilename.call(this, request, parent);
+  };
+  return () => {
+    require('module')._resolveFilename = originalResolveFilename;
+  };
+}
+
+function createMatchPath(absoluteBaseUrl, paths, mainFields = ["main"], addMatchAll = true) {
+  return function matchPath(requestedModule) {
+    for (const alias in paths) {
+      if (new RegExp(`^${alias}`).test(requestedModule)) {
+        const aliasedPaths = paths[alias];
+        for (const aliasedPath of aliasedPaths) {
+          const resolvedPath = path.resolve(absoluteBaseUrl, aliasedPath.replace('*', requestedModule.replace(alias, '')));
+          if (fs.existsSync(resolvedPath)) {
+            return resolvedPath;
+          }
+        }
+      }
+    }
+    return undefined;
+  };
+}
+
+function matchFromAbsolutePaths(absolutePathMappings, requestedModule, fileExists = fs.existsSync) {
+  for (const mapping of absolutePathMappings) {
+    if (new RegExp(`^${mapping.alias}`).test(requestedModule)) {
+      const mappedPaths = mapping.paths;
+      for (const mappedPath of mappedPaths) {
+        const resolvedPath = path.resolve(mapping.baseUrl, mappedPath.replace('*', requestedModule.replace(mapping.alias, '')));
+        if (fileExists(resolvedPath)) {
+          return resolvedPath;
+        }
+      }
+    }
+  }
+  return undefined;
+}
+
+function createMatchPathAsync(...args) {
+  return function(requestedModule, callback) {
+    const matchPath = createMatchPath(...args);
+    const result = matchPath(requestedModule);
+    process.nextTick(() => callback(null, result));
+  };
+}
+
+function matchFromAbsolutePathsAsync(absolutePathMappings, requestedModule, fileExists = fs.existsSync, callback) {
+  const result = matchFromAbsolutePaths(absolutePathMappings, requestedModule, fileExists);
+  process.nextTick(() => callback(null, result));
+}
+
+module.exports = {
+  register,
+  loadConfig,
+  createMatchPath,
+  matchFromAbsolutePaths,
+  createMatchPathAsync,
+  matchFromAbsolutePathsAsync,
+};
+```

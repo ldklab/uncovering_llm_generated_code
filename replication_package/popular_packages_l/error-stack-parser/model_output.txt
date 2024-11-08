@@ -1,0 +1,59 @@
+The Node.js package described in the `README.md` file is called `error-stack-parser`. This package is designed to parse JavaScript `Error` objects and extract relevant data from their `stack` property. The parser processes the stack trace of an error to identify and retrieve useful information such as function names, file URLs, line numbers, and column numbers. This parsed data is returned as an array of `StackFrame` objects, which encapsulate this information for each frame in the stack.
+
+The package is cross-browser compatible, though it notes limitations with Internet Explorer 9 and earlier versions, where `Error` objects do not contain a `stack` property when thrown.
+
+### Features:
+- **Functionality**: It parses the stack trace of `Error` objects to extract function names, file paths, line numbers, and column numbers.
+- **Output**: Returns an array of `StackFrame` objects, each representing a frame in the stack.
+- **Usage**: As demonstrated in the usage section, the `ErrorStackParser.parse` method is called with an `Error` object and it produces an array of `StackFrame` objects with detailed stack trace information.
+- **Installation**: It can be installed via npm, bower, or directly included from the GitHub repository.
+
+Below is the implementation code for this package:
+
+```javascript
+// error-stack-parser.js
+
+class StackFrame {
+    constructor({functionName, fileName, lineNumber, columnNumber, isNative = false, isEval = false, isConstructor = false, args = []}) {
+        this.functionName = functionName;
+        this.fileName = fileName;
+        this.lineNumber = lineNumber;
+        this.columnNumber = columnNumber;
+        this.isNative = isNative;
+        this.isEval = isEval;
+        this.isConstructor = isConstructor;
+        this.args = args;
+    }
+}
+
+class ErrorStackParser {
+    static parse(error) {
+        if (!error || !error.stack) {
+            throw new Error('Given error must have a stack');
+        }
+
+        return error.stack.split('\n').map(line => {
+            const matchedData = line.match(/at (\S+) \((.*):(\d+):(\d+)\)/) || line.match(/at (.*):(\d+):(\d+)/);
+            
+            if (!matchedData) return null;
+
+            const [_, functionName = 'unknown', fileName, lineNumber, columnNumber] = matchedData;
+
+            return new StackFrame({
+                functionName,
+                fileName,
+                lineNumber: parseInt(lineNumber, 10),
+                columnNumber: parseInt(columnNumber, 10),
+                isNative: line.includes('[native code]'),
+                isEval: line.includes('eval'),
+            });
+        }).filter(frame => frame);
+    }
+}
+
+module.exports = { StackFrame, ErrorStackParser };
+```
+
+This code defines two main components:
+- `StackFrame`: A class representing a single frame of a stack trace with details such as function name, file name, line and column numbers, etc.
+- `ErrorStackParser`: A class with a static method `parse` that takes an `Error` object, extracts, and processes its stack trace into an array of `StackFrame` objects. It uses regular expressions to parse each line of the stack trace and correctly populate the StackFrame properties.

@@ -1,0 +1,62 @@
+The given Node.js code defines a module that deals with managing and manipulating a set of visitor keys for Abstract Syntax Tree (AST) nodes. Here's a breakdown of its functionality:
+
+1. **KEYS Initialization**: The module loads a JSON file `visitor-keys.json` to initialize a collection of visitor keys for different node types. The keys are immutable due to use of `Object.freeze`.
+
+2. **NODE_TYPES**: This defines all the node types using the keys present in `visitor-keys.json`.
+
+3. **KEY_BLACKLIST**: A set of keys that should be ignored, presumably because they are not relevant to the visiting process.
+
+4. **filterKey Function**: A utility function to determine if a key should be used based on whether it is listed in the blacklist or starts with an underscore "_".
+
+5. **Public Interface**: The module exports an object that encapsulates the logic for:
+   - Accessing the visitor keys (`KEYS`).
+   - Obtaining the keys of a given AST node, excluding blacklisted keys or those prefixed with an underscore.
+   - Creating a union set of the default keys with additional keys provided by the user.
+
+The purpose of this module is likely to provide a standardized way to traverse and manipulate AST nodes by providing their keys and managing them efficiently.
+
+```javascript
+"use strict";
+
+const KEYS = require("./visitor-keys.json");
+const NODE_TYPES = Object.freeze(Object.keys(KEYS));
+
+for (const type of NODE_TYPES) {
+    Object.freeze(KEYS[type]);
+}
+Object.freeze(KEYS);
+
+const KEY_BLACKLIST = new Set([
+    "parent",
+    "leadingComments",
+    "trailingComments"
+]);
+
+function filterKey(key) {
+    return !KEY_BLACKLIST.has(key) && key[0] !== "_";
+}
+
+module.exports = Object.freeze({
+    KEYS,
+
+    getKeys(node) {
+        return Object.keys(node).filter(filterKey);
+    },
+
+    unionWith(additionalKeys) {
+        const combinedKeys = Object.assign({}, KEYS);
+
+        Object.keys(additionalKeys).forEach(type => {
+            if (combinedKeys[type]) {
+                const keySet = new Set(additionalKeys[type]);
+                combinedKeys[type].forEach(key => keySet.add(key));
+                combinedKeys[type] = Object.freeze(Array.from(keySet));
+            } else {
+                combinedKeys[type] = Object.freeze(Array.from(additionalKeys[type]));
+            }
+        });
+
+        return Object.freeze(combinedKeys);
+    }
+});
+```

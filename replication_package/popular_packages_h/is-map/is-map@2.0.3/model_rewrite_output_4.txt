@@ -1,0 +1,57 @@
+The functionality of the provided Node.js code is to determine whether a given value is a Map object. It checks for the presence and functionality of the Map and Set constructors in the environment to determine the best way to perform this check.
+
+Here's a breakdown of how it works:
+1. It checks if `Map` and `Set` are defined and functional in the environment.
+2. If `Map` is not present, it exports a function that always returns `false`.
+3. If `Map` is present but does not have a `has` method, it also exports a function that always returns `false`.
+4. If neither of the above conditions is met, it exports a function that:
+   - Checks if the input is an object.
+   - Attempts to call the `has` method from `Map.prototype` on the input.
+   - If successful and under certain conditions involving `Set.prototype`, checks if the input is an instance of `Map`.
+   - If any of these checks fail, it returns `false`.
+
+Below is the rewritten code:
+
+```javascript
+'use strict';
+
+const hasMapSupport = typeof Map === 'function' && Map.prototype;
+const hasSetSupport = typeof Set === 'function' && Set.prototype;
+
+let isMapFunction;
+
+if (!hasMapSupport) {
+	isMapFunction = function isMap(x) {
+		// `Map` is not present in this environment.
+		return false;
+	};
+}
+
+const mapHasMethod = hasMapSupport ? Map.prototype.has : null;
+const setHasMethod = hasSetSupport ? Set.prototype.has : null;
+
+if (!isMapFunction && !mapHasMethod) {
+	isMapFunction = function isMap(x) {
+		// `Map` does not have a `has` method
+		return false;
+	};
+}
+
+module.exports = isMapFunction || function isMap(x) {
+	if (!x || typeof x !== 'object') {
+		return false;
+	}
+	try {
+		mapHasMethod.call(x);
+		if (setHasMethod) {
+			try {
+				setHasMethod.call(x);
+			} catch (e) {
+				return true;
+			}
+		}
+		return x instanceof Map; // core-js workaround, pre-v2.5.0
+	} catch (e) {}
+	return false;
+};
+```

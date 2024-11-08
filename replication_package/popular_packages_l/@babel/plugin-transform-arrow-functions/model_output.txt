@@ -1,0 +1,80 @@
+The `@babel/plugin-transform-arrow-functions` is a Babel plugin that transforms ECMAScript 2015 (ES6) arrow functions into equivalent ECMAScript 5 (ES5) function expressions. This is useful for ensuring compatibility with environments that do not support ES6 syntax. Arrow functions, which have a concise syntax and lexical `this` binding, are converted to regular function expressions that are compatible with ES5.
+
+Below is the implementation of a Node.js package that provides similar functionality to the `@babel/plugin-transform-arrow-functions`. It includes code for detecting arrow functions in JavaScript code and transforming them into ES5-compliant function expressions.
+
+```javascript
+// index.js
+const babylon = require('babylon');
+const generate = require('babel-generator').default;
+const traverse = require('babel-traverse').default;
+const t = require('babel-types');
+
+/**
+ * Transform arrow functions to regular function expressions
+ * @param {string} source - JavaScript source code containing arrow functions
+ * @returns {string} - Transformed source code with arrow functions converted to functions
+ */
+function transformArrowFunctions(source) {
+  // Parse the source code into AST
+  const ast = babylon.parse(source, {
+    sourceType: 'module',
+    plugins: ['jsx', 'flow']
+  });
+
+  // Traverse the AST
+  traverse(ast, {
+    ArrowFunctionExpression(path) {
+      const { node } = path;
+
+      // Create a function expression with the same parameters and body
+      const functionExpression = t.functionExpression(
+        null,
+        node.params,
+        node.body,
+        false,
+        false
+      );
+
+      // Preserve arrow function's lexical 'this'
+      path.replaceWith(t.callExpression(
+        t.memberExpression(functionExpression, t.identifier('bind')),
+        [t.thisExpression()]
+      ));
+    }
+  });
+
+  // Generate the transformed code back from the AST
+  const output = generate(ast, {}, source);
+  return output.code;
+}
+
+// Usage Example
+const exampleSourceCode = `
+const add = (a, b) => a + b;
+const square = (x) => {
+  return x * x;
+};
+`;
+
+console.log(transformArrowFunctions(exampleSourceCode));
+```
+
+```json
+// package.json
+{
+  "name": "transform-arrow-functions-to-es5",
+  "version": "1.0.0",
+  "main": "index.js",
+  "dependencies": {
+    "babel-generator": "^6.26.1",
+    "babel-traverse": "^6.26.0",
+    "babel-types": "^6.26.0",
+    "babylon": "^6.18.0"
+  }
+}
+```
+
+```sh
+# Installation command
+npm install babel-generator babel-traverse babel-types babylon
+```

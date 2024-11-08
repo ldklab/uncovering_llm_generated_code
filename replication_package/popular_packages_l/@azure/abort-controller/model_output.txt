@@ -1,0 +1,86 @@
+The `@azure/abort-controller` package provides a Node.js library that allows developers to create and use abort signals with the `AbortController` and `AbortSignal` interfaces, which are used to cancel ongoing operations, for instance HTTP requests. This package essentially provides helper functionalities for using abort signals, specifically within the context of Azure SDKs in JavaScript. Key features include:
+
+- **AbortController**: This class helps in creating an `AbortSignal` object. An `AbortSignal` is used to communicate with a DOM request and can abort it through reusable instances.
+  
+- **AbortSignal Methods**: Provides static methods like `AbortSignal.timeout(ms)`, which allows developers to create an `AbortSignal` that automatically triggers after a given timeout in milliseconds.
+
+- **AbortError**: A specialized error class to handle scenarios where an operation fails due to an abort signal.
+
+Here's how you typically use this library:
+
+1. **Basic Usage**:
+   - Instantiate an `AbortController`.
+   - Use its `signal` property in async operations to listen for and respond to abort signals.
+   - Abort the operation using the `abort` method on the controller.
+
+2. **Timeout Abortion**:
+   - Use `AbortSignal.timeout(ms)` to create a signal that automatically aborts after a specified timeout period.
+
+Below is a basic implementation of the `@azure/abort-controller` package functionality:
+
+```javascript
+class AbortError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = 'AbortError';
+  }
+}
+
+class AbortSignal {
+  constructor() {
+    this.aborted = false;
+    this._abortEventListeners = [];
+  }
+
+  addEventListener(event, listener) {
+    if (event === 'abort') {
+      this._abortEventListeners.push(listener);
+    }
+  }
+
+  removeEventListener(event, listener) {
+    if (event === 'abort') {
+      const index = this._abortEventListeners.indexOf(listener);
+      if (index !== -1) {
+        this._abortEventListeners.splice(index, 1);
+      }
+    }
+  }
+
+  _dispatchEvent(event) {
+    if (event === 'abort') {
+      this.aborted = true;
+      this._abortEventListeners.forEach(listener => listener({ type: 'abort' }));
+    }
+  }
+
+  static timeout(ms) {
+    const signal = new AbortSignal();
+    setTimeout(() => {
+      signal._dispatchEvent('abort');
+    }, ms);
+    return signal;
+  }
+}
+
+class AbortController {
+  constructor() {
+    this.signal = new AbortSignal();
+  }
+
+  abort() {
+    if (!this.signal.aborted) {
+      this.signal._dispatchEvent('abort');
+    }
+  }
+}
+
+// Exporting the AbortSignalLike, AbortError, AbortController and AbortSignal classes
+module.exports = {
+  AbortError,
+  AbortController,
+  AbortSignal,
+};
+```
+
+This code provides a simple implementation of the `AbortController` and `AbortSignal` classes, allowing you to create signals that can cancel ongoing actions, and includes functionality to abort operations after specified timeouts.

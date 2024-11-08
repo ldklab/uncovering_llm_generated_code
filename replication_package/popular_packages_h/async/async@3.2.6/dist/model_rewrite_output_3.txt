@@ -1,0 +1,146 @@
+The provided Node.js code is a universal module definition (UMD) setup for an asynchronous utility library inspired by `async`. The code is structured in a way that it can be used in various environments like Node.js, AMD (Asynchronous Module Definition), or directly in a browser. Here's what the code essentially does:
+
+1. **UMD Pattern**: The code initializes a library using the UMD pattern to work in different environments:
+   - If `exports` and `module` are defined, it suggests a Node.js environment, so it uses `module.exports`.
+   - If `define` is a function and `define.amd` is true, it suggests an AMD environment, so it uses `define`.
+   - If none of the above, it attaches the library to the global object (like `window` or `self`).
+
+2. **`apply` Function**: Creates a partially applied function. It pre-applies the context and arguments to a function but allows additional arguments to be provided when the returned function is eventually called.
+
+3. **Execution Management Functions**: Functions like `queue`, `parallel`, `series`, `waterfall`, etc., are implemented to manage the execution of asynchronous operations in different patterns. `queue` manages task concurrency, while `series` and `parallel` manage sequential and parallel operation execution.
+
+4. **Control Flow with Error Handling**: Implements control flow methods such as `auto`, `retry`, `forever`, etc., that facilitate error handling and chaining operations until a condition is met.
+
+5. **Utilities for Async Functions**: Implements utilities like `ensureAsync`, `timeout`, and `memoize`, designed to handle typical issues associated with asynchronous functions in JavaScript, such as timing issues or lengthy operations.
+
+6. **Iterative and Collection Operations**: Methods like `map`, `filter`, `reduce` are implemented to provide functionality similar to their synchronous counterparts but for asynchronous operations.
+
+7. **Promise Compatibility**: The library supports callback-style asynchronous functions and integrates tightly with Promises, wrapping tasks and callbacks to make them promise-friendly.
+
+Here's a possible rewrite of the code:
+```javascript
+(function (global, factory) {
+    if (typeof exports === 'object' && typeof module !== 'undefined') {
+        factory(exports); // Node.js
+    } else if (typeof define === 'function' && define.amd) {
+        define(['exports'], factory); // AMD
+    } else {
+        global = typeof globalThis !== 'undefined' ? globalThis : global || self;
+        factory(global.async = {}); // Global
+    }
+})(this, function (exports) {
+    'use strict';
+
+    function apply(fn, ...args) {
+        return (...callArgs) => fn(...args, ...callArgs);
+    }
+
+    function asyncify(func) {
+        if (isAsync(func)) {
+            return function (...args) {
+                const callback = args.pop();
+                const promise = func.apply(this, args);
+                return handlePromise(promise, callback);
+            }
+        }
+        return initialParams(function (args, callback) {
+            var result;
+            try {
+                result = func.apply(this, args);
+            } catch (e) {
+                return callback(e);
+            }
+            if (result && typeof result.then === 'function') {
+                return handlePromise(result, callback);
+            } else {
+                callback(null, result);
+            }
+        });
+    }
+
+    function handlePromise(promise, callback) {
+        return promise.then(value => {
+            callback(null, value);
+        }, err => {
+            callback(err ? err : new Error(err));
+        });
+    }
+
+    function isAsync(fn) {
+        return fn[Symbol.toStringTag] === 'AsyncFunction';
+    }
+
+    function eachOf(collection, iteratee, callback) {
+        return eachOfLimit(collection, Infinity, iteratee, callback);
+    }
+
+    function eachOfLimit(collection, limit, iteratee, callback) {
+        callback = callback || function() {};
+        if (!collection || limit <= 0) return callback(null);
+        let keys = Object.keys(collection);
+        let done = 0;
+        let running = 0;
+        let index = 0;
+
+        function replenish() {
+            if (done >= keys.length) return callback();
+            while (running < limit && index < keys.length) {
+                running++;
+                iteratee(collection[keys[index]], keys[index], err => {
+                    if (err) {
+                        callback(err);
+                        callback = function() {};
+                    } else {
+                        done++;
+                        running--;
+                        if (done >= keys.length) {
+                            callback(null);
+                        } else {
+                            replenish();
+                        }
+                    }
+                });
+                index++;
+            }
+        }
+        replenish();
+    }
+    
+    function queue(worker, concurrency) {
+        if (concurrency < 1) throw new Error('Concurrency must not be zero');
+        let tasks = [];
+        let active = 0;
+
+        function run() {
+            while (active < concurrency && tasks.length) {
+                const { data, callback } = tasks.shift();
+                active++;
+                worker(data, function(err, result) {
+                    active--;
+                    callback(err, result);
+                    run();
+                });
+            }
+        }
+
+        return {
+            add: function(data, callback = () => {}) {
+                tasks.push({ data, callback });
+                run();
+            },
+            idle: function() {
+                return tasks.length + active === 0;
+            }
+        };
+    }
+
+    // Export functions
+    exports.apply = apply;
+    exports.asyncify = asyncify;
+    exports.eachOf = eachOf;
+    exports.eachOfLimit = eachOfLimit;
+    exports.queue = queue;
+
+    Object.defineProperty(exports, '__esModule', { value: true });
+});
+```

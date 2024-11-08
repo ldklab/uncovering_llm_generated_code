@@ -1,0 +1,134 @@
+The given Node.js code is a utility module that provides various helper functions to perform operations such as format strings, deprecate functions, create logs with timestamps, inspect JavaScript objects with or without colors, and type-checking functions for different data types. It also includes functions for converting callback-based functions to promise-based (promisify) and vice-versa (callbackify).
+
+### Explanation of Key Functions:
+
+1. **getOwnPropertyDescriptors**: This function retrieves all own property descriptors of an object. If `Object.getOwnPropertyDescriptors` is not available, it uses a polyfill to achieve similar functionality.
+
+2. **format**: Similar to `printf` in C, the `format` function produces a formatted string using placeholders for strings (`%s`), digits (`%d`), and JSON objects (`%j`). It supports escaping with `%%`.
+
+3. **deprecate**: Marks a function as deprecated and prints a warning message the first time the deprecated function is used. The behavior can be modified with environment variables like `process.noDeprecation`.
+
+4. **debuglog**: Creates a debugging function that logs messages only if the specified debug set matches the `NODE_DEBUG` environment variable pattern.
+
+5. **inspect**: Used to produce a string representation of an object, optionally with colors and customization. It provides formats for various types like functions, arrays, and custom objects with adjustable depth.
+
+6. **promisify**: Transforms a callback-based function into one that returns a promise.
+
+7. **callbackify**: Converts a function that returns a promise into a callback-style function for legacy asynchronous support.
+
+### Rewritten Node.js Code:
+
+```javascript
+const util = require('util');
+const process = require('process');
+
+// Polyfill for Object.getOwnPropertyDescriptors if not available
+function getOwnPropertyDescriptors(obj) {
+  return Object.keys(obj).reduce((descriptors, key) => {
+    descriptors[key] = Object.getOwnPropertyDescriptor(obj, key);
+    return descriptors;
+  }, {});
+}
+
+// Format utility using string replacement
+const formatRegExp = /%[sdj%]/g;
+
+function format(f, ...args) {
+  if (typeof f !== 'string') {
+    return args.map(arg => inspect(arg)).join(' ');
+  }
+
+  let i = 0;
+  const formattedStr = f.replace(formatRegExp, x => {
+    if (x === '%%') return '%';
+    if (i >= args.length) return x;
+    switch (x) {
+      case '%s': return String(args[i++]);
+      case '%d': return Number(args[i++]);
+      case '%j':
+        try {
+          return JSON.stringify(args[i++]);
+        } catch {
+          return '[Circular]';
+        }
+      default:
+        return x;
+    }
+  });
+
+  return args.slice(i).reduce((str, x) => {
+    return str + (x == null || typeof x !== 'object' ? ` ${x}` : ` ${inspect(x)}`);
+  }, formattedStr);
+}
+
+// Mark function as deprecated
+function deprecate(fn, msg) {
+  if (process.noDeprecation) return fn;
+
+  let warned = false;
+  const deprecatedFn = function(...args) {
+    if (!warned) {
+      if (process.throwDeprecation) {
+        throw new Error(msg);
+      } else if (process.traceDeprecation) {
+        console.trace(msg);
+      } else {
+        console.error(msg);
+      }
+      warned = true;
+    }
+    return fn.apply(this, args);
+  };
+
+  return deprecatedFn;
+}
+
+// Debug logging utility
+const debugs = {};
+let debugEnvRegex = /^$/;
+
+if (process.env.NODE_DEBUG) {
+  const debugEnv = process.env.NODE_DEBUG.replace(/[|\\{}()[\]^$+?.]/g, '\\$&')
+    .replace(/\*/g, '.*')
+    .replace(/,/g, '$|^')
+    .toUpperCase();
+  debugEnvRegex = new RegExp(`^${debugEnv}$`, 'i');
+}
+
+function debuglog(set) {
+  set = set.toUpperCase();
+  if (!debugs[set]) {
+    if (debugEnvRegex.test(set)) {
+      const pid = process.pid;
+      debugs[set] = (...args) => {
+        const msg = format(...args);
+        console.error(`${set} ${pid}: ${msg}`);
+      };
+    } else {
+      debugs[set] = () => {};
+    }
+  }
+  return debugs[set];
+}
+
+// Object inspection utility
+function inspect(obj, opts = {}) {
+  return util.inspect(obj, { ...opts, colors: false });
+}
+
+// Timestamped log
+function log(...args) {
+  console.log(`${new Date().toISOString()} - ${format(...args)}`);
+}
+
+// Exporting utilities
+module.exports = {
+  format,
+  deprecate,
+  debuglog,
+  inspect,
+  log
+};
+```
+
+This restructured version of the given code offers essential functionalities while adhering to modern JavaScript standards and best practices.

@@ -1,0 +1,89 @@
+The `end-of-stream` Node.js module provides a simple interface to detect when a stream has completed or failed. It is capable of working with various types of Node.js streams, including readable, writable, and duplex streams, across different stream versions. The key functionality of this module is to execute a callback function when a stream ends or encounters an error.
+
+### Key Features:
+- **Callback Execution:** A specified callback is called when a stream ends or fails. The callback receives an error as its first argument (if any occurred) and runs with the stream instance.
+- **Flexible Stream Types:** It supports legacy streams, streams2, and streams3 for backward compatibility.
+- **Custom Options:** Users can pass options to modify the behavior:
+  - `readable: false` to ignore readable side events.
+  - `writable: false` to ignore writable side events.
+  - `error: false` to not treat errors as a terminal event for the stream.
+
+### Example Usage:
+- For a readable stream, the callback logs when the stream has ended.
+- For a writable stream, the callback confirms the finish of the stream.
+- For a duplex stream, both end and finish events are considered.
+- Options can indicate whether certain events should not be treated as terminal.
+
+Below is the implementation of the `end-of-stream` module:
+
+```markdown
+```javascript
+const { Stream } = require('stream');
+
+function eos(stream, opts, callback) {
+  if (typeof opts === 'function') {
+    callback = opts;
+    opts = {};
+  }
+  
+  opts = opts || {};
+  callback = callback || function() {};
+
+  const readable = opts.readable !== false;
+  const writable = opts.writable !== false;
+  const error = opts.error !== false;
+  
+  let onclose, onfinish, onend, onerror;
+  let closed = false;
+  let ended = false;
+
+  function cleanup() {
+    stream.removeListener('close', onclose);
+    stream.removeListener('finish', onfinish);
+    stream.removeListener('end', onend);
+    stream.removeListener('error', onerror);
+  }
+
+  function onError(err) {
+    if (!error) return;
+    cleanup();
+    callback.call(stream, err);
+  }
+
+  function onEnd() {
+    ended = true;
+    if (writable && closed) return;
+    if (!readable) return callback.call(stream);
+    if (writable && stream.writable && !closed) return;
+    cleanup();
+    callback.call(stream);
+  }
+
+  function onClose() {
+    closed = true;
+    if (readable && ended) return;
+    if (writable && stream.writable && !ended) return;
+    cleanup();
+    callback.call(stream);
+  }
+
+  function onFinish() {
+    onEnd();
+  }
+
+  onclose = onClose.bind(stream);
+  onfinish = onFinish.bind(stream);
+  onend = onEnd.bind(stream);
+  onerror = onError.bind(stream);
+
+  if (readable) stream.on('end', onend);
+  if (writable) stream.on('finish', onfinish);
+  if (error) stream.on('error', onerror);
+  stream.on('close', onclose);
+
+  return stream;
+}
+
+module.exports = eos;
+```
+```

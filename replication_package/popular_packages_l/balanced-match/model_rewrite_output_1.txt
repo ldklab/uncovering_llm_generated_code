@@ -1,0 +1,78 @@
+The code provided is a module for finding balanced matches between pairs of delimiters in a given string. The `balanced` function searches for matching pairs of delimiters (which can be provided as strings or regular expressions) and returns details about the first balanced occurrence within the string. It also includes helper functions to assist in identifying and measuring matches.
+
+Here's a breakdown of its key components:
+
+1. **balanced(a, b, str):** This is the main function that attempts to find a set of balanced delimiters within the provided string `str`. It uses `findRange` to locate the start and end indices of a match and returns details about the matched portion, including `start`, `end`, `pre` (substring before the match), `body` (matched substring), and `post` (substring after the match).
+
+2. **findRange(a, b, str):** A helper function that finds the index range of the first balanced match between delimiters `a` and `b` in the string `str`. It uses a stack to ensure that for every opening delimiter there is a corresponding closing delimiter, maintaining the balance.
+
+3. **matchLength(pattern, index):** A helper function that determines the length of the matched substring. It currently only calculates string patterns' lengths because regex lengths cannot be determined as straightforwardly.
+
+4. **findMatch(pattern, str, fromIndex=0):** Searches for a match starting from the specified index `fromIndex` in `str`. It can handle both string patterns and regular expressions.
+
+5. **balanced.range:** This function is essentially the `findRange` function but exposed as a method of the `balanced` function for easier access.
+
+Below is the rewritten version of the code:
+
+```javascript
+// balanced-match.js
+
+function balanced(a, b, str) {
+  const range = findRange(a, b, str);
+  if (!range) return undefined;
+  
+  return {
+    start: range[0],
+    end: range[1],
+    pre: str.slice(0, range[0]),
+    body: str.slice(range[0] + matchLength(a), range[1]),
+    post: str.slice(range[1] + matchLength(b))
+  };
+}
+
+function findRange(a, b, str) {
+  const open = findMatch(a, str);
+  if (!open) return undefined;
+
+  const stack = [];
+  let close;
+
+  for (let i = open.index; i < str.length; i++) {
+    if (startMatch(a, str, i)) {
+      stack.push(i);
+      i += matchLength(a) - 1;
+    } else if (startMatch(b, str, i)) {
+      if (!stack.length) return undefined;
+      close = i;
+      if (stack.length === 1) return [stack.pop(), close];
+      stack.pop();
+      i += matchLength(b) - 1;
+    }
+  }
+  return undefined;
+}
+
+function matchLength(pattern) {
+  return typeof pattern === 'string' ? pattern.length : 0;
+}
+
+function findMatch(pattern, str, fromIndex=0) {
+  if (typeof pattern === 'string') {
+    const index = str.indexOf(pattern, fromIndex);
+    return index === -1 ? null : { index, match: pattern };
+  } else {
+    pattern.lastIndex = fromIndex;
+    return pattern.exec(str);
+  }
+}
+
+function startMatch(pattern, str, index) {
+  return findMatch(pattern, str, index)?.index === index;
+}
+
+balanced.range = function(a, b, str) {
+  return findRange(a, b, str);
+};
+
+module.exports = balanced;
+```

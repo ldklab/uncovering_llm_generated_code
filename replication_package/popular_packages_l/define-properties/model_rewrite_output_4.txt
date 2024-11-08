@@ -1,0 +1,80 @@
+The provided Node.js code defines a function `defineProperties` that is used to define properties on an object with specified descriptors. Here’s a breakdown of its functionality:
+
+1. **Parameter Validation:** The function first checks if the `target` and `properties` parameters are valid objects, throwing a `TypeError` if they are not.
+2. **Feature Detection:** It determines if the JavaScript environment supports property descriptors by attempting to define a property on an empty object with the `Object.defineProperty` method. If successful, it sets `supportsDescriptors` to `true`; otherwise, it's `false`.
+3. **Property Definition Loop:** It iterates over each key in the `properties` object:
+   - It uses the optional `predicates` object to determine whether a given property should override an existing property in `target`. The predicate is a function that, when executed, returns a boolean.
+   - If a predicate is not provided or returns `false`, the existing property on `target` is not overridden unless it's not present in `target`.
+   - If descriptors are supported, the property is added to `target` with `configurable: true`, `enumerable: false`, `writable: false`, and the provided `value`.
+   - If descriptors are not supported, the property is directly assigned to `target`.
+4. **Function Metadata:** The `supportsDescriptors` property is added to `defineProperties` itself for external checking of descriptor support.
+5. **Export and Usage:** The function is exported as a module. An example usage shows how `defineProperties` can be used, and it demonstrates creating objects with optional overriding via predicates and checks for descriptor support.
+
+```javascript
+// define-properties/index.js
+
+function defineProperties(target, properties, predicates = {}) {
+    if (!target || typeof target !== 'object') {
+        throw new TypeError('Target must be an object');
+    }
+    if (!properties || typeof properties !== 'object') {
+        throw new TypeError('Properties must be an object');
+    }
+
+    const supportsDescriptors = (() => {
+        try {
+            Object.defineProperty({}, 'test', { value: 42 });
+            return true;
+        } catch (e) {
+            return false;
+        }
+    })();
+
+    for (const key in properties) {
+        if (properties.hasOwnProperty(key)) {
+            const shouldOverride = predicates[key] ? !!predicates[key]() : false;
+            if (!shouldOverride && key in target) {
+                continue;
+            }
+            if (supportsDescriptors) {
+                Object.defineProperty(target, key, {
+                    configurable: true,
+                    enumerable: false,
+                    value: properties[key],
+                    writable: false
+                });
+            } else {
+                target[key] = properties[key];
+            }
+        }
+    }
+    
+    defineProperties.supportsDescriptors = supportsDescriptors;
+    return target;
+}
+
+module.exports = defineProperties;
+
+// Usage example:
+
+const define = require('./index');
+const assert = require('assert');
+
+const obj1 = define({ a: 1, b: 2 }, { a: 10, b: 20, c: 30 });
+assert(obj1.a === 1);
+assert(obj1.b === 2);
+assert(obj1.c === 30);
+
+const obj2 = define({ a: 1, b: 2, c: 3 }, { a: 10, b: 20, c: 30 }, {
+    a: () => false,
+    b: () => true
+});
+assert(obj2.a === 1);
+assert(obj2.b === 20);
+assert(obj2.c === 3);
+
+if (define.supportsDescriptors) {
+    console.log(Object.keys(obj1)); // Output: ['a', 'b']
+    console.log(Object.getOwnPropertyDescriptor(obj1, 'c')); // Output: { configurable: true, enumerable: false, value: 30, writable: false }
+}
+```

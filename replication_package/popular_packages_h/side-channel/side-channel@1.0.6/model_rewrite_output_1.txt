@@ -1,0 +1,123 @@
+The functionality of the provided code can be broken down as follows:
+
+1. **Dependencies and Variable Setup**: The code starts by importing several modules and intrinsic objects:
+   - `GetIntrinsic` is used to safely access JavaScript intrinsic objects like `WeakMap` and `Map`.
+   - `callBound` is used to bind intrinsic methods like `get`, `set`, and `has` for `WeakMap` and `Map`.
+   - `inspect` is used to create string representations of objects for error messages.
+   - `$TypeError` is a custom error type for throwing errors when necessary.
+
+2. **Data Structures**: 
+   - The code uses `WeakMap`, `Map`, and a custom linked list to store data:
+     - `WeakMap` is used for storing key-value pairs where keys are objects and the map doesn't prevent garbage collection.
+     - `Map` is used when keys can be primitive values (but this is only attempted if `WeakMap` cannot be used).
+     - A linked list is implemented for cases where neither `WeakMap` nor `Map` are available or if the key is not suitable for these structures. 
+
+3. **Linked List Utility Functions**:
+   - `listGetNode`: Traverses a linked list to find a node by key, moves that node to the head for optimization, and returns it.
+   - `listGet`: Uses `listGetNode` to retrieve the value for a specific key.
+   - `listSet`: Inserts a key-value pair into the list or updates an existing one.
+   - `listHas`: Checks for the existence of a key in the list.
+
+4. **Side Channel Implementation**:
+   - The primary function `getSideChannel` returns an object with methods `assert`, `get`, `has`, and `set` to interact with the data storage:
+     - `assert`: Throws an error if a key is not present.
+     - `get`: Retrieves the value for a key using `WeakMap`, `Map`, or the linked list logic, depending on availability.
+     - `has`: Checks if a key exists using the appropriate data structure.
+     - `set`: Adds or updates a key-value pair using `WeakMap`, `Map`, or the linked list as needed.
+
+Here is the rewritten code according to this explanation:
+
+```javascript
+'use strict';
+
+const GetIntrinsic = require('get-intrinsic');
+const callBound = require('call-bind/callBound');
+const inspect = require('object-inspect');
+
+const $TypeError = require('es-errors/type');
+const $WeakMap = GetIntrinsic('%WeakMap%', true);
+const $Map = GetIntrinsic('%Map%', true);
+
+const $weakMapGet = callBound('WeakMap.prototype.get', true);
+const $weakMapSet = callBound('WeakMap.prototype.set', true);
+const $weakMapHas = callBound('WeakMap.prototype.has', true);
+const $mapGet = callBound('Map.prototype.get', true);
+const $mapSet = callBound('Map.prototype.set', true);
+const $mapHas = callBound('Map.prototype.has', true);
+
+function listGetNode(list, key) {
+    let prev = list;
+    let curr;
+    while ((curr = prev.next) !== null) {
+        if (curr.key === key) {
+            prev.next = curr.next;
+            curr.next = list.next;
+            list.next = curr;
+            return curr;
+        }
+    }
+}
+
+function listGet(objects, key) {
+    const node = listGetNode(objects, key);
+    return node && node.value;
+}
+
+function listSet(objects, key, value) {
+    const node = listGetNode(objects, key);
+    if (node) {
+        node.value = value;
+    } else {
+        objects.next = { key, next: objects.next, value };
+    }
+}
+
+function listHas(objects, key) {
+    return !!listGetNode(objects, key);
+}
+
+module.exports = function getSideChannel() {
+    let $wm;
+    let $m;
+    let $o;
+
+    const channel = {
+        assert(key) {
+            if (!this.has(key)) {
+                throw new $TypeError('Side channel does not contain ' + inspect(key));
+            }
+        },
+        get(key) {
+            if ($WeakMap && key && (typeof key === 'object' || typeof key === 'function')) {
+                return $wm ? $weakMapGet($wm, key) : undefined;
+            } else if ($Map) {
+                return $m ? $mapGet($m, key) : undefined;
+            } else {
+                return $o ? listGet($o, key) : undefined;
+            }
+        },
+        has(key) {
+            if ($WeakMap && key && (typeof key === 'object' || typeof key === 'function')) {
+                return $wm ? $weakMapHas($wm, key) : false;
+            } else if ($Map) {
+                return $m ? $mapHas($m, key) : false;
+            } else {
+                return $o ? listHas($o, key) : false;
+            }
+        },
+        set(key, value) {
+            if ($WeakMap && key && (typeof key === 'object' || typeof key === 'function')) {
+                if (!$wm) $wm = new $WeakMap();
+                $weakMapSet($wm, key, value);
+            } else if ($Map) {
+                if (!$m) $m = new $Map();
+                $mapSet($m, key, value);
+            } else {
+                if (!$o) $o = { key: {}, next: null };
+                listSet($o, key, value);
+            }
+        }
+    };
+    return channel;
+};
+```

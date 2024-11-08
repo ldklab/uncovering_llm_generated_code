@@ -1,0 +1,44 @@
+// Import necessary functions from Redux Toolkit
+const { createSlice, configureStore } = require('@reduxjs/toolkit');
+
+// Create a slice for managing counter state, with automatic action types and creators
+const counterSlice = createSlice({
+  name: 'counter', // Name of the slice
+  initialState: {  // Initial state of the counter
+    value: 0,
+  },
+  // Define the reducers to handle actions and modify the state
+  reducers: {
+    increment: (state) => { // Reducer to increment the counter
+      state.value += 1;
+    },
+    decrement: (state) => { // Reducer to decrement the counter
+      state.value -= 1;
+    },
+  },
+});
+
+// Extract action creators from the slice
+const { increment, decrement } = counterSlice.actions;
+
+// Configure the store with the slice's reducer
+const store = configureStore({
+  reducer: counterSlice.reducer,
+});
+
+// Function to demonstrate how the store and actions work
+function demo() {
+  // Log the state updates to the console
+  store.subscribe(() => console.log('State updated:', store.getState()));
+
+  // Dispatch actions to change the state
+  store.dispatch(increment());
+  store.dispatch(increment());
+  store.dispatch(decrement());
+}
+
+// Execute the demo function to see the state changes
+demo();
+
+// Export the store and actions for use in other modules (e.g., React apps)
+module.exports = { store, increment, decrement };

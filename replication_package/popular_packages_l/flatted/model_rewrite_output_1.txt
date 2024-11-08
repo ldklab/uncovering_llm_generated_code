@@ -1,0 +1,111 @@
+The provided Node.js code is a module that offers custom serialization and deserialization functions aimed at handling cyclic or duplicate object references. It defines four main functionalities:
+
+1. `stringify`: Similar to the JSON.stringify method, this function serializes a JavaScript value to a JSON string. It flattens cyclic or repeated structures by replacing them with a unique reference, using a map to keep track of objects and their references.
+
+2. `parse`: This function is akin to JSON.parse; it deserializes the JSON string back into a JavaScript object. During deserialization, it reconstructs the original structure from the flattened representation, resolving any references tracked during serialization.
+
+3. `toJSON`: A utility function that simplifies calling `stringify`.
+
+4. `fromJSON`: A utility function equivalent to `parse`, providing an easy way to deserialize JSON strings.
+
+Here's a possible rewrite of the Node.js code:
+
+```javascript
+// flatted.js
+'use strict';
+
+const Primitive = String;
+const primitiveType = 'string';
+
+function stringify(value, replacer, space) {
+  let currentIndex = -1;
+  let objectReferences = new Map();
+
+  function flatten(obj) {
+    if (typeof obj === primitiveType || obj === null) {
+      return obj;
+    }
+
+    let reference = objectReferences.get(obj);
+    if (!reference) {
+      reference = new Primitive(String(++currentIndex));
+      objectReferences.set(obj, reference);
+
+      if (typeof obj === 'object') {
+        const isArray = Array.isArray(obj);
+        const flatObject = isArray ? [] : {};
+        objectReferences.set(reference, flatObject);
+
+        if (isArray) {
+          obj.forEach((item, index) => {
+            flatObject[index] = flatten(item);
+          });
+        } else {
+          for (const key in obj) {
+            flatObject[key] = flatten(obj[key]);
+          }
+        }
+        reference = flatObject;
+      }
+    }
+    return reference;
+  }
+
+  const flattenedValue = flatten(value);
+  return JSON.stringify(flattenedValue, replacer, space);
+}
+
+function parse(text, reviver) {
+  const parsedValue = JSON.parse(text);
+  const referenceMap = new Map();
+
+  function reconstruct(obj) {
+    if (typeof obj === primitiveType) {
+      return referenceMap.has(obj) ? referenceMap.get(obj) : obj;
+    }
+
+    const reconstructed = Array.isArray(obj) ? [] : {};
+    referenceMap.set(obj, reconstructed);
+
+    if (Array.isArray(obj)) {
+      obj.forEach((item, index) => {
+        reconstructed[index] = reconstruct(item);
+      });
+    } else {
+      for (const key in obj) {
+        reconstructed[key] = reconstruct(obj[key]);
+      }
+    }
+    return reconstructed;
+  }
+
+  const rebuiltValue = reconstruct(parsedValue);
+  if (reviver) {
+    (function revive(obj, key) {
+      const value = obj[key];
+      if (value && typeof value === 'object') {
+        for (const innerKey in value) {
+          revive(value, innerKey);
+        }
+        obj[key] = reviver.call(obj, key, value);
+      }
+    })(rebuiltValue, '');
+  }
+  return rebuiltValue;
+}
+
+function toJSON(value) {
+  return stringify(value);
+}
+
+function fromJSON(value, reviver) {
+  return parse(value, reviver);
+}
+
+module.exports = {
+  stringify,
+  parse,
+  toJSON,
+  fromJSON
+};
+```

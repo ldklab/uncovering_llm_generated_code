@@ -1,0 +1,48 @@
+The Node.js code provided is an asynchronous function that searches through directory paths starting from a given directory and moving up to its parent directories until a certain condition is met. The function takes a starting directory and a callback function as its arguments. Here’s how it works:
+
+1. It begins by resolving the starting path.
+2. It checks if the starting path is a directory, and if not, it adjusts to use the parent directory.
+3. The function enters a loop that continues indefinitely until a breaking condition is met:
+   - It reads the directory contents and passes them to the provided callback function.
+   - If the callback returns a truthy value, the function resolves the directory path with this value and ends.
+   - If not, it moves up to the parent directory.
+   - If the function attempts to move past the root directory (i.e., when the new directory path is the same as its parent), the loop breaks, and the search ends.
+
+Here's the rewritten code:
+
+```javascript
+const path = require('path');
+const fs = require('fs').promises;
+
+module.exports = async function findInParentDirectories(startDir, callback) {
+  let currentDir = path.resolve('.', startDir);
+
+  try {
+    let stats = await fs.stat(currentDir);
+
+    if (!stats.isDirectory()) {
+      currentDir = path.dirname(currentDir);
+    }
+    
+    while (true) {
+      const files = await fs.readdir(currentDir);
+      const result = await callback(currentDir, files);
+
+      if (result) {
+        return path.resolve(currentDir, result);
+      }
+
+      const parentDir = path.dirname(currentDir);
+      
+      if (currentDir === parentDir) {
+        break;
+      }
+
+      currentDir = parentDir;
+    }
+  } catch (error) {
+    console.error('Error while processing directories:', error);
+    throw error;
+  }
+}
+```

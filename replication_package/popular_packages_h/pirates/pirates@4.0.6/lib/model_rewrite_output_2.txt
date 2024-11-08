@@ -1,0 +1,102 @@
+The given Node.js code provides functionality to add and manage custom require hooks for Node modules. This involves dynamically modifying how modules are loaded for specific file extensions. Here’s a breakdown of its functionality:
+
+1. **Imports**: It imports the `module` and `path` modules. This allows access to Node.js’s built-in module system and file path utilities.
+
+2. **Constants**: 
+   - `nodeModulesRegex` is a regular expression used to identify if a file path belongs to `node_modules`.
+   - `Module` is set to the module constructor, selecting a mocked version if necessary.
+   - `HOOK_RETURNED_NOTHING_ERROR_MESSAGE` is a predefined error message used when a require hook does not return a valid string.
+
+3. **`shouldCompile()` Function**: 
+   - Determines if a file should be transformed by a require hook based on its extension, existence in `node_modules`, and an optional matcher function.
+
+4. **`addHook()` Function**: 
+   - Allows the addition of hooks to transform module code during require calls. Takes a hook function and options to determine for which files the hook should apply.
+   - Overrides the module’s extension loader to custom behavior that applies the hook logic.
+   - Provides a `revert()` function to remove the hook and restore the original behavior.
+
+Here's a possible rewrite of the code, preserving its original structure and functionality:
+
+```javascript
+"use strict";
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports.addHook = addHook;
+const Module = require("module");
+const path = require("path");
+
+const NODE_MODULES_REGEX = /^(?:.*[\\/])?node_modules(?:[\\/].*)?$/;
+const OriginalModule = Module.constructor.length > 1 ? Module.constructor : Module;
+const HOOK_ERROR_MESSAGE = '[Pirates] A hook returned a non-string or nothing at all, violating laws!\n' +
+  'If confused, Pirates is middleware for require hooks, debug your hooks.';
+
+/**
+ * Determines if a file should be processed by a hook.
+ * @param {string} filename
+ * @param {string[]} extensions
+ * @param {function|null} matcher
+ * @param {boolean} ignoreNodeModules
+ * @returns {boolean}
+ */
+function shouldCompile(filename, extensions, matcher, ignoreNodeModules) {
+  if (typeof filename !== 'string') return false;
+  if (!extensions.includes(path.extname(filename))) return false;
+  const resolvedFilename = path.resolve(filename);
+  if (ignoreNodeModules && NODE_MODULES_REGEX.test(resolvedFilename)) return false;
+  if (matcher && typeof matcher === 'function') return !!matcher(resolvedFilename);
+  return true;
+}
+
+/**
+ * Adds a require hook to process files during module loading.
+ * @param {function} hook - Processes module code.
+ * @param {object} [options] - Configuration options.
+ * @returns {function} - Reverts the added hook.
+ */
+function addHook(hook, options = {}) {
+  let reverted = false;
+  const loaders = [];
+  const previousLoaders = [];
+  const extensions = options.extensions || options.exts || options.extension || options.ext || ['.js'];
+
+  const originalLoader = Module._extensions['.js'];
+  const matcher = options.matcher || null;
+  const ignoreNodeModules = options.ignoreNodeModules !== false;
+
+  extensions.forEach(ext => {
+    if (typeof ext !== 'string') throw new TypeError(`Invalid Extension: ${ext}`);
+
+    const existingLoader = Module._extensions[ext] || originalLoader;
+    previousLoaders[ext] = existingLoader;
+
+    loaders[ext] = Module._extensions[ext] = function(mod, filename) {
+      if (!reverted && shouldCompile(filename, extensions, matcher, ignoreNodeModules)) {
+        const originalCompile = mod._compile;
+        mod._compile = function(code) {
+          mod._compile = originalCompile;
+          const result = hook(code, filename);
+          if (typeof result !== 'string') throw new Error(HOOK_ERROR_MESSAGE);
+          return mod._compile(result, filename);
+        };
+      }
+      existingLoader(mod, filename);
+    };
+  });
+
+  return function revert() {
+    if (reverted) return;
+    reverted = true;
+    extensions.forEach(ext => {
+      if (Module._extensions[ext] === loaders[ext]) {
+        if (!previousLoaders[ext]) {
+          delete Module._extensions[ext];
+        } else {
+          Module._extensions[ext] = previousLoaders[ext];
+        }
+      }
+    });
+  };
+}
+```

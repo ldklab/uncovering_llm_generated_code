@@ -1,0 +1,205 @@
+The provided Node.js code defines a module for handling Punycode encoding and decoding, which is used in internationalizing domain names in applications. Punycode is a way to represent Unicode characters using the limited subset of characters allowed in domain names. Here is a breakdown of the functionality:
+
+1. **Constants Declaration**: Constants like `base`, `tMin`, `tMax`, `baseMinusTMin`, etc., are predefined parameters used for the Punycode encoding and decoding process. Regular expressions for identifying punycoded and non-ASCII strings are also defined.
+
+2. **Error Handling**: The `error` function throws a `RangeError` with a specified message, which corresponds to different types of input errors.
+
+3. **Utility Functions**:
+   - `map`: A custom implementation of array mapping.
+   - `mapDomain`: Used to apply a function to each domain component or email part.
+   - `ucs2decode` and `ucs2encode`: Convert strings between JavaScript's UCS-2 encoding and Unicode code points.
+
+4. **Conversion Functions**:
+   - `basicToDigit` and `digitToBasic`: Convert between basic code points and numbers used in Punycode representation.
+   - `adapt`: Compute bias for character positioning during encoding/decoding.
+   - `decode`: Converts Punycode to a Unicode string.
+   - `encode`: Converts a Unicode string to Punycode.
+   - `toUnicode` and `toASCII`: Convert domain names or email addresses between Unicode and ASCII representations (the latter prefixed with "xn--" for Punycode).
+
+5. **Public API**: The `punycode` object is constructed with the conversion methods and exported as the module's API.
+
+The code enables converting domain names and email addresses to and from Punycode to support Unicode characters in environments where only ASCII is allowed.
+
+Here's a rewritten version with the same functionality, improving readability and structure where possible:
+
+```javascript
+'use strict';
+
+// Highest possible positive signed 32-bit integer
+const MAX_INT = 2147483647;
+
+// Punycode configuration parameters
+const BASE = 36;
+const T_MIN = 1;
+const T_MAX = 26;
+const SKEW = 38;
+const DAMP = 700;
+const INITIAL_BIAS = 72;
+const INITIAL_N = 128;
+const DELIMITER = '-';
+
+// Regular expressions for string analysis
+const REGEX_PUNYCODE = /^xn--/;
+const REGEX_NON_ASCII = /[^\0-\x7F]/;
+const REGEX_SEPARATORS = /[\x2E\u3002\uFF0E\uFF61]/g;
+
+// Error messages
+const ERRORS = {
+  overflow: 'Overflow: input needs wider integers to process',
+  'not-basic': 'Illegal input >= 0x80 (not a basic code point)',
+  'invalid-input': 'Invalid input',
+};
+
+// Utility functions for error handling, array mapping, and encoding/decoding
+function throwError(type) {
+  throw new RangeError(ERRORS[type]);
+}
+
+function map(array, callback) {
+  return array.map(callback);
+}
+
+function mapDomain(domain, callback) {
+  const [local, ...parts] = domain.split('@');
+  const domainName = parts.join('@').replace(REGEX_SEPARATORS, '\x2E');
+  const labels = domainName.split('.');
+  const transformed = map(labels, callback).join('.');
+  return parts.length > 0 ? `${local}@${transformed}` : transformed;
+}
+
+const ucs2decode = (string) => {
+  const output = [];
+  let counter = 0;
+  while (counter < string.length) {
+    const value = string.charCodeAt(counter++);
+    if (value >= 0xD800 && value <= 0xDBFF && counter < string.length) {
+      const extra = string.charCodeAt(counter++);
+      if ((extra & 0xFC00) === 0xDC00) {
+        output.push(((value & 0x3FF) << 10) + (extra & 0x3FF) + 0x10000);
+      } else {
+        output.push(value);
+        counter--;
+      }
+    } else {
+      output.push(value);
+    }
+  }
+  return output;
+};
+
+const ucs2encode = (codePoints) => String.fromCodePoint(...codePoints);
+
+const basicToDigit = (codePoint) => {
+  if (codePoint >= 0x30 && codePoint < 0x3A) return 26 + (codePoint - 0x30);
+  if (codePoint >= 0x41 && codePoint < 0x5B) return codePoint - 0x41;
+  if (codePoint >= 0x61 && codePoint < 0x7B) return codePoint - 0x61;
+  return BASE;
+};
+
+const digitToBasic = (digit, flag) => {
+  return digit + 22 + 75 * (digit < 26) - ((flag != 0) << 5);
+};
+
+const adapt = (delta, numPoints, firstTime) => {
+  let k = 0;
+  delta = firstTime ? Math.floor(delta / DAMP) : delta >> 1;
+  delta += Math.floor(delta / numPoints);
+  while (delta > (BASE - T_MIN) * T_MAX >> 1) {
+    delta = Math.floor(delta / (BASE - T_MIN));
+    k += BASE;
+  }
+  return Math.floor(k + ((BASE - T_MIN + 1) * delta) / (delta + SKEW));
+};
+
+const decode = (input) => {
+  const output = [];
+  let i = 0;
+  let n = INITIAL_N;
+  let bias = INITIAL_BIAS;
+  let basic = input.lastIndexOf(DELIMITER);
+  basic = basic < 0 ? 0 : basic;
+  for (let j = 0; j < basic; ++j) {
+    if (input.charCodeAt(j) >= 0x80) throwError('not-basic');
+    output.push(input.charCodeAt(j));
+  }
+  for (let index = basic > 0 ? basic + 1 : 0; index < input.length;) {
+    const oldi = i;
+    for (let w = 1, k = BASE;; k += BASE) {
+      if (index >= input.length) throwError('invalid-input');
+      const digit = basicToDigit(input.charCodeAt(index++));
+      if (digit >= BASE) throwError('invalid-input');
+      if (digit > Math.floor((MAX_INT - i) / w)) throwError('overflow');
+      i += digit * w;
+      const t = k <= bias ? T_MIN : (k >= bias + T_MAX ? T_MAX : k - bias);
+      if (digit < t) break;
+      const baseMinusT = BASE - t;
+      if (w > Math.floor(MAX_INT / baseMinusT)) throwError('overflow');
+      w *= baseMinusT;
+    }
+    const out = output.length + 1;
+    bias = adapt(i - oldi, out, oldi == 0);
+    if (Math.floor(i / out) > MAX_INT - n) throwError('overflow');
+    n += Math.floor(i / out);
+    i %= out;
+    output.splice(i++, 0, n);
+  }
+  return String.fromCodePoint(...output);
+};
+
+const encode = (input) => {
+  const output = [];
+  input = ucs2decode(input);
+  const inputLength = input.length;
+  let n = INITIAL_N;
+  let delta = 0;
+  let bias = INITIAL_BIAS;
+  for (const currentValue of input) {
+    if (currentValue < 0x80) output.push(String.fromCharCode(currentValue));
+  }
+  const basicLength = output.length;
+  let handledCPCount = basicLength;
+  if (basicLength) output.push(DELIMITER);
+  while (handledCPCount < inputLength) {
+    let m = MAX_INT;
+    for (const currentValue of input) {
+      if (currentValue >= n && currentValue < m) m = currentValue;
+    }
+    const handledCPCountPlusOne = handledCPCount + 1;
+    if (m - n > Math.floor((MAX_INT - delta) / handledCPCountPlusOne)) throwError('overflow');
+    delta += (m - n) * handledCPCountPlusOne;
+    n = m;
+    for (const currentValue of input) {
+      if (currentValue < n && ++delta > MAX_INT) throwError('overflow');
+      if (currentValue === n) {
+        let q = delta;
+        for (let k = BASE;; k += BASE) {
+          const t = k <= bias ? T_MIN : (k >= bias + T_MAX ? T_MAX : k - bias);
+          if (q < t) break;
+          const qMinusT = q - t;
+          const baseMinusT = BASE - t;
+          output.push(String.fromCharCode(digitToBasic(t + qMinusT % baseMinusT, 0)));
+          q = Math.floor(qMinusT / baseMinusT);
+        }
+        output.push(String.fromCharCode(digitToBasic(q, 0)));
+        bias = adapt(delta, handledCPCountPlusOne, handledCPCount === basicLength);
+        delta = 0;
+        ++handledCPCount;
+      }
+    }
+    ++delta;
+    ++n;
+  }
+  return output.join('');
+};
+
+const toUnicode = (input) => mapDomain(input, (string) => REGEX_PUNYCODE.test(string) ? decode(string.slice(4).toLowerCase()) : string);
+
+const toASCII = (input) => mapDomain(input, (string) => REGEX_NON_ASCII.test(string) ? 'xn--' + encode(string) : string);
+
+// Exporting the punycode functionality
+module.exports = {
+  version: '2.3.1',
+  ucs2: { decode: ucs2decode, encode: ucs2encode },
+  decode, encode, toASCII, toUnicode
+};
+```

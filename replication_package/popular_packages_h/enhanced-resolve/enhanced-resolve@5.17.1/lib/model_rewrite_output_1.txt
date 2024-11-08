@@ -1,0 +1,143 @@
+The Node.js code is part of a module for resolving file paths in a Node.js environment. It uses a combination of caching and customizable resolver options to handle asynchronous and synchronous path resolution.
+
+### Explanation of Functionality:
+
+1. **Dependencies and Setup**: It imports necessary modules like `graceful-fs`, `CachedInputFileSystem`, and `ResolverFactory`. It also sets up a cached file system (`nodeFileSystem`) with a specified cache timeout.
+
+2. **Resolvers**: It creates two primary resolvers:
+    - **Async Resolver (`asyncResolver`)**: Configured to resolve `.js`, `.json`, and `.node` files asynchronously.
+    - **Sync Resolver (`syncResolver`)**: Similar configurations for synchronous operations.
+
+3. **Resolve Functions**:
+   - **Async `resolve` Function**: Takes several parameters, resolves path using the asynchronous resolver, and calls back with the result.
+   - **Sync `resolveSync` Function**: Performs similar path resolution synchronously and returns the resolved path or `false`.
+
+4. **Create Functions**:
+   - **`create`**: Generates an asynchronous resolve function with custom options, maintaining the default file system.
+   - **`createSync`**: Similar to `create`, but for synchronous resolution.
+
+5. **Utility**:
+   - **`mergeExports` Function**: Combines exports with additional properties while freezing the object to prevent further modifications.
+
+6. **Exports**: The module exports various functionalities, including the `resolve` function (async), a getter for `resolveSync`, factory functions for creating custom resolvers, and additional plugins and utilities via lazy loading.
+
+Here is a possible rewrite:
+
+```javascript
+"use strict";
+
+const fs = require("graceful-fs");
+const CachedInputFileSystem = require("./CachedInputFileSystem");
+const ResolverFactory = require("./ResolverFactory");
+
+const nodeFileSystem = new CachedInputFileSystem(fs, 4000);
+const nodeContext = {
+  environments: ["node+es3+es5+process+native"]
+};
+
+const asyncResolver = ResolverFactory.createResolver({
+  conditionNames: ["node"],
+  extensions: [".js", ".json", ".node"],
+  fileSystem: nodeFileSystem
+});
+
+const resolve = (context, path, request, resolveContext, callback) => {
+  if (typeof context === "string") {
+    callback = resolveContext;
+    resolveContext = request;
+    request = path;
+    path = context;
+    context = nodeContext;
+  }
+  if (typeof callback !== "function") {
+    callback = resolveContext;
+  }
+  asyncResolver.resolve(
+    context,
+    path,
+    request,
+    resolveContext,
+    callback
+  );
+};
+
+const syncResolver = ResolverFactory.createResolver({
+  conditionNames: ["node"],
+  extensions: [".js", ".json", ".node"],
+  useSyncFileSystemCalls: true,
+  fileSystem: nodeFileSystem
+});
+
+const resolveSync = (context, path, request) => {
+  if (typeof context === "string") {
+    request = path;
+    path = context;
+    context = nodeContext;
+  }
+  return syncResolver.resolveSync(context, path, request);
+};
+
+function create(options) {
+  const resolver = ResolverFactory.createResolver({
+    fileSystem: nodeFileSystem,
+    ...options
+  });
+  return function (context, path, request, resolveContext, callback) {
+    if (typeof context === "string") {
+      callback = resolveContext;
+      resolveContext = request;
+      request = path;
+      path = context;
+      context = nodeContext;
+    }
+    if (typeof callback !== "function") {
+      callback = resolveContext;
+    }
+    resolver.resolve(context, path, request, resolveContext, callback);
+  };
+}
+
+function createSync(options) {
+  const resolver = ResolverFactory.createResolver({
+    useSyncFileSystemCalls: true,
+    fileSystem: nodeFileSystem,
+    ...options
+  });
+  return function (context, path, request) {
+    if (typeof context === "string") {
+      request = path;
+      path = context;
+      context = nodeContext;
+    }
+    return resolver.resolveSync(context, path, request);
+  };
+}
+
+const mergeExports = (obj, exports) => {
+  const descriptors = Object.getOwnPropertyDescriptors(exports);
+  Object.defineProperties(obj, descriptors);
+  return Object.freeze(obj);
+};
+
+module.exports = mergeExports(resolve, {
+  get sync() {
+    return resolveSync;
+  },
+  create: mergeExports(create, {
+    get sync() {
+      return createSync;
+    }
+  }),
+  ResolverFactory,
+  CachedInputFileSystem,
+  get CloneBasenamePlugin() {
+    return require("./CloneBasenamePlugin");
+  },
+  get LogInfoPlugin() {
+    return require("./LogInfoPlugin");
+  },
+  get forEachBail() {
+    return require("./forEachBail");
+  }
+});
+```

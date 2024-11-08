@@ -1,0 +1,85 @@
+The provided Node.js code defines a task management system that can execute tasks either sequentially or concurrently. It utilizes the EventEmitter class to handle events related to task state changes. Here's a breakdown of the functionality:
+
+1. **Task Class**: Represents an individual task with a title, task function, and state. It includes a `run` method that updates the task's state and executes the task function in an asynchronous manner. The task's state changes to 'running', and then either 'completed' or 'failed', based on the execution outcome.
+
+2. **Listr2 Class**: Extends the EventEmitter class to manage multiple tasks. It accepts an array of tasks and options for concurrency. It contains:
+   - A constructor that initializes tasks and options.
+   - A `run` method that executes tasks either concurrently (using `Promise.all`) or sequentially, based on the options provided.
+   - An `executeTask` method that returns an async function to run a task and emit state change events before and after execution.
+
+3. **Event Handling**: The `Listr2` class emits a 'stateChange' event every time a task's state changes, which can be used, for example, to log the progress.
+
+4. **Example Usage**: Demonstrates how to define tasks, initiate the Listr2 instance with those tasks, listen for task state changes, and execute the tasks.
+
+Here is the rewritten code:
+
+```javascript
+const EventEmitter = require('events');
+
+class Task {
+  constructor(title, task) {
+    this.title = title;
+    this.task = task;
+    this.state = 'pending';
+  }
+
+  async run(ctx) {
+    this.state = 'running';
+    try {
+      await this.task(ctx);
+      this.state = 'completed';
+    } catch (error) {
+      this.state = 'failed';
+      throw error;
+    }
+  }
+}
+
+class Listr2 extends EventEmitter {
+  constructor(tasks = [], options = { concurrent: false }) {
+    super();
+    this.tasks = tasks.map(({ title, task }) => new Task(title, task));
+    this.options = options;
+  }
+
+  async run(context = {}) {
+    const executions = this.tasks.map(task => this.executeTask(task, context));
+    if (this.options.concurrent) {
+      await Promise.all(executions);
+    } else {
+      for (const exec of executions) {
+        await exec();
+      }
+    }
+  }
+
+  executeTask(task, context) {
+    return async () => {
+      this.emit('stateChange', task);
+      try {
+        await task.run(context);
+        this.emit('stateChange', task);
+      } catch (error) {
+        this.emit('stateChange', task);
+        throw error;
+      }
+    };
+  }
+}
+
+// Example usage
+const tasks = [
+  { title: 'Task 1', task: async (ctx) => { /* perform task 1 */ } },
+  { title: 'Task 2', task: async (ctx) => { /* perform task 2 */ } }
+];
+
+const list = new Listr2(tasks, { concurrent: false });
+
+list.on('stateChange', (task) => {
+  console.log(`${task.title} is ${task.state}`);
+});
+
+list.run().catch(error => console.error(error));
+
+module.exports = Listr2;
+```

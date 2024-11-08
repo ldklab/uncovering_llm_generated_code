@@ -1,0 +1,38 @@
+// requireindex.js
+const fs = require('fs');
+const path = require('path');
+
+/**
+ * Function to dynamically import all sibling JavaScript files in a specified directory and export them.
+ *
+ * @param {string} dirname - The directory path from where to import files.
+ * @param {string[]} [include] - An optional array specifying which basenames to include. If not provided,
+ * all JavaScript files (excluding those starting with '_') are included by default.
+ * @returns {Object} - An object where key-value pairs map filenames (basenames without extension) to their imported module.
+ */
+function requireIndex(dirname, include = null) {
+  const files = fs.readdirSync(dirname); // Read all files in the provided directory
+  const modules = {}; // Object to store module exports
+
+  files.forEach(file => {
+    const basename = path.basename(file, path.extname(file));
+
+    // Check if file should be skipped (starts with '_' or not included in the `include` list)
+    if (file.startsWith('_') || (include && !include.includes(basename))) {
+      return; // Skip this iteration
+    }
+
+    const filepath = path.join(dirname, file); // Construct the file path
+    const stat = fs.statSync(filepath); // Get file stats
+
+    if (stat.isDirectory()) {
+      modules[basename] = require(filepath); // If it's a directory, require the index of that directory
+    } else if (stat.isFile() && path.extname(file) === '.js') {
+      modules[basename] = require(filepath); // If it's a JavaScript file, require and store it
+    }
+  });
+
+  return modules; // Return the collection of required modules
+}
+
+module.exports = requireIndex; // Export the function for use in other modules

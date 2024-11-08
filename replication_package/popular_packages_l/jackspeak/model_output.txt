@@ -1,0 +1,160 @@
+The `jackspeak` package is a strict and proper argument parser for Node.js applications. This package allows you to define, validate, and parse command-line arguments and environment variables. The key features and functionalities of `jackspeak` are outlined below:
+
+1. **Initialization**: Create a `Jack` object using the `jack` function with optional configuration settings. This object is used to define command-line and environment-based options.
+   
+2. **Option Definitions**:
+   - **Flags**: Define boolean options that can be turned on or off. These can be negated using a complementary `--no-` prefix option.
+   - **Numeric Options**: Define numerical options that are parsed as numbers.
+   - **String Options**: Define string-based options.
+   - **List Options**: Define options that can take multiple values, forming an array.
+   - **Custom Option Types**: Define options with explicit types and multiple settings.
+
+3. **Environment Integration**: Allow default values from environment variables if a prefix is provided. The parsed values can be written back into the environment.
+
+4. **Argument Parsing and Validation**:
+   - The `parse` method processes the command-line arguments, validates them according to the defined options, and returns structured output separating positional arguments and options.
+   - The `validate` method checks whether an object adheres to the defined configurations.
+
+5. **Help and Usage Generation**: Automatically generate a help banner describing the command-line interface and its options with the `usage` method.
+
+```javascript
+// jackspeak.js
+
+export function jack(options = {}) {
+  const config = {
+    allowPositionals: options.allowPositionals ?? true,
+    envPrefix: options.envPrefix,
+    env: options.env ?? process.env,
+    usage: options.usage ?? '',
+    stopAtPositional: options.stopAtPositional ?? false,
+    stopAtPositionalTest: options.stopAtPositionalTest ?? (() => false),
+    fields: {},
+  };
+
+  const usages = [];
+
+  function addField(type, multiple, fields) {
+    for (const [name, details] of Object.entries(fields)) {
+      config.fields[name] = { type, multiple, ...details };
+    }
+    return jackInstance;
+  }
+
+  function parse(args = process.argv.slice(2)) {
+    const positionals = [];
+    const values = {};
+
+    let parsingPositionals = false;
+    for (const arg of args) {
+      if (!parsingPositionals && arg.startsWith('--')) {
+        handleLongOption(arg.slice(2), values);
+      } else if (!parsingPositionals && arg.startsWith('-')) {
+        handleShortOptions(arg.slice(1), values);
+      } else {
+        if (!parsingPositionals && (config.stopAtPositional || config.stopAtPositionalTest(arg))) {
+          parsingPositionals = true;
+        }
+        positionals.push(arg);
+      }
+    }
+
+    applyDefaults(values);
+    writeToEnv(values);
+    return { positionals, values };
+  }
+
+  function handleLongOption(arg, values) {
+    const [name, rawValue] = arg.split('=');
+    const field = config.fields[name] || config.fields[`no-${name}`];
+
+    if (!field) {
+      throw new Error(`Unrecognized option: --${name}`);
+    }
+    if (field.type === 'boolean' && !rawValue) {
+      values[name] = !name.startsWith('no-');
+    } else {
+      values[name] = parseValue(rawValue, field);
+    }
+  }
+
+  function handleShortOptions(arg, values) {
+    let remainingArg = arg;
+    while (remainingArg) {
+      const short = remainingArg[0];
+      remainingArg = remainingArg.slice(1);
+
+      const field = Object.values(config.fields).find(f => f.short === short);
+      if (!field) {
+        throw new Error(`Unrecognized short option: -${short}`);
+      }
+      if (field.type === 'boolean') {
+        values[field.name] = !field.name.startsWith('no-');
+      } else {
+        const [rawValue, rest] = remainingArg.split('=', 2);
+        values[field.name] = parseValue(rawValue, field);
+        remainingArg = rest;
+      }
+    }
+  }
+
+  function parseValue(rawValue, field) {
+    switch (field.type) {
+      case 'number':
+        return parseFloat(rawValue);
+      case 'boolean':
+        return rawValue === '1';
+      default: // string
+        return rawValue;
+    }
+  }
+
+  function applyDefaults(values) {
+    for (const [name, field] of Object.entries(config.fields)) {
+      if (!(name in values) && field.default !== undefined) {
+        values[name] = field.default;
+      }
+    }
+  }
+
+  function writeToEnv(values) {
+    if (!config.envPrefix) return;
+    for (const [name, value] of Object.entries(values)) {
+      const envName = `${config.envPrefix}_${name.replace(/-/g, '_').toUpperCase()}`;
+      config.env[envName] = Array.isArray(value) ? value.join(',') : String(value);
+    }
+  }
+
+  function usage() {
+    return usages.join('\n');
+  }
+
+  function description(text, options = {}) {
+    usages.push(text.trim());
+    return jackInstance;
+  }
+
+  function heading(text, level = 1) {
+    usages.push(`\n${text}` + (level < 3 ? '\n' : ''));
+    return jackInstance;
+  }
+
+  const jackInstance = {
+    flag: (fields) => addField('boolean', false, fields),
+    flagList: (fields) => addField('boolean', true, fields),
+    num: (fields) => addField('number', false, fields),
+    numList: (fields) => addField('number', true, fields),
+    opt: (fields) => addField('string', false, fields),
+    optList: (fields) => addField('string', true, fields),
+    addFields: (fields) => addField(null, null, fields),
+    parse,
+    validate: (o) => {}, // Implement validation logic
+    usage,
+    heading,
+    description,
+    setConfigValues: (options, src) => {},
+    usageMarkdown: () => '', // Implement usageMarkdown logic
+  };
+
+  return jackInstance;
+}
+```

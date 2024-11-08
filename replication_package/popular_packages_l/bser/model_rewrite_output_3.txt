@@ -1,0 +1,80 @@
+The provided Node.js code consists of two main classes, `Bser` and `BunserBuf`, as well as their associated methods designed to encode and decode data that follows a simple Binary Serialization (BSER)-like format for demonstration purposes.
+
+### `Bser` Class
+- **`loadFromBuffer(buffer)`**: This static method takes a buffer as input, verifies it is a valid buffer, extracts a length prefix, and then reads JSON content based on that length. If successful, it parses and returns the JSON content; otherwise, it throws an error.
+  
+- **`dumpToBuffer(value)`**: This static method converts a JavaScript value into a JSON string, calculates its byte length, and creates a buffer that includes a 4-byte length prefix, containing the string's byte length, followed by the actual JSON content.
+
+### `BunserBuf` Class
+- This class extends the `EventEmitter` and is used to process incoming chunks of data that may contain serialized objects.
+  
+- **Constructor**: Initializes an empty buffer.
+  
+- **`append(chunk)`**: Adds a chunk of data to the internal buffer and triggers the processing of the buffer.
+  
+- **`_process()`**: Continuously processes the internal buffer while sufficient data is available. It reads the length of the next message, verifies if the whole message has been received, decodes the message using `Bser.loadFromBuffer`, emits a 'value' event with the decoded message, and then removes the processed message from the buffer. If there's an error during processing, it emits an 'error' event.
+
+The module exports three components: the two static methods of the `Bser` class (`loadFromBuffer` and `dumpToBuffer`) and the `BunserBuf` class.
+
+```javascript
+const EventEmitter = require('events');
+
+class Bser {
+  static loadFromBuffer(buffer) {
+    if (!Buffer.isBuffer(buffer)) {
+      throw new Error('Invalid input: expected Buffer');
+    }
+    try {
+      const length = buffer.readUIntBE(0, 4);
+      const content = buffer.slice(4, 4 + length).toString();
+      return JSON.parse(content);
+    } catch (e) {
+      throw new Error('Failed to parse buffer');
+    }
+  }
+
+  static dumpToBuffer(value) {
+    const json = JSON.stringify(value);
+    const buffer = Buffer.alloc(4 + Buffer.byteLength(json));
+    buffer.writeUIntBE(Buffer.byteLength(json), 0, 4);
+    buffer.write(json, 4);
+    return buffer;
+  }
+}
+
+class BunserBuf extends EventEmitter {
+  constructor() {
+    super();
+    this.buffer = Buffer.alloc(0);
+  }
+
+  append(chunk) {
+    this.buffer = Buffer.concat([this.buffer, chunk]);
+    this._process();
+  }
+
+  _process() {
+    try {
+      while (this.buffer.length > 4) {
+        const length = this.buffer.readUIntBE(0, 4);
+        if (this.buffer.length >= 4 + length) {
+          const valueBuffer = this.buffer.slice(4, 4 + length);
+          const value = Bser.loadFromBuffer(Buffer.concat([Buffer.alloc(4), valueBuffer]));
+          this.emit('value', value);
+          this.buffer = this.buffer.slice(4 + length);
+        } else {
+          break;
+        }
+      }
+    } catch (e) {
+      this.emit('error', e);
+    }
+  }
+}
+
+module.exports = {
+  loadFromBuffer: Bser.loadFromBuffer,
+  dumpToBuffer: Bser.dumpToBuffer,
+  BunserBuf: BunserBuf,
+};
+```

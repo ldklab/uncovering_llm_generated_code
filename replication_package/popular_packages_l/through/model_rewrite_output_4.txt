@@ -1,0 +1,82 @@
+The provided Node.js code defines a function `through` that creates a custom Node.js stream. This stream is both writable and readable and acts as a pass-through, processing data that flows through it.
+
+- **Stream Creation**: The function `through` initializes a new instance of `Stream`, making it both readable and writable with properties like `readable`, `writable`, and `paused`.
+  
+- **Write Method**: The `write` method is defined to handle incoming data. If no custom write function is provided, it uses a default that queues the data. It returns a boolean indicating if the stream is paused.
+
+- **Queue Method**: This helper method pushes data to the data event or signals the end of the stream.
+
+- **End Method**: Ends the writing of data. It calls the provided `end` function or defaults to signaling the end of the stream.
+
+- **Pause and Resume**: The stream can be paused and resumed; during a pause, it doesn't emit data.
+
+- **AutoDestroy Feature**: The stream will automatically turn off its readable and writable states and emit a 'close' event after the 'end' event if `autoDestroy` is not disabled via options.
+
+- **Queue Management**: Emitting `data` and `end` are central to manage the data flow through emitters, where data flowing through the stream gets handled using Node.js event emitters.
+
+Here is the rewritten version of the code:
+
+```javascript
+const { Stream } = require('stream');
+
+function through(write, end, options) {
+  write = write || function (data) { this.queue(data); };
+  end = end || function () { this.queue(null); };
+
+  const stream = new Stream();
+  stream.readable = true;
+  stream.writable = true;
+  stream.paused = false;
+
+  stream.write = function (data) {
+    write.call(this, data);
+    return !stream.paused;
+  };
+
+  stream.queue = function (data) {
+    if (data === null) {
+      this.emit('end');
+    } else {
+      this.emit('data', data);
+    }
+  };
+
+  stream.end = function (data) {
+    if (arguments.length) this.write(data);
+    end.call(this);
+    return this;
+  };
+
+  stream.pause = function () {
+    if (!this.paused) {
+      this.paused = true;
+      this.emit('pause');
+    }
+  };
+
+  stream.resume = function () {
+    if (this.paused) {
+      this.paused = false;
+      this.emit('resume');
+    }
+  };
+
+  stream.autoDestroy = !(options && options.autoDestroy === false);
+
+  if (stream.autoDestroy) {
+    stream.on('end', function () {
+      process.nextTick(() => {
+        if (stream.readable && stream.writable) {
+          stream.readable = false;
+          stream.writable = false;
+          stream.emit('close');
+        }
+      });
+    });
+  }
+
+  return stream;
+}
+
+module.exports = through;
+```

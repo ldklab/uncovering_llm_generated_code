@@ -1,0 +1,81 @@
+The provided Node.js code defines an object `asyncKit` with two methods: `parallel` and `serial`. These methods are used for asynchronous iteration over collections, similar to some of the functionality found in libraries like `async`.
+
+1. **`parallel` Method**:
+   - It executes asynchronous operations on a collection's items in parallel.
+   - It takes three parameters: `input` (the collection, which can be an array or an object), `iterator` (an asynchronous function to apply to each item), and `finalCallback` (a function that runs after all operations or upon an error).
+   - For each item in the collection, it calls the iterator function. If the iterator function can be aborted, it may return an abort function that gets called if an error occurs with another item.
+   - If an error occurs, the execution stops, all abort functions (if any) are called, and `finalCallback` is executed with the error.
+   - Upon successful completion of all operations, it calls the `finalCallback` with the results.
+
+2. **`serial` Method**:
+   - It runs the asynchronous `iterator` function over the collection serially (i.e., one item after the other).
+   - Like `parallel`, it accepts `input`, `iterator`, and `finalCallback` parameters.
+   - Each operation waits for the previous one to complete before proceeding.
+   - The `finalCallback` is called either after all operations complete or if an error occurs.
+
+The following code is a rewritten version of the original:
+
+```javascript
+// File: asyncKit.js
+const asyncOperations = {
+  parallel: function(collection, asyncTask, onComplete) {
+    const keys = Array.isArray(collection) ? collection.map((_, index) => index) : Object.keys(collection);
+    const total = keys.length;
+    const results = Array.isArray(collection) ? [] : {};
+    let finished = 0;
+    let hasError = false;
+    const cancelTasks = [];
+
+    keys.forEach(key => {
+      if (hasError) return;
+
+      const item = collection[key];
+      const cancelTask = asyncTask(item, key, (error, result) => {
+        if (hasError) return;
+
+        finished++;
+        if (error) {
+          hasError = true;
+          cancelTasks.forEach(cancel => cancel && cancel());
+          onComplete(error, results);
+        } else {
+          results[key] = result;
+          if (finished === total) {
+            onComplete(null, results);
+          }
+        }
+      });
+
+      if (typeof cancelTask === "function") {
+        cancelTasks.push(cancelTask);
+      }
+    });
+  },
+
+  serial: function(collection, asyncTask, onComplete) {
+    const keys = Array.isArray(collection) ? collection.map((_, index) => index) : Object.keys(collection);
+    const results = Array.isArray(collection) ? [] : {};
+    let index = 0;
+    const total = keys.length;
+
+    function proceed(error, result) {
+      if (error || index === total) {
+        onComplete(error, results);
+        return;
+      }
+
+      if (index > 0) results[keys[index - 1]] = result;
+
+      const key = keys[index++];
+      const item = collection[key];
+
+      asyncTask(item, key, proceed);
+    }
+    
+    proceed();
+  }
+};
+
+// Export the package functionalities
+module.exports = asyncOperations;
+```

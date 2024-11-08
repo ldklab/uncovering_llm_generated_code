@@ -1,0 +1,89 @@
+The Node.js code provided is a utility module that enhances the functionality of the `fs` (filesystem) module using the `graceful-fs` library. The module offers both asynchronous and synchronous versions of common file operations. Here's a breakdown of its functionality:
+
+1. **Graceful File Operations**: The `gracefulify` method from `graceful-fs` is applied to `fs` to handle possible errors like `EMFILE` (too many open files) more gracefully.
+
+2. **File Copying**: 
+   - `copy`: Asynchronously copies a file from a source path to a destination path using a promisified version of `fs.copyFile`.
+   - `copySync`: Synchronously copies a file using `fs.copyFileSync`.
+
+3. **Path Existence Check**: 
+   - `pathExists`: Asynchronously checks if a given path exists, returning `true` if it exists and `false` otherwise.
+
+4. **Directory Operations**:
+   - `ensureDir`: Asynchronously creates a directory, including its parent directories if they do not exist, using `fs.promises.mkdir` with the `recursive` option.
+   - `ensureDirSync`: Synchronously performs the same directory creation as `ensureDir`.
+
+5. **Removal Operations**:
+   - `remove`: Asynchronously removes a directory and its contents using `fs.promises.rm` with the `recursive` and `force` options.
+   - `removeSync`: Synchronously removes a directory and its contents using `fs.rmSync`.
+
+6. **File Writing**:
+   - `outputFile`: Asynchronously writes data to a file, ensuring that the directory structure exists by creating it first if necessary.
+   - `outputFileSync`: Synchronously performs the same file writing as `outputFile`.
+
+7. **Module Exports**: The module exports all the functionalities offered by `fs.promises` along with the additional methods defined within the module for enhanced operations.
+
+Here's a potential rewrite of the same functionality:
+
+```javascript
+const fs = require('fs');
+const path = require('path');
+const { promises: fsPromises } = fs;
+const gracefulFs = require('graceful-fs');
+
+gracefulFs.gracefulify(fs);
+
+const pathExists = async (p) => {
+  try {
+    await fsPromises.access(p);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+const ensureDir = async (dirPath) => {
+  await fsPromises.mkdir(dirPath, { recursive: true });
+};
+
+const ensureDirSync = (dirPath) => {
+  fs.mkdirSync(dirPath, { recursive: true });
+};
+
+const remove = async (dirPath) => {
+  await fsPromises.rm(dirPath, { recursive: true, force: true });
+};
+
+const removeSync = (dirPath) => {
+  fs.rmSync(dirPath, { recursive: true, force: true });
+};
+
+const outputFile = async (filePath, data) => {
+  await ensureDir(path.dirname(filePath));
+  await fsPromises.writeFile(filePath, data);
+};
+
+const outputFileSync = (filePath, data) => {
+  ensureDirSync(path.dirname(filePath));
+  fs.writeFileSync(filePath, data);
+};
+
+const copy = fsPromises.copyFile;
+
+const copySync = (src, dest) => {
+  fs.copyFileSync(src, dest);
+};
+
+module.exports = {
+  ...fsPromises,
+  pathExists,
+  ensureDir,
+  ensureDirSync,
+  remove,
+  removeSync,
+  outputFile,
+  outputFileSync,
+  copy,
+  copySync,
+};
+```

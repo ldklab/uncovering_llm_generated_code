@@ -1,0 +1,45 @@
+The Node.js code provided is a module that exports a function `exit` for safely exiting a Node.js application while ensuring that all output streams (`stdout` and `stderr` by default) are fully drained before the process exits. This is important to prevent data loss, especially when the application is writing to these streams just before exiting.
+
+Here’s how the code works:
+1. The `exit` function takes two arguments: `exitCode` (the code with which the process should exit) and `streams` (an array of streams that should be drained before exiting, defaulting to `stdout` and `stderr`).
+2. It initializes a counter `drainCount` to track how many streams have been drained.
+3. It defines a helper function `tryToExit` that will call `process.exit(exitCode)` once all specified streams have been drained.
+4. It iterates over each stream to check if the stream's buffer is already empty (drained). If a stream is drained, it increments `drainCount`.
+5. If a stream is not yet drained, it writes an empty string to it. The callback of this `write` method increments `drainCount` and calls `tryToExit`.
+6. The stream’s `write` method is overridden to do nothing, effectively preventing any further data from being written to the stream.
+7. Immediately attempts to exit if all streams are already drained by calling `tryToExit`.
+8. Adds a listener for the 'exit' event to ensure that the process exits with the specified exit code.
+
+Here is a possible rewrite of the given Node.js code, maintaining the same functionality:
+
+```javascript
+'use strict';
+
+module.exports = function exit(exitCode, streams = [process.stdout, process.stderr]) {
+  let drainCount = 0;
+
+  const tryToExit = () => {
+    if (drainCount === streams.length) {
+      process.exit(exitCode);
+    }
+  };
+
+  streams.forEach((stream) => {
+    if (stream.bufferSize === 0) {
+      drainCount++;
+    } else {
+      stream.write('', 'utf-8', () => {
+        drainCount++;
+        tryToExit();
+      });
+    }
+    stream.write = () => {};
+  });
+
+  tryToExit();
+
+  process.on('exit', () => {
+    process.exit(exitCode);
+  });
+};
+```

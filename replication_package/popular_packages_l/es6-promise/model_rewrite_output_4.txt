@@ -1,0 +1,103 @@
+The given Node.js code implements a basic version of the JavaScript Promise object using closures and functions. It provides a polyfill to add Promise support if not native already in the environment.
+
+Here is a brief explanation of each part:
+
+1. **No-Operation Function `noop`:** A simple function that does nothing. It's defined but not used in this code.
+
+2. **`resolvePromise` Function:** A utility to abstract promise resolution or rejection. It calls the resolving function and decides whether to fulfill or reject the promise based on the outcome.
+
+3. **`resolve` and `reject` Functions:** These set the state and value of a promise when it gets resolved or rejected, ensuring that once a promise settles, it doesn't change state again.
+
+4. **`Promise` Constructor:** Initializes the promise with a pending state and value, also defines the internal `resolve` and `reject` methods that use `resolvePromise`.
+
+5. **`then` Method:** Adds fulfillment/rejection handlers and returns a new promise, allowing method chaining.
+
+6. **`catch` Method:** Provides a shorthand for adding a rejection handler to the promise.
+
+7. **`finally` Method:** Executes a final callback regardless of the promise's result, supporting fluent chaining by returning a promise that resolves to the original value or rejection reason.
+
+8. **`polyfill` Method:** Checks if there is no native Promise and assigns the custom implementation to `global.Promise`.
+
+9. **Auto-polyfill and Export:** If running in a browser, automatically applies the polyfill. Exports `Promise` as a module if running in a Node.js environment.
+
+Here's a rewrite of the original Node.js code:
+
+```javascript
+// simple-promise.js
+
+(function (global) {
+  class SimplePromise {
+    constructor(executor) {
+      this.state = 'pending';
+      this.value = undefined;
+
+      const resolve = (value) => {
+        if (this.state === 'pending') {
+          this.state = 'fulfilled';
+          this.value = value;
+        }
+      };
+
+      const reject = (reason) => {
+        if (this.state === 'pending') {
+          this.state = 'rejected';
+          this.value = reason;
+        }
+      };
+
+      try {
+        executor(resolve, reject);
+      } catch (error) {
+        reject(error);
+      }
+    }
+
+    then(onFulfilled, onRejected) {
+      return new SimplePromise((resolve, reject) => {
+        if (this.state === 'fulfilled') {
+          try {
+            resolve(onFulfilled(this.value));
+          } catch (error) {
+            reject(error);
+          }
+        } else if (this.state === 'rejected') {
+          try {
+            reject(onRejected(this.value));
+          } catch (error) {
+            reject(error);
+          }
+        }
+      });
+    }
+
+    catch(onRejected) {
+      return this.then(null, onRejected);
+    }
+
+    finally(onFinally) {
+      return this.then(
+        value => SimplePromise.resolve(onFinally()).then(() => value),
+        reason => SimplePromise.resolve(onFinally()).then(() => { throw reason; })
+      );
+    }
+
+    static resolve(value) {
+      return new SimplePromise(resolve => resolve(value));
+    }
+
+    static polyfill() {
+      if (!global.Promise) {
+        global.Promise = SimplePromise;
+      }
+    }
+  }
+
+  if (typeof window !== 'undefined') {
+    SimplePromise.polyfill();
+  }
+
+  if (typeof module !== 'undefined') {
+    module.exports = { SimplePromise };
+  }
+}(typeof window !== 'undefined' ? window : global));
+```

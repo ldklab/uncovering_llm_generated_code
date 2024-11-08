@@ -1,0 +1,64 @@
+The `@aws-sdk/middleware-user-agent` package is a middleware used in AWS SDK for JavaScript. It facilitates the customization and management of the 'User-Agent' header in HTTP requests made by the SDK. The 'User-Agent' header is significant in identifying the client application type, version, and environment making the HTTP request, and this middleware provides a mechanism to dynamically set or modify this header for requests.
+
+This middleware can be integrated into an AWS SDK "client stack" and allows for the injection of custom user-agent strings or components, thereby making it flexible to use across different application contexts and versions. It ensures that any outgoing requests from the AWS SDK client include appropriate user-agent information, which can be useful for logging, debugging, monitoring, and analytics.
+
+Now, here is the simple code implementation for the described functionality:
+
+```javascript
+const { MiddlewareStack, HttpRequest } = require("@aws-sdk/types");
+
+class UserAgentMiddleware {
+  constructor(userAgentString) {
+    this.userAgentString = userAgentString;
+  }
+
+  applyMiddleware(stack) {
+    stack.add(
+      (next, context) => async (args) => {
+        if (!HttpRequest.isInstance(args.request)) {
+          return next(args);
+        }
+
+        const request = args.request;
+        request.headers = {
+          ...request.headers,
+          'User-Agent': this.userAgentString,
+        };
+
+        return next({ ...args, request });
+      },
+      {
+        step: 'build',
+        name: 'UserAgentMiddleware',
+        override: true,
+      }
+    );
+  }
+}
+
+// Usage Example
+const stack = new MiddlewareStack();
+const customUserAgentMiddleware = new UserAgentMiddleware("Custom/UserAgent");
+customUserAgentMiddleware.applyMiddleware(stack);
+
+async function execute() {
+  const request = new HttpRequest({
+    hostname: "example.com",
+    method: "GET",
+    headers: {},
+  });
+
+  const handler = stack.resolve((next) => (args) => {
+    console.log("Final User-Agent:", args.request.headers["User-Agent"]);
+    return Promise.resolve({ response: {} });
+  }, {});
+
+  await handler({ request });
+}
+
+execute();
+
+module.exports = UserAgentMiddleware;
+```
+
+This code implements a `UserAgentMiddleware` class which can be used to inject or modify a 'User-Agent' header for HTTP requests. The middleware is added to a middleware stack, and when executed, it sets the specified user-agent string before the request is built and sent.

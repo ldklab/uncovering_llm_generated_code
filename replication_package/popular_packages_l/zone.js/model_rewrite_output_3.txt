@@ -1,0 +1,80 @@
+The provided code is an implementation of a simplified version of the "zones" concept, commonly used in asynchronous programming to keep track of the execution context. Here's a brief overview of each part of the code:
+
+1. The `Zone` class:
+   - Each instance represents an execution context or "zone".
+   - Zones can have a parent zone (`parentZone`), a name (`name`), and associated properties (`properties`).
+   - `Zone.currentZone()` returns the current execution zone.
+   - `fork(zoneSpec)` creates a new child zone from the current zone.
+   - `wrap(callback, source)` wraps a function so that when the function is called, it runs in the zone which wraps it.
+   - `run(callback, applyThis, applyArgs, source)` sets the current zone to the one calling it, executes a given callback function, and then restores the previous zone once the function execution is complete.
+
+2. Global API patching:
+   - The function `patchGlobalAPI(global)` modifies global asynchronous functions such as `setTimeout` and `setInterval` to ensure that any callback passed to them runs within the correct zone.
+
+3. Setup:
+   - A root zone is created by default, and `_currentZone` initially points to this root zone.
+   - Global API modifications are applied using `patchGlobalAPI(globalThis)`.
+   
+4. Public API:
+   - The `Zone` class is exported for external usage.
+
+Here is the rewritten code:
+
+```javascript
+// zone.js
+
+class Zone {
+  constructor(parentZone = null, name = '<root>', properties = Object.create(null)) {
+    this.name = name;
+    this.parent = parentZone;
+    this.properties = properties;
+  }
+
+  static currentZone() {
+    return Zone._currentZone || Zone.root;
+  }
+
+  fork(zoneSpec) {
+    return new Zone(this, zoneSpec.name, zoneSpec.properties);
+  }
+
+  wrap(callback, source) {
+    const zone = this;
+    const wrappedCallback = function() {
+      return zone.run(callback, this, arguments, source);
+    };
+    return wrappedCallback;
+  }
+
+  run(callback, applyThis, applyArgs, source) {
+    const previousZone = Zone.currentZone();
+    Zone._currentZone = this;
+    try {
+      return callback.apply(applyThis, applyArgs);
+    } finally {
+      Zone._currentZone = previousZone;
+    }
+  }
+}
+
+function patchGlobalAPI(global) {
+  const originalSetTimeout = global.setTimeout;
+  global.setTimeout = function(callback, delay, ...args) {
+    const zone = Zone.currentZone();
+    return originalSetTimeout(zone.wrap(callback, 'setTimeout'), delay, ...args);
+  };
+
+  const originalSetInterval = global.setInterval;
+  global.setInterval = function(callback, delay, ...args) {
+    const zone = Zone.currentZone();
+    return originalSetInterval(zone.wrap(callback, 'setInterval'), delay, ...args);
+  };
+}
+
+Zone.root = new Zone();
+Zone._currentZone = Zone.root;
+
+patchGlobalAPI(globalThis);
+
+module.exports = { Zone };
+```

@@ -1,0 +1,78 @@
+The Node.js code creates a simplified shim for `Event` and `EventTarget` functionality. Here's what each part of the code does:
+
+1. **`EventShim` class**: 
+   - Represents an event that can be dispatched in the `EventTargetShim`.
+   - Constructor takes an event type and an optional options object. The options can specify if the event is `cancelable`.
+   - Provides a `preventDefault()` method to prevent the default action associated with the event, but only if the event is cancelable.
+
+2. **`EventTargetShim` class**: 
+   - Mimics the behavior of the `EventTarget` interface, which manages event listeners and dispatching events.
+   - Has a constructor that initializes an empty listeners object.
+   - `addEventListener(type, listener, options)`: Allows adding event listeners for specific event types.
+     - If an `AbortSignal` is provided in options, the listener is automatically removed if the signal is aborted.
+   - `removeEventListener(type, listener)`: Removes event listeners of a specific type and function.
+   - `dispatchEvent(event)`: Dispatches an event to all registered listeners for the event's type. If a listener has the `once` option, it is removed after being called. 
+
+Here's a possible rewrite of this code with the same functionality:
+
+```javascript
+// event-target-shim.js
+
+class EventShim {
+  constructor(type, options = {}) {
+    this.type = type;
+    this.cancelable = !!options.cancelable;
+    this.defaultPrevented = false;
+  }
+
+  preventDefault() {
+    if (this.cancelable) {
+      this.defaultPrevented = true;
+    } else {
+      console.warn('Ignored as event is passive.');
+    }
+  }
+}
+
+class EventTargetShim {
+  constructor() {
+    this.listeners = {};
+  }
+
+  addEventListener(type, listener, options = {}) {
+    if (!this.listeners[type]) {
+      this.listeners[type] = [];
+    }
+
+    const listenerOptions = typeof options === 'boolean' ? { capture: options } : options;
+
+    if (listenerOptions.signal) {
+      listenerOptions.signal.addEventListener('abort', () => {
+        this.removeEventListener(type, listener);
+      });
+    }
+
+    this.listeners[type].push({ listener, options: listenerOptions });
+  }
+
+  removeEventListener(type, listener) {
+    if (!this.listeners[type]) return;
+    this.listeners[type] = this.listeners[type].filter(entry => entry.listener !== listener);
+  }
+
+  dispatchEvent(event) {
+    const registeredListeners = this.listeners[event.type] || [];
+    for (const { listener, options } of registeredListeners) {
+      if (options.once) {
+        this.removeEventListener(event.type, listener);
+      }
+      listener.call(this, event);
+    }
+  }
+}
+
+module.exports = {
+  EventShim,
+  EventTargetShim,
+};
+```

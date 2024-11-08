@@ -1,0 +1,104 @@
+The provided Node.js code is a command-line argument parser that mimics some functionalities of the `yargs` library. Here's a detailed breakdown of the functionality:
+
+1. **Class Definition**: A class `YargsParser` is defined that will handle the parsing of command-line arguments.
+
+2. **Defaults**: The constructor initializes `defaults` which has three types of defaults for argument data types: boolean, number, and string.
+
+3. **Parse Method**: 
+   - The `parse` method takes arguments (`args`) and options (`opts`).
+   - It merges default options with user-provided options.
+   - The method processes arguments which can be given as a string or an array.
+   - `_` is used to accumulate non-option arguments (positional arguments).
+
+4. **Argument Processing**:
+   - Long options (`--option`) are processed by `parseLongOption`.
+   - Short options (`-o`) are processed by `parseShortOption`.
+
+5. **Argument Setter**: 
+   - `setArgValue` is responsible for setting the values of the options based on their type.
+   - It distinguishes between boolean, number, or string based on user-specified preferences.
+   - If an argument is boolean and not followed by a value or is followed by another option, it defaults to `true`.
+
+6. **Value Casting**:
+   - `castValue` tries to convert string values into numbers if they are in the appropriate format.
+
+7. **Exported Function**:
+   - The `YargsParser` class is used within an exported function to parse command-line arguments with `args` and `opts` as inputs.
+
+Here is a rewritten version of the same functionality:
+
+```javascript
+class ArgParser {
+  constructor() {
+    this.defaultTypes = {
+      boolean: [],
+      number: [],
+      string: [],
+    };
+  }
+
+  parseInput(args, options = {}) {
+    const configuredOptions = { ...this.defaultTypes, ...options };
+    let parsedResults = { _: [] };
+
+    if (typeof args === 'string') {
+      args = args.split(' ');
+    }
+
+    args.forEach((arg, i) => {
+      if (arg.startsWith('--')) {
+        this.handleLongOption(arg, args, i, configuredOptions, parsedResults);
+      } else if (arg.startsWith('-')) {
+        this.handleShortOption(arg, args, i, configuredOptions, parsedResults);
+      } else {
+        parsedResults._.push(this.convertValue(arg, configuredOptions));
+      }
+    });
+
+    return parsedResults;
+  }
+
+  handleLongOption(arg, args, idx, options, results) {
+    const [key, val] = arg.slice(2).split('=');
+    this.assignArgumentValue(key, val, args, idx, options, results);
+  }
+
+  handleShortOption(arg, args, idx, options, results) {
+    const shortOpts = arg.slice(1).split('');
+    shortOpts.forEach(opt => {
+      this.assignArgumentValue(opt, null, args, idx, options, results);
+    });
+  }
+
+  assignArgumentValue(key, val = undefined, args, idx, options, results) {
+    if (options.boolean.includes(key)) {
+      results[key] = val !== undefined ? 
+        this.convertValue(val, options) : 
+        (args[idx + 1] && args[idx + 1][0] !== '-') ? 
+          this.convertValue(args[++idx], options) : true;
+    } else if (options.number.includes(key)) {
+      results[key] = this.convertValue(val !== undefined ? val : args[++idx], options);
+    } else if (options.string.includes(key)) {
+      results[key] = val !== undefined ? val : args[++idx];
+    } else {
+      results[key] = val !== undefined ? this.convertValue(val, options) : this.convertValue(args[++idx], options);
+    }
+  }
+
+  convertValue(value, options) {
+    if (!isNaN(value) && options.number) {
+      return parseFloat(value);
+    }
+    return value;
+  }
+}
+
+module.exports = (args, opts) => {
+  const argParser = new ArgParser();
+  return argParser.parseInput(args, opts);
+};
+
+// Example use:
+// const inputArgs = require('./arg-parser')('--foo=123 --bar world'.split(' '), { boolean: ['debug'], number: ['foo'] });
+// console.log(inputArgs);
+```

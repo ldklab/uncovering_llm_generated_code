@@ -1,0 +1,44 @@
+The given Node.js code defines a function `pathParse` that parses a file path string into its components: root, directory, base name, extension, and name for both Windows and POSIX (Unix-like) platforms. The code uses regular expressions to split the path based on the platform, determines the root and base of the path, extracts the extension if present, and computes the name by stripping the extension from the base.
+
+Additionally, `pathParse` has two platform-specific methods: `pathParse.posix` and `pathParse.win32`, which allow parsing for POSIX and Windows paths explicitly. The function and its methods are exported as a module.
+
+Here's a possible rewrite of the code:
+
+```javascript
+// path-parse/index.js
+
+function pathParse(path, options = { platform: process.platform }) {
+    const isWindows = options.platform === 'win32';
+
+    const splitPathPatterns = {
+        win32: /^(?:(\/?|)([\w ]:|\\|\\\\)(?:([^\\\/:*?"<>|\r\n]+(?:\\|\\\\))*)([^\\\/:*?"<>|\r\n]*))$/,
+        posix: /^((?:\/|)(?:[^\/]+(?:\/|))*)([^\/]*)$/
+    };
+
+    const splitPath = (pathString) => {
+        const pattern = isWindows ? splitPathPatterns.win32 : splitPathPatterns.posix;
+        return pathString.match(pattern).slice(1);
+    };
+
+    const components = splitPath(path);
+
+    const root = isWindows ? (components[1] + '\\') : '/';
+    const base = components[3] || components[1] || components[0];
+    const dir = components[0] || (isWindows ? root : '');
+    const ext = base.includes('.') ? '.' + base.split('.').pop() : '';
+    const name = base.slice(0, base.length - ext.length);
+
+    return {
+        root,
+        dir,
+        base,
+        ext,
+        name
+    };
+}
+
+pathParse.posix = (pathString) => pathParse(pathString, { platform: 'posix' });
+pathParse.win32 = (pathString) => pathParse(pathString, { platform: 'win32' });
+
+module.exports = pathParse;
+```

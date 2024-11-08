@@ -1,0 +1,73 @@
+The Node.js code provided is a simple implementation for scheduling asynchronous tasks to be executed as soon as possible, but not immediately synchronously. It uses an internal task queue for efficiency and relies on various methods to trigger a flush of tasks from the queue:
+
+1. **Queue Management**: It maintains a `queue` array to hold the tasks (functions) that need to be executed. A flag `flushing` indicates whether a flush is currently in progress to avoid multiple flush attempts concurrently. The `index` helps keep track of the current position in the task queue.
+
+2. **Task Scheduling**:
+   - `asap` and `rawAsap` are functions for adding tasks to the queue. These are essentially identical in this implementation.
+   - When a task is added, the system checks if a flush process is already running. If not, it sets `flushing` to true and requests a flush via `requestFlush`.
+
+3. **Flushing the Queue**:
+   - `flush` processes each task in the queue sequentially, attempting to call the task function safely within a try-catch block. If an error occurs, it is re-thrown using `setTimeout` to ensure it doesn't interfere with the flush process.
+   - After processing, it resets the queue and index, and clears the `flushing` state.
+
+4. **Requesting a Flush**:
+   - `requestFlush` decides the method for queue draining based on the environment:
+     - In environments supporting `MutationObserver`, it uses a mutation trick to schedule a flush.
+     - If `MutationObserver` is not available, it uses `MessageChannel`.
+     - As a fallback for environments that lack both, it uses `setTimeout`.
+
+Here is a possible rewrite of the provided code:
+
+```javascript
+// asyncScheduler.js
+let taskQueue = [];
+let isFlushing = false;
+let currentIndex = 0;
+
+function scheduleTask(task) {
+  taskQueue.push(task);
+  if (!isFlushing) {
+    isFlushing = true;
+    triggerFlush();
+  }
+}
+
+function scheduleRawTask(task) {
+  taskQueue.push(task);
+  if (!isFlushing) {
+    isFlushing = true;
+    triggerFlush();
+  }
+}
+
+function executeTasks() {
+  while (currentIndex < taskQueue.length) {
+    const task = taskQueue[currentIndex++];
+    try {
+      task();
+    } catch (error) {
+      setTimeout(() => { throw error; }, 0);
+    }
+  }
+  currentIndex = 0;
+  taskQueue = [];
+  isFlushing = false;
+}
+
+function triggerFlush() {
+  if (typeof MutationObserver !== 'undefined') {
+    let node = document.createTextNode('');
+    new MutationObserver(executeTasks).observe(node, { characterData: true });
+    node.data = 'toggle';
+  } else if (typeof MessageChannel !== 'undefined') {
+    const channel = new MessageChannel();
+    channel.port1.onmessage = executeTasks;
+    channel.port2.postMessage(0);
+  } else {
+    setTimeout(executeTasks, 0);
+  }
+}
+
+module.exports = scheduleTask;
+module.exports.raw = scheduleRawTask;
+```

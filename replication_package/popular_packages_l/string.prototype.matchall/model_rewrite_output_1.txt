@@ -1,0 +1,91 @@
+The provided Node.js code defines a polyfill function for `String.prototype.matchAll()`. This polyfill is essential for environments where `matchAll()` is not natively available in JavaScript. 
+
+Here's a breakdown of its functionality:
+
+- The code creates a stand-alone function called `matchAllShim` which simulates the behavior of the `String.prototype.matchAll()` method.
+- It uses various method bindings and utility methods. For example, `toObject` ensures that the input string is converted into an object, and `toString` converts various data types to strings.
+- The function `createMatcher` creates a regular expression matcher that mimics the behavior of the given regular expression, ensuring global matching.
+- The `matchAllShim` function executes the given regular expression against the input string, collecting all matches into an array that includes match details like the index and input string.
+- If the native `matchAll` method is not present in the `String.prototype`, `matchAllShim.shim()` adds this method to `String.prototype`, making it available as if it were natively supported.
+- The `module.exports` statement allows this polyfill to be used as a module in other JavaScript files.
+
+Here's a potential rewrite of this Node.js code:
+
+```javascript
+(function () {
+  'use strict';
+
+  const callBind = Function.prototype.call.bind(Function.prototype.call);
+  const indexOf = callBind(String.prototype.indexOf);
+  const hasSymbols = typeof Symbol === 'function' && typeof Symbol.iterator !== 'undefined';
+
+  const toObject = (value) => {
+    if (value == null) {
+      throw new TypeError('Cannot convert undefined or null to object');
+    }
+    return Object(value);
+  };
+
+  const toString = (item) => String(item);
+
+  const hasOwn = callBind(Object.prototype.hasOwnProperty);
+
+  const createMatcher = (regexp) => {
+    const flags = 'g' + (hasOwn(regexp, 'flags') ? '' : 
+      (regexp.ignoreCase ? 'i' : '') +
+      (regexp.multiline ? 'm' : '') +
+      (regexp.dotAll ? 's' : '') +
+      (regexp.unicode ? 'u' : '') +
+      (regexp.sticky ? 'y' : '')
+    );
+    return new RegExp(regexp.source, flags);
+  };
+
+  const matchAllShim = (string, regex) => {
+    const O = toObject(string);
+    const S = toString(O);
+    let matcher, flags;
+
+    if (typeof regex !== 'object' || (hasSymbols && !(Symbol.matchAll in regex))) {
+      matcher = createMatcher(new RegExp(regex, 'g'));
+    } else if (!regex.global) {
+      throw new TypeError('matchAll requires a global RegExp or a non-RegExp string');
+    } else {
+      matcher = regex;
+    }
+
+    const matches = [];
+    let lastIndex = 0;
+    let match;
+
+    while ((match = matcher.exec(S)) !== null) {
+      const matchObject = Object.assign([], match);
+      matchObject.index = match.index;
+      matchObject.input = S;
+      matches.push(matchObject);
+      if (!matcher.global) {
+        break;
+      }
+      lastIndex = matcher.lastIndex;
+    }
+
+    matcher.lastIndex = lastIndex;
+    return matches;
+  };
+
+  matchAllShim.shim = function shimMatchAll() {
+    const prototype = String.prototype;
+    if (!('matchAll' in prototype)) {
+      Object.defineProperty(prototype, 'matchAll', {
+        configurable: true,
+        writable: true,
+        value: function matchAll(regexp) {
+          return matchAllShim(this, regexp);
+        }
+      });
+    }
+  };
+
+  module.exports = matchAllShim;
+}());
+```

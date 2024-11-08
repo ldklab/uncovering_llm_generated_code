@@ -1,0 +1,122 @@
+The given Node.js code defines a function `hash`, which generates a hashed version of the input value based on various options. The function uses the `crypto` module to create hash digests. Here is a detailed explanation of the functionality:
+
+1. **Options and Defaults**: The function accepts options that define how data is transformed prior to hashing. These include specifying hashing algorithms (`algorithm`), determining whether to exclude values or keys (`excludeValues`, `excludeKeys`), handling of unordered data structures (`unorderedArrays`, `unorderedObjects`, `unorderedSets`), and respecting JavaScript function attributes (`respectFunctionProperties`, `respectFunctionNames`).
+
+2. **Data Handling**: 
+   - It handles special types like `null`, `undefined`, `boolean`, `number`, `string`, `function`, `buffer`, `symbol`, arrays, and objects.
+   - The function processes each value type uniquely: turning functions into strings with options to include their properties and names, sorting arrays if necessary, and optionally sorting object keys.
+   - The function processes the input with a `replacer` function if provided, which can transform the input data before hashing.
+
+3. **Hash Creation**: After processing, it computes a hash digest using the specified algorithm, except when `passthrough` is used, in which case the computed value is returned directly.
+
+4. **Additional Methods**: There are helper functions (`hash.sha1`, `hash.keys`, `hash.MD5`, `hash.keysMD5`) that create specific configurations of the `hash` function for common tasks.
+
+5. **Stream Support**: A utility function, `hash.writeToStream`, writes the processed data directly to a given stream.
+
+Here's a possible rewrite maintaining the functionality described:
+
+```javascript
+const crypto = require('crypto');
+
+function hash(value, options = {}) {
+  const {
+    algorithm = 'sha1',
+    excludeValues = false,
+    encoding = 'hex',
+    unorderedArrays = false,
+    unorderedSets = true,
+    unorderedObjects = true,
+    respectFunctionProperties = true,
+    respectFunctionNames = true,
+    respectType = true,
+    ignoreUnknown = false,
+    replacer = (v) => v,
+    excludeKeys = () => false,
+  } = options;
+
+  const replacedValue = replacer(value);
+
+  function process(value) {
+    const type = typeof value;
+    if (value === null || type === 'undefined') {
+      return `@null`;
+    }
+    if (type === 'boolean' || type === 'number' || type === 'string') {
+      return `@${type}:${value}`;
+    }
+    if (type === 'function') {
+      return handleFunction(value);
+    }
+    if (Buffer.isBuffer(value)) {
+      return `@buffer:${value.toString('hex')}`;
+    }
+    if (type === 'symbol') {
+      return `@symbol:${value.toString()}`;
+    }
+    if (Array.isArray(value)) {
+      return handleArray(value);
+    }
+    if (typeof value === 'object') {
+      return handleObject(value);
+    }
+    if (ignoreUnknown) {
+      return '';
+    }
+    throw new Error('type not supported: ' + type);
+  }
+
+  function handleFunction(func) {
+    let result = `@function`;
+    if (respectFunctionNames) {
+      result += `:${func.name}`;
+    }
+    if (respectFunctionProperties) {
+      result += `:${Object.keys(func).toString()}`;
+    }
+    return result;
+  }
+
+  function handleArray(arr) {
+    const newArr = arr.slice();
+    if (unorderedArrays) {
+      newArr.sort();
+    }
+    return `@array:${newArr.map(item => process(item)).join(',')}`;
+  }
+
+  function handleObject(obj) {
+    const keys = Object.keys(obj);
+    if (unorderedObjects) {
+      keys.sort();
+    }
+    let result = `@object`;
+    keys.forEach(key => {
+      if (!excludeKeys(key)) {
+        const value = obj[key];
+        result += `:${key}:${excludeValues ? '' : process(value)}`;
+      }
+    });
+    return result;
+  }
+
+  let finalResult = process(replacedValue);
+
+  if (algorithm === 'passthrough') {
+    return finalResult;
+  }
+  const hash = crypto.createHash(algorithm).update(finalResult).digest(encoding);
+  return hash;
+}
+
+hash.sha1 = (value) => hash(value, { algorithm: 'sha1' });
+hash.keys = (value) => hash(value, { excludeValues: true });
+hash.MD5 = (value) => hash(value, { algorithm: 'md5' });
+hash.keysMD5 = (value) => hash(value, { algorithm: 'md5', excludeValues: true });
+
+hash.writeToStream = (value, options, stream) => {
+  const passthrough = hash(value, { ...options, algorithm: 'passthrough' });
+  stream.write(passthrough);
+};
+
+module.exports = hash;
+```

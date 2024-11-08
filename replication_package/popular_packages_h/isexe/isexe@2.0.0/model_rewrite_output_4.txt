@@ -1,0 +1,76 @@
+The provided Node.js code is designed to determine if a given file path is executable. It uses different core modules depending on the platform: one for Windows and another for non-Windows platforms. The function `isexe` checks this asynchronously, supporting both callback and Promise-based approaches. There's also a synchronous version of this check, called `sync`.
+
+### Functionality Breakdown:
+1. **Platform-specific Module Loading**: 
+    - If the platform is Windows (`process.platform` is 'win32' or a global variable `TESTING_WINDOWS` is set), it loads `windows.js`.
+    - Otherwise, it loads `mode.js`.
+
+2. **`isexe` Function**:
+    - Accepts a `path` to a file, options, and an optional callback `cb`.
+    - If no callback is provided and Promises are available, it returns a Promise.
+    - Calls the platform-specific `core` function to check if the file is executable.
+    - Errors for permission issues (`EACCES`) or when options specify `ignoreErrors` are handled to set `is` to false without throwing an error.
+
+3. **`sync` Function**:
+    - Synchronously checks if the provided path is executable using the `core.sync` method.
+    - Handles the same permission errors and options as the asynchronous version.
+
+Given this explanation, here is a possible rewrite of the code:
+
+```javascript
+const fs = require('fs');
+let coreModule;
+
+if (process.platform === 'win32' || global.TESTING_WINDOWS) {
+  coreModule = require('./windows.js');
+} else {
+  coreModule = require('./mode.js');
+}
+
+module.exports = checkExecutable;
+checkExecutable.sync = checkExecutableSync;
+
+function checkExecutable(path, options = {}, callback) {
+  if (typeof options === 'function') {
+    callback = options;
+    options = {};
+  }
+
+  if (!callback) {
+    if (typeof Promise !== 'function') {
+      throw new TypeError('callback not provided');
+    }
+    return new Promise((resolve, reject) => {
+      checkExecutable(path, options, (error, isExecutable) => {
+        if (error) {
+          reject(error);
+        } else {
+          resolve(isExecutable);
+        }
+      });
+    });
+  }
+
+  coreModule(path, options, (error, isExecutable) => {
+    if (error) {
+      if (error.code === 'EACCES' || options.ignoreErrors) {
+        error = null;
+        isExecutable = false;
+      }
+    }
+    callback(error, isExecutable);
+  });
+}
+
+function checkExecutableSync(path, options = {}) {
+  try {
+    return coreModule.sync(path, options);
+  } catch (error) {
+    if (options.ignoreErrors || error.code === 'EACCES') {
+      return false;
+    } else {
+      throw error;
+    }
+  }
+}
+```

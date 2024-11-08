@@ -1,0 +1,124 @@
+The provided Node.js code is a caching module that manages cache storage using a file-based system. The module's main functionality includes:
+
+1. **Loading the Cache**: The `load` method initializes a cache object, either by reading from an existing cache file associated with a given identifier (`docId`) or by setting up a new cache if the file doesn't exist. A directory can be optionally specified (`cacheDir`) for storing these files. The module can also load cache data from a specific file using `loadFile`.
+
+2. **Cache Manipulation Methods**:
+   - `all`: Returns all cached data.
+   - `keys`: Returns all keys in the cache.
+   - `setKey`: Adds or updates a key-value pair in the cache.
+   - `removeKey`: Deletes a specific key from the cache.
+   - `getKey`: Retrieves the value for a specific key.
+   - `_prune`: Internal method to remove unaccessed keys since the last read or write operation.
+
+3. **Saving the Cache**: The `save` method persists the cache data to disk as a JSON file. An optional `noPrune` parameter can be used to control whether unaccessed keys should be removed before saving.
+
+4. **Cache File Management**:
+   - `removeCacheFile`: Deletes the cache file.
+   - `destroy`: Clears cache content and removes the associated cache file.
+
+5. **Module Exports**: Provides functionalities to create or load cache instances using `create` and `load` (the latter is deprecated). Additional methods to clear cache by identifier or all caches in a directory are offered (`clearCacheById` and `clearAll`).
+
+```javascript
+const path = require('path');
+const fs = require('fs');
+const utils = require('./utils');
+const del = require('./del');
+const writeJSON = utils.writeJSON;
+
+const cache = {
+  load(docId, cacheDir) {
+    this._visited = {};
+    this._persisted = {};
+    this._pathToFile = cacheDir ? path.resolve(cacheDir, docId) : path.resolve(__dirname, '../.cache/', docId);
+
+    if (fs.existsSync(this._pathToFile)) {
+      this._persisted = utils.tryParse(this._pathToFile, {});
+    }
+  },
+
+  loadFile(pathToFile) {
+    const dir = path.dirname(pathToFile);
+    const fName = path.basename(pathToFile);
+    this.load(fName, dir);
+  },
+
+  all() {
+    return this._persisted;
+  },
+
+  keys() {
+    return Object.keys(this._persisted);
+  },
+
+  setKey(key, value) {
+    this._visited[key] = true;
+    this._persisted[key] = value;
+  },
+
+  removeKey(key) {
+    delete this._visited[key];
+    delete this._persisted[key];
+  },
+
+  getKey(key) {
+    this._visited[key] = true;
+    return this._persisted[key];
+  },
+
+  _prune() {
+    const keys = Object.keys(this._visited);
+    if (keys.length === 0) return;
+
+    const obj = {};
+    keys.forEach(key => {
+      obj[key] = this._persisted[key];
+    });
+
+    this._visited = {};
+    this._persisted = obj;
+  },
+
+  save(noPrune) {
+    !noPrune && this._prune();
+    writeJSON(this._pathToFile, this._persisted);
+  },
+
+  removeCacheFile() {
+    return del(this._pathToFile);
+  },
+
+  destroy() {
+    this._visited = {};
+    this._persisted = {};
+    this.removeCacheFile();
+  },
+};
+
+module.exports = {
+  load(docId, cacheDir) {
+    return this.create(docId, cacheDir);
+  },
+
+  create(docId, cacheDir) {
+    const obj = Object.create(cache);
+    obj.load(docId, cacheDir);
+    return obj;
+  },
+
+  createFromFile(filePath) {
+    const obj = Object.create(cache);
+    obj.loadFile(filePath);
+    return obj;
+  },
+
+  clearCacheById(docId, cacheDir) {
+    const filePath = cacheDir ? path.resolve(cacheDir, docId) : path.resolve(__dirname, '../.cache/', docId);
+    return del(filePath);
+  },
+
+  clearAll(cacheDir) {
+    const filePath = cacheDir ? path.resolve(cacheDir) : path.resolve(__dirname, '../.cache/');
+    return del(filePath);
+  },
+};
+```

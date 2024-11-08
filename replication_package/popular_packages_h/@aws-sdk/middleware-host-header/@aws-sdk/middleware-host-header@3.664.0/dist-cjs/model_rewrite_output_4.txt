@@ -1,0 +1,71 @@
+The code is a Node.js module that modifies HTTP requests by ensuring the proper setting of the "Host" or ":authority" header, which is important for HTTP/2 requests. It exports four functions: `resolveHostHeaderConfig`, `hostHeaderMiddleware`, `hostHeaderMiddlewareOptions`, and `getHostHeaderPlugin`.
+
+1. **resolveHostHeaderConfig**:
+   - A simple function that returns its input, likely used for configuration purposes in a larger context.
+
+2. **hostHeaderMiddleware**:
+   - A middleware function that checks if an HTTP request instance is being processed.
+   - It modifies the request headers:
+     - For HTTP/2 requests (indicated by the presence of `"h2"` in the handler protocol), it sets the ":authority" header and removes the "host" header.
+     - For others, it sets or corrects the "host" header.
+
+3. **hostHeaderMiddlewareOptions**:
+   - An object defining metadata for the middleware, such as its name, when it should run in a stack (`"build"` step), and its priority.
+
+4. **getHostHeaderPlugin**:
+   - A function that returns an object with an `applyToStack` method, adding the middleware to a stack of middleware functions using the specified options.
+
+Here is a potential rewrite of the Node.js code based on the given explanation:
+
+```javascript
+"use strict";
+
+const { HttpRequest } = require("@smithy/protocol-http");
+
+function resolveHostHeaderConfig(input) {
+  return input;
+}
+
+function hostHeaderMiddleware(options) {
+  return (next) => async (args) => {
+    if (!HttpRequest.isInstance(args.request)) return next(args);
+
+    const { request } = args;
+    const { handlerProtocol = "" } = options.requestHandler.metadata || {};
+
+    if (handlerProtocol.includes("h2") && !request.headers[":authority"]) {
+      delete request.headers["host"];
+      request.headers[":authority"] = request.hostname + (request.port ? `:${request.port}` : "");
+    } else if (!request.headers["host"]) {
+      let host = request.hostname;
+      if (request.port != null) host += `:${request.port}`;
+      request.headers["host"] = host;
+    }
+
+    return next(args);
+  };
+}
+
+const hostHeaderMiddlewareOptions = {
+  name: "hostHeaderMiddleware",
+  step: "build",
+  priority: "low",
+  tags: ["HOST"],
+  override: true
+};
+
+function getHostHeaderPlugin(options) {
+  return {
+    applyToStack: (clientStack) => {
+      clientStack.add(hostHeaderMiddleware(options), hostHeaderMiddlewareOptions);
+    }
+  };
+}
+
+module.exports = {
+  resolveHostHeaderConfig,
+  hostHeaderMiddleware,
+  hostHeaderMiddlewareOptions,
+  getHostHeaderPlugin
+};
+```

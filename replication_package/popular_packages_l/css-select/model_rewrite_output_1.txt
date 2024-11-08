@@ -1,0 +1,54 @@
+The provided Node.js code defines a basic CSS selector library called `CSSselect`. It provides functionality for selecting DOM elements using CSS-like selectors. Here's a breakdown of the functionality:
+
+1. **`selectAll(selector, elems, options)`:** This method compiles a CSS selector and uses `domutils.findAll` to select all matching elements from a given set of elements.
+
+2. **`compile(selector, options)`:** This method parses a CSS selector string into its component parts using `cssWhat`, and then compiles these parts into a function (`compiledSelector`). This function takes an element as input and checks whether it matches the parsed selector components.
+
+3. **`compilePart(part, options)`:** This method handles individual selector parts, converting them into specific functions that determine if a DOM element matches according to the part type, such as tag names or descendant relationships.
+
+4. **`is(elem, query, options)`:** This method checks if a specific element matches a given CSS-like selector by compiling the selector and testing the element against it.
+
+5. **`selectOne(selector, elems, options)`:** Similar to `selectAll`, but it returns only the first matching element by using `domutils.findOne`.
+
+The code uses the `css-what` package to parse CSS selectors and `domutils` to traverse and manipulate the DOM.
+
+```javascript
+// index.js
+const cssWhat = require('css-what');
+const domutils = require('domutils');
+
+class CSSselect {
+  static selectAll(selector, elems, options = {}) {
+    const compiledSelector = CSSselect.compile(selector, options);
+    return domutils.findAll(compiledSelector, elems, options);
+  }
+
+  static compile(selector, options = {}) {
+    const parsedSelector = cssWhat.parse(selector);
+    const funcs = parsedSelector[0].map(part => CSSselect.compilePart(part, options));
+    return element => funcs.every(func => func(element));
+  }
+
+  static compilePart(part, options) {
+    if (part.type === 'tag') {
+      return elem => elem.tagName === part.name;
+    } else if (part.type === 'descendant') {
+      return elem => elem.parentNode != null;
+    } else {
+      throw new Error(`Unsupported selector type: ${part.type}`);
+    }
+  }
+
+  static is(elem, query, options = {}) {
+    const compiledSelector = CSSselect.compile(query, options);
+    return compiledSelector(elem);
+  }
+
+  static selectOne(selector, elems, options = {}) {
+    const compiledSelector = CSSselect.compile(selector, options);
+    return domutils.findOne(compiledSelector, elems, options);
+  }
+}
+
+module.exports = CSSselect;
+```

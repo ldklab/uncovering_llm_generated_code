@@ -1,0 +1,93 @@
+The provided Node.js code serves as a utility for configuring Jest test cases. It facilitates the execution of parameterized tests using the `each` function, allowing tests to be easily defined with different sets of input data. The functionality is as follows:
+
+- The code imports a `_bind` module which is expected to wrap Jest's test functions (`test`, `it`, `describe`, etc.) to handle automated binding of argument tables for parameterized testing.
+- The `install` function takes:
+  - `g`: a global-like object (typically `globalThis`) where the Jest functions reside.
+  - `table`: an array or a tagged template literal expected to contain test case data.
+  - `data`: additional data for parameterized tests.
+- The `install` function verifies that either an array or a tagged template literal is passed as `table`, throwing an error if not.
+- Using `_bind`, it creates bound versions of Jest's test functions (`test`, `it`, `describe`, etc.) allowing for operations like .skip, .only, and .concurrent.
+- The `each` function is a higher-order function that sets up these bound test methods for global use, while `each.withGlobal` allows for using a custom global-like context.
+
+Rewritten Node.js Code:
+
+```javascript
+'use strict';
+
+Object.defineProperty(exports, '__esModule', {
+  value: true
+});
+Object.defineProperty(exports, 'bind', {
+  enumerable: true,
+  get: function () {
+    return _bind.default;
+  }
+});
+exports.default = void 0;
+
+var _bind = _interopRequireDefault(require('./bind'));
+
+function _interopRequireDefault(obj) {
+  return obj && obj.__esModule ? obj : {default: obj};
+}
+
+const install = (globalObject, tableData, ...otherData) => {
+  const usingArray = otherData.length === 0;
+  const usingTemplate = Array.isArray(tableData) && !!tableData.raw;
+  
+  if (!usingArray && !usingTemplate) {
+    throw new Error('`.each` must only be called with an Array or Tagged Template Literal.');
+  }
+
+  const test = (title, testFn, timeout) =>
+    (0, _bind.default)(globalObject.test)(tableData, ...otherData)(title, testFn, timeout);
+
+  test.skip = (0, _bind.default)(globalObject.test.skip)(tableData, ...otherData);
+  test.only = (0, _bind.default)(globalObject.test.only)(tableData, ...otherData);
+
+  const concurrentTest = (title, testFn, timeout) =>
+    (0, _bind.default)(globalObject.test.concurrent)(tableData, ...otherData)(title, testFn, timeout);
+
+  test.concurrent = concurrentTest;
+  concurrentTest.only = (0, _bind.default)(globalObject.test.concurrent.only)(tableData, ...otherData);
+  concurrentTest.skip = (0, _bind.default)(globalObject.test.concurrent.skip)(tableData, ...otherData);
+
+  const it = (title, testFn, timeout) =>
+    (0, _bind.default)(globalObject.it)(tableData, ...otherData)(title, testFn, timeout);
+
+  it.skip = (0, _bind.default)(globalObject.it.skip)(tableData, ...otherData);
+  it.only = (0, _bind.default)(globalObject.it.only)(tableData, ...otherData);
+  it.concurrent = concurrentTest;
+
+  const xit = (0, _bind.default)(globalObject.xit)(tableData, ...otherData);
+  const fit = (0, _bind.default)(globalObject.fit)(tableData, ...otherData);
+  const xtest = (0, _bind.default)(globalObject.xtest)(tableData, ...otherData);
+
+  const describe = (title, suiteFn, timeout) =>
+    (0, _bind.default)(globalObject.describe, false)(tableData, ...otherData)(title, suiteFn, timeout);
+  
+  describe.skip = (0, _bind.default)(globalObject.describe.skip, false)(tableData, ...otherData);
+  describe.only = (0, _bind.default)(globalObject.describe.only, false)(tableData, ...otherData);
+
+  const fdescribe = (0, _bind.default)(globalObject.fdescribe, false)(tableData, ...otherData);
+  const xdescribe = (0, _bind.default)(globalObject.xdescribe, false)(tableData, ...otherData);
+
+  return {
+    describe,
+    fdescribe,
+    fit,
+    it,
+    test,
+    xdescribe,
+    xit,
+    xtest
+  };
+};
+
+const each = (tableData, ...otherData) => install(globalThis, tableData, ...otherData);
+
+each.withGlobal = globalInstance => (tableData, ...otherData) => install(globalInstance, tableData, ...otherData);
+
+var _default = each;
+exports.default = _default;
+```

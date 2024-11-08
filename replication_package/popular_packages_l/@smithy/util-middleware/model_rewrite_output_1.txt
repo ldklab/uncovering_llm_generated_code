@@ -1,0 +1,101 @@
+The code is a Node.js module that provides a system for managing middleware functions. It defines a `MiddlewareStack` class for executing a sequence of middleware functions and utility functions for composing middleware with error handling and logging.
+
+### Functionality Breakdown:
+1. **MiddlewareStack Class**: 
+   - Maintains an array of middleware functions (`this.middleware`). 
+   - The `use(fn)` method adds a middleware function to the stack.
+   - The `execute(context)` method asynchronously executes each middleware function with the provided context, awaiting each function's completion in sequence.
+
+2. **compose Function**:
+   - Takes multiple middleware functions and returns a single function that executes them from last to first (right-to-left).
+   - It creates a sequence execution by using `reduceRight` to wrap each function, passing the context and a next function through the sequence.
+
+3. **withErrorHandling Function**:
+   - A higher-order function wrapping another middleware function.
+   - It tries to execute the function and catches errors, logging them and attaching the error to the context for further handling.
+
+4. **withLogging Function**:
+   - Similar to `withErrorHandling`, it logs the context before and after the middleware function execution to track the changes in the context.
+
+5. **Example Usage**:
+   - It demonstrates creating a `MiddlewareStack`, adding two middleware functions wrapped with logging and error handling, and executing the stack with an empty context.
+
+```javascript
+// index.js
+
+class MiddlewareStack {
+    constructor() {
+        this.middleware = [];
+    }
+
+    use(fn) {
+        this.middleware.push(fn);
+    }
+
+    async execute(context) {
+        for (const fn of this.middleware) {
+            await fn(context);
+        }
+    }
+}
+
+function compose(...middlewares) {
+    return (context) => {
+        return middlewares.reduceRight(
+            (next, fn) => () => fn(context, next),
+            () => Promise.resolve()
+        )();
+    };
+}
+
+function withErrorHandling(fn) {
+    return async (context, next) => {
+        try {
+            await fn(context, next);
+        } catch (error) {
+            console.error('An error occurred:', error);
+            context.error = error;
+        }
+    };
+}
+
+function withLogging(fn) {
+    return async (context, next) => {
+        console.log('Processing:', context);
+        await fn(context, next);
+        console.log('Processed:', context);
+    };
+}
+
+module.exports = {
+    MiddlewareStack,
+    compose,
+    withErrorHandling,
+    withLogging
+};
+
+// Example Usage
+
+const { MiddlewareStack, compose, withErrorHandling, withLogging } = require('./index');
+
+const stack = new MiddlewareStack();
+
+function firstMiddleware(ctx, next) {
+    ctx.first = true;
+    next();
+}
+
+function secondMiddleware(ctx, next) {
+    ctx.second = true;
+    next();
+}
+
+stack.use(withLogging(withErrorHandling(firstMiddleware)));
+stack.use(withLogging(withErrorHandling(secondMiddleware)));
+
+(async () => {
+    const context = {};
+    await stack.execute(context);
+    console.log('Final context:', context);
+})();
+```

@@ -1,0 +1,121 @@
+The `graceful-fs` package is a custom wrapper around Node.js's native `fs` module, designed to handle common file system errors more gracefully and enhance compatibility across platforms. It replaces or extends default functionality with improvements specifically aimed at robust error handling and normalizing behavior across different runtime environments. Here's a breakdown of its functionalities and enhancements:
+
+### Key Features of `graceful-fs`:
+
+1. **Error Handling for `EMFILE`:** 
+   - Queues and retries `open` and `readdir` calls if there are too many open file descriptors (`EMFILE` error), thus preventing application crashes.
+
+2. **Command Support Adjustments:**
+   - Fixes the `lchmod` functionality for Node versions prior to 0.6.2.
+   - Implements a no-operation (noop) for `fs.lutimes` if it isn't supported, ensuring that function calls do not fail unnecessarily.
+
+3. **Permission Error Handling:**
+   - Silently ignores `EINVAL` and `EPERM` errors for `chown`, `fchown`, or `lchown` commands if the process isn't running as a root, minimizing disruptions from permission errors.
+   - Makes `lchmod` and `lchown` perform no operations if they are unavailable.
+
+4. **Read Retry Logic:**
+   - Retries reading a file if a `read` operation results in an `EAGAIN` error.
+
+5. **Windows-Specific Improvements:**
+   - Handles `EACCESS` or `EPERM` errors during file renaming by retrying for up to one second, accommodating file locks often caused by antivirus software.
+
+### Usage
+
+- It can be used as a direct replacement for the `fs` module by requiring `graceful-fs` instead.
+- A typical usage involves replacing direct calls to `fs` methods with `graceful-fs` methods, allowing these enhancements and protections to take effect with minimal changes to code.
+
+### Synchronization Limitation
+
+- While enhancing asynchronous file operations, it does not provide improvements for synchronous methods and relies on the user to manually handle any such errors.
+
+### Global Patching
+
+- Offers a `gracefulify` method to patch the global `fs` module or any similar module, to propagate these improvements throughout the application, although this approach should be used cautiously to avoid unintended side-effects.
+
+Here's an example implementation of the `graceful-fs` package:
+
+```javascript
+// graceful-fs.js
+const fs = require('fs');
+const path = require('path');
+
+const queue = [];
+let ready = true;
+let retryLimit = 1000;
+
+/**
+ * Generic queue manager to handle fs operation retries.
+ * @param {Function} fn - The fs function to execute
+ */
+function enqueue(fn) {
+  queue.push(fn);
+  processQueue();
+}
+
+function processQueue() {
+  if (ready && queue.length) {
+    const fn = queue.shift();
+    fn(handleCompletion);
+  }
+}
+
+function handleCompletion() {
+  ready = true;
+  setTimeout(processQueue, 0);
+}
+
+/**
+ * Patch the `rename` function.
+ */
+function gracefulRename(oldPath, newPath, callback) {
+  let retries = 0;
+  const attempt = () => {
+    fs.rename(oldPath, newPath, (err) => {
+      if (err && (err.code === 'EACCES' || err.code === 'EPERM') && retries < retryLimit) {
+        retries++;
+        setTimeout(attempt, 10);
+      } else {
+        callback(err);
+      }
+    });
+  };
+  attempt();
+}
+
+/**
+ * Wrap fs.open to handle EMFILE errors gracefully.
+ */
+function gracefulOpen(path, flags, mode, callback) {
+  const attempt = (retryCount = 0) => {
+    fs.open(path, flags, mode, (err, fd) => {
+      if (err && err.code === 'EMFILE' && retryCount < retryLimit) {
+        enqueue(() => attempt(retryCount + 1));
+      } else {
+        callback(err, fd);
+      }
+    });
+  };
+  attempt();
+}
+
+/**
+ * Patch other methods as needed
+ * TODO: Implement other patched methods similar to open or rename
+ */
+
+// Export the patched `fs` methods
+module.exports = {
+  ...fs,
+  rename: gracefulRename,
+  open: gracefulOpen,
+  // Add other wrapped functions here
+};
+
+// Example usage
+const gracefulFs = require('./graceful-fs');
+gracefulFs.open('myfile.txt', 'r', (err, fd) => {
+  // Handle file open
+});
+```
+
+Feel free to add the other functionalities described in the README to this implementation to suit the exact requirements needed for your application.

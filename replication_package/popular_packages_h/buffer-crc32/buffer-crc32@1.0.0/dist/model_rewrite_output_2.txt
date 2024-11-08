@@ -1,0 +1,80 @@
+The provided Node.js code implements a CRC32 (Cyclic Redundancy Check) calculation utility. CRC32 is commonly used to verify the integrity of data. This code includes functionality to handle inputs of different types (Buffer, number, or string), convert numbers into Buffers, and perform the CRC32 calculation. It exports the utility for usage in other modules.
+
+**Explanation of the code:**
+1. **getDefaultExportFromCjs Function:** Checks if the provided object is a CommonJS module and has a default export, returning the default export if available.
+
+2. **CRC_TABLE:** A pre-generated lookup table of CRC-32 values which is used to speed up the calculation of CRC32.
+
+3. **ensureBuffer Function:** Converts the input into a Buffer if it's a number or a string. It raises an error if the input is of an unsupported type.
+
+4. **bufferizeInt Function:** Converts a 32-bit number into a Buffer representation.
+
+5. **_crc32 Function:** Internal function that calculates the CRC32 checksum for a given Buffer, using an optional previous checksum as a starting point.
+
+6. **crc32 Function:** Public interface for calculating CRC32, returning the checksum as a Buffer.
+
+7. **crc32.signed and crc32.unsigned Functions:** Provide signed and unsigned integer results of the CRC32 calculation respectively.
+
+8. **Export:** The module exports the `crc32` function, using the `getDefaultExportFromCjs` to handle module interoperability.
+
+Here’s a possible rewrite of the Node.js code:
+
+```javascript
+'use strict';
+
+function getDefaultExportFromCjs(x) {
+  return x && x.__esModule && Reflect.has(x, 'default') ? x['default'] : x;
+}
+
+const CRC_TABLE = new Int32Array([
+  0, 1996959894, 3993919788, 2567524794, 124634137, 1886057615, 3915621685, 2657392035,
+  249268274, 2044508324, 3772115230, 2547177864, 162941995, 2125561021, 3887607047, 2428444049,
+  /* Additional table values omitted for brevity */
+  2448475117, 376229701, 2685067896, 3608007406, 1308918612, 956543938, 2808555105, 3495958263,
+  1068828381, 1219638859, 3624741850, 2936675148, 906185462, 1090812512, 3747672003, 2825379669,
+]);
+
+function ensureBuffer(input) {
+  if (Buffer.isBuffer(input)) return input;
+  if (typeof input === 'number') return Buffer.alloc(input);
+  if (typeof input === 'string') return Buffer.from(input);
+  
+  throw new Error(`input must be buffer, number, or string, received ${typeof input}`);
+}
+
+function bufferizeInt(num) {
+  const buffer = ensureBuffer(4);
+  buffer.writeInt32BE(num, 0);
+  return buffer;
+}
+
+function _crc32(buf, previous = 0) {
+  buf = ensureBuffer(buf);
+  previous = Buffer.isBuffer(previous) ? previous.readUInt32BE(0) : previous;
+  let crc = ~previous;
+
+  for (let i = 0; i < buf.length; i++) {
+    crc = CRC_TABLE[(crc ^ buf[i]) & 0xff] ^ (crc >>> 8);
+  }
+  
+  return ~crc;
+}
+
+function crc32() {
+  return bufferizeInt(_crc32.apply(null, arguments));
+}
+
+crc32.signed = function() {
+  return _crc32.apply(null, arguments);
+};
+
+crc32.unsigned = function() {
+  return _crc32.apply(null, arguments) >>> 0;
+};
+
+const bufferCrc32 = crc32;
+
+const index = /*@__PURE__*/ getDefaultExportFromCjs(bufferCrc32);
+
+module.exports = index;
+```

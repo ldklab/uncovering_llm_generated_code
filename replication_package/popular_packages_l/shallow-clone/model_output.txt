@@ -1,0 +1,83 @@
+The `shallow-clone` package aims to create a shallow clone of a variety of JavaScript objects and primitive types. This means that while the top-level structure of the object is cloned, the nested structures are not deeply cloned, and they still refer to the same underlying objects. 
+
+### Supported Types
+The package supports cloning for:
+- Array buffers, arrays, and buffers
+- Dates, errors, maps, and sets
+- Objects and regular expressions
+- Typed arrays (e.g., `Float32Array`)
+- Primitives (e.g., numbers, strings) which are returned as-is
+- Symbols
+
+### Details
+- **Arrays and Objects**: Only the shallow structure is cloned. An array or object itself is duplicated, but nested elements or properties pointing to objects retain references to their original instances.
+- **Regular Expressions**: Regular expressions are cloned including their flags, maintaining their `lastIndex` property.
+- **Primitives**: Cloning a primitive simply returns the primitive itself as primitives are immutable.
+  
+Here is an implementation that reflects these functionalities:
+
+```js
+// shallow-clone.js
+
+function shallowClone(value) {
+  if (value === null || typeof value !== 'object') {
+    return value; // Primitives: return as is
+  }
+
+  if (Array.isArray(value)) {
+    return value.slice(); // Arrays: return shallow copy
+  }
+
+  if (value instanceof Date) {
+    return new Date(value); // Dates: return new date with same time value
+  }
+
+  if (value instanceof RegExp) {
+    const flags = value.flags || (value.global ? 'g' : '') + (value.ignoreCase ? 'i' : '') + (value.multiline ? 'm' : '');
+    const clonedRegex = new RegExp(value.source, flags);
+    clonedRegex.lastIndex = value.lastIndex;
+    return clonedRegex; // RegEx: new RegExp with the same pattern, flags, and lastIndex
+  }
+
+  if (value instanceof Map) {
+    return new Map(value); // Maps: use Map constructor to clone
+  }
+  
+  if (value instanceof Set) {
+    return new Set(value); // Sets: use Set constructor to clone
+  }
+
+  if (ArrayBuffer.isView(value)) {
+    return new value.constructor(value.buffer.slice(0), value.byteOffset, value.length); // Typed arrays: construct with buffer slice
+  }
+
+  if (value instanceof ArrayBuffer) {
+    return value.slice(0); // ArrayBuffer: use slice for shallow copy
+  }
+  
+  if (typeof value === 'object') {
+    return Object.assign({}, value); // Objects: use Object.assign for shallow copy
+  }
+
+  throw new TypeError('Unsupported type for shallow clone');
+}
+
+module.exports = shallowClone;
+
+// Usage Examples
+let arr = [{ a: 0 }, { b: 1 }];
+let arrClone = shallowClone(arr);
+console.log(arrClone, arrClone[0] === arr[0]); // [{ 'a': 0 }, { 'b': 1 }], true
+
+let obj = { a: 1, b: { c: 3 } };
+let objClone = shallowClone(obj);
+console.log(objClone, objClone.b === obj.b); // { a: 1, b: { c: 3 } }, true
+
+let regex = /foo/g;
+let regexClone = shallowClone(regex);
+console.log(regexClone, regexClone.lastIndex); // /foo/g, 0
+
+console.log(shallowClone(123)); // 123
+console.log(shallowClone("test")); // "test"
+```
+This code defines a module that can clone supported types, leveraging JavaScript's language features like constructors and methods to ensure a shallow clone is made.

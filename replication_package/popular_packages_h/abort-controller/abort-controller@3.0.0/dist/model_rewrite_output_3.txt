@@ -1,0 +1,117 @@
+The Node.js code provided implements an `AbortSignal` and `AbortController` similar to the ones in the DOM API, useful for canceling ongoing tasks or requests. Here is a breakdown of the functionality:
+
+1. **AbortSignal Class**: 
+   - Extends `EventTarget` from the `event-target-shim` library.
+   - Cannot be instantiated directly to prevent direct creation outside set patterns.
+   - The key feature is the `aborted` property, indicating whether the signal is in the "aborted" state, managed through a `WeakMap` (`abortedFlags`).
+
+2. **AbortController Class**:
+   - Responsible for creating and managing an `AbortSignal`.
+   - Offers methods to create signals and abort them, changing the signal's state, which is also stored in a `WeakMap` (`signals`).
+
+3. **Functions and Helpers**:
+   - `createAbortSignal()`: Returns a constructed `AbortSignal` object with an initial non-aborted state.
+   - `abortSignal(signal)`: Sets a specified signal's state to aborted and dispatches an `abort` event.
+   - `getSignal(controller)`: Retrieves the associated signal from an `AbortController`.
+
+4. **Symbols and Enumerability**: 
+   - Uses `Symbol.toStringTag` to ensure the string representation of objects is consistent with their types.
+   - Configures properties to be enumerable.
+
+5. **Exporting**:
+   - The module exports both the `AbortController` and `AbortSignal` for external use.
+
+Here is a possible rewritten version of the code:
+
+```javascript
+'use strict';
+
+const { EventTarget, defineEventAttribute } = require('event-target-shim');
+
+class AbortSignal extends EventTarget {
+    constructor() {
+        super();
+        throw new TypeError("AbortSignal cannot be constructed directly");
+    }
+
+    get aborted() {
+        const isAborted = abortedFlags.get(this);
+        if (typeof isAborted !== "boolean") {
+            throw new TypeError(`Expected 'this' to be an 'AbortSignal' object, but got ${this === null ? "null" : typeof this}`);
+        }
+        return isAborted;
+    }
+}
+
+defineEventAttribute(AbortSignal.prototype, "abort");
+
+function createAbortSignal() {
+    const signal = Object.create(AbortSignal.prototype);
+    EventTarget.call(signal);
+    abortedFlags.set(signal, false);
+    return signal;
+}
+
+function abortSignal(signal) {
+    if (abortedFlags.get(signal) === false) {
+        abortedFlags.set(signal, true);
+        signal.dispatchEvent({ type: "abort" });
+    }
+}
+
+const abortedFlags = new WeakMap();
+Object.defineProperties(AbortSignal.prototype, {
+    aborted: { enumerable: true },
+});
+
+if (typeof Symbol === "function" && typeof Symbol.toStringTag === "symbol") {
+    Object.defineProperty(AbortSignal.prototype, Symbol.toStringTag, {
+        configurable: true,
+        value: "AbortSignal",
+    });
+}
+
+class AbortController {
+    constructor() {
+        signals.set(this, createAbortSignal());
+    }
+
+    get signal() {
+        return getSignal(this);
+    }
+
+    abort() {
+        abortSignal(getSignal(this));
+    }
+}
+
+const signals = new WeakMap();
+
+function getSignal(controller) {
+    const signal = signals.get(controller);
+    if (!signal) {
+        throw new TypeError(`Expected 'this' to be an 'AbortController' object, but got ${controller === null ? "null" : typeof controller}`);
+    }
+    return signal;
+}
+
+Object.defineProperties(AbortController.prototype, {
+    signal: { enumerable: true },
+    abort: { enumerable: true },
+});
+
+if (typeof Symbol === "function" && typeof Symbol.toStringTag === "symbol") {
+    Object.defineProperty(AbortController.prototype, Symbol.toStringTag, {
+        configurable: true,
+        value: "AbortController",
+    });
+}
+
+exports.AbortController = AbortController;
+exports.AbortSignal = AbortSignal;
+exports.default = AbortController;
+
+module.exports = AbortController;
+module.exports.AbortController = module.exports["default"] = AbortController;
+module.exports.AbortSignal = AbortSignal;
+```

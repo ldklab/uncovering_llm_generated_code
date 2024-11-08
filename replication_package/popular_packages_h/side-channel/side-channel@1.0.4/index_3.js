@@ -1,0 +1,111 @@
+'use strict';
+
+const GetIntrinsic = require('get-intrinsic');
+const callBound = require('call-bind/callBound');
+const inspect = require('object-inspect');
+
+const $TypeError = GetIntrinsic('%TypeError%');
+const $WeakMap = GetIntrinsic('%WeakMap%', true);
+const $Map = GetIntrinsic('%Map%', true);
+
+const $weakMapGet = callBound('WeakMap.prototype.get', true);
+const $weakMapSet = callBound('WeakMap.prototype.set', true);
+const $weakMapHas = callBound('WeakMap.prototype.has', true);
+const $mapGet = callBound('Map.prototype.get', true);
+const $mapSet = callBound('Map.prototype.set', true);
+const $mapHas = callBound('Map.prototype.has', true);
+
+function listGetNode(list, key) {
+    let prev = list;
+    let curr;
+    while ((curr = prev.next) !== null) {
+        if (curr.key === key) {
+            prev.next = curr.next;
+            curr.next = list.next;
+            list.next = curr;
+            return curr;
+        }
+        prev = curr;
+    }
+}
+
+function listGet(objects, key) {
+    const node = listGetNode(objects, key);
+    return node && node.value;
+}
+
+function listSet(objects, key, value) {
+    const node = listGetNode(objects, key);
+    if (node) {
+        node.value = value;
+    } else {
+        objects.next = { key, next: objects.next, value };
+    }
+}
+
+function listHas(objects, key) {
+    return !!listGetNode(objects, key);
+}
+
+module.exports = function getSideChannel() {
+    let $wm;
+    let $m;
+    let $o;
+    const channel = {
+        assert(key) {
+            if (!this.has(key)) {
+                throw new $TypeError('Side channel does not contain ' + inspect(key));
+            }
+        },
+        get(key) {
+            if ($WeakMap && key && typeof key === 'object' || typeof key === 'function') {
+                if ($wm) {
+                    return $weakMapGet($wm, key);
+                }
+            } else if ($Map) {
+                if ($m) {
+                    return $mapGet($m, key);
+                }
+            } else {
+                if ($o) {
+                    return listGet($o, key);
+                }
+            }
+        },
+        has(key) {
+            if ($WeakMap && key && typeof key === 'object' || typeof key === 'function') {
+                if ($wm) {
+                    return $weakMapHas($wm, key);
+                }
+            } else if ($Map) {
+                if ($m) {
+                    return $mapHas($m, key);
+                }
+            } else {
+                if ($o) {
+                    return listHas($o, key);
+                }
+            }
+            return false;
+        },
+        set(key, value) {
+            if ($WeakMap && key && typeof key === 'object' || typeof key === 'function') {
+                if (!$wm) {
+                    $wm = new $WeakMap();
+                }
+                $weakMapSet($wm, key, value);
+            } else if ($Map) {
+                if (!$m) {
+                    $m = new $Map();
+                }
+                $mapSet($m, key, value);
+            } else {
+                if (!$o) {
+                    $o = { key: {}, next: null };
+                }
+                listSet($o, key, value);
+            }
+        }
+    };
+    return channel;
+};

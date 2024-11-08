@@ -1,0 +1,84 @@
+The Node.js code provides utility functions for binding the `Function.prototype.call` method to ensure that function methods work as expected even if the prototype methods have been modified or deleted. The two main exported functions, `callBind` and `callBound`, serve different purposes:
+
+1. **callBind**: It allows binding of the `call` method to a given function `fn`. When the bound function is invoked, it ensures that `fn` is called with the correct `this` value and arguments using `Function.prototype.call`.
+
+2. **callBound**: This function retrieves a method from a specified path (e.g., `Array.prototype.slice`), binds it with the `call` method, and returns a function. This ensures that the method can be invoked on any given object, even if the original method on the prototype is replaced or deleted.
+
+The `test.js` file includes tests to demonstrate and verify the functionality of these bindings.
+
+Below is the rewritten Node.js code consolidating the above functionality:
+
+```javascript
+// call-bind/index.js
+'use strict';
+
+/**
+ * Bind `Function.prototype.call` to a given function `fn`.
+ * @param {Function} fn - The function to bind.
+ * @returns {Function} - A function with bound `call`.
+ */
+function callBind(fn) {
+  return function boundFunction() {
+    return Function.prototype.call.apply(fn, arguments);
+  };
+}
+
+// call-bind/callBound.js
+'use strict';
+
+/**
+ * Retrieve a method from an object and bind it, ensuring it works
+ * even if the original prototype method is modified or deleted.
+ * @param {string} methodPath - The path to the method (e.g., 'Array.prototype.slice').
+ * @returns {Function} - A bound function.
+ */
+function callBound(methodPath) {
+  const pathParts = methodPath.split('.');
+  let obj = globalThis;
+
+  for (let i = 0; i < pathParts.length; i++) {
+    obj = obj[pathParts[i]];
+  }
+
+  if (typeof obj !== 'function') {
+    throw new TypeError('path must resolve to a function');
+  }
+
+  return Function.prototype.call.bind(obj);
+}
+
+// package.json
+const packageJson = {
+  "name": "call-bind",
+  "version": "1.0.0",
+  "main": "index.js",
+  "devDependencies": {
+    "assert": "^1.5.0"
+  },
+  "scripts": {
+    "test": "node test.js"
+  }
+};
+
+// test.js
+const assert = require('assert');
+
+// Test callBind
+const fBound = callBind(function f(a, b) {
+  assert.equal(this, 1);
+  assert.equal(a, 2);
+  assert.equal(b, 3);
+  assert.equal(arguments.length, 2);
+});
+delete Function.prototype.call;
+delete Function.prototype.bind;
+fBound(1, 2, 3);
+
+// Test callBound
+const slice = callBound('Array.prototype.slice');
+assert.deepEqual(slice([1, 2, 3, 4], 1, -1), [2, 3]);
+
+console.log('All tests passed.');
+
+module.exports = { callBind, callBound };
+```

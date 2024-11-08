@@ -1,0 +1,106 @@
+The provided Node.js code is an implementation of an `extend` function that mimics a mixin or merge utility. It combines properties from one or more source objects into a target object. The function can perform both shallow and deep copies, depending on whether the first argument provided is a boolean and set to `true`.
+
+Here is a breakdown of the functionality:
+
+1. **Utilities**: 
+   - `hasOwn` and `toStr` are saved from `Object.prototype` for checking property ownership and object type.
+   - `defineProperty` and `gOPD` are saved from `Object` for advanced property manipulation.
+
+2. **Helper Functions**:
+   - `isArray` checks if a value is an array.
+   - `isPlainObject` checks if a value is a plain object (i.e., created using `{}` literals or `new Object`).
+   - `setProperty` adds a property to an object, handling `__proto__` cases to avoid prototype pollution.
+   - `getProperty` retrieves properties, ensuring `__proto__` access is safe.
+
+3. **Core Function: `extend`**:
+   - The `extend` function takes multiple arguments and merges them into the first argument. It can handle deep copying if the first argument is `true`.
+   - It loops through each source object, copying properties to the target.
+   - If deep merging is required and the property value is an object or array, it recursively applies `extend`.
+   - Defaults to shallow merging by copying direct values from source to target when not deep merging.
+
+Here's a possible rewrite of this code:
+
+```javascript
+'use strict';
+
+const { hasOwnProperty, toString } = Object.prototype;
+const { defineProperty, getOwnPropertyDescriptor } = Object;
+
+const isArray = Array.isArray || (arr => toString.call(arr) === '[object Array]');
+
+const isPlainObject = (obj) => {
+	if (!obj || toString.call(obj) !== '[object Object]') return false;
+
+	const hasOwnConstructor = hasOwnProperty.call(obj, 'constructor');
+	const hasIsPrototypeOf = obj.constructor && obj.constructor.prototype && 
+		hasOwnProperty.call(obj.constructor.prototype, 'isPrototypeOf');
+
+	if (obj.constructor && !hasOwnConstructor && !hasIsPrototypeOf) return false;
+
+	let key;
+	for (key in obj); // Enumerate properties
+
+	return typeof key === 'undefined' || hasOwnProperty.call(obj, key);
+};
+
+const setProperty = (target, { name, newValue }) => {
+	if (defineProperty && name === '__proto__') {
+		defineProperty(target, name, {
+			enumerable: true,
+			configurable: true,
+			value: newValue,
+			writable: true
+		});
+	} else {
+		target[name] = newValue;
+	}
+};
+
+const getProperty = (obj, name) => {
+	if (name === '__proto__') {
+		if (!hasOwnProperty.call(obj, name)) {
+			return undefined;
+		} else if (getOwnPropertyDescriptor) {
+			return getOwnPropertyDescriptor(obj, name).value;
+		}
+	}
+	return obj[name];
+};
+
+module.exports = function extend() {
+	let target = arguments[0];
+	let i = 1;
+	let deep = false;
+
+	if (typeof target === 'boolean') {
+		deep = target;
+		target = arguments[1] || {};
+		i = 2;
+	}
+	if (target == null || (typeof target !== 'object' && typeof target !== 'function')) {
+		target = {};
+	}
+
+	for (; i < arguments.length; ++i) {
+		const options = arguments[i];
+		if (options != null) {
+			for (let name in options) {
+				const src = getProperty(target, name);
+				const copy = getProperty(options, name);
+
+				if (target !== copy) {
+					let clone;
+					if (deep && copy && (isPlainObject(copy) || (isArray(copy)))) {
+						clone = src && (isArray(copy) ? isArray(src) ? src : [] : isPlainObject(src) ? src : {});
+						setProperty(target, { name, newValue: extend(deep, clone, copy) });
+					} else if (typeof copy !== 'undefined') {
+						setProperty(target, { name, newValue: copy });
+					}
+				}
+			}
+		}
+	}
+
+	return target;
+};
+```

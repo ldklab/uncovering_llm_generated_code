@@ -1,0 +1,65 @@
+The Node.js code provided is a utility for determining if a specified module is considered a "core" module within Node.js by checking against a set of data and version constraints. Here's a breakdown of its functionality:
+
+1. **Dependencies and Imports:**
+   - The code uses the `has` package to check if a key exists in an object.
+   - It imports a JSON file `core.json`, which presumably contains data defining core modules and possibly their version constraints.
+
+2. **Function Definitions:**
+   - `specifierIncluded`: This function checks if a given Node.js version (`current`) satisfies a version specifier (`specifier`). The specifier might include operators like `<` or `>=`.
+   - `matchesRange`: This function checks if a Node.js version matches all of the specifiers joined by `&&`.
+   - `versionIncluded`: This function checks if a Node.js version satisfies a single or multiple specifiers. It handles different cases based on whether the input is a boolean, a single specifier, or an array of specifiers.
+
+3. **Main Exported Function:**
+   - `isCore`: This function is exported and determines if a given module name `x` is a core module for a specified `nodeVersion`. It checks if the module exists in the data (`core.json`) and whether the version constraints (if any) are satisfied.
+
+Here is a rewritten version of the code:
+
+```javascript
+'use strict';
+
+const has = require('has');
+const data = require('./core.json');
+
+function specifierIncluded(currentVersion, specifier) {
+  const currentParts = currentVersion.split('.').map(Number);
+  const [operator, version] = specifier.includes(' ') ? specifier.split(' ') : ['=', specifier];
+  const specVersionParts = version.split('.').map(Number);
+
+  for (let i = 0; i < 3; i++) {
+    const currentPart = currentParts[i] || 0;
+    const specPart = specVersionParts[i] || 0;
+    if (currentPart !== specPart) {
+      if (operator === '<') return currentPart < specPart;
+      if (operator === '>=') return currentPart >= specPart;
+      return false;
+    }
+  }
+
+  return operator === '>=';
+}
+
+function matchesRange(currentVersion, range) {
+  const specifiers = range.split(/ ?&& ?/);
+  return specifiers.every(specifier => specifierIncluded(currentVersion, specifier));
+}
+
+function versionIncluded(nodeVersion, specifierValue) {
+  if (typeof specifierValue === 'boolean') return specifierValue;
+
+  const currentVersion = nodeVersion || (process.versions && process.versions.node);
+
+  if (typeof currentVersion !== 'string') {
+    throw new TypeError(nodeVersion ? 'A valid node version is required' : 'Unable to determine current node version');
+  }
+
+  if (Array.isArray(specifierValue)) {
+    return specifierValue.some(range => matchesRange(currentVersion, range));
+  }
+
+  return matchesRange(currentVersion, specifierValue);
+}
+
+module.exports = function isCore(moduleName, nodeVersion) {
+  return has(data, moduleName) && versionIncluded(nodeVersion, data[moduleName]);
+};
+```

@@ -1,0 +1,70 @@
+The given Node.js code defines two functions, `sign` and `unsign`, for signing and unsigning data using cryptographic operations. These functions are based on generating and verifying HMAC signatures using the SHA-256 algorithm.
+
+1. **sign(val, secret)**:
+   - This function takes a string `val` and a `secret` key.
+   - It throws a TypeError if `val` is not a string or if `secret` is null.
+   - It creates an HMAC signature of the value using SHA-256 and the given `secret`, then appends this signature to the `val`, encoding the signature in base64 and removing any trailing equal signs (`=`).
+   - The signed string is returned in the format: `val.signature`.
+
+2. **unsign(input, secret)**:
+   - This function takes a `signed` string `input` and a `secret` key.
+   - It throws a TypeError if `input` is not a string or if `secret` is null.
+   - It extracts the original value part from the `input` by splitting at the last dot (`.`).
+   - It then re-generates the expected signed string using the extracted value and the same `secret`.
+   - It uses `crypto.timingSafeEqual` to compare the provided signed `input` with the expected signature buffer in a timing-safe manner.
+   - If they match, it returns the original value; otherwise, it returns `false`.
+
+Here's a rewrittten version of the code in a single markdown code block:
+
+```javascript
+const crypto = require('crypto');
+
+/**
+ * Sign the given value with a secret key.
+ * 
+ * @param {string} val - The value to be signed.
+ * @param {string|NodeJS.ArrayBufferView|crypto.KeyObject} secret - The secret key for signing.
+ * @returns {string} - Returns the signed value.
+ */
+exports.sign = function(val, secret) {
+  if (typeof val !== 'string') {
+    throw new TypeError("Cookie value must be provided as a string.");
+  }
+  if (secret == null) {
+    throw new TypeError("Secret key must be provided.");
+  }
+  
+  const hmac = crypto.createHmac('sha256', secret);
+  const signature = hmac.update(val).digest('base64').replace(/=+$/, '');
+  
+  return `${val}.${signature}`;
+};
+
+/**
+ * Unsign the given value with a secret key.
+ * 
+ * @param {string} input - The signed input to verify.
+ * @param {string|NodeJS.ArrayBufferView|crypto.KeyObject} secret - The secret key for verification.
+ * @returns {string|boolean} - Returns the original value if the signature matches, otherwise false.
+ */
+exports.unsign = function(input, secret) {
+  if (typeof input !== 'string') {
+    throw new TypeError("Signed cookie string must be provided.");
+  }
+  if (secret == null) {
+    throw new TypeError("Secret key must be provided.");
+  }
+  
+  const separatorIndex = input.lastIndexOf('.');
+  const tentativeValue = input.slice(0, separatorIndex);
+  const expected = exports.sign(tentativeValue, secret);
+  
+  const expectedBuffer = Buffer.from(expected);
+  const inputBuffer = Buffer.from(input);
+  
+  const signatureValid = expectedBuffer.length === inputBuffer.length &&
+    crypto.timingSafeEqual(expectedBuffer, inputBuffer);
+    
+  return signatureValid ? tentativeValue : false;
+};
+```

@@ -1,0 +1,83 @@
+The provided Node.js code is a utility module for parsing and formatting time durations. It allows conversion between human-readable time strings (e.g., "2 days" or "1.5h") and milliseconds, and vice versa. Here's a breakdown of its functionality:
+
+- **Constants**: It defines time constants in milliseconds for conversion, such as seconds (`s`), minutes (`m`), hours (`h`), days (`d`), weeks (`w`), and years (`y`).
+
+- **Main Function**: The module exports a function that accepts a value (`val`) and an optional `options` object. This function can either parse a human-readable time string into milliseconds or format a given number of milliseconds into a human-readable string. If `options.long` is set to `true`, it uses a more verbose format.
+
+- **Parsing**: If `val` is a string, it tries to parse it into the equivalent milliseconds using the `parse` function. It matches strings like "2 days", "1.5h", etc., using regular expressions and converts them to milliseconds based on the suffix provided (e.g., "d" for days).
+
+- **Formatting**: If `val` is a number, it either uses the `fmtShort` or `fmtLong` helper functions to convert the milliseconds into a human-readable string. The `fmtShort` function returns abbreviated time strings like "1d", while `fmtLong` provides longer, fully-worded versions like "1 day".
+
+- **Pluralization**: The `plural` function is used within `fmtLong` to correctly pluralize units (e.g., "1 hour" vs "2 hours").
+
+Here's the rewritten Node.js code encapsulating the same functionality:
+
+```javascript
+const MILLISECONDS = 1000;
+const SECONDS = MILLISECONDS * 60;
+const MINUTES = SECONDS * 60;
+const HOURS = MINUTES * 24;
+const DAYS = HOURS * 7;
+const YEARS = HOURS * 365.25;
+
+module.exports = function (val, options = {}) {
+  const type = typeof val;
+  if (type === 'string' && val.length > 0) {
+    return parseString(val);
+  } else if (type === 'number' && isFinite(val)) {
+    return options.long ? formatLong(val) : formatShort(val);
+  }
+  throw new Error(`val is not a non-empty string or a valid number. val=${JSON.stringify(val)}`);
+};
+
+function parseString(str) {
+  if (str.length > 100) return;
+  const match = /^(-?(?:\d+)?\.?\d+) *(milliseconds?|msecs?|ms|seconds?|secs?|s|minutes?|mins?|m|hours?|hrs?|h|days?|d|weeks?|w|years?|yrs?|y)?$/i.exec(str);
+  if (!match) return;
+  const value = parseFloat(match[1]);
+  const unit = (match[2] || 'ms').toLowerCase();
+
+  const unitMap = {
+    'y': YEARS, 'yr': YEARS, 'yrs': YEARS, 'year': YEARS, 'years': YEARS,
+    'w': DAYS, 'week': DAYS, 'weeks': DAYS,
+    'd': HOURS, 'day': HOURS, 'days': HOURS,
+    'h': MINUTES, 'hr': MINUTES, 'hrs': MINUTES, 'hour': MINUTES, 'hours': MINUTES,
+    'm': SECONDS, 'min': SECONDS, 'mins': SECONDS, 'minute': SECONDS, 'minutes': SECONDS,
+    's': MILLISECONDS, 'sec': MILLISECONDS, 'secs': MILLISECONDS, 'second': MILLISECONDS, 'seconds': MILLISECONDS,
+    'ms': 1, 'msec': 1, 'msecs': 1, 'millisecond': 1, 'milliseconds': 1
+  };
+
+  return value * (unitMap[unit] || 0);
+}
+
+function formatShort(ms) {
+  const absMs = Math.abs(ms);
+  if (absMs >= HOURS) return Math.round(ms / HOURS) + 'd';
+  if (absMs >= MINUTES) return Math.round(ms / MINUTES) + 'h';
+  if (absMs >= SECONDS) return Math.round(ms / SECONDS) + 'm';
+  if (absMs >= MILLISECONDS) return Math.round(ms / MILLISECONDS) + 's';
+  return ms + 'ms';
+}
+
+function formatLong(ms) {
+  const absMs = Math.abs(ms);
+  const units = [
+    { threshold: HOURS, name: 'day' },
+    { threshold: MINUTES, name: 'hour' },
+    { threshold: SECONDS, name: 'minute' },
+    { threshold: MILLISECONDS, name: 'second' }
+  ];
+
+  for (const unit of units) {
+    if (absMs >= unit.threshold) {
+      return plural(ms, absMs, unit.threshold, unit.name);
+    }
+  }
+  return ms + ' ms';
+}
+
+function plural(ms, absMs, unit, name) {
+  const count = Math.round(ms / unit);
+  return `${count} ${name}${absMs >= unit * 1.5 ? 's' : ''}`;
+}
+```

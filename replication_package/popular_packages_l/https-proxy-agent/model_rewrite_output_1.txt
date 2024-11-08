@@ -1,0 +1,67 @@
+The given Node.js code provides functionality to make HTTPS requests through an HTTP proxy server. Here is a breakdown of what this code does:
+
+1. **Module Imports**: It imports the necessary modules from Node.js - `http` for standard HTTP functionalities, `https` for HTTPS requests, and `url` for parsing URLs.
+
+2. **HttpsProxyAgent Class**: This class extends `http.Agent` to create a custom agent that handles proxy requests:
+   - The `constructor` accepts the `proxyUrl` and initializes the proxy parameters using the URL API.
+   - The `createConnection` method overrides the default connection behavior to establish a tunnel through an HTTP proxy using the `CONNECT` method. When the proxy responds with a 200 status, indicating a successful connection, it proceeds with creating the actual connection through the proxy.
+
+3. **HTTPS Request Example**: The function `httpsRequestExample` provides a demonstration of making an HTTPS request to `https://example.com` using the `HttpsProxyAgent` to connect via a specified proxy.
+
+4. **Export Statements**: It exports the `HttpsProxyAgent` class and the example function so they can be used in other modules.
+
+Here is a possible rewrite of the code maintaining the same functionality: 
+
+```javascript
+// Import required modules
+const http = require('http');
+const https = require('https');
+const { URL } = require('url');
+
+// HttpsProxyAgent class definition
+class HttpsProxyAgent extends http.Agent {
+  constructor(proxyUrl, options = {}) {
+    super(options);
+    this.proxy = new URL(proxyUrl);
+    this.headers = options.headers || {};
+  }
+
+  // Method to handle connection via proxy
+  createConnection(options, callback) {
+    const proxyOptions = {
+      hostname: this.proxy.hostname,
+      port: this.proxy.port,
+      method: 'CONNECT',
+      path: `${options.hostname}:${options.port}`,
+      headers: this.headers,
+    };
+
+    const req = http.request(proxyOptions);
+    req.end();
+
+    req.on('connect', (res, socket, head) => {
+      if (res.statusCode === 200) {
+        options.socket = socket;
+        const conn = super.createConnection(options, callback);
+        callback(null, conn);
+      } else {
+        callback(new Error(`Proxy connection failed with status code: ${res.statusCode}`));
+      }
+    });
+
+    req.on('error', err => callback(err));
+  }
+}
+
+// Usage example: HTTPS request via HTTPS proxy
+function httpsRequestExample() {
+  const agent = new HttpsProxyAgent('http://168.63.76.32:3128');
+  https.get('https://example.com', { agent }, (res) => {
+    console.log('"response" event!', res.headers);
+    res.pipe(process.stdout);
+  });
+}
+
+// Exporting the HttpsProxyAgent and examples for use in other modules
+module.exports = { HttpsProxyAgent, httpsRequestExample };
+```

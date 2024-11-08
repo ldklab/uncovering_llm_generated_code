@@ -1,0 +1,79 @@
+The Node.js code defines a utility function called `requireDirectory` meant to dynamically include and structure modules from a specified directory (or from the directory of the module executing the script, if no directory is provided). Here's an explanation of its functionality:
+
+1. **Configuration via `defaultOptions`:** Default options dictate how files are included, filtered, renamed, and processed when loading from a directory. These options can be overridden.
+
+2. **Checking File Inclusion:** The `checkFileInclusion` function determines whether files should be included based on extension, regular expressions, or functions specified through `include` and `exclude` criteria in the options.
+
+3. **Directory Traversal and Module Inclusion:** 
+   - The `requireDirectory` function traverses the specified directory.
+   - It determines if each item is a file or subdirectory.
+   - Files are included based on the criteria defined in the `checkFileInclusion` function while respecting the recursion setting for subdirectories.
+   - The modules are imported using Node's `require` and structured in an object where keys represent module names (potentially renamed as per the options).
+
+4. **Options Handling:** 
+   - The function supports extension-based filtering, control over recursive directory traversal, transformation of module names before inclusion, and visitor functions to process the module objects once loaded.
+
+Here is the rewritten code based on the functionality:
+
+```javascript
+'use strict';
+
+const fs = require('fs');
+const path = require('path');
+
+const defaultOptions = {
+  extensions: ['js', 'json', 'coffee'],
+  recurse: true,
+  rename: (name) => name,
+  visit: (obj) => obj
+};
+
+function checkFileInclusion(filepath, filename, options) {
+  const extPattern = new RegExp(`\\.(${options.extensions.join('|')})$`, 'i');
+  const passesInclude = !options.include || (
+    (options.include instanceof RegExp && options.include.test(filepath)) ||
+    (typeof options.include === 'function' && options.include(filepath, filename))
+  );
+
+  const passesExclude = !options.exclude || !(
+    (options.exclude instanceof RegExp && options.exclude.test(filepath)) ||
+    (typeof options.exclude === 'function' && options.exclude(filepath, filename))
+  );
+
+  return extPattern.test(filename) && passesInclude && passesExclude;
+}
+
+function requireDirectory(module, dirPath, options = {}) {
+  let retval = {};
+
+  if (typeof dirPath !== 'string') {
+    options = dirPath || {};
+    dirPath = null;
+  }
+
+  options = { ...defaultOptions, ...options };
+
+  const basePath = dirPath ? path.resolve(path.dirname(module.filename), dirPath) : path.dirname(module.filename);
+
+  fs.readdirSync(basePath).forEach((filename) => {
+    const fullPath = path.join(basePath, filename);
+    const stats = fs.statSync(fullPath);
+
+    if (stats.isDirectory() && options.recurse) {
+      const subTree = requireDirectory(module, fullPath, options);
+      if (Object.keys(subTree).length) {
+        retval[options.rename(filename, fullPath, filename)] = subTree;
+      }
+    } else if (fullPath !== module.filename && checkFileInclusion(fullPath, filename, options)) {
+      const moduleKey = filename.slice(0, -path.extname(filename).length);
+      const loadedModule = module.require(fullPath);
+      retval[options.rename(moduleKey, fullPath, filename)] = options.visit(loadedModule, fullPath, filename) || loadedModule;
+    }
+  });
+
+  return retval;
+}
+
+module.exports = requireDirectory;
+module.exports.defaults = defaultOptions;
+```

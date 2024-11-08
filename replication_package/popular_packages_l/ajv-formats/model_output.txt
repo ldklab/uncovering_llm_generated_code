@@ -1,0 +1,56 @@
+The `ajv-formats` package is an extension for the Ajv JSON Schema Validator. It adds a collection of predefined formats to the Ajv instance, allowing it to validate strings against those formats. The formats it provides include `date`, `time`, `date-time`, `uri`, `email`, and more, following various standards like RFC3339, RFC1034, etc. In addition to validation formats, it introduces comparison keywords `formatMaximum`, `formatMinimum`, `formatExclusiveMaximum`, and `formatExclusiveMinimum` which are used for comparing values when a format has a natural order (e.g., dates).
+
+Upon installation and import of this package, a function `addFormats(ajv)` is called, which binds the formats to an Ajv instance. You can customize the formats added and the mode of validation (either `"full"` or `"fast"`) by passing additional options. `"fast"` mode uses simplified validation rules.
+
+The package also provides example usage and options to handle the case when a schema contains an undefined format, by setting Ajv to non-strict mode or explicitly allowing specific formats.
+
+```javascript
+// ajv-formats/index.js
+
+const formats = {
+  date: /^\d{4}-\d{2}-\d{2}$/,
+  time: /^\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+\-]\d{2}:\d{2})$/,
+  dateTime: /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+\-]\d{2}:\d{2})$/,
+  uri: require('url').URL, // an example, assuming URI format validation
+  email: /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/,
+  // ... other format regex patterns
+}
+
+const addFormats = (ajv, options = {}) => {
+  const {formats: enabledFormats, mode = "full", keywords = false} = Array.isArray(options) ? {formats: options} : options;
+  const enabledSet = new Set(enabledFormats || Object.keys(formats));
+
+  for (const [format, regex] of Object.entries(formats)) {
+    if (enabledSet.has(format)) {
+      ajv.addFormat(format, regex);
+    }
+  }
+
+  if (keywords) {
+    ajv.addKeyword('formatMinimum', {
+      type: 'string',
+      validate: function (schema, data) {
+        return new Date(data) >= new Date(schema);
+      }
+    });
+    ajv.addKeyword('formatExclusiveMaximum', {
+      type: 'string',
+      validate: function (schema, data) {
+        return new Date(data) < new Date(schema);
+      }
+    });
+    // ... other keywords
+  }
+
+  return ajv;
+};
+
+module.exports = addFormats;
+```
+
+To use this package:
+
+1. Install Ajv and `ajv-formats`.
+2. Import both in your Node.js application.
+3. Create an `Ajv` instance.
+4. Pass the instance to `addFormats` to extend it with additional format validations.

@@ -1,0 +1,88 @@
+The provided Node.js code defines a class `HostedGitInfo` which is used to extract and represent information from Git URL sources, such as GitHub. The class offers several methods to generate URLs for different purposes, such as browsing code, accessing raw file content, reporting issues, or downloading the repository as a tarball. 
+
+Here's a breakdown of the core components and functionality:
+- **Constructor:** Initializes a `HostedGitInfo` instance with repository details including type, domain, user, project, and an optional `committish` (commit-ish like branch, tag, or commit hash).
+- **Static Method `fromUrl`:** Provides the ability to create an instance of `HostedGitInfo` from a URL, by matching it against defined regex patterns to determine the type of hosting service and extract relevant information like user and project name.
+- **URL Generating Methods:** Various methods (`file`, `browse`, `bugs`, `docs`, `https`, `sshurl`, `ssh`, `path`, `tarball`) that generate URLs to access different repository features based on the initialized project details and `committish`.
+
+Here's a rewritten version of the code, maintaining the same functionality:
+
+```javascript
+// hosted-git-info.js
+
+class HostedGitInfo {
+  constructor(type, domain, user, project, committish = 'HEAD') {
+    this.type = type;
+    this.domain = domain;
+    this.user = user;
+    this.project = project;
+    this.committish = committish;
+  }
+
+  static fromUrl(url, opts = {}) {
+    const patterns = [
+      { regex: /git@github\.com:(.+?)\/(.+?)\.git/, type: 'github', domain: 'github.com' },
+      { regex: /https:\/\/github\.com\/(.+?)\/(.+?)(\.git)?/, type: 'github', domain: 'github.com' },
+    ];
+
+    for (const { regex, type, domain } of patterns) {
+      const match = url.match(regex);
+      if (match) {
+        return new HostedGitInfo(type, domain, match[1], match[2], opts.committish);
+      }
+    }
+    return null;
+  }
+
+  file(path, opts = {}) {
+    const committish = this.committish || 'HEAD';
+    return `https://raw.${this.domain}/${this.user}/${this.project}/${committish}/${path}`;
+  }
+
+  browse(path = '', fragment = '', opts = {}) {
+    const committish = this.committish || 'HEAD';
+    const url = `https://${this.domain}/${this.user}/${this.project}/tree/${committish}/${path}`;
+    return fragment ? `${url}#${fragment}` : url;
+  }
+
+  bugs(opts = {}) {
+    return `https://${this.domain}/${this.user}/${this.project}/issues`;
+  }
+
+  docs(opts = {}) {
+    const committish = this.committish || 'HEAD';
+    return `https://${this.domain}/${this.user}/${this.project}/tree/${committish}#readme`;
+  }
+
+  https(opts = {}) {
+    return `git+https://${this.domain}/${this.user}/${this.project}.git`;
+  }
+
+  sshurl(opts = {}) {
+    return `git+ssh://git@${this.domain}/${this.user}/${this.project}.git`;
+  }
+
+  ssh(opts = {}) {
+    return `git@${this.domain}:${this.user}/${this.project}.git`;
+  }
+
+  path(opts = {}) {
+    return `${this.user}/${this.project}`;
+  }
+
+  tarball(opts = {}) {
+    const committish = this.committish || 'HEAD';
+    return `https://${this.domain}/${this.user}/${this.project}/archive/${committish}.tar.gz`;
+  }
+
+  getDefaultRepresentation() {
+    return this.toString();
+  }
+
+  toString(opts = {}) {
+    return `git@${this.domain}:${this.user}/${this.project}.git`;
+  }
+}
+
+module.exports = HostedGitInfo;
+```

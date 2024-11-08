@@ -1,0 +1,75 @@
+The provided Node.js code defines a module that allows asynchronous scheduling of tasks to be executed as soon as possible, without blocking the main execution thread. The module exports two functions, `asap` and `rawAsap`, which schedule tasks to run on the event loop. Both functions store the task in a queue and initiate a flushing process if it is not already in progress.
+
+Here's a breakdown of the key functionality:
+
+1. **Task Queueing**: Tasks (functions) are pushed into an array named `queue`.
+
+2. **Flushing Mechanism**: Ensures pending tasks are executed once they are scheduled. This is regulated by a `flushing` boolean flag.
+
+3. **Flush Execution**: Contains a loop that processes each task in the queue and catches any exceptions. If an exception occurs, it is rethrown asynchronously.
+
+4. **Requesting Flush**: Checks for optimal asynchronous trigger mechanisms:
+   - Uses `MutationObserver`, if available, for high-resolution asynchronous operations in browsers.
+   - Falls back to `MessageChannel` if `MutationObserver` isn't available.
+   - Uses `setTimeout` as a last resort for environments that do not support the former methods.
+
+5. **Module Exports**: Exports the `asap` function as the primary interface and `rawAsap` as an additional method.
+
+Here's a possible rewrite of the code following the explanation:
+
+```javascript
+// asap.js
+const taskQueue = [];
+let isFlushing = false;
+let currentIndex = 0;
+
+function asap(task) {
+  taskQueue.push(task);
+  if (!isFlushing) {
+    isFlushing = true;
+    initiateFlush();
+  }
+}
+
+function rawAsap(task) {
+  taskQueue.push(task);
+  if (!isFlushing) {
+    isFlushing = true;
+    initiateFlush();
+  }
+}
+
+function flushTasks() {
+  while (currentIndex < taskQueue.length) {
+    const task = taskQueue[currentIndex];
+    currentIndex++;
+    try {
+      task();
+    } catch (error) {
+      setTimeout(() => { throw error; }, 0);
+    }
+  }
+  currentIndex = 0;
+  taskQueue.length = 0;
+  isFlushing = false;
+}
+
+function initiateFlush() {
+  if (typeof MutationObserver !== 'undefined') {
+    let count = 0;
+    const observerTarget = document.createTextNode('');
+    const observer = new MutationObserver(flushTasks);
+    observer.observe(observerTarget, { characterData: true });
+    observerTarget.data = (count = ++count % 2);
+  } else if (typeof MessageChannel !== 'undefined') {
+    const messageChannel = new MessageChannel();
+    messageChannel.port1.onmessage = flushTasks;
+    messageChannel.port2.postMessage(0);
+  } else {
+    setTimeout(flushTasks, 0);
+  }
+}
+
+module.exports = asap;
+module.exports.raw = rawAsap;
+```

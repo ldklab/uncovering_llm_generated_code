@@ -1,0 +1,67 @@
+(function(global) {
+    "use strict";
+
+    // Optionally set default alphabet
+    String.alphabet = null;
+
+    function naturalCompare(a, b) {
+        var alphabet = String.alphabet;
+        var idxA = 0, idxB = 0, charA, charB, numA, numB;
+
+        function getChar(string, idx) {
+            return alphabet ? alphabet.indexOf(string.charAt(idx)) + 1 || 0 : string.charCodeAt(idx) || 0;
+        }
+
+        function isDigit(code) {
+            return code >= 48 && code <= 57;
+        }
+
+        function compareTokens(a, b) {
+            var res = 0;
+
+            while (!res && (charA = getChar(a, idxA)) && (charB = getChar(b, idxB))) {
+                if (isDigit(charA) && isDigit(charB)) {
+                    numA = numB = '';
+                    do { numA += a[idxA++]; } while (isDigit(getChar(a, idxA)));
+                    do { numB += b[idxB++]; } while (isDigit(getChar(b, idxB)));
+                    numA = parseInt(numA, 10);
+                    numB = parseInt(numB, 10);
+                    res = numA < numB ? -1 : numB < numA ? 1 : 0;
+                }
+                else {
+                    res = charA < charB ? -1 : charB < charA ? 1 : 0;
+                    idxA++;
+                    idxB++;
+                }
+            }
+            return res || (a.length - b.length);
+        }
+
+        return compareTokens(a, b);
+    }
+
+    if (typeof module !== 'undefined' && module.exports) {
+        module.exports = naturalCompare;
+    } else {
+        String.naturalCompare = naturalCompare;
+    }
+})(this);
+
+// Usage and test cases
+if (require.main === module) {
+    var arr = ["z1.doc", "z10.doc", "z17.doc", "z2.doc", "z23.doc", "z3.doc"];
+    arr.sort(String.naturalCompare);
+    console.log(arr); // ["z1.doc", "z2.doc", "z3.doc", "z10.doc", "z17.doc", "z23.doc"]
+
+    // Usage with case insensitivity
+    arr.sort(function(a, b) {
+        return String.naturalCompare(a.toLowerCase(), b.toLowerCase());
+    });
+    console.log(arr);
+
+    // Set up a custom alphabet
+    String.alphabet = "abcčdeéfghiijklmnoprstuüõöxy";
+    var alphArr = ["t", "z", "x", "õ"];
+    alphArr.sort(String.naturalCompare);
+    console.log(alphArr); // Custom order
+}

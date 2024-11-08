@@ -1,0 +1,72 @@
+The provided Node.js code is a script that uses Facebook's Watchman tool to monitor a directory for file changes. The script performs the following functions:
+
+1. **Initialization of a Watch**: The `initWatch` function initializes a watch on a specified directory (`path`). This is done by creating a Watchman client and checking the capability for `relative_root`. If the check is successful, it sets up a watch on the directory using the Watchman `watch-project` command. This function returns a promise that resolves with the client, watch, and relative path information for further operations.
+
+2. **Subscription to Changes**: The `subscribeToChanges` function subscribes to file change events in the monitored directory. It defines a subscription object with specified match expressions and fields of interest (e.g., `name`, `size`, `mtime_ms`, etc.). The function uses the `subscribe` command to watch the directory changes and hooks an event listener to log the changed files' names on each event.
+
+3. **Example Usage**: The script includes an example function that demonstrates how to use `initWatch` in conjunction with `subscribeToChanges` to monitor changes in a directory (`/path/to/watch`) and log any file changes detected.
+
+Here's a possible rewrite of the original code in a single markdown code block:
+
+```javascript
+const watchman = require('fb-watchman');
+
+// Function to set up a watch on a given directory
+async function setupDirectoryWatch(path) {
+  try {
+    const client = new watchman.Client();
+    await client.capabilityCheckAsync({optional:[], required:['relative_root']});
+
+    const resp = await client.commandAsync(['watch-project', path]);
+    console.log(`Watch established on ${resp.watch}`);
+
+    return {
+      client,
+      watch: resp.watch,
+      relativePath: resp.relative_path || ''
+    };
+  } catch (error) {
+    console.error('Failed to set up watch:', error);
+    throw error;
+  }
+}
+
+// Function to handle subscriptions to directory changes
+function monitorDirectoryChanges({client, watch, relativePath}, subscriptionName) {
+  const subscriptionConfig = {
+    expression: ['allof', ['match', '*.*']],
+    fields: ['name', 'size', 'mtime_ms', 'exists', 'type'],
+    relative_root: relativePath,
+  };
+
+  client.command(['subscribe', watch, subscriptionName, subscriptionConfig], (error, resp) => {
+    if (error) {
+      console.error('Subscription failed:', error);
+      client.end();
+      return;
+    }
+    console.log(`Subscription ${subscriptionName} is active.`);
+  });
+
+  client.on('subscription', (resp) => {
+    if (resp.subscription === subscriptionName) {
+      resp.files.forEach(file => {
+        console.log(`File changed: ${file.name}`);
+      });
+    }
+  });
+}
+
+// Main execution: setting up a watch and monitoring changes
+(async () => {
+  const directoryPath = '/path/to/watch';
+  try {
+    const { client, watch, relativePath } = await setupDirectoryWatch(directoryPath);
+    monitorDirectoryChanges({ client, watch, relativePath }, 'file-change-subscription');
+  } catch (err) {
+    console.error('Error in initializing watch:', err);
+  }
+})();
+```
+
+**Note**: `capabilityCheckAsync` and `commandAsync` are assumed to be Promise-returning versions of the respective watchman client methods, which handle asynchronous functionality in the rewritten code. If they do not exist, you would need to wrap these methods with Promises manually.

@@ -1,0 +1,94 @@
+The provided Node.js code defines a `ConfigProvider` class to manage configuration settings for an application. This class supports loading configuration data from both files and environment variables.
+
+### Functionality:
+
+1. **Initialization**:
+   - The `ConfigProvider` class initializes with an empty `config` object.
+
+2. **Loading from File**:
+   - The `loadFromFile(filePath)` method reads configuration data from a specified file (`.json`, `.yml`, or `.yaml`).
+   - JSON files are parsed into JavaScript objects using `JSON.parse()`.
+   - YAML files are parsed with a simplified custom function `parseYAML`.
+
+3. **Loading from Environment Variables**:
+   - `loadFromEnv(prefix)` method loads environment variables into the `config` object.
+   - Only variables starting with the specified `prefix` are considered, and the prefix is removed to form the config key.
+
+4. **Retrieving Configuration**:
+   - The `get(key, defaultValue)` method retrieves the value for a specified key from the `config` object, returning a default value if the key does not exist.
+
+5. **YAML Parsing**:
+   - A basic `parseYAML(yamlString)` function converts a YAML string into a JavaScript object assuming a simple key-value format.
+
+6. **Updating Configurations**:
+   - The `update(key, value)` method modifies the value of a specific configuration setting.
+
+7. **Monitoring for Config Changes**:
+   - The `onConfigChange(callback)` method watches a directory for changes in configuration files.
+   - It reloads the configuration and triggers a callback function when a change is detected.
+
+### Rewritten Code:
+
+```javascript
+const fs = require('fs');
+const path = require('path');
+
+class ConfigProvider {
+  constructor() {
+    this.config = {};
+  }
+
+  loadFromFile(filePath) {
+    try {
+      const fileExtension = path.extname(filePath);
+      let fileData = fs.readFileSync(filePath, 'utf8');
+      if (fileExtension === '.json') {
+        fileData = JSON.parse(fileData);
+      } else if (fileExtension === '.yml' || fileExtension === '.yaml') {
+        fileData = this.parseYAML(fileData);
+      }
+      this.config = { ...this.config, ...fileData };
+    } catch (error) {
+      throw new Error(`Failed to load configuration file: ${error.message}`);
+    }
+  }
+
+  loadFromEnv(prefix = '') {
+    for (const [key, value] of Object.entries(process.env)) {
+      if (key.startsWith(prefix)) {
+        const configKey = key.slice(prefix.length);
+        this.config[configKey] = value;
+      }
+    }
+  }
+
+  get(key, defaultValue = null) {
+    return key in this.config ? this.config[key] : defaultValue;
+  }
+
+  parseYAML(yamlString) {
+    const yamlLines = yamlString.split('\n');
+    const yamlObject = {};
+    yamlLines.forEach(line => {
+      const [key, value] = line.split(':').map(item => item.trim());
+      if (key && value) yamlObject[key] = value;
+    });
+    return yamlObject;
+  }
+
+  update(key, value) {
+    this.config[key] = value;
+  }
+
+  onConfigChange(callback) {
+    fs.watch('path/to/config/dir', (eventType, filename) => {
+      if (filename) {
+        this.loadFromFile(path.join('path/to/config/dir', filename));
+        callback(this.config);
+      }
+    });
+  }
+}
+
+module.exports = ConfigProvider;
+```

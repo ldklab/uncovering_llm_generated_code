@@ -1,0 +1,62 @@
+The Node.js code provides functionality to serialize JavaScript values into a string format that can be safely used, for example, in a JSON context or embedded in HTML. It includes special handling to escape potentially unsafe strings and to serialize complex JavaScript types like `Date`, `RegExp`, `Map`, `Set`, `BigInt`, and `URL`. The code provides two primary functions:
+
+1. `escapeString(str)`: Escapes characters like `<`, `>`, `/`, newline, carriage return, and tab in a string to their respective Unicode escape sequences, to prevent XSS vulnerabilities when strings are embedded in HTML.
+
+2. `serializeValue(value, options)`: Serializes a given value considering its type, such as handling functions, regex, dates, maps, sets, bigints, URLs, and strings (with optional escaping).
+
+3. `serialize(object, options)`: Serializes an object. It will either treat the object as plain JSON or convert it to a custom serialized format depending on the `isJSON` option.
+
+Here is a rewritten version that maintains the functionality described:
+
+```javascript
+// serialize.js
+
+function escapeSpecialChars(str) {
+    const escapeMap = {
+        '<': '\\u003C',
+        '>': '\\u003E',
+        '/': '\\u002F',
+        '\n': '\\n',
+        '\r': '\\r',
+        '\t': '\\t'
+    };
+    return str.replace(/[<>\/\n\r\t]/g, char => escapeMap[char]);
+}
+
+function stringify(value, opts = {}) {
+    if (value === undefined) return 'undefined';
+  
+    switch (true) {
+        case typeof value === 'function' && !opts.ignoreFunction:
+            return value.toString();
+        case value instanceof RegExp:
+            return value.toString();
+        case value instanceof Date:
+            return `new Date(${JSON.stringify(value.toISOString())})`;
+        case value instanceof Map:
+            return `new Map(${stringify([...value.entries()], opts)})`;
+        case value instanceof Set:
+            return `new Set(${stringify([...value.values()], opts)})`;
+        case typeof value === 'bigint':
+            return `BigInt("${value.toString()}")`;
+        case value instanceof URL:
+            return `new URL(${JSON.stringify(value.toString())})`;
+        case typeof value === 'string' && !opts.unsafe:
+            return JSON.stringify(escapeSpecialChars(value));
+        default:
+            return JSON.stringify(value, null, opts.space);
+    }
+}
+
+function serialize(input, opts = {}) {
+    if (opts.isJSON) {
+        return JSON.stringify(input, null, opts.space);
+    }
+    const entries = Object.entries(input).map(
+        ([key, val]) => `${JSON.stringify(key)}:${stringify(val, opts)}`
+    );
+    return `{${entries.join(',')}}`;
+}
+
+module.exports = serialize;
+```

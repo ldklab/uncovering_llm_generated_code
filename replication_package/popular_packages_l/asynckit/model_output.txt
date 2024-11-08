@@ -1,0 +1,78 @@
+The package "asynckit" provides utilities for handling asynchronous tasks in either parallel or serial order, with the added functionality of handling streams. It acts as a job runner that executes given jobs over a list of items which can be an array or an object. The key features of this package include:
+
+1. **Parallel Execution**: It runs jobs over an array or an object in parallel. It returns the results in the corresponding structure (array or object) and allows premature termination of remaining jobs in case of an error if an abort function is provided.
+
+2. **Serial Execution**: Similar to parallel execution but the jobs are executed sequentially. If any job fails, it stops further execution and returns the error along with any results from completed tasks.
+
+3. **Abort Functionality**: Both execution methods include an optional feature where each job can return a function that can be used to abort the job if needed (e.g., when an error occurs).
+
+4. **Multiple Inputs Support**: It can handle both arrays and objects as input, supporting named jobs when using objects.
+
+5. **Order Control**: For serial processes, it ensures output is in the order of input, which can be crucial for some applications.
+
+Below is an implementation of a simple version of such a package in Node.js. It supports parallel and serial execution for arrays and objects, completes jobs in specified orders, and handles job abortion on errors.
+
+```javascript
+// File: index.js
+const asyncKit = {
+  parallel: function(input, iterator, finalCallback) {
+    const keys = Array.isArray(input) ? input.map((_, i) => i) : Object.keys(input);
+    const totalJobs = keys.length;
+    const results = Array.isArray(input) ? [] : {};
+    let completedJobs = 0;
+    let errorOccurred = false;
+    const abortFns = [];
+
+    keys.forEach(key => {
+      if (errorOccurred) return;
+
+      const item = input[key];
+      const abortFn = iterator(item, key, (err, result) => {
+        if (errorOccurred) return;
+
+        completedJobs++;
+        if (err) {
+          errorOccurred = true;
+          abortFns.forEach(fn => fn && fn());
+          finalCallback(err, results);
+        } else {
+          results[key] = result;
+          if (completedJobs === totalJobs) {
+            finalCallback(null, results);
+          }
+        }
+      });
+
+      if (typeof abortFn === "function") {
+        abortFns.push(abortFn);
+      }
+    });
+  },
+
+  serial: function(input, iterator, finalCallback) {
+    const keys = Array.isArray(input) ? input.map((_, i) => i) : Object.keys(input);
+    const results = Array.isArray(input) ? [] : {};
+    let currentIndex = 0;
+    const totalJobs = keys.length;
+
+    function next(err, result) {
+      if (err || currentIndex === totalJobs) {
+        finalCallback(err, results);
+        return;
+      }
+
+      if (currentIndex > 0) results[keys[currentIndex - 1]] = result;
+
+      const currentKey = keys[currentIndex++];
+      const currentItem = input[currentKey];
+
+      iterator(currentItem, currentKey, next);
+    }
+    
+    next();
+  }
+};
+
+// Export the package functionalities
+module.exports = asyncKit;
+```

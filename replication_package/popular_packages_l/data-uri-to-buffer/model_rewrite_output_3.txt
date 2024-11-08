@@ -1,0 +1,72 @@
+The given Node.js code provides a utility to parse a data URI into its constituent components such as media type, character set, and the actual binary data in an `ArrayBuffer` format. The main functionality includes:
+
+1. **Interface Definition**: `ParsedDataURI` interface outlines the structure for the returned parsed data, including properties like `type`, `typeFull`, `charset`, and the data as an `ArrayBuffer`.
+
+2. **Parsing Function**: `dataUriToBuffer` function takes a data URI (or a URL object) as input and returns an object adhering to the `ParsedDataURI` structure. It extracts the media type, checks if the data is base64 encoded, and converts the data into an `ArrayBuffer` using helper functions.
+
+3. **Helper Functions**:
+   - `base64ToArrayBuffer`: Converts a base64 encoded string to an `ArrayBuffer`.
+   - `textToArrayBuffer`: Converts a URI-decoded string to an `ArrayBuffer`.
+
+Here is the rewritten version:
+
+```typescript
+export interface ParsedDataURI {
+    type: string;
+    typeFull: string;
+    charset: string;
+    buffer: ArrayBuffer;
+}
+
+export function dataUriToBuffer(uri: string | URL): ParsedDataURI {
+    uri = typeof uri === 'string' ? uri : uri.toString();
+
+    const pattern = /^data:([^,]*?),([^#]*)/;
+    const matches = pattern.exec(uri);
+    if (!matches) throw new Error('Invalid data URI');
+
+    const mediaType = matches[1] || '';
+    const data = matches[2];
+
+    const isBase64 = /;\s*base64\s*(;|$)/i.test(mediaType);
+
+    let type = 'text/plain';
+    let typeFull = 'text/plain;charset=US-ASCII';
+    let charset = 'US-ASCII';
+
+    if (mediaType) {
+        typeFull = mediaType;
+        const parts = mediaType.split(';');
+        type = parts[0] || type;
+        const charsetPart = parts.find(part => /charset=/i.test(part));
+        if (charsetPart) {
+            charset = charsetPart.split('=')[1] || charset;
+        }
+    }
+
+    const buffer = isBase64 ? base64ToArrayBuffer(data) : textToArrayBuffer(decodeURIComponent(data));
+
+    if (!/charset=/i.test(mediaType)) {
+        charset = '';
+    }
+
+    return { type, typeFull, charset, buffer };
+}
+
+function base64ToArrayBuffer(base64: string): ArrayBuffer {
+    const binaryStr = atob(base64);
+    const len = binaryStr.length;
+    const bytes = new Uint8Array(len);
+
+    for (let i = 0; i < len; i++) {
+        bytes[i] = binaryStr.charCodeAt(i);
+    }
+
+    return bytes.buffer;
+}
+
+function textToArrayBuffer(text: string): ArrayBuffer {
+    const encoder = new TextEncoder();
+    return encoder.encode(text).buffer;
+}
+```

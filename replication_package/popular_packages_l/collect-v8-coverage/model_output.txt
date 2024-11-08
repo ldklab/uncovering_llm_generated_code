@@ -1,0 +1,69 @@
+The `collect-v8-coverage` package provides a way to programmatically gather detailed V8 JavaScript engine coverage data within a Node.js application. This is useful for profiling and optimizing code as it allows developers to see which parts of the code were actually executed.
+
+Here's a detailed breakdown of how the functionality works:
+
+1. **Import the Coverage Instrumenter**: The module exports a class called `CoverageInstrumenter`. This class handles the process of starting and stopping the V8 inspector and gathering coverage data.
+
+2. **Create an Instance**: You create an instance of `CoverageInstrumenter` to handle your code coverage operations.
+
+3. **Start Instrumentation**: By calling `startInstrumenting()` on the instrumenter instance, you begin capturing coverage data. This involves starting the V8 inspector, which tracks code execution.
+
+4. **Execute Code**: After the instrumentation has started, you can execute the JavaScript code or require certain modules. The inspector will track the execution coverage of this code.
+
+5. **Stop Instrumentation**: Once you've completed executing the code that you want to analyze, `stopInstrumenting()` is called. This stops the V8 inspector and returns the coverage data, which details which parts of the code were executed.
+
+Here's the implementation of this functionality:
+
+```javascript
+// collect-v8-coverage/index.js
+const inspector = require('inspector');
+const fs = require('fs');
+
+class CoverageInstrumenter {
+  constructor() {
+    this.session = new inspector.Session();
+    this.session.connect();
+  }
+
+  async startInstrumenting() {
+    return new Promise((resolve, reject) => {
+      this.session.post('Profiler.enable', (err) => {
+        if (err) {
+          return reject(err);
+        }
+        this.session.post('Profiler.startPreciseCoverage', { callCount: true, detailed: true }, (err) => {
+          if (err) {
+            return reject(err);
+          }
+          resolve();
+        });
+      });
+    });
+  }
+
+  async stopInstrumenting() {
+    return new Promise((resolve, reject) => {
+      this.session.post('Profiler.takePreciseCoverage', (err, result) => {
+        if (err) {
+          return reject(err);
+        }
+        this.session.post('Profiler.stopPreciseCoverage', (err) => {
+          if (err) {
+            return reject(err);
+          }
+          this.session.post('Profiler.disable', (err) => {
+            if (err) {
+              return reject(err);
+            }
+            resolve(result.result);
+          });
+        });
+      });
+    });
+  }
+}
+
+module.exports = { CoverageInstrumenter };
+```
+
+By using this implementation, you can conduct comprehensive coverage analysis in a Node.js application, making performance optimizations based on the execution paths the code takes.

@@ -1,0 +1,92 @@
+The `string.prototype.matchall` package provides a polyfill for the `String.prototype.matchAll` method introduced in ES2020. This method allows a user to create an iterator of regex matches from a string. The package ensures that `matchAll` is available and behaves according to the ES2020 specification, even in older JavaScript environments that do not natively support it.
+
+### Key Features:
+1. **Shim Functionality**: The package includes a `shim` method that can be invoked to add the `matchAll` method to the `String.prototype` if it is missing or non-compliant.
+2. **Argument Coercion**: The `matchAll` method coerces non-regex arguments into a global regex.
+3. **Compliant Iteration**: For a global regex, it provides an iterator returning match objects similar to regex execution results, including `index`, `input`, and `groups` properties.
+4. **Error Handling**: Throws an error when a non-global regex is used with `matchAll`, maintaining strict adherence to the ES2020 specification.
+
+### Usage Examples:
+- Convert non-regex argument to a global regex and retrieve all matches.
+- Use with global regex and get the expected match objects with indices and inputs.
+- Throws an error on non-global regex inputs as per ES2020 specifications.
+
+This ensures consistent behavior across different JavaScript environments, particularly older ones without native support for `matchAll`.
+
+```javascript
+(function () {
+  'use strict';
+
+  var callBind = Function.prototype.call.bind(Function.prototype.call);
+  var indexOf = callBind(String.prototype.indexOf);
+
+  var hasSymbols = typeof Symbol === 'function' && typeof Symbol.iterator !== 'undefined';
+
+  var toObject = function (value) {
+    if (value == null) {
+      throw new TypeError('Cannot convert undefined or null to object');
+    }
+    return Object(value);
+  };
+
+  var toString = function (item) {
+    return String(item);
+  };
+
+  var hasOwn = callBind(Object.prototype.hasOwnProperty);
+
+  var createMatcher = function (regexp) {
+    var flags = 'g' + (hasOwn(regexp, 'flags') ? '' : (regexp.ignoreCase ? 'i' : '') + (regexp.multiline ? 'm' : '') + (regexp.dotAll ? 's' : '') + (regexp.unicode ? 'u' : '') + (regexp.sticky ? 'y' : ''));
+    return new RegExp(regexp.source, flags);
+  };
+
+  var matchAllShim = function matchAll(string, regex) {
+    var O = toObject(string);
+    var S = toString(O);
+    var matcher, flags;
+
+    if (typeof regex !== 'object' || (hasSymbols && !(Symbol.matchAll in regex))) {
+      matcher = createMatcher(new RegExp(regex, 'g'));
+    } else if (!regex.global) {
+      throw new TypeError('matchAll requires a global RegExp or a non-RegExp string');
+    } else {
+      matcher = regex;
+    }
+
+    var matches = [];
+    var lastIndex = 0;
+    var match;
+
+    while ((match = matcher.exec(S)) !== null) {
+      var matchObject = Object.assign([], match);
+      matchObject.index = match.index;
+      matchObject.input = S;
+      matches.push(matchObject);
+      if (!matcher.global) {
+        break;
+      }
+      lastIndex = matcher.lastIndex;
+    }
+
+    matcher.lastIndex = lastIndex;
+    return matches;
+  };
+
+  matchAllShim.shim = function shimMatchAll() {
+    var prototype = String.prototype;
+    if (!('matchAll' in prototype)) {
+      Object.defineProperty(prototype, 'matchAll', {
+        configurable: true,
+        writable: true,
+        value: function matchAll(regexp) {
+          return matchAllShim(this, regexp);
+        }
+      });
+    }
+  };
+
+  module.exports = matchAllShim;
+}());
+```
+
+This code implements a polyfill for `String.prototype.matchAll` with comprehensive error handling and alignment with ES2020 standards. It provides an `iterator` over all matches of a `global regex` or coerced regex on a target string.

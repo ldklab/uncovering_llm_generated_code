@@ -1,0 +1,66 @@
+The provided code snippet is a module for handling asynchronous task execution in Node.js. Here's a breakdown of the functionality:
+
+1. **rawAsap Dependency**: It uses a `rawAsap` dependency to schedule tasks to run as soon as possible, with higher priority over other I/O events.
+   
+2. **Task Reuse**: It maintains a pool (`freeTasks`) to reuse `RawTask` instances for efficiency, minimizing object creation overhead.
+   
+3. **asap Function**: This function accepts a `task` (typically a function) and schedules it for execution:
+   - Checks if there is a free, reusable `RawTask` instance.
+   - If available, it reuses it; otherwise, it creates a new one.
+   - Sets the task and the current domain, then schedules it using `rawAsap`.
+   
+4. **RawTask Object**: Represents a task and its domain:
+   - Contains the actual task and the domain within which it should run.
+   - Executes the task in the `call` method, managing domain entry and exit safely.
+   - If an error occurs during the task, it uses a `threw` flag to ensure proper error handling and domain management.
+   - In the event of an uncaught exception, it invokes `rawAsap.requestFlush()` to handle flushing properly.
+   - After execution, the `task` and `domain` properties are cleared, and the instance is returned to the pool for reuse.
+
+```javascript
+"use strict";
+
+const rawAsap = require("./raw");
+const freeTasks = [];
+
+/**
+ * Schedule a task for execution as soon as possible.
+ * 
+ * @param {{call}} task - A callable object, typically a function.
+ */
+module.exports = asap;
+function asap(task) {
+    const rawTask = freeTasks.length ? freeTasks.pop() : new RawTask();
+    rawTask.task = task;
+    rawTask.domain = process.domain;
+    rawAsap(rawTask);
+}
+
+class RawTask {
+    constructor() {
+        this.task = null;
+        this.domain = null;
+    }
+
+    call() {
+        const { domain, task } = this;
+        if (domain) {
+            domain.enter();
+        }
+        let threw = true;
+        try {
+            task.call();
+            threw = false;
+            if (domain) {
+                domain.exit();
+            }
+        } finally {
+            if (threw) {
+                rawAsap.requestFlush();
+            }
+            this.task = null;
+            this.domain = null;
+            freeTasks.push(this);
+        }
+    }
+}
+```

@@ -1,0 +1,98 @@
+The `@jridgewell/gen-mapping` package provides tools to generate source maps, which are used to map code within a compressed or transpiled file back to its original source. This is particularly useful in debugging because it allows developers to see their original source code in web browsers or other tools, even when the code that is being executed is minified or transpiled.
+
+### Main Features Explained:
+
+1. **GenMapping Object**: This is an instance of a source map being generated. It is initialized with optional properties such as `file` for the output file name and `sourceRoot` for the root URL of the sources.
+
+2. **addMapping**: This function adds a mapping to the source map. A mapping relates locations in the generated file to locations in the original source file, optionally including a symbol name (e.g., function name). You specify the line and column in both the generated and original file, and the name of the symbol if relevant.
+
+3. **setSourceContent**: This function associates the original content of a source file with the mappings, allowing tools to display the original code.
+
+4. **toEncodedMap**: Converts the map to an encoded format suitable for embedding in a file or sending over network requests. This format is compact and optimized for size.
+
+5. **toDecodedMap**: Converts the map into a non-compact, decoded format which is more human-readable for debugging or output purposes.
+
+6. **maybeAddMapping**: A more intelligent variant of `addMapping` that only adds useful mappings. This reduces unnecessary data and optimizes file size.
+
+Here’s a mock implementation of the described functionality:
+
+```javascript
+class GenMapping {
+  constructor({ file, sourceRoot } = {}) {
+    this.file = file || '';
+    this.sourceRoot = sourceRoot || '';
+    this.names = [];
+    this.sources = [];
+    this.sourcesContent = [];
+    this.mappings = [];
+  }
+}
+
+function addMapping(map, { generated, source, original, name }) {
+  if (!map.sources.includes(source)) {
+    map.sources.push(source);
+    map.sourcesContent.push(null);
+  }
+  if (name && !map.names.includes(name)) {
+    map.names.push(name);
+  }
+  map.mappings.push([generated, original, map.sources.indexOf(source), map.names.indexOf(name)]);
+}
+
+function setSourceContent(map, source, content) {
+  const index = map.sources.indexOf(source);
+  if (index === -1) return;
+  map.sourcesContent[index] = content;
+}
+
+function toEncodedMap(map) {
+  let encodedMappings = '';
+  for (let mapping of map.mappings) {
+    const [generated, original, sourceIndex, nameIndex] = mapping;
+    encodedMappings += `${generated.line},${generated.column},${sourceIndex},${original.line},${original.column},${nameIndex};`;
+  }
+  return {
+    version: 3,
+    file: map.file,
+    sourceRoot: map.sourceRoot,
+    sources: map.sources,
+    sourcesContent: map.sourcesContent,
+    names: map.names,
+    mappings: encodedMappings,
+  };
+}
+
+function toDecodedMap(map) {
+  return {
+    version: 3,
+    file: map.file,
+    sourceRoot: map.sourceRoot,
+    sources: map.sources,
+    sourcesContent: map.sourcesContent,
+    names: map.names,
+    mappings: map.mappings.map(([gen, orig, src, name]) => ({
+      generated: gen,
+      source: map.sources[src],
+      original: orig,
+      name: map.names[name],
+    })),
+  };
+}
+
+function maybeAddMapping(map, { generated, source, original, name }) {
+  if (!source) return;
+  if (!map.mappings.some(([gen, orig]) => gen.line === generated.line && orig.line === original.line)) {
+    addMapping(map, { generated, source, original, name });
+  }
+}
+
+// Usage:
+const map = new GenMapping({ file: 'output.js', sourceRoot: 'https://example.com/' });
+setSourceContent(map, 'input.js', 'function foo() {}');
+addMapping(map, { generated: { line: 1, column: 0 }, source: 'input.js', original: { line: 1, column: 0 } });
+addMapping(map, { generated: { line: 1, column: 9 }, source: 'input.js', original: { line: 1, column: 9 }, name: 'foo' });
+console.log(toDecodedMap(map));
+console.log(toEncodedMap(map));
+```
+
+This code sets up basic structures and functions corresponding to those described in the README for the generation of source maps, including handling variations like `maybeAddMapping`.

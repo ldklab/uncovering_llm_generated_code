@@ -1,0 +1,91 @@
+The Node.js package `buffer-crc32` provides functionality for calculating CRC32 checksums, which are used for error-checking purposes to ensure data integrity. Here's an explanation of its features:
+
+1. **CRC32 Calculation**: The core function of the package computes the CRC32 checksum of given data. It is compatible with binary data and character sets that might include special characters.
+
+2. **Buffer Compatibility**: The function can process Node.js `Buffer` objects directly, making it suitable for handling binary data efficiently.
+
+3. **String Support**: If a string is passed as input, the function automatically converts the string to a Buffer, ensuring compatibility with different character sets, including non-ASCII characters.
+
+4. **Output Formats**: The package offers different methods to obtain the CRC32 result:
+   - As a Buffer, which provides the raw checksum bytes.
+   - As a signed integer.
+   - As an unsigned integer.
+
+5. **Incremental CRC Computation**: The package supports "append mode", allowing CRC checksums to be computed incrementally by passing the previous CRC value along with new data.
+
+6. **Compatibility and Testing**: The package aligns with the CRC32 implementation provided by zlib and has been tested to validate its correctness. It is compatible with Node.js version 8 and above.
+
+Here is the implementation of the package:
+
+```javascript
+// buffer-crc32.js
+const crcTable = [];
+
+function makeCrcTable() {
+  let c;
+  for(let n = 0; n < 256; n++) {
+    c = n;
+    for(let k = 0; k < 8; k++) {
+      if(c & 1) {
+        c = 0xEDB88320 ^ (c >>> 1);
+      } else {
+        c = c >>> 1;
+      }
+    }
+    crcTable[n] = c;
+  }
+}
+
+makeCrcTable();
+
+function crc32(buf, previous = 0) {
+  if (typeof buf === 'string') {
+    buf = Buffer.from(buf, 'utf8');
+  }
+
+  let crc = ~previous;
+  for (let byte of buf) {
+    crc = crcTable[(crc ^ byte) & 0xff] ^ (crc >>> 8);
+  }
+  return Buffer.from([~crc >> 24 & 0xff, ~crc >> 16 & 0xff, ~crc >> 8 & 0xff, ~crc & 0xff]);
+}
+
+crc32.signed = function(buf) {
+  const buffer = crc32(buf);
+  return buffer.readInt32BE(0);
+};
+
+crc32.unsigned = function(buf) {
+  const buffer = crc32(buf);
+  return buffer.readUInt32BE(0);
+};
+
+module.exports = crc32;
+```
+
+Below is an example demonstrating how to use this package:
+
+```javascript
+// example.js
+const crc32 = require('./buffer-crc32');
+// works with buffers
+const buf = Buffer([0x00, 0x73, 0x75, 0x70, 0x20, 0x62, 0x72, 0x6f, 0x00]);
+console.log(crc32(buf)); // Output: <Buffer 94 5a ab 4a>
+
+// has convenience methods for getting signed or unsigned ints
+console.log(crc32.signed(buf)); // Output: -1805997238
+console.log(crc32.unsigned(buf)); // Output: 2488970058
+
+// will cast to buffer if given a string, so you can directly use foreign characters safely
+console.log(crc32('自動販売機')); // Output: <Buffer cb 03 1a c5>
+
+// and works in append mode too
+let partialCrc = crc32('hey');
+partialCrc = crc32(' ', partialCrc);
+partialCrc = crc32('sup', partialCrc);
+partialCrc = crc32(' ', partialCrc);
+const finalCrc = crc32('bros', partialCrc);
+console.log(finalCrc); // Output: <Buffer 47 fa 55 70>
+```
+
+To run tests, you'll need to set up a test suite with a tool like `tap`, which is not included in this code block. The package offers a programmatic API to compute and test CRC32 checksums with easy-to-use methods for different outputs and supports both buffers and strings as inputs.

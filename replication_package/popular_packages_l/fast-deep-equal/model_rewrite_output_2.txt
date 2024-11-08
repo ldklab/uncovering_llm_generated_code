@@ -1,0 +1,114 @@
+The Node.js code provides a set of functions for deep equality checks to determine if two values are deeply equal. The code consists of three modules for different environments: standard JavaScript, ES6, and React. Each module exports a function that deeply compares two values for equality by examining their structure and content.
+
+### Explained Functionalities
+
+1. **isObject Function**: Checks if a value is a non-null object.
+2. **areDatesEqual Function**: Checks for equality between two Date objects by comparing their time values.
+3. **areRegExpsEqual Function**: Compares two regular expressions by their string representations.
+4. **areArraysEqual Function**: Recursively checks if two arrays have the same length and elements, calling `deepEqual` for each pair of elements.
+5. **areObjectsEqual Function**: Compares two objects by checking if they have the same keys and values using recursive `deepEqual` checks.
+6. **deepEqual Function (for standard JavaScript)**: Checks the equality of two values using various conditions (instances of Date, RegExp, arrays, or generic objects).
+7. **deepEqualES6 Function**: Extends `deepEqual` to handle ES6 data structures like Map and Set, and typed arrays.
+8. **reactEqual Function**: Similar to `deepEqual` but designed for React, ignoring `_owner` property and using a `visited` set to handle cycles or repeated references.
+
+### Rewritten Code
+
+```javascript
+// Helper functions
+function isObject(obj) {
+  return obj !== null && typeof obj === 'object';
+}
+
+function areDatesEqual(a, b) {
+  return a.getTime() === b.getTime();
+}
+
+function areRegExpsEqual(a, b) {
+  return a.toString() === b.toString();
+}
+
+function areArraysEqual(a, b, comparator) {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (!comparator(a[i], b[i])) return false;
+  }
+  return true;
+}
+
+function areObjectsEqual(a, b, comparator) {
+  const keysA = Object.keys(a);
+  const keysB = Object.keys(b);
+  if (keysA.length !== keysB.length) return false;
+  for (let key of keysA) {
+    if (!comparator(a[key], b[key])) return false;
+  }
+  return true;
+}
+
+// Generic deep equality function
+function createDeepEqual(comparator) {
+  return function(a, b) {
+    if (a === b) return true;
+    if (!isObject(a) || !isObject(b)) return false;
+
+    if (a instanceof Date && b instanceof Date) {
+      return areDatesEqual(a, b);
+    }
+    if (a instanceof RegExp && b instanceof RegExp) {
+      return areRegExpsEqual(a, b);
+    }
+    if (Array.isArray(a) && Array.isArray(b)) {
+      return areArraysEqual(a, b, comparator);
+    }
+    return areObjectsEqual(a, b, comparator);
+  };
+}
+
+// Standard deep equality
+const deepEqual = createDeepEqual(function(a, b) {
+  return deepEqual(a, b);
+});
+module.exports = deepEqual;
+
+// ES6-specific deep equality
+const deepEqualES6 = createDeepEqual(function(a, b) {
+  if (a === b) return true;
+  if (!isObject(a) || !isObject(b)) return false;
+  if (a instanceof Map && b instanceof Map) {
+    if (a.size !== b.size) return false;
+    for (let [key, value] of a) {
+      if (!b.has(key) || !deepEqualES6(value, b.get(key))) return false;
+    }
+    return true;
+  }
+  if (a instanceof Set && b instanceof Set) {
+    if (a.size !== b.size) return false;
+    for (let value of a) {
+      if (!b.has(value)) return false;
+    }
+    return true;
+  }
+  if (ArrayBuffer.isView(a) && ArrayBuffer.isView(b)) {
+    return a.byteLength === b.byteLength && a.every((val, i) => val === b[i]);
+  }
+  return areObjectsEqual(a, b, deepEqualES6);
+});
+module.exports = deepEqualES6;
+
+// React-specific deep equality that ignores `_owner`
+function deepEqualReact(a, b, visited = new Set()) {
+  if (a === b) return true;
+  if (!isObject(a) || !isObject(b)) return false;
+  if (Array.isArray(a) && Array.isArray(b)) {
+    return areArraysEqual(a, b, (x, y) => deepEqualReact(x, y, visited));
+  }
+  const keysA = Object.keys(a).filter(key => key !== '_owner');
+  const keysB = Object.keys(b).filter(key => key !== '_owner');
+  if (keysA.length !== keysB.length) return false;
+  return areObjectsEqual(a, b, (x, y) => deepEqualReact(x, y, visited));
+}
+
+module.exports = function(a, b) {
+  return deepEqualReact(a, b);
+};
+```

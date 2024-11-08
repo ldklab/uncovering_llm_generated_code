@@ -1,0 +1,73 @@
+The package `array.prototype.findlastindex` is a polyfill for the `Array.prototype.findLastIndex` method. This method is a proposed addition to JavaScript's array methods, allowing users to find the last index of an element in an array that satisfies a provided testing function.
+
+### Features of the Package:
+1. **Purpose**: The primary purpose of this package is to provide a shim/polyfill for environments that do not yet support `Array.prototype.findLastIndex`. It ensures compatibility with the ES3 standard, making it usable in older JavaScript environments.
+
+2. **Functionality**:
+   - The method `findLastIndex` takes an array and a callback function. It searches the array from the last element to the first, applying the callback to each element until it finds one that returns `true`. It then returns the index of that element.
+   - The `shim` method can be used to make sure the functionality is available as a native method on `Array.prototype`.
+
+3. **API**:
+   - `findLastIndex(array, callback)`: Finds the index of the last element in the array that satisfies the callback.
+   - `shim()`: Shims the `Array.prototype.findLastIndex` to include this method if it does not already exist.
+
+4. **Usage**:
+   - It can be used in environments where `Array.prototype.findLastIndex` is not natively available by installing via npm and requiring in the project.
+   - It checks if the native method exists and will provide a polyfilled method if needed. 
+
+5. **Testing**: It instructs how you can run tests to ensure everything works by cloning the repository and running `npm test`.
+
+Here's how you could implement such a polyfill in Node.js:
+
+```markdown
+const defineProperty = Object.defineProperty;
+const call = Function.prototype.call;
+
+function getPolyfill() {
+  if (Array.prototype.findLastIndex) {
+    return Array.prototype.findLastIndex;
+  }
+  return function findLastIndex(callback, thisArg) {
+    if (this == null) {
+      throw new TypeError('Array.prototype.findLastIndex called on null or undefined');
+    }
+    if (typeof callback !== 'function') {
+      throw new TypeError('callback must be a function');
+    }
+    const object = Object(this);
+    const length = object.length >>> 0;
+    for (let i = length - 1; i >= 0; i--) {
+      if (i in object && callback.call(thisArg, object[i], i, object)) {
+        return i;
+      }
+    }
+    return -1;
+  };
+}
+
+function shimArrayPrototypeFindLastIndex() {
+  const polyfill = getPolyfill();
+  if (Array.prototype.findLastIndex !== polyfill) {
+    defineProperty(Array.prototype, 'findLastIndex', {
+      value: polyfill,
+      configurable: true,
+      enumerable: false,
+      writable: true
+    });
+  }
+  return polyfill;
+}
+
+function findLastIndex(array, callback, thisArg) {
+  return call.call(getPolyfill(), array, callback, thisArg);
+}
+
+module.exports = {
+  getPolyfill,
+  shim: shimArrayPrototypeFindLastIndex,
+  implementation: getPolyfill(),
+  findLastIndex
+};
+```
+
+This code provides the polyfill for the `findLastIndex` method, and conditionally shims it into the JavaScript environment if not already present. The core components include a method to get or define the polyfill, one to shim it globally, and the main functionality itself.

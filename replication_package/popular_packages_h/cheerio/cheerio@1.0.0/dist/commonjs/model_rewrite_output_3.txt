@@ -1,0 +1,135 @@
+The provided Node.js code is part of a module that provides an enhanced version of the Cheerio library, which is used for parsing and manipulating HTML and XML documents in Node.js. This module includes utility functions for loading documents from various sources, offering an all-in-one solution ("batteries-included") for handling documents. Here's a breakdown of the functionality:
+
+1. **Module Imports and Exports**:
+   - It imports necessary modules like `parse5-htmlparser2-tree-adapter`, `htmlparser2`, `undici`, etc., for parsing and encoding purposes.
+   - It exports convenience functions: `loadBuffer`, `stringStream`, `decodeStream`, and `fromURL`, along with additional methods from `./load-parse.js`.
+   - The `merge` and `contains` utilities are also exported using getters from `./static.js`.
+
+2. **Utility Functions**:
+   - **`loadBuffer`**: Sniffs the encoding of a given buffer and creates a document acknowledging the detected encoding using Cheerio.
+   - **`_stringStream`**: A private function to create a writable stream that processes a sequence of strings into a document.
+   - **`stringStream`**: Public version of `_stringStream` that flattens options before calling `_stringStream`.
+   - **`decodeStream`**: Creates a stream to parse buffers into a document, using the default or specified encoding.
+   - **`fromURL`**: Asynchronously loads a document from a given URL, handling redirects and checking response content types to ensure it's either HTML or XML, and then loads it using Cheerio.
+
+3. **Cheerio Integration**:
+   - This utility wraps around Cheerio's capabilities, augmenting it with functions to directly load content from buffers, streams, or URLs, making Cheerio usage more versatile and convenient.
+
+Here's a possible rewrite of the code according to this explanation:
+
+```javascript
+"use strict";
+
+/**
+ * @file A complete version of Cheerio with added convenience methods for loading documents from different sources.
+ */
+
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.merge = exports.contains = void 0;
+
+const { adapter } = require("parse5-htmlparser2-tree-adapter");
+const htmlparser2 = require("htmlparser2");
+const { ParserStream } = require("parse5-parser-stream");
+const { decodeBuffer, DecodeStream } = require("encoding-sniffer");
+const undici = require("undici");
+const MimeType = require("whatwg-mimetype");
+const { Writable, finished } = require("node:stream");
+const { flattenOptions } = require("./options.js");
+const { load } = require("./load-parse.js");
+
+Object.defineProperty(exports, "contains", { enumerable: true, get: function() { return require("./static.js").contains; } });
+Object.defineProperty(exports, "merge", { enumerable: true, get: function() { return require("./static.js").merge; } });
+
+exports.loadBuffer = loadBuffer;
+exports.stringStream = stringStream;
+exports.decodeStream = decodeStream;
+exports.fromURL = fromURL;
+
+function loadBuffer(buffer, options = {}) {
+  const opts = flattenOptions(options);
+  const str = decodeBuffer(buffer, {
+    defaultEncoding: opts?.xmlMode ? 'utf8' : 'windows-1252',
+    ...options.encoding,
+  });
+  return load(str, opts);
+}
+
+function _stringStream(options, cb) {
+  if (options?._useHtmlParser2) {
+    const parser = htmlparser2.createDocumentStream((err, doc) => cb(err, load(doc)), options);
+    return new Writable({
+      decodeStrings: false,
+      write(chunk, _encoding, callback) {
+        if (typeof chunk !== 'string') throw new TypeError('Expected a string');
+        parser.write(chunk);
+        callback();
+      },
+      final(callback) {
+        parser.end();
+        callback();
+      },
+    });
+  }
+
+  options = options || {};
+  options.treeAdapter = options.treeAdapter || adapter;
+  if (options.scriptingEnabled !== false) options.scriptingEnabled = true;
+  
+  const stream = new ParserStream(options);
+  finished(stream, (err) => cb(err, load(stream.document)));
+  return stream;
+}
+
+function stringStream(options, cb) {
+  return _stringStream(flattenOptions(options), cb);
+}
+
+function decodeStream(options, cb) {
+  const { encoding = {}, ...cheerioOptions } = options;
+  const opts = flattenOptions(cheerioOptions);
+  encoding.defaultEncoding = encoding.defaultEncoding || (opts?.xmlMode ? 'utf8' : 'windows-1252');
+  const decodeStream = new DecodeStream(encoding);
+  const loadStream = _stringStream(opts, cb);
+  decodeStream.pipe(loadStream);
+  return decodeStream;
+}
+
+const defaultRequestOptions = {
+  method: 'GET',
+  maxRedirections: 5,
+  throwOnError: true,
+  headers: {
+    accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+  },
+};
+
+async function fromURL(url, options = {}) {
+  const { requestOptions = defaultRequestOptions, encoding = {}, ...cheerioOptions } = options;
+  let undiciStream;
+  
+  requestOptions.headers = requestOptions.headers || defaultRequestOptions.headers;
+  
+  const promise = new Promise((resolve, reject) => {
+    undiciStream = undici.stream(url, requestOptions, (res) => {
+      const contentType = res.headers['content-type'] || 'text/html';
+      const mimeType = new MimeType(Array.isArray(contentType) ? contentType[0] : contentType);
+      if (!mimeType.isHTML() && !mimeType.isXML()) {
+        throw new RangeError(`The content-type "${contentType}" is neither HTML nor XML.`);
+      }
+      
+      encoding.transportLayerEncodingLabel = mimeType.parameters.get('charset');
+      const history = res.context?.history;
+      const opts = {
+        encoding,
+        xmlMode: mimeType.isXML(),
+        baseURL: history ? history[history.length - 1] : url,
+        ...cheerioOptions,
+      };
+      return decodeStream(opts, (err, $) => (err ? reject(err) : resolve($)));
+    });
+  });
+
+  await undiciStream;
+  return promise;
+}
+```

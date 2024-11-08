@@ -1,0 +1,78 @@
+The Node.js code is a module designed to determine ECMAScript (ES) compatibility for various environments, helping to understand which polyfills are required based on specified target environments and module requirements. Here's what each part of the code does:
+
+1. **Data Loading**: It imports three JSON files:
+   - `compat-data.json` includes compatibility data for various ES features across different environments.
+   - `entry-points.json` maps entry points to specific module names.
+   - `modules-list.json` provides a list of all modules available.
+
+2. **Main Functionality (`compat()` function)**:
+   - This function takes an options object indicating the target environments (`targets`), specific modules to include or exclude (`modules` and `exclude`), and the `version` of polyfills needed. There's also an `inverse` flag to toggle selection logic.
+   - It filters compatibility data to determine which modules are necessary based on whether the target environments support them or not. Modules are filtered further by inclusion and exclusion filters.
+   - Returns an object containing the list of required modules and their target compatibility data.
+
+3. **Helper Functions**:
+   - `matchesFilter(moduleName, filters)`: Determines if a module name matches any provided filter (string prefix or regex).
+   - `compareVersions(v1, v2)`: Compares two semantic version strings numerically.
+
+4. **Exported API**:
+   - Exports the main `compat` function, along with the raw compatibility data (`data`), entry points (`entries`), module list (`modules`), and a function to get modules available for a specific target version (simplified to always return the full list).
+
+The rewritten version consolidates this functionality:
+
+```javascript
+const compatData = require('./compat-data.json');
+const entryPoints = require('./entry-points.json');
+const moduleList = require('./modules-list.json');
+
+function compat({ targets, modules = [], exclude = [], version = 'latest', inverse = false }) {
+  const requiredModules = Object.keys(compatData).filter(module => {
+    if (modules.length && !matchesFilter(module, modules)) return false;
+    if (exclude.length && matchesFilter(module, exclude)) return false;
+    const targetVersions = compatData[module];
+    return Object.keys(targets).some(env => {
+      const versionNeeded = targetVersions[env];
+      return versionNeeded && targets[env] != null && compareVersions(versionNeeded, targets[env]) > 0;
+    });
+  });
+
+  const result = inverse 
+    ? moduleList.filter(module => !requiredModules.includes(module))
+    : requiredModules;
+
+  const targetsOutput = result.reduce((acc, module) => {
+    acc[module] = compatData[module];
+    return acc;
+  }, {});
+
+  return { list: result, targets: targetsOutput };
+}
+
+function matchesFilter(moduleName, filters) {
+  return filters.some(filter => {
+    if (typeof filter === 'string') return moduleName.startsWith(filter);
+    if (filter instanceof RegExp) return filter.test(moduleName);
+    return false;
+  });
+}
+
+function compareVersions(v1, v2) {
+  if (v1 === v2) return 0;
+  const v1parts = v1.split('.').map(Number);
+  const v2parts = v2.split('.').map(Number);
+  for (let i = 0; i < Math.max(v1parts.length, v2parts.length); i++) {
+    const diff = (v1parts[i] || 0) - (v2parts[i] || 0);
+    if (diff !== 0) return diff;
+  }
+  return 0;
+}
+
+module.exports = {
+  compat,
+  data: compatData,
+  entries: entryPoints,
+  modules: moduleList,
+  getModulesListForTargetVersion() {
+    return moduleList;
+  },
+};
+```

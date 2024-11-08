@@ -1,0 +1,65 @@
+The provided Node.js code defines a utility function `classNames` for conditionally combining CSS class names. This pattern is commonly used to dynamically set the `class` attribute in HTML. The function accepts a variety of arguments, and it processes each one as follows:
+
+1. Strings or numbers are directly added to the result list of class names.
+2. Arrays are recursively processed, and their elements are evaluated for class name inclusion.
+3. Objects are evaluated such that the keys are added as class names if their values are truthy.
+4. The resulting class names are concatenated into a single space-separated string.
+
+The function checks for various module system environments:
+- If `module.exports` is available, it exports the function for CommonJS environments (like Node.js).
+- If `define` is defined and supports AMD, it registers the function as an AMD module.
+- If neither of these is detected, it assigns the function to the `window` object, making it globally accessible in a browser environment.
+
+Here's a potential rewrite of the original code:
+
+```javascript
+/*!
+  Copyright (c) 2017 Jed Watson.
+  Licensed under the MIT License (MIT), see
+  http://jedwatson.github.io/classnames
+*/
+
+(function (global) {
+	'use strict';
+
+	var hasOwn = Object.prototype.hasOwnProperty;
+
+	function classNames() {
+		var classes = [];
+
+		for (var i = 0; i < arguments.length; i++) {
+			var arg = arguments[i];
+			if (!arg) continue;
+
+			var argType = typeof arg;
+
+			if (argType === 'string' || argType === 'number') {
+				classes.push(arg);
+			} else if (Array.isArray(arg) && arg.length) {
+				var inner = classNames.apply(null, arg);
+				if (inner) {
+					classes.push(inner);
+				}
+			} else if (argType === 'object') {
+				for (var key in arg) {
+					if (hasOwn.call(arg, key) && arg[key]) {
+						classes.push(key);
+					}
+				}
+			}
+		}
+
+		return classes.join(' ');
+	}
+
+	if (typeof module !== 'undefined' && module.exports) {
+		module.exports = classNames;
+	} else if (typeof define === 'function' && define.amd) {
+		define('classnames', [], function () {
+			return classNames;
+		});
+	} else {
+		global.classNames = classNames;
+	}
+})(this);
+```

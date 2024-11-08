@@ -1,0 +1,68 @@
+The Mitt library is a tiny, functional, and dependency-free event emitter for JavaScript, designed to emulate the behavior of Node's EventEmitter in a lightweight manner, suitable for use in both browser and any JavaScript runtime environments. It provides methods to register and deregister event handlers, emit events, and listen to all events with a wildcard type. The core features include:
+
+1. **Event Registration (`on`)**: Allows users to register specific event handlers for particular event types, or use the wildcard `'*'` to listen to all events.
+
+2. **Event Deregistration (`off`)**: Facilitates the removal of specific event handlers. If no handler is provided, all handlers for the particular type are removed.
+
+3. **Event Emitting (`emit`)**: Triggers all the handlers associated with the specified event type, with `'*'` handlers called after any type-matched handlers.
+
+4. **Event Map (`all`)**: Internally manages the registered event handlers using a Map data structure, associating event types to their handlers.
+
+5. **TypeScript Support**: Offers TypeScript definitions to ensure type safety when using event handlers, allowing for inference based on event types and their expected payloads.
+
+Below is a Node.js implementation of the described functionality within a single file:
+
+```javascript
+// mitt.js
+function mitt(all) {
+  all = all || new Map();
+
+  return {
+    all,
+    on(type, handler) {
+      const handlers = all.get(type);
+      if (handlers) {
+        handlers.push(handler);
+      } else {
+        all.set(type, [handler]);
+      }
+    },
+    off(type, handler) {
+      const handlers = all.get(type);
+      if (handlers) {
+        if (!handler) {
+          all.set(type, []);
+        } else {
+          handlers.splice(handlers.indexOf(handler) >>> 0, 1);
+        }
+      }
+    },
+    emit(type, evt) {
+      ((all.get(type) || []).slice().map(handler => { handler(evt); }))
+      .concat((all.get('*') || []).slice().map(handler => { handler(type, evt); }));
+    }
+  };
+}
+
+// Usage example
+const emitter = mitt();
+
+// Listen to a specific event
+emitter.on('foo', (e) => console.log('foo', e));
+
+// Listen to all events
+emitter.on('*', (type, e) => console.log(type, e));
+
+// Emit an event
+emitter.emit('foo', { a: 'b' });
+
+// Remove specific handler or all handlers for an event
+function onFoo() { console.log("foo event handler"); }
+emitter.on('foo', onFoo);
+emitter.off('foo', onFoo);
+
+// Default export
+module.exports = mitt;
+```
+
+This code encompasses the functionality, allowing for easy integration and usage in Node.js environments, while maintaining simplicity and efficiency similar to the Mitt package described.

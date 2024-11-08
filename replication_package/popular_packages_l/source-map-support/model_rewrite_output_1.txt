@@ -1,0 +1,86 @@
+The original Node.js code provides a way to handle JavaScript stack traces by mapping them to the original source using source maps. This is achieved through the following key steps:
+
+1. **Class `SourceMapSupport`**: This class manages source maps and provides functionality to load source maps and map JavaScript stack traces to the original source positions.
+   - **Method `loadSourceMap`**: Loads a source map for a given file by reading and parsing a source map file.
+   - **Method `mapTrace`**: Converts stack trace lines using the loaded source maps to point back to the original code, recovering the source line, column, and file.
+   - **Method `install`**: Replaces the default error stack trace preparation function with a custom one that utilizes the source maps to map stack traces.
+
+2. **Function `install`**: Configures and installs source map support globally. It allows customizing options like handling uncaught exceptions, custom retrieval of source maps, and more.
+
+3. **Module Exports**: Exports the `install` function and `SourceMapSupport` class for use in other parts of an application or other modules.
+
+```javascript
+const fs = require('fs');
+const path = require('path');
+const sourceMap = require('source-map');
+
+class SourceMapHandler {
+  constructor() {
+    this.sourceMaps = {};
+  }
+
+  loadMap(filePath, mapFile) {
+    const mapData = fs.readFileSync(mapFile, 'utf8');
+    const mapConsumer = new sourceMap.SourceMapConsumer(JSON.parse(mapData));
+    this.sourceMaps[filePath] = mapConsumer;
+  }
+
+  transformStackTrace(trace) {
+    return trace.split('\n').map((line) => {
+      const match = line.match(/\((.*):(\d+):(\d+)\)$/);
+      if (!match) return line;
+      const [_, file, lineNum, colNum] = match;
+      const consumer = this.sourceMaps[file];
+      if (!consumer) return line;
+      const origPos = consumer.originalPositionFor({
+        line: Number(lineNum),
+        column: Number(colNum)
+      });
+      if (!origPos.source) return line;
+      return line.replace(`${path.basename(file)}:${lineNum}:${colNum}`, `${origPos.source}:${origPos.line}:${origPos.column}`);
+    }).join('\n');
+  }
+
+  apply() {
+    const basePrepareStackTrace = Error.prepareStackTrace;
+    Error.prepareStackTrace = (error, callSites) => {
+      const stack = basePrepareStackTrace
+        ? basePrepareStackTrace(error, callSites)
+        : callSites.map((callSite) => `    at ${callSite}`).join('\n');
+
+      return this.transformStackTrace(stack);
+    };
+  }
+}
+
+const sourceMapHandler = new SourceMapHandler();
+
+function enable(options = {}) {
+  const defaults = {
+    handleUncaughtExceptions: true,
+    customSourceMapRetrieval: null,
+    env: 'auto',
+    requireSourcesHook: false
+  };
+
+  const settings = { ...defaults, ...options };
+
+  if (settings.customSourceMapRetrieval) {
+    sourceMapHandler.loadMap = settings.customSourceMapRetrieval;
+  }
+
+  sourceMapHandler.apply();
+
+  if (settings.handleUncaughtExceptions) {
+    process.on('uncaughtException', (error) => {
+      console.error(error.stack);
+      process.exit(1);
+    });
+  }
+}
+
+module.exports = {
+  enable,
+  SourceMapHandler
+};
+```

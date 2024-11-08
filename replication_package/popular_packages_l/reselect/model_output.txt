@@ -1,0 +1,113 @@
+The `Reselect` library provides tools for creating memoized selector functions, which are particularly useful in applications using Redux, but can be used with any JavaScript immutable data. A selector is a function that derives data from state. Memoized selectors created with Reselect improve performance by recalculating outputs only when their inputs change, and return existing results to help in maintaining reference equality, which is important for efficient UI updates in frameworks like React.
+
+Here's a breakdown of the package functionalities:
+
+1. **Selectors for Data Derivation**: These allow you to store minimal possible state by computing derived data.
+
+2. **Efficiency Through Memoization**: Selectors are not recomputed unless one of their arguments changes, making them efficient.
+
+3. **Composable Selectors**: You can create complex selectors by composing simpler ones.
+
+The main API from Reselect is `createSelector`, used to create memoized selectors. This API combines input selectors (functions extracting values from arguments) and a result function to produce memoized output selectors.
+
+### Basic Example
+
+- **Input Selectors**: Functions that pick slices of state needed for the result.
+- **Result Function**: Computes the final result using outputs of the input selectors.
+- **Memoized Selector**: Outputs will not be recalculated unless inputs change.
+
+#### Example Usage
+
+```typescript
+import { createSelector } from 'reselect';
+
+interface RootState {
+  todos: { id: number; completed: boolean }[];
+  alerts: { id: number; read: boolean }[];
+}
+
+const state: RootState = {
+  todos: [
+    { id: 0, completed: false },
+    { id: 1, completed: true }
+  ],
+  alerts: [
+    { id: 0, read: false },
+    { id: 1, read: true }
+  ]
+};
+
+// Input Selector
+const selectTodos = (state: RootState) => state.todos;
+
+// Memoized Selector
+const selectCompletedTodos = createSelector(
+  [selectTodos],
+  todos => todos.filter(todo => todo.completed)
+);
+
+console.log(selectCompletedTodos(state)); // First run, calculates 
+console.log(selectCompletedTodos(state)); // Second run, returns cached result
+```
+
+In this code, `selectCompletedTodos` is a memoized selector that recalculates when the `todos` slice of the state changes. This is useful for improving performance in applications with complex state management needs or slow data calculations.
+
+### Implementation of Reselect Functionality
+
+Below is the Node.js package code implementing the functionality explained:
+
+```typescript
+// Reselect implementation in Node.js
+
+type Selector<T, R> = (state: T) => R;
+type ResultFunc<Selectors, R> = (...args: Selectors) => R;
+
+function createSelector<State, Selectors extends any[], Output>(
+  selectors: [...{ [K in keyof Selectors]: Selector<State, Selectors[K]> }],
+  resultFunc: ResultFunc<Selectors, Output>
+): Selector<State, Output> {
+  let lastArgs: Selectors | null = null;
+  let lastResult: Output | null = null;
+
+  return (state: State) => {
+    const args = selectors.map(selector => selector(state)) as Selectors;
+    if (lastArgs && args.every((arg, index) => arg === lastArgs[index])) {
+      // Return cached result if inputs are the same
+      return lastResult!;
+    }
+
+    lastArgs = args;
+    lastResult = resultFunc(...args);
+    return lastResult;
+  };
+}
+
+// Example usage
+interface RootState {
+  todos: { id: number; completed: boolean }[];
+  alerts: { id: number; read: boolean }[];
+}
+
+const state: RootState = {
+  todos: [
+    { id: 0, completed: false },
+    { id: 1, completed: true }
+  ],
+  alerts: [
+    { id: 0, read: false },
+    { id: 1, read: true }
+  ]
+};
+
+const selectTodos = (state: RootState) => state.todos;
+
+const selectCompletedTodos = createSelector(
+  [selectTodos],
+  todos => todos.filter(todo => todo.completed)
+);
+
+console.log(selectCompletedTodos(state)); // selector ran
+console.log(selectCompletedTodos(state)); // does not rerun the calculation
+```
+
+This code sets up a very basic implementation of the Reselect `createSelector` function, allowing you to define input selectors and a result function that memoizes its output for performance gains. The memoization checks for input changes to determine if the result needs recalculation, effectively preventing unnecessary work.

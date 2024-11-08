@@ -1,0 +1,30 @@
+"use strict";
+
+Object.defineProperty(exports, "__esModule", { value: true });
+
+/**
+ * Function to check if an element is a tag (either a regular tag, a script tag, or a style tag).
+ *
+ * @param {Object} elem - The element to be tested
+ * @returns {boolean} - Returns true if the element is a tag, script, or style
+ */
+function isTag(elem) {
+    return (
+        elem.type === "tag" || 
+        elem.type === "script" ||
+        elem.type === "style"
+    );
+}
+
+exports.isTag = isTag;
+
+// Exports for backward compatibility with element type names
+exports.Root = "root";         // Root element type for a document
+exports.Text = "text";         // Type for text nodes
+exports.Directive = "directive"; // Type for <? ... ?>
+exports.Comment = "comment";   // Type for <!-- ... -->
+exports.Script = "script";     // Type for <script> tags
+exports.Style = "style";       // Type for <style> tags
+exports.Tag = "tag";           // Type for any HTML tag
+exports.CDATA = "cdata";       // Type for <![CDATA[ ... ]]>
+exports.Doctype = "doctype";   // Type for <!doctype ...>

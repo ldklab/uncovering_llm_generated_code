@@ -1,0 +1,44 @@
+The provided Node.js code defines utility functions for detecting if a given value is an "arguments object" (e.g., the `arguments` object available within function bodies in JavaScript). The code first checks if the JavaScript environment supports `toStringTag` for enhanced object type detection. It then defines two functions:
+
+1. `isStandardArguments`: Checks if a value is a standard arguments object based on `Object.prototype.toString`.
+2. `isLegacyArguments`: Checks for legacy browser scenarios by verifying a set of conditions including the presence of `callee`, to identify arguments objects in environments without `toStringTag` support.
+
+The code determines whether to use `isStandardArguments` or `isLegacyArguments` for its final export by testing with the current `arguments` object. Additionally, it attaches `isLegacyArguments` to `isStandardArguments` as a property, likely for testing purposes.
+
+Here's a rewrite of the Node.js code with these functionalities explained:
+
+```javascript
+'use strict';
+
+const hasToStringTag = typeof Symbol === 'function' && typeof Symbol.toStringTag === 'symbol';
+const callBound = require('call-bind/callBound');
+
+const $toString = callBound('Object.prototype.toString');
+
+const isStandardArguments = function isArguments(value) {
+	if (hasToStringTag && value && typeof value === 'object' && Symbol.toStringTag in value) {
+		return false;
+	}
+	return $toString(value) === '[object Arguments]';
+};
+
+const isLegacyArguments = function isArguments(value) {
+	if (isStandardArguments(value)) {
+		return true;
+	}
+	return value !== null &&
+		typeof value === 'object' &&
+		typeof value.length === 'number' &&
+		value.length >= 0 &&
+		$toString(value) !== '[object Array]' &&
+		$toString(value.callee) === '[object Function]';
+};
+
+const supportsStandardArguments = (function () {
+	return isStandardArguments(arguments);
+}());
+
+isStandardArguments.isLegacyArguments = isLegacyArguments; // for tests
+
+module.exports = supportsStandardArguments ? isStandardArguments : isLegacyArguments;
+```

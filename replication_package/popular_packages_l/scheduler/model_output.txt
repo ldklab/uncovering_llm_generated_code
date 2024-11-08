@@ -1,0 +1,60 @@
+The `scheduler` package is designed for cooperative scheduling in a browser environment. It's intended to help manage task scheduling, although its API is not finalized, indicating that it's likely still under development or refinement. The package was originally used internally by React, suggesting it deals with managing execution timing effectively, which is crucial for maintaining UI responsiveness in applications.
+
+Here’s a basic implementation of a scheduler in Node.js, which provides the core functionality expected from a task scheduler:
+
+```javascript
+class Scheduler {
+  constructor() {
+    this.taskQueue = [];
+    this.requestIdleCallbackId = null;
+  }
+
+  addTask(callback) {
+    this.taskQueue.push(callback);
+    this.scheduleNextTask();
+  }
+
+  scheduleNextTask() {
+    if (this.taskQueue.length > 0) {
+      if (!this.requestIdleCallbackId) {
+        this.requestIdleCallbackId = requestIdleCallback(deadline => this.runTasks(deadline));
+      }
+    }
+  }
+
+  runTasks(deadline) {
+    while (this.taskQueue.length > 0 && deadline.timeRemaining() > 0) {
+      const task = this.taskQueue.shift();
+      task();
+    }
+
+    this.requestIdleCallbackId = null;
+
+    if (this.taskQueue.length > 0) {
+      this.scheduleNextTask();
+    }
+  }
+}
+
+// Usage example:
+const scheduler = new Scheduler();
+
+scheduler.addTask(() => console.log('Task 1'));
+scheduler.addTask(() => console.log('Task 2'));
+scheduler.addTask(() => console.log('Task 3'));
+
+function requestIdleCallback(callback) {
+  // Fallback for Node.js environment, where requestIdleCallback is not implemented
+  return setTimeout(() => {
+    callback({
+      timeRemaining() {
+        return Number.MAX_VALUE; // Some very large time remaining to simulate idle time
+      }
+    });
+  }, 0);
+}
+
+global.requestIdleCallback = requestIdleCallback; // Simulate browser environment
+```
+
+In this code, the `Scheduler` class manages a queue of tasks. Tasks are added via `addTask`, which pushes functions into the `taskQueue`. The `scheduleNextTask` method makes use of `requestIdleCallback` (simulated here for Node.js) to execute tasks during idle periods. The `runTasks` method runs queued tasks while there's remaining time, which helps in cooperative scheduling by allowing tasks to run without blocking the main thread for long periods. The package effectively balances workload by utilizing idle time efficiently, aligning with how React might handle scheduling for UI rendering tasks.

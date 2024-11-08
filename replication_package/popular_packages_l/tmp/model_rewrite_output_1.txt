@@ -1,0 +1,110 @@
+The Node.js code creates a utility for generating temporary files and directories. It ensures these resources are cleaned up gracefully upon program exit unless specified otherwise. Here's a breakdown of its functionality:
+
+- **Options Defaulting & Unique Naming:**
+  - The code defines default options for temporary file or directory creation, including directory location, file mode, prefix, postfix, whether to retain the file/directory, and retries for generating a unique name.
+  - `tmpNameSync`: Attempts to generate a unique temporary file or directory name by combining a directory path, prefix, random string, and postfix. It retries a specified number of times (`tries`) to ensure uniqueness.
+
+- **File & Directory Creation:**
+  - `fileSync`: Creates a temporary file. It returns an object containing the file name, file descriptor, and a cleanup callback to remove the file if `keep` is not true.
+  - `dirSync`: Similarly, creates a temporary directory and returns an object with the directory name and a cleanup function, again removing it unless `keep` is true.
+
+- **Cleanliness & Resource Management:**
+  - `setGracefulCleanup`: Registers a process exit handler to execute all cleanup callbacks accumulated in `tempFiles`, ensuring no temporary files or directories are left behind if the process exits.
+
+- **Export & Example Usage:**
+  - The utility functions (`fileSync`, `dirSync`, `tmpNameSync`, `setGracefulCleanup`) are exported for usage elsewhere.
+  - There's an example usage at the bottom, demonstrating creating and manually cleaning up a temporary file and directory.
+
+Here's the rewritten code:
+
+```javascript
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
+const crypto = require('crypto');
+
+const tempFiles = [];
+const optionsDefaults = {
+  dir: os.tmpdir(),
+  mode: 0o600,
+  prefix: 'tmp-',
+  postfix: '',
+  keep: false,
+  tries: 3,
+};
+
+function randomChars() {
+  return crypto.randomBytes(3).toString('hex');
+}
+
+function tmpNameSync(options = {}) {
+  const opts = { ...optionsDefaults, ...options };
+  for (let i = 0; i < opts.tries; i++) {
+    const name = path.join(opts.dir, opts.prefix + randomChars() + opts.postfix);
+    if (!fs.existsSync(name)) {
+      return name;
+    }
+  }
+  throw new Error('Could not generate a unique tmp filename');
+}
+
+function fileSync(options = {}) {
+  const name = tmpNameSync(options);
+  const fd = fs.openSync(name, 'w', options.mode || 0o600);
+  const cleanupCallback = () => {
+    try {
+      fs.closeSync(fd);
+    } catch (err) {}
+    try {
+      if (!options.keep) fs.unlinkSync(name);
+    } catch (err) {}
+  };
+
+  if (!options.keep) {
+    tempFiles.push(cleanupCallback);
+  }
+
+  return { name, fd, cleanupCallback };
+}
+
+function dirSync(options = {}) {
+  const name = tmpNameSync(options);
+  fs.mkdirSync(name, options.mode || 0o700);
+  const cleanupCallback = () => {
+    try {
+      fs.rmdirSync(name, { recursive: options.unsafeCleanup || false });
+    } catch (err) {}
+  };
+
+  if (!options.keep) {
+    tempFiles.push(cleanupCallback);
+  }
+
+  return { name, cleanupCallback };
+}
+
+function setGracefulCleanup() {
+  process.on('exit', () => {
+    tempFiles.forEach(callback => callback());
+  });
+}
+
+module.exports = {
+  fileSync,
+  dirSync,
+  tmpNameSync,
+  setGracefulCleanup,
+};
+
+// Example usage
+const tmp = require('./tmp');
+tmp.setGracefulCleanup();
+
+const tmpfile = tmp.fileSync();
+console.log('Temp file created at:', tmpfile.name);
+tmpfile.cleanupCallback();
+
+const tmpdir = tmp.dirSync();
+console.log('Temp directory created at:', tmpdir.name);
+tmpdir.cleanupCallback();
+```

@@ -1,0 +1,73 @@
+The Node.js code provided is a module that performs transformation and pattern matching operations on brace patterns. The primary function `braces` can take a string or an array of brace patterns and expands or compiles them based on given options, returning results in different formats as needed. 
+
+### Key Features:
+- **Expansion and Compilation:** 
+  - If `options.expand` is `true`, it returns an array of expanded strings, which enumerate all possible combinations defined by the brace pattern.
+  - If `options.compile` is `true`, it returns regex-compatible strings, suitable for pattern matching.
+- **Stringify/Parse:**
+  - The module can parse a brace pattern into an AST (Abstract Syntax Tree) and then stringify it back into a brace pattern.
+- **Duplicate and Empty String Handling:** 
+  - It provides options to filter out duplicates (`nodupes`) and empty strings (`noempty`).
+
+Here's the rewritten code:
+
+```javascript
+'use strict';
+
+const stringify = require('./lib/stringify');
+const compile = require('./lib/compile');
+const expand = require('./lib/expand');
+const parse = require('./lib/parse');
+
+const braces = (input, options = {}) => {
+  let output = Array.isArray(input)
+    ? input.reduce((acc, pattern) => {
+        const result = braces.create(pattern, options);
+        return Array.isArray(result) ? acc.concat(result) : [...acc, result];
+      }, [])
+    : [].concat(braces.create(input, options));
+
+  if (options.expand && options.nodupes) {
+    output = [...new Set(output)];
+  }
+  
+  return output;
+};
+
+braces.parse = (input, options = {}) => parse(input, options);
+
+braces.stringify = (input, options = {}) => {
+  const data = typeof input === 'string' ? braces.parse(input, options) : input;
+  return stringify(data, options);
+};
+
+braces.compile = (input, options = {}) => {
+  const data = typeof input === 'string' ? braces.parse(input, options) : input;
+  return compile(data, options);
+};
+
+braces.expand = (input, options = {}) => {
+  const data = typeof input === 'string' ? braces.parse(input, options) : input;
+  let result = expand(data, options);
+
+  if (options.noempty) {
+    result = result.filter(Boolean);
+  }
+
+  if (options.nodupes) {
+    result = [...new Set(result)];
+  }
+
+  return result;
+};
+
+braces.create = (input, options = {}) => {
+  if (input === '' || input.length < 3) {
+    return [input];
+  }
+
+  return options.expand ? braces.expand(input, options) : braces.compile(input, options);
+};
+
+module.exports = braces;
+```

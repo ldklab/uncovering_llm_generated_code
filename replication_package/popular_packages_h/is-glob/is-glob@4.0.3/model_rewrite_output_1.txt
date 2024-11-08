@@ -1,0 +1,108 @@
+The provided Node.js code defines a module to determine if a given string is a glob pattern. A glob pattern is a string that includes wildcard characters `*`, `?`, or specific placeholder characters within braces `{}`, square brackets `[]`, or parentheses `()`, often used in file path matching.
+
+### Explanation:
+
+1. **Dependencies**: The `is-extglob` module is required to check if a string includes extended globbing patterns like `?(pattern)`, `!(pattern)`, etc.
+
+2. **Character Map**: An object `chars` maps opening characters `{`, `(`, `[` to their corresponding closing characters `}`, `)`, `]`.
+
+3. **Strict Check**: A function `strictCheck` is defined to determine if a string is a strict glob pattern based on precise rules and certain conditions like characters `*`, `?`, '+' etc.
+
+4. **Relaxed Check**: A function `relaxedCheck` considers broader rules and recognizes basic glob patterns that include wildcard characters or any of `{}`, `()`, `[]`.
+
+5. **Main Function**: The main function `isGlob(str, options)` is exported. It checks if a string is non-empty, if it uses extended glob patterns using `isExtglob`, or applies a stricter or relaxed check based on the options provided (strict checking by default, unless `options.strict` is `false`).
+
+### Rewritten Code:
+
+```javascript
+const isExtglob = require('is-extglob');
+
+const chars = { '{': '}', '(': ')', '[': ']' };
+
+function strictCheck(str) {
+  if (str.startsWith('!')) return true;
+
+  let index = 0;
+  let indices = { pipe: -2, closeSquare: -2, closeCurly: -2, closeParen: -2, backSlash: -2 };
+
+  while (index < str.length) {
+    const char = str[index];
+
+    if (char === '*') return true;
+
+    if (str[index + 1] === '?' && /[\].+)]/.test(char)) return true;
+
+    updateIndices(str[index] === '[', str, index, indices, 'closeSquare', '[');
+
+    if (checkIndices(indices.closeSquare, index, ']', str, indices)) return true;
+
+    updateIndices(str[index] === '{', str, index, indices, 'closeCurly', '{');
+
+    if (str[index] === '\\') {
+      const nextChar = str[index + 1];
+      index += 2;
+      const closeChar = chars[nextChar];
+
+      if (closeChar) {
+        const n = str.indexOf(closeChar, index);
+        if (n !== -1) index = n + 1;
+      }
+
+      if (str[index] === '!') return true;
+    } else {
+      index++;
+    }
+  }
+  return false;
+
+  function updateIndices(condition, str, index, indices, closeType, openChar) {
+    if (condition && str[index + 1] !== chars[openChar]) {
+      indices[closeType] = str.indexOf(chars[openChar], index);
+    }
+  }
+
+  function checkIndices(closeTypeIndex, currentIndex, closeChar, str, indices) {
+    if (closeTypeIndex > currentIndex) {
+      indices.backSlash = str.indexOf('\\', currentIndex);
+      if (indices.backSlash === -1 || indices.backSlash > closeTypeIndex) return true;
+    }
+    return false;
+  }
+}
+
+function relaxedCheck(str) {
+  if (str.startsWith('!')) return true;
+
+  let index = 0;
+
+  while (index < str.length) {
+    if (/[*?{}()[\]]/.test(str[index])) return true;
+
+    if (str[index] === '\\') {
+      const nextChar = str[index + 1];
+      index += 2;
+      const closeChar = chars[nextChar];
+
+      if (closeChar) {
+        const n = str.indexOf(closeChar, index);
+        if (n !== -1) index = n + 1;
+      }
+
+      if (str[index] === '!') return true;
+    } else {
+      index++;
+    }
+  }
+  return false;
+}
+
+module.exports = function isGlob(str, options) {
+  if (typeof str !== 'string' || str === '') return false;
+
+  if (isExtglob(str)) return true;
+
+  const check = (options && options.strict === false) ? relaxedCheck : strictCheck;
+
+  return check(str);
+};
+```

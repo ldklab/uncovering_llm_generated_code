@@ -1,0 +1,88 @@
+The given Node.js code defines a `Prompts` class that extends the `EventEmitter`. This class is designed to facilitate interactive command-line prompts, allowing users to answer questions in sequence. Here's a brief explanation of the functionality:
+
+1. **Class Construction**: When an instance of `Prompts` is created, it initializes a readline interface to handle input and output streams for the command line, and an `answers` object to store the responses.
+
+2. **ask Method**: This asynchronous method takes a single question or an array of questions. It iterates over each question and uses the `prompt` method to get user input. The responses are stored in the `answers` object with the question's `name` as the key.
+
+3. **prompt Method**: This method handles the display of each question, waits for a user's response, and processes validations and formatting if specified. The resolved value from the prompt is either directly from the user input or uses defaults (like `initial` value). If the input doesn't pass validation, it asks the user again.
+
+4. **Example Usage**: The script then demonstrates how to use the `Prompts` class by asking the user for their age with a validation rule (must be 18 or older) and a series of three questions involving a username, age, and open-ended text.
+
+Below is a possible rewrite of the given Node.js code that maintains the same functionality:
+
+```javascript
+const readline = require('readline');
+const { EventEmitter } = require('events');
+
+class Prompts extends EventEmitter {
+  constructor() {
+    super();
+    this.rl = readline.createInterface({
+      input: process.stdin,
+      output: process.stdout
+    });
+    this.answers = {};
+  }
+
+  async ask(questions) {
+    const questionsArray = Array.isArray(questions) ? questions : [questions];
+    
+    for (const q of questionsArray) {
+      const response = await this.prompt(q);
+      if (q.name) {
+        this.answers[q.name] = response;
+      }
+    }
+    
+    this.rl.close();
+    return this.answers;
+  }
+
+  prompt(question) {
+    return new Promise(resolve => {
+      const { message, initial, validate, format } = question;
+      const displayMessage = `${message} ${initial ? '(' + initial + ') ' : ''}`;
+
+      this.rl.question(displayMessage, (input) => {
+        let value = input || initial;
+
+        if (validate) {
+          const validationOutcome = validate(value);
+          if (validationOutcome !== true) {
+            console.log(validationOutcome);
+            return resolve(this.prompt(question));
+          }
+        }
+
+        if (format) {
+          value = format(value);
+        }
+
+        resolve(value);
+      });
+    });
+  }
+}
+
+// Example usage
+(async () => {
+  const prompts = new Prompts();
+  
+  const singleResponse = await prompts.ask({
+    type: 'number',
+    name: 'age',
+    message: 'How old are you?',
+    validate: value => value < 18 ? 'Nightclub is 18+ only' : true
+  });
+  
+  console.log(singleResponse); // => { age: 24 }
+  
+  const multipleResponses = await prompts.ask([
+    { type: 'text', name: 'username', message: 'What is your GitHub username?' },
+    { type: 'number', name: 'age', message: 'How old are you?' },
+    { type: 'text', name: 'about', message: 'Tell something about yourself', initial: 'Why should I?' }
+  ]);
+  
+  console.log(multipleResponses); // => { username: '...', age: '...', about: '...' }
+})();
+```

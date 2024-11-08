@@ -1,0 +1,163 @@
+The provided Node.js code is an implementation of an Embedded JavaScript templating engine, known as EJS. It allows developers to use plain JavaScript code embedded within HTML code, by defining templates that can render HTML dynamically based on various data inputs. Here is a breakdown of the core functionalities of the code:
+
+1. **File and Module Details**: It includes comments describing licenses, author information, and file/module descriptions. The EJS engine is composed of both internal and external functions needed for templating.
+
+2. **Dependencies**: The code imports the `fs` and `path` modules for file operations and path manipulations, and a custom `utils` module that provides utility functions, such as caching and data copying.
+
+3. **Caching**: EJS uses a caching mechanism to store compiled template functions, supporting in-memory caching to improve performance for subsequent renders.
+
+4. **File Loading**: It defines mechanisms to load file content that can be used for preprocessing or restricting file access to specific directories.
+
+5. **Template Resolution**: The functionality to resolve the paths of included files in templates is provided, accommodating both absolute and relative paths based on the root configuration or options defined during setup.
+
+6. **Handling Templates**: The EJS engine handles the caching of templates and compiles them into JavaScript functions that can render data to HTML. This process includes error handling, templating logic (looping, conditions), and expressive markup included in templates.
+
+7. **API Functions**: 
+   - `compile()`: This function converts an EJS template string to a reusable function.
+   - `render()`: This function renders a template with data and options provided.
+   - `renderFile()`: This function read a file, compiles it if necessary, and renders it with provided data.
+
+8. **Utility and Internal Methods**: These methods help handle different parts of the rendering process, like rethrowing errors, handling includes, and template compilation.
+
+9. **Configuration Options**: Various options exist to customize the templating, such as delimiters, locals names, caching, escaping, rendering configuration, and more.
+
+Here is a streamlined version of the Node.js EJS library code encapsulated in a single code block:
+
+```markdown
+'use strict';
+
+var fs = require('fs');
+var path = require('path');
+var utils = require('./utils');
+
+var cacheEnabled = false;
+var cache = utils.cache;
+var fileLoader = fs.readFileSync;
+var _DEFAULT_LOCALS_NAME = 'locals';
+var _REGEX_STRING = '(<%%|%%>|<%=|<%-|<%_|<%#|<%|%>|-%>|_%>)';
+var _DEFAULT_OPEN_DELIMITER = '<';
+var _DEFAULT_CLOSE_DELIMITER = '>';
+var _DEFAULT_DELIMITER = '%';
+
+exports.fileLoader = function(filePath) {
+  return fileLoader(filePath);
+};
+
+function resolveInclude(name, filename, isDir) {
+  var includePath = path.resolve(isDir ? filename : path.dirname(filename), name);
+  if (!path.extname(name)) {
+    includePath += '.ejs';
+  }
+  return includePath;
+}
+
+function render(template, data, options) {
+  options = options || {};
+  data = data || {};
+  Object.assign(options, { localsName: _DEFAULT_LOCALS_NAME });
+  return compile(template, options)(data);
+}
+
+function compile(template, options) {
+  options = options || {};
+  var templ = new Template(template, options);
+  return templ.compile();
+}
+
+function handleCache(options, template) {
+  var func;
+  var filename = options.filename;
+  var hasTemplate = arguments.length > 1;
+
+  if (options.cache && filename) {
+    func = cache.get(filename);
+    if (func) return func;
+    if (!hasTemplate) {
+      template = fileLoader(filename).toString();
+    }
+  } else if (!hasTemplate) {
+    template = fileLoader(filename).toString();
+  }
+
+  func = compile(template, options);
+  if (options.cache && filename) {
+    cache.set(filename, func);
+  }
+  return func;
+}
+
+exports.renderFile = function (path, data, options, cb) {
+  options = options || {};
+  data = data || {};
+  var opts = { filename: path };
+  if (typeof cb !== 'function') throw new Error('Callback is required');
+  
+  try {
+    var result = handleCache(opts, null)(data);
+    cb(null, result);
+  } catch (err) {
+    cb(err);
+  }
+};
+
+function Template(text, opts) {
+  this.templateText = text;
+  this.opts = opts;
+  this.source = '';
+  this.mode = null;
+  this.regex = this.createRegex();
+}
+
+Template.prototype = {
+  createRegex: function () {
+    var str = _REGEX_STRING;
+    var delim = utils.escapeRegExpChars(this.opts.delimiter || _DEFAULT_DELIMITER);
+    var open = utils.escapeRegExpChars(this.opts.openDelimiter || _DEFAULT_OPEN_DELIMITER);
+    var close = utils.escapeRegExpChars(this.opts.closeDelimiter || _DEFAULT_CLOSE_DELIMITER);
+    str = str.replace(/%/g, delim).replace(/</g, open).replace(/>/g, close);
+    return new RegExp(str);
+  },
+
+  compile: function () {
+    var src = 'var __output = ""; var __append = function(s) { if (s !== null && s !== undefined) __output += s; };';
+    src += this.parseTemplateText().concat(' return __output;').join('\n');
+    try {
+      var fn = new Function(this.opts.localsName || _DEFAULT_LOCALS_NAME, 'escapeFn', src);
+      return fn;
+    } catch (e) {
+      throw e;
+    }
+  },
+
+  parseTemplateText: function () {
+    var str = this.templateText;
+    var result = this.regex.exec(str);
+    var arr = [], line;
+    while (result) {
+      line = str.slice(0, result.index);
+      if (line) arr.push('__append(' + JSON.stringify(line) + ');');
+      line = result[0];
+      switch (line) {
+        case '<%': arr.push(''); break;
+        case '<%=': arr.push('__append(escapeFn('); break;
+        case '<%-': arr.push('__append('); break;
+        case '%>': arr.push(');'); break;
+        default: arr.push('__append(' + JSON.stringify(line) + ');'); break;
+      }
+      str = str.slice(result.index + line.length);
+      result = this.regex.exec(str);
+    }
+    if (str) arr.push('__append(' + JSON.stringify(str) + ');');
+    return arr;
+  }
+};
+
+exports.compile = compile;
+exports.render = render;
+exports.VERSION = require('../package.json').version;
+exports.name = 'ejs';
+
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = exports;
+}
+```

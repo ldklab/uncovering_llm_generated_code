@@ -1,0 +1,87 @@
+The provided Node.js code is a setup script for the winston logging library. It organizes and exposes components of the library, defining properties and methods that are available to users. Here's a summary of its functionality:
+
+- Imports necessary modules and components including `logform`, various internal Winston components, and `winston-transport`.
+- Creates a `winston` object that is exported to provide access to library functionalities.
+- Sets the `version` property using the library's version from `package.json`.
+- Imports and exposes default transports and configurations.
+- Hoists format-related functionalities from `logform` and exposes them as `addColors` and `format`.
+- Exposes core logging-related prototypes and utilities such as `createLogger`, `ExceptionHandler`, `RejectionHandler`, `Container`, and `Transport`.
+- Initializes a `Container` object for managing multiple logger instances under `winston.loggers`.
+- Creates a `defaultLogger` for using the logger without explicitly creating an instance.
+- Maps several methods from `winston.config.npm.levels` and other logging methods onto the `winston` object directly, routing them through `defaultLogger`.
+- Defines `getters` and `setters` for `level`, `exceptions`, `exitOnError`, and default properties such as `exceptionHandlers`, `rejectionHandlers`, and `transports`.
+- Includes compatibility and deprecation warnings to maintain backward compatibility and guide users transitioning from previous versions.
+
+Here's a refactored version of the code following the explained functionality:
+
+```javascript
+'use strict';
+
+const logform = require('logform');
+const { warn } = require('./winston/common');
+const { version } = require('../package.json');
+const transports = require('./winston/transports');
+const config = require('./winston/config');
+const createLogger = require('./winston/create-logger');
+const ExceptionHandler = require('./winston/exception-handler');
+const RejectionHandler = require('./winston/rejection-handler');
+const Container = require('./winston/container');
+const Transport = require('winston-transport');
+
+const winston = {
+  version,
+  transports,
+  config,
+  addColors: logform.levels,
+  format: logform.format,
+  createLogger,
+  ExceptionHandler,
+  RejectionHandler,
+  Container,
+  Transport,
+  loggers: new Container(),
+};
+
+const defaultLogger = winston.createLogger();
+
+Object.keys(winston.config.npm.levels).concat([
+  'log', 'query', 'stream', 'add', 'remove', 'clear', 'profile', 
+  'startTimer', 'handleExceptions', 'unhandleExceptions', 
+  'handleRejections', 'unhandleRejections', 'configure', 'child'
+]).forEach(
+  method => winston[method] = (...args) => defaultLogger[method](...args)
+);
+
+Object.defineProperty(winston, 'level', {
+  get: () => defaultLogger.level,
+  set: (val) => { defaultLogger.level = val; },
+});
+
+Object.defineProperty(winston, 'exceptions', {
+  get: () => defaultLogger.exceptions,
+});
+
+['exitOnError'].forEach(prop => {
+  Object.defineProperty(winston, prop, {
+    get: () => defaultLogger[prop],
+    set: (val) => { defaultLogger[prop] = val; }
+  });
+});
+
+Object.defineProperty(winston, 'default', {
+  get: () => ({
+    exceptionHandlers: defaultLogger.exceptionHandlers,
+    rejectionHandlers: defaultLogger.rejectionHandlers,
+    transports: defaultLogger.transports
+  })
+});
+
+warn.deprecated(winston, 'setLevels');
+warn.forFunctions(winston, 'useFormat', ['cli']);
+warn.forProperties(winston, 'useFormat', ['padLevels', 'stripColors']);
+warn.forFunctions(winston, 'deprecated', ['addRewriter', 'addFilter', 'clone', 'extend']);
+warn.forProperties(winston, 'deprecated', ['emitErrs', 'levelLength']);
+warn.moved(winston, 'createLogger', 'Logger');
+
+module.exports = winston;
+```

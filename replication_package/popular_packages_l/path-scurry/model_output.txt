@@ -1,0 +1,157 @@
+The `path-scurry` Node.js package offers highly optimized utilities for traversing and interacting with file system paths. This package is especially designed for scenarios requiring efficient handling of file system operations which are central to tools like glob pattern matching.
+
+### Key Features:
+
+1. **Efficient File System Traversal**: 
+   - Uses caching to avoid redundant `readdir()` and `stat()` operations, hence reducing overhead with repeated path resolutions and directory listings.
+   - Avoids unnecessary directory reads for paths verified to not be directories, optimizing the overall traversal process.
+
+2. **Minimal String Operations**:
+   - Reduces operations like `path.resolve()`, `dirname()`, `basename()`, etc., making it suitable for environments where performance tuning is critical.
+
+3. **Flexible API**:
+   - Provides a range of usage options beyond just streams or iterators, aligning closely with Node's native `fs` module.
+
+4. **Smart Caching with LRUCache**:
+   - Incorporates `LRUCache` to manage cache effectively, speeding up operations significantly after the first walk.
+
+5. **Platform-Specific Handling**:
+   - Manages platform-specific path intricacies, like Windows UNC paths, seamlessly, delivering consistent behavior across different systems.
+
+6. **Performance-Balanced Options**:
+   - Offers configuration options to balance between speed and memory usage, like `childrenCacheSize` for managing caching of directory entries.
+
+### Usage:
+
+Here's how you might use `path-scurry` to efficiently manage file system traversal:
+
+- **Initialization**: Create a `PathScurry` object for your working directory. This object will be central in managing filesystem operations.
+
+- **Directory Traversal**: Use methods such as `walk()`, `walkSync()`, `iterate()` and their sync/async variations to traverse directories. These can return entries in various forms (object or path string) as specified by options.
+
+- **Reading Directories**: Utilize `readdir()` and `readdirSync()` to read contents of directories efficiently with optimal caching.
+
+- **Resolution and Path Manipulation**: Methods like `resolve()`, `relative()`, `dirname()`, and `basename()` provide quick resolution and manipulation of paths with caching benefits.
+
+- **Symbolic Links and Metadata Access**: Functions like `readlink()` and `lstat()` provide access to symlink targets and path metadata, with synchronous counterparts available.
+
+### Functionality Code
+
+```javascript
+const fs = require('fs');
+const path = require('path');
+const { LRUCache } = require('lru-cache');
+const { Minipass } = require('minipass');
+
+class PathScurry {
+    constructor(cwd = process.cwd(), options = {}) {
+        this.cwd = this._resolvePath(cwd);
+        this.nocase = options.nocase !== undefined ? options.nocase : process.platform === 'win32' || process.platform === 'darwin';
+        this.childrenCacheSize = options.childrenCacheSize || 16 * 1024;
+        this.cache = new LRUCache({
+            max: this.childrenCacheSize,
+            ttl: 1000 * 60 * 5,
+            allowStale: true,
+        });
+        this.fs = options.fs || fs.promises;
+        this.root = path.parse(this.cwd).root;
+    }
+
+    _resolvePath(...paths) {
+        return path.resolve(...paths);
+    }
+
+    async walk(entry = this.cwd, opts = {}) {
+        const options = { ...opts, withFileTypes: true };
+        const startPath = this._getPath(entry);
+        const results = [];
+        const processEntry = async (pt) => {
+            results.push(pt);
+            if (pt.isDirectory()) {
+                const children = await this.readdir(pt, options);
+                await Promise.all(children.map(processEntry));
+            }
+        };
+        await processEntry(startPath);
+        return results;
+    }
+
+    walkSync(entry = this.cwd, opts = {}) {
+        const options = { ...opts, withFileTypes: true };
+        const startPath = this._getPath(entry);
+        const results = [];
+        const processEntry = (pt) => {
+            results.push(pt);
+            if (pt.isDirectory()) {
+                const children = this.readdirSync(pt, options);
+                children.forEach(processEntry);
+            }
+        };
+        processEntry(startPath);
+        return results;
+    }
+
+    async readdir(dir = this.cwd, opts = {}) {
+        const options = { ...opts, withFileTypes: true };
+        const directoryPath = this._getPath(dir);
+        if (!directoryPath.isDirectory()) return [];
+        const cached = this.cache.get(directoryPath);
+        if (cached) return cached;
+
+        const result = await this.fs.readdir(directoryPath, options);
+        this.cache.set(directoryPath, result);
+        return result.map(entry => this._getPath(path.join(directoryPath, entry.name || entry)));
+    }
+
+    readdirSync(dir = this.cwd, opts = {}) {
+        const options = { ...opts, withFileTypes: true };
+        const directoryPath = this._getPath(dir);
+        if (!directoryPath.isDirectory()) return [];
+        const cached = this.cache.get(directoryPath);
+        if (cached) return cached;
+
+        const result = fs.readdirSync(directoryPath, options);
+        const resultPaths = result.map(entry => this._getPath(path.join(directoryPath, entry.name || entry)));
+        this.cache.set(directoryPath, resultPaths);
+        return resultPaths;
+    }
+
+    _getPath(entry) {
+        if (entry instanceof Path) return entry;
+        const resolved = this._resolvePath(entry);
+        return new Path(resolved, this);
+    }
+
+    resolve(...paths) {
+        const resolved = this._resolvePath(...paths);
+        return this._getPath(resolved);
+    }
+}
+
+class Path {
+    constructor(name, scurry) {
+        this.name = name;
+        this.scurry = scurry;
+    }
+
+    isDirectory() {
+        try {
+            return fs.lstatSync(this.name).isDirectory();
+        } catch (e) {
+            return false;
+        }
+    }
+
+    resolve(p) {
+        return this.scurry.resolve(this.name, p);
+    }
+
+    fullpath() {
+        return this.name;
+    }
+}
+
+module.exports = { PathScurry, Path };
+```
+
+This code provides a simplified yet high-performing overview of the main functionalities offered by the `path-scurry` package in terms of handling paths and directory traversal in a Node.js environment.

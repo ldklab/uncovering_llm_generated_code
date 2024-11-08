@@ -1,0 +1,78 @@
+The provided Node.js code defines a function `deepEqual` that checks if two values or objects are deeply equal. Here's a breakdown of its functionality:
+
+- `deepEqual`: Exports a function that compares `actual` and `expected` values for deep equality. It covers various scenarios such as:
+  - Handling special cases like +0 and -0 using `areZerosEqual`.
+  - Simple equality checks with `===`.
+  - Date objects are compared by their time values.
+  - Checking for `NaN` values using `isNumberNaN`.
+  - For non-object types, values are compared using `==`.
+  - Objects and arrays (`objEquiv`) are compared by their keys and values, accounting for the same number and set of keys, and equivalent values for each key.
+  
+- `isUndefinedOrNull`: Checks if a value is `null` or `undefined`.
+
+- `isArguments`: Determines if an object is an `Arguments` object by using `Object.prototype.toString`.
+
+- `isNumberNaN`: Checks if a value is `NaN`.
+
+- `areZerosEqual`: Differentiates between +0 and -0 by checking their inverse reciprocals, as +0 and -0 have different reciprocals.
+
+- `objEquiv`: Compares two objects or arrays for deep equality by:
+  - Checking for `null` or `undefined` values.
+  - Ensuring both objects have the same prototype.
+  - Converting `Arguments` objects to arrays for comparison.
+  - Extracting keys using `Object.keys` or a fallback method if `Object.keys` is not available.
+  - Sorting keys and ensuring both objects have the same keys.
+  - Using `deepEqual` to recursively check equality for each corresponding key's value.
+
+Here is a possible rewrite of the code:
+
+```javascript
+const deepEqual = (actual, expected) => {
+  if (actual === 0 && expected === 0) return areZerosEqual(actual, expected);
+  if (actual === expected) return true;
+  if (actual instanceof Date && expected instanceof Date) return actual.getTime() === expected.getTime();
+  if (isNumberNaN(actual)) return isNumberNaN(expected);
+  if (typeof actual !== 'object' && typeof expected !== 'object') return actual == expected;
+  return objEquiv(actual, expected);
+};
+
+const isUndefinedOrNull = value => value === null || value === undefined;
+
+const isArguments = object => Object.prototype.toString.call(object) === '[object Arguments]';
+
+const isNumberNaN = value => typeof value === 'number' && value !== value;
+
+const areZerosEqual = (zeroA, zeroB) => (1 / zeroA) === (1 / zeroB);
+
+const objEquiv = (a, b) => {
+  if (isUndefinedOrNull(a) || isUndefinedOrNull(b)) return false;
+  if (a.prototype !== b.prototype) return false;
+  if (isArguments(a)) {
+    if (!isArguments(b)) return false;
+    a = Array.prototype.slice.call(a);
+    b = Array.prototype.slice.call(b);
+    return deepEqual(a, b);
+  }
+  
+  try {
+    const ka = Object.keys(a);
+    const kb = Object.keys(b);
+    if (ka.length !== kb.length) return false;
+    ka.sort();
+    kb.sort();
+    for (let i = ka.length - 1; i >= 0; i--) {
+      if (ka[i] !== kb[i]) return false;
+    }
+    for (let i = ka.length - 1; i >= 0; i--) {
+      const key = ka[i];
+      if (!deepEqual(a[key], b[key])) return false;
+    }
+  } catch {
+    return false;
+  }
+  
+  return true;
+};
+
+module.exports = deepEqual;
+```

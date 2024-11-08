@@ -1,0 +1,51 @@
+// object.values.js
+(function() {
+    'use strict';
+
+    // Determine if the environment supports symbols
+    var supportsSymbols = typeof Symbol === 'function' && typeof Symbol() === 'symbol';
+
+    function getObjectValues(obj) {
+        if (obj == null) { // Handle null or undefined
+            throw new TypeError('Cannot convert undefined or null to object');
+        }
+        var propertyKeys = Object.keys(obj);
+        var valuesArray = [];
+        
+        // Collect values of the object's own string-keyed properties
+        for (var i = 0; i < propertyKeys.length; i++) {
+            valuesArray.push(obj[propertyKeys[i]]);
+        }
+        
+        // If symbols are supported, collect values of the object's own symbol-keyed properties
+        if (supportsSymbols) {
+            var symbolKeys = Object.getOwnPropertySymbols(obj);
+            for (var j = 0; j < symbolKeys.length; j++) {
+                if (Object.prototype.propertyIsEnumerable.call(obj, symbolKeys[j])) {
+                    valuesArray.push(obj[symbolKeys[j]]);
+                }
+            }
+        }
+        
+        return valuesArray;
+    }
+
+    getObjectValues.shim = function shimGetObjectValues() {
+        if (!Object.values) { // Add Object.values if not present
+            Object.defineProperty(Object, 'values', {
+                value: getObjectValues,
+                configurable: true,
+                enumerable: false,
+                writable: true
+            });
+        }
+        return Object.values;
+    };
+
+    // Export the function for module environments and the browser
+    if (typeof module !== 'undefined' && module.exports) {
+        module.exports = getObjectValues;
+    } else {
+        window.getObjectValues = getObjectValues;
+    }
+}());

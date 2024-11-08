@@ -1,0 +1,94 @@
+The `@smithy/middleware-retry` package is a middleware component for use in Node.js applications. It is intended to handle retry logic for HTTP requests or other asynchronous operations, especially in scenarios where transient errors might occur.
+
+### Functionality Overview
+
+1. **Retry Logic:**
+   - The package integrates retry logic in your operations, ensuring that failed requests are retried a specified number of times before ultimately failing.
+   
+2. **Configurations:**
+   - The retry behavior, such as the number of retries and the delay strategy between retries, can be configured. This package relies on `@smithy/util-retry` for the detailed configuration and implementation of retry mechanisms.
+   
+3. **Integration:**
+   - It serves as a middleware, meaning it can be plugged into a middleware stack that processes requests and responses, typically used in HTTP clients.
+
+The provided README directs users to `@smithy/util-retry` for detailed retry behavior and configuration information, indicating that the core retry functionality may be elaborated in that utility package. Additionally, users are encouraged to refer to AWS documentation for understanding retry behavior in the context of AWS services.
+
+### Code Implementation
+
+Below is a basic code implementation of the retry middleware functionality for a Node.js package:
+
+```javascript
+class RetryMiddleware {
+    constructor(config) {
+        this.maxRetries = config.maxRetries || 3;
+        this.retryDelay = config.retryDelay || 1000; // default delay of 1 second
+    }
+    
+    async handle(request, next) {
+        let attempts = 0;
+        let lastError;
+
+        while (attempts < this.maxRetries) {
+            try {
+                const response = await next(request);
+                return response;
+            } catch (error) {
+                lastError = error;
+
+                if (!this.shouldRetry(error, attempts)) {
+                    throw error;
+                }
+
+                attempts++;
+                await this.delay(this.retryDelay * attempts);
+            }
+        }
+
+        throw lastError;
+    }
+
+    shouldRetry(error, attempts) {
+        // Customize logic to determine whether to retry based on error type and attempt number
+        return attempts < this.maxRetries && this.isTransientError(error);
+    }
+
+    isTransientError(error) {
+        // Here you would define logic to determine if an error is transient,
+        // for instance, checking if it's a network error or a 5XX HTTP status code
+        return error.isNetworkError || (error.statusCode >= 500 && error.statusCode < 600);
+    }
+
+    async delay(ms) {
+        return new Promise(resolve => setTimeout(resolve, ms));
+    }
+}
+
+// Usage with an HTTP client
+async function fetchDataWithRetry(url, options, retryConfig) {
+    const retryMiddleware = new RetryMiddleware(retryConfig);
+    const client = async (url, options) => {
+        // Here we'd implement the actual HTTP request, e.g., using fetch or axios
+        // This example just throws to simulate a failure
+        throw new Error('Simulated network error');
+    };
+
+    const request = { url, options };
+    return retryMiddleware.handle(request, client);
+}
+
+// Example usage
+const retryConfig = {
+    maxRetries: 5,
+    retryDelay: 2000  // 2 seconds between retries
+};
+
+fetchDataWithRetry('https://example.com/api/data', {}, retryConfig)
+    .then(response => {
+        console.log('Data fetched successfully:', response);
+    })
+    .catch(error => {
+        console.error('Failed to fetch data:', error);
+    });
+```
+
+This implementation outlines a basic retry middleware structure, handling retries with customizable retry attempts and delays. It uses a simple condition to decide when to retry, and a simulated error to demonstrate its usage.

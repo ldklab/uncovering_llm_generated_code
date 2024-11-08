@@ -1,0 +1,90 @@
+The provided Node.js code defines a utility function called `runAsync`, which is designed to run another function either asynchronously or synchronously. The `runAsync` function wraps a given function (`func`) and allows it to be executed with a callback or a Promise. It handles the function's return value as either a Promise or through a callback. Additionally, it ensures proper resolution of Promises, warns about potential conflicts (e.g., if both callbacks and Promises are used inappropriately), and handles errors appropriately.
+
+Here's a breakdown of the functionality:
+
+1. `isPromise`: A helper function to determine if an object is a Promise.
+2. `runAsync`: The main function that returns another function wrapping `func`. The returned function can handle both asynchronous and synchronous executions:
+   - Enables the use of callbacks for asynchronous operations.
+   - If the wrapped function's execution returns a Promise, it resolves or rejects based on the Promise's outcome.
+   - Handles possible runtime warnings for improper use of both return types and callbacks simultaneously.
+3. `runAsync.cb`: A higher-order function that allows using `async()` within the function to be run, enabling callback-based asynchronous handling.
+
+```javascript
+'use strict';
+
+// Helper function to check whether an object is a Promise
+function isPromise(obj) {
+  return !!obj && (typeof obj === 'object' || typeof obj === 'function') && typeof obj.then === 'function';
+}
+
+// Main function that returns a function to run another function asynchronously or synchronously
+var runAsync = module.exports = function (func, cb) {
+  cb = cb || function () {}; // Default to a no-op if no callback provided
+
+  return function () {
+    var args = arguments; // Arguments to pass to 'func'
+
+    var promise = new Promise(function (resolve, reject) {
+      var resolved = false, rejected = false, usingCallback = false, callbackConflict = false, contextEnded = false;
+
+      const wrappedResolve = function (value) {
+        if (resolved) console.warn('Run-async promise already resolved.');
+        resolved = true;
+        resolve(value);
+      }
+
+      const wrappedReject = function (value) {
+        if (rejected) console.warn('Run-async promise already rejected.');
+        rejected = true;
+        reject(value);
+      }
+
+      var answer = func.apply({
+        async: function () {
+          if (contextEnded) {
+            console.warn('Run-async async() called outside a valid run-async context, callback will be ignored.');
+            return function() {};
+          }
+          if (callbackConflict) {
+            console.warn('Run-async wrapped function (async) returned a promise.\nCalls to async() callback can have unexpected results.');
+          }
+          usingCallback = true;
+          return function (err, value) {
+            if (err) wrappedReject(err);
+            else wrappedResolve(value);
+          };
+        }
+      }, Array.prototype.slice.call(args));
+
+      if (usingCallback) {
+        if (isPromise(answer)) {
+          console.warn('Run-async wrapped function (sync) returned a promise but async() callback must be executed to resolve.');
+        }
+      } else {
+        if (isPromise(answer)) {
+          callbackConflict = true;
+          answer.then(wrappedResolve, wrappedReject);
+        } else {
+          wrappedResolve(answer);
+        }
+      }
+      contextEnded = true;
+    });
+
+    promise.then(cb.bind(null, null), cb); // Call the callback with (null, result) on resolve, else call on reject
+
+    return promise;
+  }
+};
+
+// Helper to run a function with a callback style
+runAsync.cb = function (func, cb) {
+  return runAsync(function () {
+    var args = Array.prototype.slice.call(arguments);
+    if (args.length === func.length - 1) {
+      args.push(this.async()); // Ensures the async callback is inserted if needed
+    }
+    return func.apply(this, args); // Call the function with potential async callback included
+  }, cb);
+};
+```

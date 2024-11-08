@@ -1,0 +1,96 @@
+The Node.js code defines two exported functions, `filesize` and `partial`. The `filesize` function takes a number of bytes and an options object to return a formatted string representing the size in human-readable terms, with various customizable options. The `partial` function takes a descriptor (set of options) and returns a new function, which when called with bytes, formats that number of bytes using the pre-defined descriptor.
+
+Here's a breakdown of how the `filesize` function works:
+
+1. **Options Initialization**: The function starts by setting default values for various options and then overrides them with any user-provided options.
+2. **Base Determination**: It checks if the base should be 1000 (for decimal) or 1024 (for binary).
+3. **Conversion**: The number of bytes is divided iteratively by the base until it becomes smaller than the base, counting the exponent.
+4. **Bit Conversion**: If the `bits` option is true, it converts the number to bits by multiplying by 8.
+5. **Rounding**: The value is rounded based on the specified rounding method (`floor`, `ceil`, or `round`).
+6. **Precision**: Adjusts the final number's precision according to provided precision settings.
+7. **Unit Resolution**: Determines the appropriate size unit or uses the full form if specified.
+8. **Formatting**: Converts the number into a string using locale if specified or formats it according to options.
+9. **Output Modes**: Returns the result in various formats including an array, object, number, or string, based on the `output` option.
+   
+The `partial` function creates a new pre-configured `filesize` function from a given set of options.
+
+Here is a possible rewrite of the Node.js code:
+
+```javascript
+export function filesize(bytes, options = {}) {
+    const defaultOptions = {
+        base: 10,
+        bits: false,
+        fullform: false,
+        fullforms: [],
+        locale: '',
+        localeOptions: {},
+        output: 'string',
+        pad: false,
+        precision: 0,
+        round: 2,
+        roundingMethod: 'round',
+        separator: '',
+        spacer: ' ',
+        standard: 'si',
+        symbols: {},
+    };
+    options = {...defaultOptions, ...options};
+
+    const base = options.base === 2 ? 1024 : 1000;
+    const bits = options.bits;
+    const fullform = options.fullform;
+    const fullforms = options.fullforms;
+    const roundingMethod = options.roundingMethod;
+    const spacer = options.spacer;
+    const locale = options.locale;
+
+    let e = -1;
+    let num = Number(bytes);
+    if (isNaN(num)) throw new TypeError('Invalid number');
+    
+    const ceil = num < 0 ? Math.ceil : Math.floor;
+    
+    while (num >= base && e < 8) {
+        num /= base;
+        e++;
+    }
+
+    const exponent = options.exponent !== -1 ? options.exponent : e;
+    if (exponent !== e) {
+        num *= Math.pow(base, e - exponent);
+        e = exponent;
+    }
+
+    if (bits) num *= 8;
+
+    num = (Math[roundingMethod] || Math.round)(num);
+    num = Math.round(num * Math.pow(10, options.precision)) / Math.pow(10, options.precision);
+
+    const units = bits ? ['b', 'Kibit', 'Mibit', 'Gibit', 'Tibit', 'Pibit', 'Eibit', 'Zibit', 'Yibit'] : ['B', 'KiB', 'MiB', 'GiB', 'TiB', 'PiB', 'EiB', 'ZiB', 'YiB'];
+    const defaultUnit = bits ? 'bit' : 'B';
+    const symbol = options.symbols[units[e]] || defaultUnit;
+
+    const fullUnits = bits ? ['bits', 'kilobits', 'megabits', 'gigabits', 'terabits', 'petabits', 'exabits', 'zettabits', 'yottabits'] : ['bytes', 'kilobytes', 'megabytes', 'gigabytes', 'terabytes', 'petabytes', 'exabytes', 'zettabytes', 'yottabytes'];
+    const full = fullform ? fullforms[e] || fullUnits[e] : '';
+
+    let result = locale 
+        ? num.toLocaleString(locale, { minimumFractionDigits: options.pad ? options.round : 0, maximumFractionDigits: options.round, ...options.localeOptions })
+        : num.toFixed(options.precision);
+
+    switch (options.output) {
+        case 'array':
+            return [result, symbol];
+        case 'object':
+            return {value: result, symbol, exponent: e, unit: symbol};
+        case 'exponent':
+            return e;
+        default:
+            return result + spacer + (full || symbol);
+    }
+}
+
+export function partial(descriptor) {
+    return (bytes) => filesize(bytes, descriptor);
+}
+```

@@ -1,0 +1,22 @@
+The Node.js code defines a module that exports a single function, `getCallerFile`. This function is used to find out the filename of the JavaScript file from which a function was invoked in a call stack. It achieves this by inspecting the V8 stack trace. The optional parameter `position` determines the depth in the stack trace to inspect, with a default value set to 2. This default value assumes that the function call hierarchy is such that index 0 is the current file, index 1 is where `getCallerFile` is called, and index 2 is where the initial call was made. If `position` exceeds the current `Error.stackTraceLimit`, a `TypeError` is thrown. The method temporarily overrides the `Error.prepareStackTrace` function in order to directly access the stack trace as an array of `CallSite` objects. If the stack trace is valid and the desired stack frame is available, the file name is returned.
+
+```javascript
+"use strict";
+
+module.exports = function getCallerFile(position = 2) {
+    if (position >= Error.stackTraceLimit) {
+        throw new TypeError(
+            `getCallerFile(position) requires position be less than Error.stackTraceLimit but position was: \`${position}\` and Error.stackTraceLimit was: \`${Error.stackTraceLimit}\``
+        );
+    }
+
+    const originalPrepareStackTrace = Error.prepareStackTrace;
+    Error.prepareStackTrace = (_, stack) => stack;
+    const stack = new Error().stack;
+    Error.prepareStackTrace = originalPrepareStackTrace;
+
+    if (stack !== null && typeof stack === 'object') {
+        return stack[position] ? stack[position].getFileName() : undefined;
+    }
+};
+```

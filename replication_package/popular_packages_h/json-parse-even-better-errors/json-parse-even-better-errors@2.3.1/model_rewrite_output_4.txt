@@ -1,0 +1,110 @@
+The Node.js code provided is a JSON parsing utility with enhanced error handling and formatting capabilities. Here's what the code does:
+
+1. **Hexify Function**: Takes a character, converts its character code to a hexadecimal representation, and formats it as a string with a prefix `0x`, ensuring it has two digits, i.e., `0x0A` for newline (`\n`).
+
+2. **Error Parsing**: The function `parseError` is designed to parse and format JSON parsing errors, including unexpected tokens and end-of-JSON errors. It provides a customized error message and identifies the error position in the JSON string.
+
+3. **Custom JSON Error**: The `JSONParseError` class extends the native `SyntaxError` to provide additional error information. This class captures stack traces and includes the original error message, code, and a detailed parsing message.
+
+4. **Parsing JSON**: `parseJson` is the primary function to parse a JSON string. It removes any Byte Order Mark (BOM) from the string before parsing and handles specific cases where it captures and maintains formatting details, such as indentation and newline characters found in the JSON. It throws a custom `JSONParseError` if parsing fails.
+
+5. **Strip BOM**: The helper function `stripBOM` removes the BOM from the start of the string if present, which is necessary for correct parsing.
+
+6. **Module Exports**: Exports the `parseJson` function and adds the `JSONParseError` class as a property of `parseJson` for external access. It also includes `noExceptions` method, which attempts to parse JSON and suppresses any parsing errors.
+
+Here's a possible rewrite of the code, organized in a single markdown code block:
+
+```javascript
+'use strict'
+
+const charToHex = char => {
+  const hex = char.charCodeAt(0).toString(16).toUpperCase();
+  return '0x' + (hex.length % 2 ? '0' : '') + hex;
+};
+
+const buildParseError = (error, text, context) => {
+  if (!text) {
+    return {
+      message: `${error.message} while parsing empty string`,
+      position: 0,
+    };
+  }
+  
+  const badTokenMatch = error.message.match(/^Unexpected token (.) .*position\s+(\d+)/i);
+  const errorIndex = badTokenMatch ? parseInt(badTokenMatch[2])
+    : error.message.match(/^Unexpected end of JSON.*/i) ? text.length - 1
+    : null;
+
+  const msg = badTokenMatch ? error.message.replace(/^Unexpected token ./, `Unexpected token ${JSON.stringify(badTokenMatch[1])} (${charToHex(badTokenMatch[1])})`)
+    : error.message;
+
+  if (errorIndex !== null && errorIndex !== undefined) {
+    const start = errorIndex <= context ? 0 : errorIndex - context;
+    const end = errorIndex + context >= text.length ? text.length : errorIndex + context;
+    const snippet = (start === 0 ? '' : '...') + text.slice(start, end) + (end === text.length ? '' : '...');
+    const near = text === snippet ? '' : 'near ';
+    
+    return {
+      message: `${msg} while parsing ${near}${JSON.stringify(snippet)}`,
+      position: errorIndex,
+    };
+  } else {
+    return {
+      message: `${msg} while parsing '${text.slice(0, context * 2)}'`,
+      position: 0,
+    };
+  }
+};
+
+class JSONParseError extends SyntaxError {
+  constructor (error, text, context = 20, caller) {
+    const errorDetails = buildParseError(error, text, context);
+    super(errorDetails.message);
+    Object.assign(this, errorDetails);
+    this.code = 'EJSONPARSE';
+    this.systemError = error;
+    Error.captureStackTrace(this, caller || this.constructor);
+  }
+
+  get name() { return this.constructor.name; }
+  set name(_) {}
+  get [Symbol.toStringTag]() { return this.constructor.name; }
+}
+
+const kIndent = Symbol.for('indent');
+const kNewline = Symbol.for('newline');
+const formatRE = /^\s*[{\[]((?:\r?\n)+)([\s\t]*)/;
+const emptyRE = /^(?:\{\}|\[\])((?:\r?\n)+)?$/;
+
+const parseJson = (text, reviver, context = 20) => {
+  const content = stripBOM(text);
+  try {
+    const [, newline = '\n', indent = '  '] = content.match(emptyRE) || content.match(formatRE) || [, '', ''];
+    const result = JSON.parse(content, reviver);
+    if (result && typeof result === 'object') {
+      result[kNewline] = newline;
+      result[kIndent] = indent;
+    }
+    return result;
+  } catch (error) {
+    if (typeof text !== 'string' && !Buffer.isBuffer(text)) {
+      throw Object.assign(new TypeError(`Cannot parse ${Array.isArray(text) && text.length === 0 ? 'an empty array' : String(text)}`), {
+        code: 'EJSONPARSE',
+        systemError: error,
+      });
+    }
+    throw new JSONParseError(error, content, context, parseJson);
+  }
+};
+
+const stripBOM = text => String(text).replace(/^\uFEFF/, '');
+
+module.exports = parseJson;
+parseJson.JSONParseError = JSONParseError;
+
+parseJson.noExceptions = (text, reviver) => {
+  try {
+    return JSON.parse(stripBOM(text), reviver);
+  } catch {}
+};
+```

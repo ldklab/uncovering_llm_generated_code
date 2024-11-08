@@ -1,0 +1,135 @@
+The given Node.js code is a module designed to handle and react to process exit events due to signals. It facilitates registering, triggering, and cleaning up of exit handlers upon receiving specific termination signals. The module allows for custom callbacks to be attached and executed when the process is about to exit. Here's a breakdown of its functionality:
+
+1. **Signal Detection and EventEmitter Setup**: It checks if an EventEmitter for handling exit signals already exists (`process.__signal_exit_emitter__`). If not, it creates one with infinite listeners to manage exit events.
+
+2. **Handling Listeners**: The module allows attaching a callback to be executed on exit. It identifies if the callback should execute on normal `exit` or as the `afterexit`, depending on options provided.
+
+3. **Signal Listeners**: It defines signal listeners for each registered signal. These listeners handle signals by removing themselves and re-emitting the signal, effectively ensuring the process terminates appropriately while executing the required callbacks prior to exit events.
+
+4. **Load and Unload**: It provides functions to load and unload signal handlers. Loading involves attaching signal listeners to `process` and overriding `process.emit` and `process.reallyExit` to ensure all exit events are caught and correctly managed.
+
+5. **Signal Broadcasting**: The module maintains a registry of which events (`'exit'`, `'afterexit'`) have already been emitted to avoid duplicate executions of callbacks.
+
+6. **Compatibility with Windows**: Special handling is included for Windows to switch from unsupported signals like `SIGHUP` to supported ones like `SIGINT`.
+
+Here's the rewritten code:
+
+```javascript
+const assert = require('assert');
+const signals = require('./signals.js');
+const isWindows = /^win/i.test(process.platform);
+
+const EventEmitter = require('events');
+
+let emitter;
+if (!process.__signal_exit_emitter__) {
+  emitter = process.__signal_exit_emitter__ = new EventEmitter();
+  emitter.count = 0;
+  emitter.emitted = {};
+  emitter.setMaxListeners(Infinity);
+  emitter.infinite = true;
+} else {
+  emitter = process.__signal_exit_emitter__;
+}
+
+module.exports = function (callback, options) {
+  assert.strictEqual(typeof callback, 'function', 'A callback function is required');
+
+  if (!loaded) {
+    load();
+  }
+
+  const event = options?.alwaysLast ? 'afterexit' : 'exit';
+
+  emitter.on(event, callback);
+
+  const removeListener = () => {
+    emitter.removeListener(event, callback);
+    if (!emitter.listeners('exit').length && !emitter.listeners('afterexit').length) {
+      unload();
+    }
+  };
+
+  return removeListener;
+};
+
+module.exports.unload = unload;
+
+function unload() {
+  if (!loaded) return;
+  loaded = false;
+
+  for (const signal of signals) {
+    try {
+      process.removeListener(signal, signalListeners[signal]);
+    } catch {}
+  }
+  process.emit = originalProcessEmit;
+  process.reallyExit = originalProcessReallyExit;
+  emitter.count--;
+}
+
+function emit(event, code, signal) {
+  if (!emitter.emitted[event]) {
+    emitter.emitted[event] = true;
+    emitter.emit(event, code, signal);
+  }
+}
+
+const sigListeners = {};
+for (const signal of signals) {
+  sigListeners[signal] = () => {
+    const listeners = process.listeners(signal);
+    if (listeners.length === emitter.count) {
+      unload();
+      emit('exit', null, signal);
+      if (isWindows && signal === 'SIGHUP') signal = 'SIGINT';
+      process.kill(process.pid, signal);
+    }
+  };
+}
+
+module.exports.signals = () => signals;
+module.exports.load = load;
+
+let loaded = false;
+
+function load() {
+  if (loaded) return;
+  loaded = true;
+  emitter.count++;
+
+  signals = signals.filter(signal => {
+    try {
+      process.on(signal, sigListeners[signal]);
+      return true;
+    } catch {
+      return false;
+    }
+  });
+
+  process.emit = processEmit;
+  process.reallyExit = processReallyExit;
+}
+
+const originalProcessReallyExit = process.reallyExit;
+
+function processReallyExit(code) {
+  process.exitCode = code || 0;
+  emit('exit', process.exitCode, null);
+  originalProcessReallyExit.call(process, process.exitCode);
+}
+
+const originalProcessEmit = process.emit;
+
+function processEmit(event, arg) {
+  if (event === 'exit') {
+    if (arg !== undefined) process.exitCode = arg;
+    const ret = originalProcessEmit.apply(this, arguments);
+    emit('exit', process.exitCode, null);
+    return ret;
+  } else {
+    return originalProcessEmit.apply(this, arguments);
+  }
+}
+```

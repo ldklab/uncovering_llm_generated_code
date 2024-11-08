@@ -1,0 +1,107 @@
+The `run-async` package provides a utility function to handle the execution of both synchronous and asynchronous functions in a consistent manner, ensuring they are treated and executed as asynchronous. This is especially useful for developers creating libraries or functions that need to accept either synchronous or asynchronous user-defined functions as parameters. 
+
+### Key Features
+
+1. **Consistent Async Execution:** The core functionality of `runAsync` is to ensure that given functions, regardless of whether they are synchronous or asynchronous (using callbacks or promises), are executed in an asynchronous manner and standardized for easy handling of results.
+
+2. **Multiple Signature Support:** The utility seamlessly accommodates:
+   - Asynchronous functions using `this.async()` to indicate they will complete later.
+   - Functions returning ES6 promises.
+   - Synchronous functions that return a direct result.
+   - Functions using a custom async factory.
+
+3. **Callback Support:** An alternative method `runAsync.cb` also supports functions that utilize a callback in their last argument position, aligning with traditional Node.js callback patterns.
+
+### Usage Examples
+
+- **Basic Usage with Callback:** Execute a function and print its results using a callback once it completes.
+- **Asynchronous Execution with `this.async`:** You can use `this.async()` to get a callback that the function should call once it has completed.
+- **Promise-based Function Execution:** Return a promise from the function, and `runAsync` resolves it once complete.
+- **Synchronous Function Execution:** Simply return the result directly from the function when no asynchronous behavior is needed.
+- **Custom Async Factory:** Useful for creating customized asynchronous behavior.
+- **Context Binding:** Pass additional context that functions can use when executed.
+
+Below is the implementation for the `run-async` package, encapsulating the described functionality:
+
+```javascript
+// run-async.js
+
+// Polyfill for Promise support if it's not natively available
+if (typeof Promise === 'undefined') {
+  var Promise = require('es6-promise').Promise;
+}
+
+function runAsync(func, customAsync) {
+  return function() {
+    var self = this;
+    var args = Array.prototype.slice.call(arguments);
+    var err = false;
+
+    function callback(err, result) {
+      if (err) {
+        result = undefined;
+        return callback.promise.reject(err);
+      }
+      return callback.promise.resolve(result);
+    }
+
+    Object.defineProperty(callback, 'promise', {
+      value: new Promise(function (resolve, reject) {
+        callback.promise = { resolve, reject };
+      }),
+      enumerable: false
+    });
+
+    Object.defineProperty(self, 'async', {
+      value: function() {
+        return callback;
+      },
+      enumerable: false
+    });
+
+    if (customAsync) {
+      Object.defineProperty(self, customAsync, {
+        value: function() {
+          return callback;
+        },
+        enumerable: false
+      });
+    }
+
+    try {
+      var running = func.apply(self, args);
+      if (running && running.then && typeof running.then === 'function') {
+        running.then(callback.promise.resolve, callback.promise.reject);
+      } else if (!customAsync && !err && func.length < args.length + 1) {
+        callback.promise.resolve(running);
+      }
+    } catch (error) {
+      callback.promise.reject(error);
+    }
+
+    return callback.promise;
+  };
+}
+
+function runAsyncCb(func, callback) {
+  return function() {
+    var self = this;
+    var args = Array.prototype.slice.call(arguments);
+    var hasCallback = typeof args[args.length - 1] === 'function';
+
+    if (hasCallback) {
+      callback = args.pop();
+    }
+
+    runAsync(func).apply(self, args).then(function(result) {
+      callback(null, result);
+    }, callback);
+  };
+}
+
+runAsync.cb = runAsyncCb;
+
+module.exports = runAsync;
+```
+
+This package provides a simple way to handle both sync and async functions uniformly, leveraging promises and callbacks as needed to normalize and ease function handling.

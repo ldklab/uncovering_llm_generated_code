@@ -1,0 +1,72 @@
+The provided Node.js code defines a module for parsing and validating domain names. This module is built around the concept of a Public Suffix List (PSL), which is used to understand the structure of a domain by identifying its top-level domain (TLD) and splitting it into meaningful parts such as the second-level domain (SLD) and subdomain. Here's a breakdown of how it functions:
+
+1. **parse(domain)**: This function takes a domain name as input, converts it to lowercase, and trims whitespace. It then splits the domain into parts using the period (.) as a delimiter. The function attempts to find the TLD by checking combinations from the domain against the Public Suffix List. If a valid TLD is found, it constructs and returns an object containing the TLD, SLD, full domain name (SLD + TLD), and subdomain. If no valid TLD is found, it returns null.
+
+2. **get(domain)**: This method uses the `parse` method to return only the full domain name if the input domain is valid; otherwise, it returns null.
+
+3. **isValid(domain)**: This function checks the validity of a domain. It returns true if the domain can be parsed into a valid domain name, and false otherwise.
+
+The code then exports this functionality for use in other files, providing example usage at the bottom.
+
+Here is the rewritten code:
+
+```javascript
+// psl.js
+const publicSuffixList = require('publicsuffixlist'); // Imaginary module for example purposes
+
+const psl = {
+  parse(domain) {
+    if (typeof domain !== 'string') return null;
+
+    domain = domain.toLowerCase().trim();
+    const parts = domain.split('.');
+
+    if (parts.length < 2) return null; // Requires at least a TLD and one other part
+
+    let tldIndex = -1;
+    // Determine the TLD using the PSL by iterating from the end
+    for (let i = parts.length - 1; i >= 0; i--) {
+      const candidate = parts.slice(i).join('.');
+      if (publicSuffixList.includes(candidate)) {
+        tldIndex = i;
+        break;
+      }
+    }
+
+    if (tldIndex === -1) return null; // No valid TLD was found
+
+    const tld = parts.slice(tldIndex).join('.');
+    const sld = parts[tldIndex - 1] || null;
+    const domainName = sld ? `${sld}.${tld}` : null;
+    const subdomain = parts.slice(0, tldIndex - 1).join('.') || null;
+
+    return { tld, sld, domain: domainName, subdomain };
+  },
+
+  get(domain) {
+    const parsed = this.parse(domain);
+    return parsed ? parsed.domain : null;
+  },
+
+  isValid(domain) {
+    return this.get(domain) !== null;
+  }
+};
+
+// Export module
+module.exports = psl;
+
+// Example Usage
+const parsedDomain = psl.parse('www.google.com');
+console.log(parsedDomain);
+// Output:
+// {
+//   tld: 'com',
+//   sld: 'google',
+//   domain: 'google.com',
+//   subdomain: 'www'
+// }
+
+console.log(psl.get('example.COM')); // 'example.com'
+console.log(psl.isValid('google.com')); // true
+```

@@ -1,0 +1,52 @@
+The provided Node.js code is a module that exports a function used to require and load JavaScript files from a specified directory. The function can accept either one or two arguments:
+
+1. `dir`: The directory path from which files will be required.
+2. `basenames` (optional): An array of file basenames to specifically include from the directory for requiring.
+
+Functionality:
+- If two arguments are provided, the function will only require files matching the given basenames from the directory.
+- If only one argument is provided, the function will list all files in the directory and:
+  - Sort them alphabetically (case-insensitive).
+  - Exclude files named `index.js` or those prefixed with `_` or `.`.
+  - Require only files with extensions `.js`, `.node`, or `.json`.
+  - Add these modules to an object with the basename as the key and the required module as the value.
+- If neither of these conditions is met (wrong number of arguments), it throws an error.
+
+Here's a potential rewrite of the code:
+
+```javascript
+const fs = require('fs');
+const path = require('path');
+
+module.exports = function requireFiles(directory, basenames) {
+  const modules = {};
+
+  if (arguments.length === 2) {
+    basenames.forEach((basename) => {
+      const fullpath = path.resolve(path.join(directory, basename));
+      modules[basename] = require(fullpath);
+    });
+  } else if (arguments.length === 1) {
+    const files = fs.readdirSync(directory);
+
+    files.sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
+
+    files.forEach((filename) => {
+      if (['index.js', '_', '.'].some(prefix => filename.startsWith(prefix))) return;
+
+      const fullpath = path.resolve(path.join(directory, filename));
+      const extension = path.extname(filename);
+      const stats = fs.statSync(fullpath);
+
+      if (stats.isFile() && !['.js', '.node', '.json'].includes(extension)) return;
+
+      const basename = path.basename(filename, extension);
+      modules[basename] = require(fullpath);
+    });
+  } else {
+    throw new Error("The first argument must be the directory path");
+  }
+
+  return modules;
+};
+```

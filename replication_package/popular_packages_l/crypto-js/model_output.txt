@@ -1,0 +1,82 @@
+The `crypto-js` library provided a set of cryptographic functions for JavaScript. However, the development of this library has been discontinued because both NodeJS and modern web browsers now support a native `crypto` module, which is more secure. 
+
+Key features of the library included:
+
+1. **Hashing Algorithms**: Functions like `sha256`, `sha512`, etc., for creating hashes of data, essential for data integrity verification.
+2. **HMAC Algorithms**: For creating Hash-based Message Authentication Codes.
+3. **Encryption**: Symmetric algorithms such as AES, allowing encryption and decryption of messages.
+4. **Encodings**: Functions for encoding data in different formats (Base64, UTF-8, etc.).
+5. **Modes and Padding**: Customization features for encryption modes and padding schemes.
+
+The library was available for both Node.js and browser environments. For Node.js, code was typically organized into modular imports, allowing specific cryptographic functions to be used individually or collectively, whereas for browsers, script tags or require.js configurations were used.
+
+Below is the implementation of a simple Node.js package that uses the native `crypto` module to achieve similar functionality to `crypto-js` but utilizes modern cryptographic practices. 
+
+```javascript
+// package.json
+{
+  "name": "crypto-native-wrapper",
+  "version": "1.0.0",
+  "main": "index.js",
+  "type": "module"
+}
+
+// index.js
+import { createHash, createHmac, randomBytes, createCipheriv, createDecipheriv } from 'crypto';
+
+export function sha256(data) {
+  return createHash('sha256').update(data).digest('hex');
+}
+
+export function hmacSHA512(data, key) {
+  return createHmac('sha512', key).update(data).digest('hex');
+}
+
+export function base64Encode(data) {
+  return Buffer.from(data).toString('base64');
+}
+
+export function base64Decode(data) {
+  return Buffer.from(data, 'base64').toString('utf8');
+}
+
+const algorithm = 'aes-256-cbc';
+export function encryptAES(text, secret) {
+  const iv = randomBytes(16);
+  const cipher = createCipheriv(algorithm, Buffer.from(secret, 'hex'), iv);
+  let encrypted = cipher.update(text, 'utf8', 'hex');
+  encrypted += cipher.final('hex');
+  return iv.toString('hex') + ':' + encrypted;
+}
+
+export function decryptAES(encryptedText, secret) {
+  const textParts = encryptedText.split(':');
+  const iv = Buffer.from(textParts.shift(), 'hex');
+  const encryptedTextBuff = Buffer.from(textParts.join(':'), 'hex');
+  const decipher = createDecipheriv(algorithm, Buffer.from(secret, 'hex'), iv);
+  let decrypted = decipher.update(encryptedTextBuff, 'hex', 'utf8');
+  decrypted += decipher.final('utf8');
+  return decrypted;
+}
+
+// Usage example:
+const message = 'Hello';
+const nonce = '123';
+const path = '/api/endpoint';
+const privateKey = 'a1b2c3d4';
+
+const hashDigest = sha256(nonce + message);
+const hmacDigest = base64Encode(hmacSHA512(path + hashDigest, privateKey));
+
+console.log('Hash Digest:', hashDigest);
+console.log('HMAC Digest:', hmacDigest);
+
+const secretKey = randomBytes(32).toString('hex');
+const encryptedMessage = encryptAES('my message', secretKey);
+const decryptedMessage = decryptAES(encryptedMessage, secretKey);
+
+console.log('Encrypted Message:', encryptedMessage);
+console.log('Decrypted Message:', decryptedMessage);
+```
+
+Note: This code involves encrypting using AES with a random Initialization Vector (IV) and decrypting using the same secret. It's crucial to handle encryption keys securely in production environments.

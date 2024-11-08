@@ -1,0 +1,103 @@
+The `any-promise` package provides a way to select and manage which ES6-compatible `Promise` implementation libraries should be used in a Node.js or browser environment. Here’s how it works:
+
+1. **Library Support for Multiple Promise Implementations**: 
+   - Libraries can utilize `any-promise` to use whichever `Promise` implementation is preferred by the application without hardcoding one specific `Promise` library. Libraries can simply require `any-promise` to obtain a `Promise` constructor.
+
+2. **Global Default**:
+   - By default, it uses the global `Promise` available in Node.js version 0.12 or newer. When used in a browser, it defaults to `window.Promise`.
+
+3. **Application Registration**:
+   - Application authors can optionally register a preferred Promise implementation using a registration method. This should be done at the very start of the application, before requiring any module that might use `any-promise`.
+   - Registration can be done using shortcuts for known `Promise` libraries or through manual registration with more customization.
+
+4. **Manual and Advanced Registration**:
+   - If using a lesser-known library or a custom `Promise` implementation, users can manually specify which `Promise` library to use. This advanced registration remains optional and is intended for situations where necessary, such as ensuring compatibility with browser environments.
+
+5. **Library Developer Consideration**:
+   - Libraries that use this package should stick to using only documented, standard `Promise` methods, avoiding reliance on specific library features that may not be common among all Promise implementations.
+   - The `any-promise` package also allows library developers to detect and make decisions based on which `Promise` implementation is registered.
+
+6. **Node.js Older Version Support**:
+   - For Node.js versions prior to v0.12, which may have bugs in their native `Promise`, the application can explicitly register a `Promise` library, as `any-promise` will neither automatically select one nor default to a faulty global `Promise`.
+
+Here's the implementation code for the described functionality in one markdown block:
+
+```markdown
+// index.js
+let registeredPromise = null;
+let registeredImplementation = null;
+const process = require('process');
+
+// Register function to allow clients to set their desired Promise library
+exports.register = function (implementation, options = {}) {
+    if (registeredPromise) {
+        if (registeredImplementation !== implementation) {
+            throw new Error(`Any-promise: Different implementation already registered as ${registeredImplementation}`);
+        }
+        return; // Ignore if the same implementation is registered
+    }
+
+    if (typeof implementation !== 'string') {
+        throw new Error("Any-promise: Expected a valid module name.");
+    }
+
+    const mod = require(implementation);
+    if (options.Promise) {
+        if (typeof options.Promise !== 'function') {
+            throw new Error("Provided Promise is not a constructor.");
+        }
+        registeredPromise = options.Promise;
+    } else {
+        registeredPromise = mod.Promise || mod;
+    }
+    
+    if (options && options.global === false) {
+        // Do not register globally
+        registeredImplementation = implementation;
+        return;
+    }
+
+    // Register globally
+    global.Promise = registeredPromise;
+    registeredImplementation = implementation;
+};
+
+// Retrieve registered Promise constructor
+exports.getPromise = function () {
+    if (!registeredPromise) {
+        if (typeof Promise !== 'function') {
+            throw new Error("Any-promise: No Promise implementation is available");
+        }
+        exports.register('global');
+    }
+    return registeredPromise;
+};
+
+// Get implementation name, mainly for libraries that need this info
+exports.getImplementation = function () {
+    if (registeredImplementation) return registeredImplementation;
+    if (typeof Promise === 'function') return process.browser ? 'window.Promise' : 'global.Promise';
+    throw new Error("Any-promise: No Promise implementation is available");
+};
+
+// Register file example
+// register.js
+
+const anyPromise = require('./index');
+
+module.exports = function (implementation, options) {
+    anyPromise.register(implementation, options);
+};
+
+// Usage example in application
+/*
+require('any-promise/register')('bluebird', {Promise: require('bluebird')});
+const Promise = require('any-promise').getPromise();
+*/
+// Usage in library:
+/*
+const Promise = require('any-promise').getPromise();
+*/
+```
+
+This code provides the core functionality for registering a desired Promise library and using it throughout any application or library that uses `any-promise`. It manages both Node.js and browser contexts and handles advanced scenarios like specifying custom Promise implementations.

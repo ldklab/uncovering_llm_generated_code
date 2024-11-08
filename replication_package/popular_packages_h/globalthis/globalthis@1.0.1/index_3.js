@@ -1,0 +1,21 @@
+'use strict';
+
+const defineProperties = require('define-properties');
+
+const implementation = require('./implementation');
+const getPolyfill = require('./polyfill');
+const shim = require('./shim');
+
+const polyfill = getPolyfill();
+
+function getGlobal() {
+    return polyfill;
+}
+
+defineProperties(getGlobal, {
+    getPolyfill,
+    implementation,
+    shim,
+});
+
+module.exports = getGlobal;

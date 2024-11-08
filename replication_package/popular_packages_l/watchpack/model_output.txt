@@ -1,0 +1,102 @@
+The `watchpack` library is a Node.js utility for monitoring changes in directories and files. It provides an abstraction over the file watching mechanism, ensuring efficient resource usage by maintaining a single watcher per directory. Here's an overview of its key functionalities:
+
+1. **Architecture**: It uses a three-tier architecture with `WatcherManager`, `DirectoryWatchers`, and user-faced `Watchers`.
+   - **WatcherManager**: Manages and ensures a single `DirectoryWatcher` per directory.
+   - **DirectoryWatcher**: Creates real watchers and provides filtered view for `Watchers`.
+   - **Watcher**: Provides user with a view on the `DirectoryWatcher`.
+  
+2. **Reference Counting**: This mechanism is used to determine when a watcher should be closed, ensuring efficient resource management.
+
+3. **High-Level Features**:
+   - **Unified Watchers**: Files are not directly watched. Instead, directories are monitored, and changes within them are tracked.
+   - **Symlink Handling**: The library watches symlinks but does not resolve them to avoid performance hits.
+   - **Historical Watch Start**: Allows watching of directories starting from a past timestamp to include events from before starting the watch.
+   - **Polling Option**: Provides a polling alternative for environments where native file watching may not work effectively (e.g., network paths).
+
+4. **API Usage**:
+   - **Initialization**: Instantiate `Watchpack` with options including `aggregateTimeout`, `poll`, and `followSymlinks`.
+   - **Watch Method**: Start watching a set of files or directories, specifying missing items (not expected to exist) and an optional `startTime`.
+   - **Event Handling**: Listen to `change`, `remove`, and `aggregated` events for files and directories.
+   - **Pause and Resume**: Ability to pause watching, which keeps watchers open without emitting events, and then resume them.
+   - **Close**: Completely stops and removes watchers.
+   - **Time Info**: Collects and retrieves timestamps and safe times for changes in watched files and directories.
+
+Here's a mock implementation of `watchpack`:
+
+```javascript
+const EventEmitter = require('events');
+const fs = require('fs');
+const path = require('path');
+
+class Watchpack extends EventEmitter {
+  constructor(options = {}) {
+    super();
+    this.options = options;
+    this.watchers = new Map();
+    this.aggregatedChanges = new Set();
+    this.aggregatedRemovals = new Set();
+    this.aggregateTimeout = options.aggregateTimeout || 0;
+    this.aggregationTimer = null;
+  }
+
+  watch({ files = [], directories = [], missing = [], startTime = Date.now() } = {}) {
+    // Clear previous watchers
+    this.close();
+
+    // Watch directories
+    directories.forEach(dir => this._watchDirectory(dir));
+  }
+
+  _watchDirectory(dir) {
+    if (!this.watchers.has(dir)) {
+      const watcher = fs.watch(dir, (eventType, filename) => {
+        if (filename) {
+          this._notifyChange(path.join(dir, filename), eventType);
+        }
+      });
+
+      this.watchers.set(dir, watcher);
+    }
+  }
+
+  _notifyChange(filePath, eventType) {
+    const stats = fs.statSync(filePath);
+    const mtime = stats.mtimeMs;
+
+    // Handle "change" event
+    if (eventType === 'rename' || eventType === 'change') {
+      this.aggregatedChanges.add(filePath);
+      this.emit("change", filePath, mtime, `Detected ${eventType}`);
+    }
+
+    // Schedule aggregation if needed
+    if (this.aggregateTimeout) {
+      clearTimeout(this.aggregationTimer);
+      this.aggregationTimer = setTimeout(() => {
+        this.emit("aggregated", this.aggregatedChanges, this.aggregatedRemovals);
+        this.aggregatedChanges.clear();
+        this.aggregatedRemovals.clear();
+      }, this.aggregateTimeout);
+    }
+  }
+
+  pause() {
+    for (const [, watcher] of this.watchers) {
+      watcher.close();
+    }
+  }
+
+  close() {
+    this.pause();
+    this.watchers.clear();
+  }
+
+  getAggregated() {
+    return { changes: new Set(this.aggregatedChanges), removals: new Set(this.aggregatedRemovals) };
+  }
+}
+
+module.exports = Watchpack;
+```
+
+This simplified version of `watchpack` showcases the core functionality like starting watchers, handling file change events, and emitting aggregated changes. It can be further extended to include features such as symlink behavior, ignored patterns, or detailed time information collection as seen in the library's API.

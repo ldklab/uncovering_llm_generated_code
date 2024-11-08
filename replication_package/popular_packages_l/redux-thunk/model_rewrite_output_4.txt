@@ -1,0 +1,65 @@
+The given Node.js code is a Redux setup that includes a custom thunk middleware. This middleware allows action creators to return functions (instead of action objects) to dispatch actions asynchronously or conditionally based on the current state. The code demonstrates:
+
+1. **Thunk Middleware with Extra Argument**: A customized version of Redux Thunk middleware is created using `withExtraArgument`. This allows thunk functions to receive a third argument (`extraArgument`) alongside `dispatch` and `getState`.
+
+2. **Root Reducer**: A simple reducer is defined, managing a `count` in the state with an action type 'INCREMENT'.
+
+3. **Store Creation**: The Redux store is created using `createStore`, and the middleware is applied via `applyMiddleware`.
+
+4. **Action Creators**: Three action creators are defined:
+   - `increment`: Returns an action object to increment the count.
+   - `incrementAsync`: Returns a function that dispatches `increment` after a 1-second delay.
+   - `incrementIfOdd`: Returns a function that checks the current state's count and dispatches `increment` if the count is odd.
+
+5. **Dispatching Actions**: The store's `dispatch` method is used to execute the asynchronous and conditional actions.
+
+Here's a rewrite, including comments explaining each part:
+
+```javascript
+// Import necessary functions from Redux
+import { createStore, applyMiddleware } from 'redux';
+
+// Define the thunk middleware with an extra argument
+const withExtraArgument = extraArgument => ({ dispatch, getState }) => next => action => {
+  if (typeof action === 'function') {
+    return action(dispatch, getState, extraArgument);
+  }
+  return next(action);
+};
+
+// Example root reducer handling a simple counter
+const rootReducer = (state = {}, action) => {
+  switch(action.type) {
+    case 'INCREMENT': 
+      return { count: (state.count || 0) + 1 };
+    default: 
+      return state;
+  }
+};
+
+// Create a Redux store with thunk middleware including an extra argument
+const store = createStore(
+  rootReducer,
+  applyMiddleware(withExtraArgument({ apiService: /* your service layer */ }))
+);
+
+// Action creators for different scenarios
+const increment = () => ({ type: 'INCREMENT' });
+
+const incrementAsync = () => dispatch => {
+  setTimeout(() => {
+    dispatch(increment());
+  }, 1000);
+};
+
+const incrementIfOdd = () => (dispatch, getState) => {
+  const { count } = getState();
+  if (count % 2 !== 0) {
+    dispatch(increment());
+  }
+};
+
+// Dispatch actions to modify state
+store.dispatch(incrementAsync());
+store.dispatch(incrementIfOdd());
+```

@@ -1,0 +1,182 @@
+The given Node.js code is a configuration script that manages how different file extensions are handled when required in a Node.js application. It defines a set of extensions and corresponding modules or configurations needed to process files of those types, using tools like Babel for JavaScript and TypeScript transpiling, as well as other related configurations for different file types.
+
+### Explanation:
+
+1. **Dependencies**: 
+   - `path`: A Node.js module used for handling file paths.
+
+2. **Regex for Babel Files**: 
+   - `endsInBabelJs`: A regular expression that matches files ending with `.babel.js`, `.babel.ts`, `.babel.jsx`, `.babel.tsx`.
+
+3. **Ignore Function**: 
+   - `ignoreNonBabelAndNodeModules`: Function that checks if a file is not a babel file and resides in `node_modules`, returning true if both conditions are met.
+
+4. **Extension Map**: 
+   - `extensions`: An object mapping file extensions to the proper modules or register hooks needed to require files in those formats. For instance:
+     - `.babel.js`, `.babel.ts`, and `.jsx` extensions: Use Babel register hooks to enable transpilation.
+     - Other extensions like `.co`, `.coffee`, and `.ts`: Map to required packages for processing or transpilation.
+
+5. **JavaScript Variant Extensions**: 
+   - `jsVariantExtensions`: An array listing various JavaScript variant file extensions that are handled differently during the module resolution process.
+
+6. **Exported Configuration**:
+   - The module exports an object containing the mapping of extensions and a reduced map clearing out just the JavaScript variants (`jsVariants`).
+
+Here’s a possible rewrite with the same functionality:
+
+```javascript
+const path = require('path');
+
+const endsInBabelJs = /\.babel\.[jt]s(x)?$/;
+
+const mjsStub = path.join(__dirname, 'mjs-stub');
+
+const ignoreNonBabelAndNodeModules = (file) => {
+  const isNonBabel = !endsInBabelJs.test(file);
+  const isInNodeModules = path.relative(process.cwd(), file).split(path.sep).includes('node_modules');
+  return isNonBabel && isInNodeModules;
+};
+
+const createBabelRegisterConfig = (ext, additionalOpts = {}) => ({
+  module: '@babel/register',
+  register: (hook) => {
+    hook({
+      extensions: ext,
+      rootMode: 'upward-optional',
+      ignore: [ignoreNonBabelAndNodeModules],
+      ...additionalOpts,
+    });
+  },
+});
+
+const extensions = {
+  '.babel.js': [
+    createBabelRegisterConfig('.js'),
+    {
+      module: 'babel-register',
+      register(hook) {
+        hook({ extensions: '.js', ignore: ignoreNonBabelAndNodeModules });
+      },
+    },
+    {
+      module: 'babel-core/register',
+      register(hook) {
+        hook({ extensions: '.js', ignore: ignoreNonBabelAndNodeModules });
+      },
+    },
+    {
+      module: 'babel/register',
+      register(hook) {
+        hook({ extensions: '.js', ignore: ignoreNonBabelAndNodeModules });
+      },
+    },
+  ],
+  '.babel.ts': [createBabelRegisterConfig('.ts')],
+  '.buble.js': 'buble/register',
+  '.cirru': 'cirru-script/lib/register',
+  '.cjsx': 'node-cjsx/register',
+  '.co': 'coco',
+  '.coffee': ['coffeescript/register', 'coffee-script/register', 'coffeescript', 'coffee-script'],
+  '.coffee.md': ['coffeescript/register', 'coffee-script/register', 'coffeescript', 'coffee-script'],
+  '.csv': 'require-csv',
+  '.eg': 'earlgrey/register',
+  '.esm.js': {
+    module: 'esm',
+    register(hook) {
+      const esmLoader = hook(module);
+      require.extensions['.js'] = esmLoader('module')._extensions['.js'];
+    },
+  },
+  '.iced': ['iced-coffee-script/register', 'iced-coffee-script'],
+  '.iced.md': 'iced-coffee-script/register',
+  '.ini': 'require-ini',
+  '.js': null,
+  '.json': null,
+  '.json5': ['json5/lib/register', 'json5/lib/require'],
+  '.jsx': [
+    createBabelRegisterConfig('.jsx'),
+    {
+      module: 'babel-register',
+      register(hook) {
+        hook({ extensions: '.jsx', ignore: ignoreNonBabelAndNodeModules });
+      },
+    },
+    {
+      module: 'babel-core/register',
+      register(hook) {
+        hook({ extensions: '.jsx', ignore: ignoreNonBabelAndNodeModules });
+      },
+    },
+    {
+      module: 'babel/register',
+      register(hook) {
+        hook({ extensions: '.jsx', ignore: ignoreNonBabelAndNodeModules });
+      },
+    },
+    {
+      module: 'node-jsx',
+      register(hook) {
+        hook.install({ extension: '.jsx', harmony: true });
+      },
+    },
+  ],
+  '.litcoffee': ['coffeescript/register', 'coffee-script/register', 'coffeescript', 'coffee-script'],
+  '.liticed': 'iced-coffee-script/register',
+  '.ls': ['livescript', 'LiveScript'],
+  '.mjs': mjsStub,
+  '.node': null,
+  '.toml': {
+    module: 'toml-require',
+    register(hook) {
+      hook.install();
+    },
+  },
+  '.ts': [
+    'ts-node/register',
+    'typescript-node/register',
+    'typescript-register',
+    'typescript-require',
+    'sucrase/register/ts',
+    createBabelRegisterConfig('.ts'),
+  ],
+  '.tsx': [
+    'ts-node/register',
+    'typescript-node/register',
+    'sucrase/register',
+    createBabelRegisterConfig('.tsx'),
+  ],
+  '.wisp': 'wisp/engine/node',
+  '.xml': 'require-xml',
+  '.yaml': 'require-yaml',
+  '.yml': 'require-yaml',
+};
+
+const jsVariantExtensions = [
+  '.js',
+  '.babel.js',
+  '.babel.ts',
+  '.buble.js',
+  '.cirru',
+  '.cjsx',
+  '.co',
+  '.coffee',
+  '.coffee.md',
+  '.eg',
+  '.esm.js',
+  '.iced',
+  '.iced.md',
+  '.jsx',
+  '.litcoffee',
+  '.liticed',
+  '.ls',
+  '.mjs',
+  '.ts',
+  '.tsx',
+  '.wisp',
+];
+
+module.exports = {
+  extensions,
+  jsVariants: Object.fromEntries(jsVariantExtensions.map(ext => [ext, extensions[ext]])),
+};
+```

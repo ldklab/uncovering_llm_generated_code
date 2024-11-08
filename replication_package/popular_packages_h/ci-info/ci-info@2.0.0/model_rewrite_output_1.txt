@@ -1,0 +1,77 @@
+The provided Node.js code is a module that identifies the environment in which it is being run, specifically focusing on Continuous Integration (CI) environments and Pull Request (PR) detection. Here's a detailed explanation:
+
+1. **Vendor Data:** The code imports JSON data from `vendors.json`, presumably containing configurations for different CI services.
+
+2. **Environment Variables:** It accesses the current process's environment variables using `process.env`.
+
+3. **Vendor Map Initialization:** This code maps through the vendors and stores their constants for testing purposes in a `_vendors` export.
+
+4. **Exported Properties:**
+   - `exports.name`: Initially null and set to the current vendor's name if the appropriate environment variables indicate the script is running in a recognized CI environment.
+   - `exports.isPR`: Initially null, this will be set based on a PR detection logic if the script is running in a CI environment.
+   - `exports.isCI`: A boolean set to `true` if the script determines it is running in any recognized CI environment, based on environment variables or vendor information.
+
+5. **Environment Detection Logic:** 
+   - It iterates over each vendor to determine if the current environment matches the CI provider's configurations.
+   - For each environment variable configuration within a vendor, it uses the `checkEnv()` function to verify that the environment matches.
+
+6. **Pull Request Detection Logic:** 
+   - Once a CI environment is confirmed, it checks for the presence of PR-related environment variable(s) using different strategies, such as single environment variable, combinations of variables, or lists. This is handled in a `switch` statement based on the `vendor.pr` configuration.
+
+7. **Utility Function - `checkEnv()`:** Validates the presence and value of environment variables, supporting both single variable strings and key-value pair objects for detailed checks.
+
+Here's a rewritten version of the code, with similar functionality:
+
+```javascript
+'use strict';
+
+const vendors = require('./vendors.json');
+const env = process.env;
+
+// Exporting vendor constants for testing
+Object.defineProperty(exports, '_vendors', {
+  value: vendors.map(vendor => vendor.constant),
+});
+
+exports.name = null;
+exports.isPR = null;
+
+// Iterate over each vendor to determine CI and PR status
+for (const vendor of vendors) {
+  const envConditions = Array.isArray(vendor.env) ? vendor.env : [vendor.env];
+  const isCurrentCI = envConditions.every(checkEnv);
+
+  exports[vendor.constant] = isCurrentCI;
+
+  if (isCurrentCI) {
+    exports.name = vendor.name;
+    
+    if (typeof vendor.pr === 'string') {
+      exports.isPR = Boolean(env[vendor.pr]);
+    } else if (typeof vendor.pr === 'object') {
+      if ('env' in vendor.pr) {
+        exports.isPR = vendor.pr.env in env && env[vendor.pr.env] !== vendor.pr.ne;
+      } else if ('any' in vendor.pr) {
+        exports.isPR = vendor.pr.any.some(key => Boolean(env[key]));
+      } else {
+        exports.isPR = checkEnv(vendor.pr);
+      }
+    } else {
+      exports.isPR = null;
+    }
+  }
+}
+
+exports.isCI = Boolean(
+  env.CI || 
+  env.CONTINUOUS_INTEGRATION || 
+  env.BUILD_NUMBER || 
+  env.RUN_ID || 
+  exports.name
+);
+
+function checkEnv(condition) {
+  if (typeof condition === 'string') return Boolean(env[condition]);
+  return Object.entries(condition).every(([key, value]) => env[key] === value);
+}
+```

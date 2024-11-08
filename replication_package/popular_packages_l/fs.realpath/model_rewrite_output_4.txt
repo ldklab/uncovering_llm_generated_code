@@ -1,0 +1,58 @@
+The original Node.js code is designed to override the default `fs.realpath` and `fs.realpathSync` functions with custom implementations that handle specific error cases (`ELOOP`, `ENOMEM`, `ENAMETOOLONG`) by falling back to an old JavaScript method. The custom functions first attempt to use the Node.js `fs` methods, and if specific errors occur, revert to using the JavaScript `path.resolve` function as a fallback. Additionally, the code provides `monkeypatch` and `unmonkeypatch` functions to swap the original methods with the custom ones and reset them back, respectively.
+
+Here is the rewritten code:
+
+```javascript
+const fs = require('fs');
+const path = require('path');
+
+function legacyRealpath(p, callback) {
+  try {
+    const resolvedPath = path.resolve(p);
+    callback(null, resolvedPath);
+  } catch (error) {
+    callback(error);
+  }
+}
+
+function enhancedRealpath(p, callback) {
+  fs.realpath(p, (error, resolvedPath) => {
+    if (error && ['ELOOP', 'ENOMEM', 'ENAMETOOLONG'].includes(error.code)) {
+      legacyRealpath(p, callback);
+    } else {
+      callback(error, resolvedPath);
+    }
+  });
+}
+
+function enhancedRealpathSync(p) {
+  try {
+    return fs.realpathSync(p);
+  } catch (error) {
+    if (['ELOOP', 'ENOMEM', 'ENAMETOOLONG'].includes(error.code)) {
+      return path.resolve(p);
+    }
+    throw error;
+  }
+}
+
+const originalRealpath = fs.realpath;
+const originalRealpathSync = fs.realpathSync;
+
+function applyMonkeypatch() {
+  fs.realpath = enhancedRealpath;
+  fs.realpathSync = enhancedRealpathSync;
+}
+
+function removeMonkeypatch() {
+  fs.realpath = originalRealpath;
+  fs.realpathSync = originalRealpathSync;
+}
+
+module.exports = {
+  enhancedRealpath,
+  enhancedRealpathSync,
+  applyMonkeypatch,
+  removeMonkeypatch
+};
+```

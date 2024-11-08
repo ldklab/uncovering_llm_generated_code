@@ -1,0 +1,82 @@
+The provided Node.js code defines a simple DOM handler for parsing HTML content. This handler is designed to track various HTML node types (text, tags, comments) and optionally record their start and end indices if specified in the options. Here's the functionality broken down:
+
+1. **DomHandler Class:** 
+   - **Constructor:** Initializes the handler with a callback function, options, and sets up an internal document structure (`dom` array and `root` object).
+   - **_addIndices Method:** A helper function to add start and end indices to nodes if the corresponding options are enabled.
+   - **ontext Method:** Handles text nodes by creating a node with a `data` field and adds it to the `dom` array.
+   - **onopentag Method:** Handles opening tags with attributes, creates a tag node, and adds it to the `dom` array.
+   - **oncomment Method:** Handles comment nodes by creating a comment node and adds it to the `dom` array.
+   - **onend Method:** Invoked at the end of parsing, it calls the callback with the parsed document structure (`dom` array).
+
+2. **Module Export:** The `DomHandler` class is exported for use in other modules.
+
+3. **Example Usage:**
+   - Sets up a `Parser` from the `htmlparser2` library with the defined `DomHandler`.
+   - Parses a sample HTML string (`rawHtml`), printing the parsed DOM to the console with start and end indices for nodes.
+
+Here's how the rewritten code can look:
+
+```javascript
+// domhandler.js
+class DomHandler {
+    constructor(callback, options = {}) {
+        this.callback = callback;
+        this.options = options;
+        this.dom = [];
+        this.root = { children: this.dom };
+    }
+
+    _addIndices(node, start, end) {
+        if (this.options.withStartIndices) node.startIndex = start;
+        if (this.options.withEndIndices) node.endIndex = end;
+    }
+
+    ontext(data, start, end) {
+        const node = { data, type: 'text' };
+        this._addIndices(node, start, end);
+        this.dom.push(node);
+    }
+
+    onopentag(name, attribs, start, end) {
+        const node = {
+            type: name,
+            name: name,
+            attribs: attribs,
+            children: []
+        };
+        this._addIndices(node, start, end);
+        this.dom.push(node);
+    }
+
+    oncomment(data, start, end) {
+        const node = { data, type: 'comment' };
+        this._addIndices(node, start, end);
+        this.dom.push(node);
+    }
+
+    onend() {
+        if (typeof this.callback === 'function') {
+            this.callback(null, this.dom);
+        }
+    }
+}
+
+module.exports = { DomHandler };
+
+// Usage example
+const { Parser } = require('htmlparser2');
+const { DomHandler } = require('./domhandler.js');
+
+const rawHtml = "Xyz <script language=javascript>var foo = '<<bar>>';</script><!--<!-- Waah! -- -->";
+const handler = new DomHandler((error, dom) => {
+    if (error) {
+        console.error('Parsing error:', error);
+    } else {
+        console.log('Parsed DOM:', dom);
+    }
+}, { withStartIndices: true, withEndIndices: true });
+
+const parser = new Parser(handler);
+parser.write(rawHtml);
+parser.end();
+```

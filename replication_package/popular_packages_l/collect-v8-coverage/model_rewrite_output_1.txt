@@ -1,0 +1,52 @@
+The provided Node.js code defines a class `CoverageInstrumenter` that uses the `inspector` module to collect V8 coverage data for a Node.js application. This class interacts with the V8 Profiler to start and stop precise coverage collection, which allows for detailed analysis of JavaScript code execution. The code performs the following main functions:
+
+1. Initializes a new session with the V8 Inspector.
+2. Provides a method `startInstrumenting` to enable the Profiler and start precise coverage data collection. It returns a promise that resolves when the coverage collection is successfully started.
+3. Provides another method `stopInstrumenting` to take the collected precise coverage data, stop the precise coverage, and disable the Profiler. It returns a promise that resolves with the collected coverage data.
+
+Here's a possible rewrite of the code:
+
+```javascript
+// collect-v8-coverage/index.js
+const inspector = require('inspector');
+
+class CoverageInstrumenter {
+  constructor() {
+    this.session = new inspector.Session();
+    this.session.connect();
+  }
+
+  startInstrumenting() {
+    return new Promise((resolve, reject) => {
+      this.session.post('Profiler.enable', (err) => {
+        if (err) return reject(err);
+
+        const coverageOptions = { callCount: true, detailed: true };
+        this.session.post('Profiler.startPreciseCoverage', coverageOptions, (err) => {
+          if (err) return reject(err);
+          resolve();
+        });
+      });
+    });
+  }
+
+  stopInstrumenting() {
+    return new Promise((resolve, reject) => {
+      this.session.post('Profiler.takePreciseCoverage', (err, result) => {
+        if (err) return reject(err);
+
+        this.session.post('Profiler.stopPreciseCoverage', (err) => {
+          if (err) return reject(err);
+
+          this.session.post('Profiler.disable', (err) => {
+            if (err) return reject(err);
+            resolve(result.result);
+          });
+        });
+      });
+    });
+  }
+}
+
+module.exports = { CoverageInstrumenter };
+```

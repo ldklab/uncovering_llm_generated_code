@@ -1,0 +1,68 @@
+The provided Node.js code defines a module for cross-platform spawning of child processes. Here's a detailed breakdown of its functionality:
+
+1. **Imports**:
+   - `spawn` and `spawnSync` are functions from the `child_process` module, used for asynchronous and synchronous process creation, respectively.
+   - `path` and `os` modules are used for path manipulation and to determine the operating system.
+
+2. **Function `resolveCommand(command)`**:
+   - If the OS is not Windows, the function returns the command as is.
+   - If it is Windows, it appends common executable extensions (from `%PATHEXT%`) to the command path to determine the correct executable file if it exists.
+
+3. **Function `crossSpawn(command, args, options)`**:
+   - Resolves the command using `resolveCommand`.
+   - Sets `options.shell` to `true` on Windows by default (unless explicitly set in options).
+   - Invokes `spawn` with the resolved command, arguments, and options, starting a child process.
+
+4. **Function `crossSpawnSync(command, args, options)`**:
+   - Similar to `crossSpawn`, but uses `spawnSync` instead for synchronous process execution.
+
+5. **Exports**:
+   - The module exports `crossSpawn` as `spawn` and `crossSpawnSync` as `sync`.
+
+6. **Example Usage** (commented out in the code):
+   - Demonstrates how to use the `crossSpawn` function to execute an `npm` command.
+
+Here's the rewritten version of the original Node.js code:
+
+```javascript
+const { spawn, spawnSync } = require('child_process');
+const path = require('path');
+const os = require('os');
+const fs = require('fs');
+
+function resolveCommand(command) {
+    if (os.platform() !== 'win32') return command;
+
+    const extensions = (process.env.PATHEXT || '.EXE').split(';');
+    const commandPath = path.resolve(process.cwd(), command);
+
+    for (const ext of extensions) {
+        const fullPath = commandPath + ext;
+        if (fs.existsSync(fullPath)) {
+            return fullPath;
+        }
+    }
+
+    return command;
+}
+
+function crossSpawn(command, args, options = {}) {
+    const resolvedCommand = resolveCommand(command);
+    options.shell = options.shell !== undefined ? options.shell : os.platform() === 'win32';
+
+    return spawn(resolvedCommand, args, options);
+}
+
+function crossSpawnSync(command, args, options = {}) {
+    const resolvedCommand = resolveCommand(command);
+    options.shell = options.shell !== undefined ? options.shell : os.platform() === 'win32';
+
+    return spawnSync(resolvedCommand, args, options);
+}
+
+module.exports = { spawn: crossSpawn, sync: crossSpawnSync };
+
+// Usage Example:
+// const { spawn } = require('./cross-spawn-module');
+// const child = spawn('npm', ['list', '-g', '--depth=0'], { stdio: 'inherit' });
+```

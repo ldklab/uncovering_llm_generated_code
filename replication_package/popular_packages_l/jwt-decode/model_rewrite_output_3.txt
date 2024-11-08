@@ -1,0 +1,89 @@
+This Node.js code defines a function to decode JSON Web Tokens (JWTs). JWTs are composed of three parts: header, payload, and signature, each encoded using Base64 URL encoding. The code provides functions to decode these parts.
+
+1. **`base64UrlDecode(str)`**:
+   - Decodes a Base64 URL encoded string to a regular string.
+   - Converts URL safe characters '-' and '_' back to '+' and '/'.
+   - Adds padding if necessary and decodes the string using Node.js's Buffer.
+
+2. **`jwtDecode(token, options = {})`**:
+   - Accepts a JWT token as a string and an optional `options` object.
+   - Checks if the token is a string and if it contains the correct parts (i.e., separated by periods).
+   - Decodes either the header or the payload, based on the `options.header` flag.
+   - Parses the decoded Base64 data as JSON. Throws an error if the JSON or Base64 is invalid.
+
+3. **Export and Usage**:
+   - The `jwtDecode` function is exported for use in other modules.
+   - Example usage is provided for CommonJS and ES6 syntax.
+
+Here is a rewritten version of the code with the explained functionalities:
+
+```javascript
+// jwt-decode.js
+
+function base64UrlDecode(str) {
+  // Converts Base64 URL safe string to a standard Base64 string
+  const base64 = str.replace(/-/g, '+').replace(/_/g, '/');
+  
+  // Adds padding if necessary
+  const padding = base64.length % 4 === 0 ? '' : '='.repeat(4 - (base64.length % 4));
+  const base64WithPadding = base64 + padding;
+  
+  // Decodes the Base64 string using Buffer
+  return Buffer.from(base64WithPadding, 'base64').toString();
+}
+
+function jwtDecode(token, options = {}) {
+  // Validates the token is a string
+  if (typeof token !== 'string') {
+    throw new Error('Invalid token specified: must be a string');
+  }
+  
+  // Splits the token into its base components
+  const [headerSegment, payloadSegment, signatureSegment] = token.split('.');
+
+  // Checks for the presence of all necessary parts
+  if (!headerSegment || !payloadSegment || !signatureSegment) {
+    throw new Error(`Invalid token specified: missing part #`);
+  }
+
+  try {
+    // Decides which part to decode
+    const segmentToDecode = options.header ? headerSegment : payloadSegment;
+    const decoded = base64UrlDecode(segmentToDecode);
+
+    // Tries parsing the decoded string as JSON
+    return JSON.parse(decoded);
+  } catch (err) {
+    if (err instanceof SyntaxError) {
+      throw new Error(`Invalid token specified: invalid json for part #`);
+    } else {
+      throw new Error(`Invalid token specified: invalid base64 for part #`);
+    }
+  }
+}
+
+module.exports = { jwtDecode };
+
+// Usage in CommonJS:
+// const { jwtDecode } = require('./jwt-decode');
+
+// Usage in ES6:
+// import { jwtDecode } from './jwt-decode';
+
+// Sample Usage
+try {
+  // Example JWT token
+  const token = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJmb28iOiJiYXIiLCJleHAiOjEzOTMyODY4OTMsImlhdCI6MTM5MjY4ODkz.f_SyLNkF5H7gTxDbDeihdj5Z8SGvt-jvE4H14RJC2u0";
+  
+  // Decoding the payload
+  const decoded = jwtDecode(token);
+  console.log(decoded);
+
+  // Decoding the header by setting options.header = true
+  const decodedHeader = jwtDecode(token, { header: true });
+  console.log(decodedHeader);
+  
+} catch (error) {
+  console.error(error.message);
+}
+```

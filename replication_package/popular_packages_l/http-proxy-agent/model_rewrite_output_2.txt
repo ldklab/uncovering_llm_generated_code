@@ -1,0 +1,67 @@
+The given Node.js code defines a class `HttpProxyAgent` which extends the native `http.Agent`. This class is meant to be used as a custom HTTP agent that routes requests through a proxy server. Here is a breakdown of how the code works:
+
+1. **Constructor**: The `HttpProxyAgent` constructor accepts a proxy (either a URL string or a URL object) and an optional `options` object. It initializes the proxy using the `URL` class if necessary, and sets up default headers from the options.
+
+2. **addRequest**: This function handles adding a request to be passed through the proxy. It uses the `net` module to create a connection to the proxy server. Upon successfully connecting:
+   - A `CONNECT` request is formatted and written to the socket, attempting to establish a tunneling connection for the desired end target.
+   - A listener checks for the "200 Connection Established" response from the proxy, indicating a successful connection. If so, it assigns the established socket to the HTTP request.
+   - If the connection fails or errors are encountered, the related errors are emitted on the original request object.
+
+3. **Example Usage**: At the end, there is an example showing how to use the `HttpProxyAgent` with an HTTP GET request. This demonstrates setting up the agent, sending an HTTP GET request through a proxy, and logging the response headers to the console.
+
+Here is the rewritten code:
+
+```javascript
+// http-proxy-agent/index.js
+import http from 'http';
+import { URL } from 'url';
+import net from 'net';
+
+export class HttpProxyAgent extends http.Agent {
+  constructor(proxy, options = {}) {
+    super(options);
+    this.proxy = typeof proxy === 'string' ? new URL(proxy) : proxy;
+    this.headers = options.headers || {};
+  }
+
+  addRequest(req, options) {
+    const { hostname, port } = this.proxy;
+
+    const socket = net.connect({ hostname, port: port || 80 }, () => {
+      const headers = { ...this.headers, Host: `${options.hostname}:${options.port}`, Connection: 'close' };
+
+      if (typeof this.headers === 'function') {
+        Object.assign(headers, this.headers());
+      }
+
+      const proxyHeaders = Object.entries(headers).map(([key, value]) => `${key}: ${value}`).join('\r\n');
+      const connectReq = `CONNECT ${options.hostname}:${options.port} HTTP/1.1\r\n${proxyHeaders}\r\n\r\n`;
+
+      socket.write(connectReq);
+
+      socket.once('data', (chunk) => {
+        if (!chunk.toString().includes('200 Connection Established')) {
+          socket.end();
+          req.emit('error', new Error('Failed to connect to proxy'));
+          return;
+        }
+
+        req.onSocket(socket);
+      });
+    });
+
+    socket.on('error', (err) => req.emit('error', err));
+  }
+}
+
+// Example of usage from README.md
+import { HttpProxyAgent } from './http-proxy-agent';
+import http from 'http';
+
+const agent = new HttpProxyAgent('http://168.63.76.32:3128');
+
+http.get('http://nodejs.org/api/', { agent }, (res) => {
+  console.log('"response" event!', res.headers);
+  res.pipe(process.stdout);
+});
+```

@@ -1,0 +1,102 @@
+The `enhanced-resolve` package provides an enhanced mechanism for resolving module paths in Node.js. It supports both synchronous and asynchronous operations and allows for customizable resolution strategies. Key features include a plugin system, options to define custom file systems, and the inclusion of synchronous and asynchronous default Node.js file systems.
+
+### Functionality Overview:
+
+1. **Asynchronous and Synchronous Resolution**: The package extends the `require.resolve` function with both asynchronous and synchronous methods to find the absolute path of a module according to Node.js resolve logic.
+
+2. **Customization**: Users can create custom resolvers with specific options such as file extensions to consider, alias configurations, and other advanced options like enforcing extensions or using caching.
+
+3. **Plugin System**: The core of the functionality relies on plugins, which extend the resolution behavior. The package provides a template for creating custom plugins.
+
+4. **Custom File Systems**: Users can integrate their own file system implementation, wrapped with cache capability if needed, to be used by the resolver.
+
+5. **Options and Configuration**: Through the `ResolverFactory`, users can configure a resolver with various options like `extensions`, `alias`, `modules`, `mainFields`, etc. These options modify how the resolution process behaves, including what files to look for and how to interpret module paths.
+
+6. **Escape and Parse Logic**: Enhancements to resolve requests containing fragments (`#`), where such fragments can be treated as part of a path or an actual URL fragment, with escaping mechanisms provided.
+
+### Node.js Enhanced Resolve Implementation:
+
+```js
+const fs = require('fs');
+
+class EnhancedResolve {
+  constructor(options = {}) {
+    this.options = {
+      extensions: options.extensions || ['.js', '.json', '.node'],
+      alias: options.alias || {},
+      fileSystem: options.fileSystem || fs,
+      plugins: options.plugins || [],
+      ...options,
+    };
+  }
+
+  resolve(context, path, request, callback) {
+    this._applyPlugins('before-resolve', { context, path, request }, err => {
+      if (err) return callback(err);
+
+      let resolvedPath;
+      try {
+        resolvedPath = this._resolveSync(path, request);
+      } catch (err) {
+        return callback(err);
+      }
+
+      this._applyPlugins('after-resolve', { context, path: resolvedPath, request }, err => {
+        if (err) return callback(err);
+        callback(null, resolvedPath);
+      });
+    });
+  }
+
+  _resolveSync(path, request) {
+    // Base resolve function with potential plugin hooks
+    for (const ext of this.options.extensions) {
+      const potentialPath = `${path}/${request}${ext}`;
+      if (this.options.fileSystem.existsSync(potentialPath)) {
+        return potentialPath;
+      }
+    }
+    throw new Error(`Cannot resolve ${request} in ${path}`);
+  }
+
+  static create(options) {
+    return new EnhancedResolve(options);
+  }
+
+  _applyPlugins(hookName, data, callback) {
+    const plugins = this.options.plugins.filter(plugin => plugin.appliesTo(hookName));
+    let index = 0;
+
+    const next = (err) => {
+      if (err || index === plugins.length) return callback(err);
+      plugins[index++].apply(data, next);
+    };
+
+    next();
+  }
+}
+
+// Example: Plugin Template
+class SamplePlugin {
+  constructor(sources, target) {
+    this.sources = sources;
+    this.target = target;
+  }
+
+  appliesTo(hookName) {
+    return this.sources.includes(hookName);
+  }
+
+  apply(data, callback) {
+    // Custom logic
+    callback();
+  }
+}
+
+module.exports = {
+  EnhancedResolve,
+  SamplePlugin,
+};
+```
+
+This simplified implementation captures the core functionalities described, including synchronous and asynchronous resolution, plugin handling, and basic customization options.

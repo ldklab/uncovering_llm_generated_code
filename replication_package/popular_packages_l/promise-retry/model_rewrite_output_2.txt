@@ -1,0 +1,64 @@
+The provided Node.js code defines a `promiseRetry` function that attempts to execute a specified asynchronous function multiple times in case of failure, using a retry strategy. The function allows configurable options such as the number of retries, retry delay factors, minimum and maximum timeouts, and whether to randomize these timeouts between retries.
+
+- `promiseRetry` function accepts two parameters: `options` and `fn`.
+  - If `options` is not an object, it assumes the first parameter is the function to be retried (`fn`), and assigns default values to `options`.
+- `options` can define:
+  - `retries`: Maximum number of retry attempts (default is 10).
+  - `factor`: Exponential factor for increasing delay between retries (default is 2).
+  - `minTimeout`: Minimum delay between retries in milliseconds (default is 1000ms).
+  - `maxTimeout`: Maximum delay between retries (default is Infinity).
+  - `randomize`: Boolean to apply random factor in retry delays (default is false).
+- The function uses the `retry` package to manage retry operations.
+- It attempts to execute the function `fn` through a retry operation.
+  - If `fn` succeeds by resolving, the promise returned by `promiseRetry` resolves.
+  - If `fn` fails by rejecting or calling an error callback, retry logic kicks in.
+  - If retries exhaust, the last error is rejected.
+
+Below is a possible rewrite of the Node.js code:
+
+```javascript
+const retry = require('retry');
+
+function promiseRetry(options, fn) {
+    if (typeof options === 'function') {
+        fn = options;
+        options = {};
+    }
+
+    options = options || {};
+    const retries = options.retries ?? 10;
+    const factor = options.factor ?? 2;
+    const minTimeout = options.minTimeout ?? 1000;
+    const maxTimeout = options.maxTimeout ?? Infinity;
+    const randomize = options.randomize ?? false;
+
+    const retryOptions = {
+        retries,
+        factor,
+        minTimeout,
+        maxTimeout,
+        randomize
+    };
+
+    return new Promise((resolve, reject) => {
+        const operation = retry.operation(retryOptions);
+
+        operation.attempt(() => {
+            fn((err) => {
+                if (operation.retry(err)) {
+                    return;
+                }
+                reject(operation.mainError());
+            }, operation.attempts())
+            .then(resolve)
+            .catch((err) => {
+                if (!operation.retry(err)) {
+                    reject(operation.mainError());
+                }
+            });
+        });
+    });
+}
+
+module.exports = promiseRetry;
+```

@@ -1,0 +1,104 @@
+The Node.js script is designed to load and process a configuration for PostCSS, a tool that transforms CSS with JavaScript plugins. Below is a breakdown of the functionalities:
+
+1. **Dependencies**: It imports the `path` module for handling file paths, `cosmiconfig` for configuration handling, and two custom modules for options and plugins.
+
+2. **processResult Function**: This utility processes the result obtained from `cosmiconfig`. It transforms the configuration into a usable format by checking if the configuration is a function or an object, and ensures plugins are defined. Finally, it returns a processed configuration object containing plugins, options, and the config file path.
+
+3. **createContext Function**: This builds the configuration context object, initializing with the current working directory (`cwd`) and the `NODE_ENV`. If the `NODE_ENV` is absent, it sets it to `development`.
+
+4. **rc Function**: This is the primary function for asynchronously loading a PostCSS configuration. It initializes the context, resolves the path, uses `cosmiconfig` to search for a configuration in the specified or current directory, and processes the result.
+
+5. **rc.sync Function**: This is a synchronous version of the `rc` function which uses `cosmiconfigSync` to perform the same operations synchronously.
+
+6. **Export**: The script exports the `rc` function to be used as a module within other scripts.
+
+The code assigns default values and processes configuration files in a manner compatible with PostCSS, allowing customization and extensibility within various environments.
+
+Here is a possible rewrite of the code:
+
+```javascript
+'use strict';
+
+const path = require('path');
+const { cosmiconfig, cosmiconfigSync } = require('cosmiconfig');
+const loadOptions = require('./options.js');
+const loadPlugins = require('./plugins.js');
+
+/**
+ * Processes the configuration result from cosmiconfig.
+ *
+ * @param {Object} ctx - Configuration Context.
+ * @param {Object} result - Result from cosmiconfig search.
+ * @returns {Object} - Processed PostCSS configuration.
+ */
+function processResult(ctx, result) {
+  const filePath = result.filepath || '';
+  let config = result.config || {};
+
+  config = typeof config === 'function' ? config(ctx) : { ...config, ...ctx };
+
+  if (!config.plugins) {
+    config.plugins = [];
+  }
+
+  return {
+    plugins: loadPlugins(config, filePath),
+    options: loadOptions(config, filePath),
+    file: filePath
+  };
+}
+
+/**
+ * Builds the configuration context.
+ *
+ * @param {Object} ctx - User-provided context overrides.
+ * @returns {Object} - Full configuration context.
+ */
+function createContext(ctx) {
+  const defaultContext = {
+    cwd: process.cwd(),
+    env: process.env.NODE_ENV || 'development'
+  };
+
+  ctx = { ...defaultContext, ...ctx };
+
+  if (!ctx.env) {
+    process.env.NODE_ENV = 'development';
+  }
+
+  return ctx;
+}
+
+/**
+ * Asynchronously loads the PostCSS configuration.
+ *
+ * @param {Object} ctx - Configuration context.
+ * @param {String} [path] - Configuration file path.
+ * @param {Object} [options] - Options for cosmiconfig.
+ * @returns {Promise} - Promise resolving to PostCSS configuration.
+ */
+async function rc(ctx, path, options) {
+  ctx = createContext(ctx);
+  const resolvedPath = path ? path.resolve(path) : process.cwd();
+
+  try {
+    const result = await cosmiconfig('postcss', options).search(resolvedPath);
+    if (!result) throw new Error(`No PostCSS Config found in: ${resolvedPath}`);
+    return processResult(ctx, result);
+  } catch (err) {
+    throw err;
+  }
+}
+
+rc.sync = (ctx, path, options) => {
+  ctx = createContext(ctx);
+  const resolvedPath = path ? path.resolve(path) : process.cwd();
+
+  const result = cosmiconfigSync('postcss', options).search(resolvedPath);
+  if (!result) throw new Error(`No PostCSS Config found in: ${resolvedPath}`);
+
+  return processResult(ctx, result);
+};
+
+module.exports = rc;
+```

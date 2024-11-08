@@ -1,0 +1,70 @@
+The provided Node.js code defines a module for working with JavaScript source code Abstract Syntax Tree (AST) node keys, specifically within the context of ESLint’s visitor keys. Here’s a breakdown of the functionality:
+
+1. **KEYS Constant**: 
+   - A frozen object `KEYS` that holds default key lists for specific types of AST nodes. 
+   - Example nodes include `AssignmentExpression` and `MethodDefinition` with their respective key arrays, like `["left", "right"]` and `["key", "value"]`.
+
+2. **getKeys Function**: 
+   - This function takes an AST `node` object and returns an array of its own property keys.
+   - It excludes keys that start with an underscore or are part of a set of ignored keys: `parent`, `leadingComments`, and `trailingComments`.
+
+3. **unionWith Function**: 
+   - This function merges an `additionalKeys` object with the predefined `KEYS`.
+   - It creates a new object combining the two, taking care to union any array values for overlapping keys in `additionalKeys` and `KEYS`.
+
+4. **Exports**: 
+   - The module exports three entities: `KEYS`, `getKeys`, and `unionWith`.
+
+5. **Examples**: 
+   - Examples demonstrate how to use the `getKeys` function to extract keys from a sample node and how `unionWith` operates to merge additional keys.
+
+Here's a possible rewrite of this code:
+
+```javascript
+// eslint-visitor-keys/index.js
+
+const DEFAULT_KEYS = Object.freeze({
+    AssignmentExpression: ["left", "right"],
+    MethodDefinition: ["key", "value"]
+});
+
+function extractNodeKeys(node) {
+    if (!node) {
+        return [];
+    }
+    return Object.keys(node).filter(key => (
+        !key.startsWith("_") && !['parent', 'leadingComments', 'trailingComments'].includes(key)
+    ));
+}
+
+function mergeKeys(customKeys) {
+    const mergedKeys = { ...DEFAULT_KEYS };
+
+    for (const type in customKeys) {
+        if (mergedKeys[type]) {
+            mergedKeys[type] = [...new Set([...mergedKeys[type], ...customKeys[type]])];
+        } else {
+            mergedKeys[type] = customKeys[type];
+        }
+    }
+    return mergedKeys;
+}
+
+module.exports = {
+    DEFAULT_KEYS,
+    extractNodeKeys,
+    mergeKeys
+};
+
+// Example Usage:
+const exampleNode = {
+    type: "AssignmentExpression",
+    left: { type: "Identifier", name: "foo" },
+    right: { type: "Literal", value: 0 }
+};
+console.log(extractNodeKeys(exampleNode)); // Output: ["type", "left", "right"]
+
+console.log(mergeKeys({
+    MethodDefinition: ["decorators"]
+})); // Output: { ..., MethodDefinition: ["key", "value", "decorators"], ... }
+```

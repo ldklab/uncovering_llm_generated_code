@@ -1,0 +1,90 @@
+The provided Node.js code is a module to load and process configuration for PostCSS using `cosmiconfig` for configuration search and resolution. It includes functionality to:
+
+1. **Process Configuration Results**:
+   - Takes a context and a result object from `cosmiconfig`.
+   - Determines the configuration based on the possible function value, merging, and adding default plugins.
+   - Returns a configuration object containing plugins, options, and file information by using helper functions `loadPlugins` and `loadOptions`.
+
+2. **Create a Configuration Context**:
+   - Determines the working directory and environment, defaulting to `'development'` if `process.env.NODE_ENV` is `undefined`.
+
+3. **Load Config (Async and Sync)**:
+   - Searches for a configuration file in a specified path using `cosmiconfig`.
+   - Handles both asynchronous and synchronous loading.
+   - Processes the result using the `processResult` function.
+   - If no configuration file is found, it throws an error.
+
+Based on these functionalities, here's a possible rewrite of the code:
+
+```js
+'use strict';
+
+const path = require('path');
+const cosmiconfig = require('cosmiconfig');
+const loadOptions = require('./options.js');
+const loadPlugins = require('./plugins.js');
+
+const processResult = (ctx, result) => {
+  const file = result.filepath || '';
+  let config = result.config || {};
+
+  if (typeof config === 'function') {
+    config = config(ctx);
+  } else {
+    config = { ...config, ...ctx };
+  }
+
+  config.plugins = config.plugins || [];
+
+  return {
+    plugins: loadPlugins(config, file),
+    options: loadOptions(config, file),
+    file
+  };
+};
+
+const createContext = (ctx) => {
+  const defaultContext = {
+    cwd: process.cwd(),
+    env: process.env.NODE_ENV
+  };
+
+  ctx = { ...defaultContext, ...ctx };
+
+  if (!ctx.env) {
+    process.env.NODE_ENV = 'development';
+  }
+
+  return ctx;
+};
+
+const rc = (ctx, path, options) => {
+  ctx = createContext(ctx);
+  path = path ? path.resolve(path) : process.cwd();
+
+  return cosmiconfig('postcss', options)
+    .search(path)
+    .then(result => {
+      if (!result) {
+        throw new Error(`No PostCSS Config found in: ${path}`);
+      }
+
+      return processResult(ctx, result);
+    });
+};
+
+rc.sync = (ctx, path, options) => {
+  ctx = createContext(ctx);
+  path = path ? path.resolve(path) : process.cwd();
+
+  const result = cosmiconfig('postcss', options).searchSync(path);
+
+  if (!result) {
+    throw new Error(`No PostCSS Config found in: ${path}`);
+  }
+
+  return processResult(ctx, result);
+};
+
+module.exports = rc;
+```

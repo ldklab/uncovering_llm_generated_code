@@ -1,0 +1,89 @@
+The provided Node.js code defines a function `prepare` that attempts to configure a given module loader for a specific file extension. Here is a breakdown of its operation:
+
+1. **Dependencies**: The code uses several modules with `require`, such as `path`, and custom modules from the `lib` directory (`extension`, `normalize`, and `register`).
+
+2. **Functionality of `prepare`**:
+   - It takes four parameters: `extensions` (a configuration object for different file types), `filepath` (the path of the file in question), `cwd` (current working directory), and `nothrow` (a flag to suppress exceptions).
+   - Extracts and processes the file extension using the `extension` module.
+   - Attempts to obtain a configuration for the file extension by normalizing it with the `normalize` module.
+   - It checks whether the extension already has a registered loader in `require.extensions`.
+   - If no configuration is found, it throws an error unless `nothrow` is truthy.
+   - Determines the `cwd` if not specified.
+   - Iterates over possible configurations trying to register each module using the `register` module.
+   - Tracks any errors and successful registrations in the `attempts` array.
+   - If all attempts result in errors, throws a customized error that details the failures unless `nothrow` is truthy.
+
+The key purpose of this function is to seamlessly enable the use of custom module loaders for files with different extensions by linking them with appropriate configuration settings.
+
+```javascript
+const path = require('path');
+
+const extension = require('./lib/extension');
+const normalize = require('./lib/normalize');
+const register = require('./lib/register');
+
+exports.prepare = function(extensions, filepath, cwd = null, nothrow = false) {
+  let config, usedExtension, err;
+  const attempts = [];
+  let onlyErrors = true;
+  const exts = extension(filepath);
+
+  // Find the first valid configuration for the given file extension
+  if (exts) {
+    exts.some((ext) => {
+      usedExtension = ext;
+      config = normalize(extensions[ext]);
+      return config != null;
+    });
+  }
+
+  // Check if an extension is already registered
+  if (Object.keys(require.extensions).includes(usedExtension)) {
+    return true;
+  }
+
+  // Handle case where no config is found
+  if (!config) {
+    if (nothrow) {
+      return;
+    }
+    throw new Error(`No module loader found for "${usedExtension}".`);
+  }
+
+  // Resolve cwd if it wasn't specified
+  if (!cwd) {
+    cwd = path.dirname(path.resolve(filepath));
+  }
+  
+  // Ensure config is an array
+  if (!Array.isArray(config)) {
+    config = [config];
+  }
+
+  // Attempt to register each configuration
+  for (const option of config) {
+    const attemptResult = register(cwd, option.module, option.register);
+    const error = attemptResult instanceof Error ? attemptResult : null;
+    attempts.push({ moduleName: option.module, module: attemptResult, error });
+
+    if (error) {
+      continue; // Move to next attempt if there is an error
+    }
+
+    onlyErrors = false;
+    break; // Break if a module was registered successfully
+  }
+
+  // Handling the case where all registration attempts failed
+  if (onlyErrors) {
+    err = new Error(`Unable to use specified module loaders for "${usedExtension}".`);
+    err.failures = attempts;
+    if (nothrow) {
+      return err;
+    }
+    throw err;
+  }
+
+  return attempts;
+};
+```

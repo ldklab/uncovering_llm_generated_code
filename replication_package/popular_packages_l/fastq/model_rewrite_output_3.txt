@@ -1,0 +1,155 @@
+The Node.js code defines a task queue system called `FastQueue` with functionality to handle concurrent task processing. The queue manages task execution using worker functions with a specified concurrency level, allowing a defined number of tasks to be processed simultaneously. Here's a breakdown of the main functionalities:
+
+1. **Queue Management**: 
+   - The tasks can be added to the queue using `push` (adding to the end) or `unshift` (adding to the front).
+   - The queue automatically processes tasks when they are added, if concurrency allows.
+
+2. **Concurrency and Worker Management**:
+   - The `concurrency` parameter limits the number of simultaneously running workers.
+   - The queue manages worker function execution and tracks active worker counts.
+
+3. **Task Callbacks and Promises**:
+   - Tasks can be processed with either traditional callbacks or Promises, controlled by the `usePromises` flag.
+
+4. **Queue Control Methods**:
+   - `pause` and `resume` allow stopping and starting task processing.
+   - `kill` and `killAndDrain` empty the queue; `killAndDrain` also calls the `drain` event.
+   - Event handler assignments for `drain`, `empty`, `saturated`, and error handling allow user-defined actions during certain states.
+
+5. **Idle and Length Checks**:
+   - `idle()` checks if the queue is empty and no workers are active.
+   - `length()` returns the number of enqueued tasks.
+
+6. **Queue Events**:
+   - Users can define behaviors for when the queue is empty, saturated (full capacity), or completely drained. 
+
+Here's a possible rewrite of the Node.js code, organized and slightly reformatted for clarity:
+
+```javascript
+'use strict';
+
+class FastQueue {
+  constructor(that, worker, concurrency, usePromises = false) {
+    this.that = that;
+    this.worker = worker;
+    this.concurrency = concurrency;
+    this.queue = [];
+    this.workers = 0;
+    this.paused = false;
+    this.drain = () => {};
+    this.empty = () => {};
+    this.saturated = () => {};
+    this.errorHandler = null;
+    this.usePromises = usePromises;
+  }
+
+  push(task, done) {
+    return new Promise((resolve, reject) => {
+      const callback = (err, result) => {
+        if (this.errorHandler) this.errorHandler(err, task);
+        if (done) return done(err, result);
+        if (err) return reject(err);
+        resolve(result);
+      };
+
+      this.queue.push({ task, callback });
+      process.nextTick(() => this._process());
+    });
+  }
+
+  unshift(task, done) {
+    return new Promise((resolve, reject) => {
+      const callback = (err, result) => {
+        if (this.errorHandler) this.errorHandler(err, task);
+        if (done) return done(err, result);
+        if (err) return reject(err);
+        resolve(result);
+      };
+
+      this.queue.unshift({ task, callback });
+      process.nextTick(() => this._process());
+    });
+  }
+
+  pause() {
+    this.paused = true;
+  }
+
+  resume() {
+    this.paused = false;
+    this._process();
+  }
+
+  idle() {
+    return this.workers === 0 && this.queue.length === 0;
+  }
+
+  length() {
+    return this.queue.length;
+  }
+
+  getQueue() {
+    return this.queue.slice();
+  }
+
+  kill() {
+    this.queue = [];
+    this.drain = () => {};
+  }
+
+  killAndDrain() {
+    this.kill();
+    this.drain();
+  }
+
+  error(handler) {
+    this.errorHandler = handler;
+  }
+
+  _process() {
+    if (this.paused || this.workers >= this.concurrency) return;
+    const taskObj = this.queue.shift();
+    if (!taskObj) return;
+    if (!this.queue.length) this.empty();
+
+    this.workers += 1;
+    if (this.workers === this.concurrency) this.saturated();
+
+    const { task, callback } = taskObj;
+    const workerFn = this.worker.bind(this.that);
+
+    if (this.usePromises) {
+      workerFn(task)
+        .then(result => {
+          callback(null, result);
+          this._complete();
+        })
+        .catch(err => {
+          callback(err);
+          this._complete();
+        });
+    } else {
+      workerFn(task, (err, result) => {
+        callback(err, result);
+        this._complete();
+      });
+    }
+  }
+
+  _complete() {
+    this.workers -= 1;
+    if (this.idle()) this.drain();
+    this._process();
+  }
+}
+
+function fastqueue(that, worker, concurrency) {
+  return new FastQueue(that, worker, concurrency, false);
+}
+
+fastqueue.promise = function(that, worker, concurrency) {
+  return new FastQueue(that, worker, concurrency, true);
+};
+
+module.exports = fastqueue;
+```

@@ -1,0 +1,117 @@
+The provided Node.js code snippet defines and exports a series of functions used for creating memoized selectors. These selectors help in efficiently determining if input parameters have changed and computing results only when necessary, which can optimize performance, especially in state management libraries like Redux. Below is a concise explanation of each component in the code:
+
+1. **defaultEqualityCheck**: A simple function that checks if two arguments are strictly equal (using `===`).
+
+2. **areArgumentsShallowlyEqual**: This function compares two sets of arguments to check if they are shallowly equal using the provided equality check function.
+
+3. **defaultMemoize**: A memoization function that caches the result of a function call based on the arguments passed. If the arguments are the same as the last call, it returns the cached result without recomputing.
+
+4. **getDependencies**: Extracts dependencies from an array, ensuring all of them are functions. Throws an error if any are not function types.
+
+5. **createSelectorCreator**: Generates a function that can create a selector with memoization, specified by the `memoize` and any options passed. It handles dependencies and result calculation and tracks recomputation count.
+
+6. **createSelector**: Utilizes `createSelectorCreator` with the default memoization function to create a default selector-creating function.
+
+7. **createStructuredSelector**: Builds a structured selector from an object of selectors, mapping each key to the result returned from their corresponding selector functions. It can also accept a custom selector creator function.
+
+Here is a possible rewrite of the code:
+
+```javascript
+'use strict';
+
+exports.__esModule = true;
+exports.defaultMemoize = defaultMemoize;
+exports.createSelectorCreator = createSelectorCreator;
+exports.createStructuredSelector = createStructuredSelector;
+
+function defaultEqualityCheck(a, b) {
+  return a === b;
+}
+
+function areArgumentsShallowlyEqual(equalityCheck, prev, next) {
+  if (prev === null || next === null || prev.length !== next.length) {
+    return false;
+  }
+  for (let i = 0; i < prev.length; i++) {
+    if (!equalityCheck(prev[i], next[i])) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function defaultMemoize(func, equalityCheck = defaultEqualityCheck) {
+  let lastArgs = null;
+  let lastResult = null;
+  
+  return function() {
+    if (!areArgumentsShallowlyEqual(equalityCheck, lastArgs, arguments)) {
+      lastResult = func.apply(null, arguments);
+    }
+    lastArgs = arguments;
+    return lastResult;
+  };
+}
+
+function getDependencies(funcs) {
+  const dependencies = Array.isArray(funcs[0]) ? funcs[0] : funcs;
+
+  if (!dependencies.every(dep => typeof dep === 'function')) {
+    const dependencyTypes = dependencies.map(dep => typeof dep).join(', ');
+    throw new Error(
+      `Selector creators expect all input-selectors to be functions, instead received: [${dependencyTypes}]`
+    );
+  }
+
+  return dependencies;
+}
+
+function createSelectorCreator(memoize, ...memoizeOptions) {
+  return function(...funcs) {
+    let recomputations = 0;
+    const resultFunc = funcs.pop();
+    const dependencies = getDependencies(funcs);
+
+    const memoizedResultFunc = memoize(
+      function() {
+        recomputations++;
+        return resultFunc.apply(null, arguments);
+      },
+      ...memoizeOptions
+    );
+
+    const selector = memoize(function() {
+      const params = dependencies.map(dep => dep.apply(null, arguments));
+      return memoizedResultFunc.apply(null, params);
+    });
+    
+    selector.resultFunc = resultFunc;
+    selector.dependencies = dependencies;
+    selector.recomputations = () => recomputations;
+    selector.resetRecomputations = () => (recomputations = 0);
+    
+    return selector;
+  };
+}
+
+const createSelector = exports.createSelector = createSelectorCreator(defaultMemoize);
+
+function createStructuredSelector(selectors, selectorCreator = createSelector) {
+  if (typeof selectors !== 'object') {
+    throw new Error(
+      `createStructuredSelector expects an object where each property is a selector, instead received a ${typeof selectors}`
+    );
+  }
+  
+  const objectKeys = Object.keys(selectors);
+  return selectorCreator(
+    objectKeys.map(key => selectors[key]),
+    function(...values) {
+      return values.reduce((composition, value, index) => {
+        composition[objectKeys[index]] = value;
+        return composition;
+      }, {});
+    }
+  );
+}
+```

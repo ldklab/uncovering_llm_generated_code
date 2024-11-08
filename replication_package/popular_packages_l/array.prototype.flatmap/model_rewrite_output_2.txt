@@ -1,0 +1,55 @@
+The Node.js code snippet is implementing a custom version of the `Array.prototype.flatMap` function and ensuring it is available as a polyfill on environments where this method does not exist natively. Here's the explanation of how it works:
+
+1. **Dependencies**: It imports `define-properties` and `callBind` to help with method binding and property definition.
+
+2. **flatMapImplementation**: This function mimics the behavior of the native `Array.prototype.flatMap`. It takes an array, a mapper function, and an optional `thisArg`. It maps each element using the mapper function and flattens the results into a single array. If the result of the mapper is an array, it concatenates it; otherwise, it simply pushes the result.
+
+3. **getPolyfill**: This function checks if `Array.prototype.flatMap` exists. If it does, it returns the native method; otherwise, it returns the custom implementation.
+
+4. **shim**: It ensures the `flatMap` method is defined on `Array.prototype` using the polyfill obtained from `getPolyfill`. It guarantees that `flatMap` is available in the environment.
+
+5. **Module Exports**: It exports `flatMapImplementation` for direct use, and additionally exports `shim` and `getPolyfill` for consumers who might want to directly apply the shim or utilize the polyfill logic.
+
+Here is a rewritten version of the Node.js code:
+
+```javascript
+// array.prototype.flatmap.js
+
+const define = require('define-properties');
+const callBind = require('es-abstract/helpers/callBind');
+
+const flatMapImplementation = function(array, mapper, thisArg) {
+    if (typeof mapper !== 'function') {
+        throw new TypeError('mapper is not a function');
+    }
+    
+    const result = [];
+    const forEach = callBind(Function.prototype.call, Array.prototype.forEach);
+    
+    forEach(array, function(value, index, arr) {
+        const mappedValue = mapper.call(thisArg, value, index, arr);
+        
+        if (Array.isArray(mappedValue)) {
+            result.push(...mappedValue);
+        } else {
+            result.push(mappedValue);
+        }
+    });
+    
+    return result;
+};
+
+const getPolyfill = function() {
+    return Array.prototype.flatMap || flatMapImplementation;
+};
+
+const shim = function() {
+    const polyfill = getPolyfill();
+    define(Array.prototype, { flatMap: polyfill });
+    return polyfill;
+};
+
+module.exports = flatMapImplementation;
+module.exports.shim = shim;
+module.exports.getPolyfill = getPolyfill;
+```

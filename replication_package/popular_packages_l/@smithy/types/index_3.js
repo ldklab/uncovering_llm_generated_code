@@ -1,0 +1,80 @@
+typescript
+// smithy-types.ts
+
+// Utility type to remove undefined from properties of an object
+export type NoUndefined<T> = {
+  [P in keyof T]-?: NonNullable<T[P]>;
+};
+
+// Type for a client ensuring inputs and outputs are non-undefined
+export type AssertiveClient<T> = {
+  [K in keyof T]: T[K] extends (...args: infer A) => infer R ? (...args: NoUndefined<A>) => NoUndefined<R> : T[K];
+};
+
+// Type for a client where outputs have all fields marked as required (non-nullable)
+export type UncheckedClient<T> = {
+  [K in keyof T]: T[K] extends (...args: infer A) => infer R ? (...args: A) => Required<R> : T[K];
+};
+
+// Defines a type for a streaming mechanism with type T
+export type SdkStream<T> = {
+  transformToString(): Promise<string>;
+} & T;
+
+// Node.js-specific client where function results return a promise of a stream
+export type NodeJsClient<T> = {
+  [K in keyof T]: T[K] extends (...args: infer A) => infer R
+    ? (...args: A) => Promise<SdkStream<Response>>
+    : T[K];
+};
+
+// Type for outputs that involve streaming blob data
+export type StreamingBlobPayloadOutputTypes = SdkStream<Response>;
+
+// Example usage with AWS S3 client
+import {
+  S3Client,
+  GetObjectCommand,
+  GetObjectCommandInput,
+} from "@aws-sdk/client-s3";
+import type { AssertiveClient, UncheckedClient, NoUndefined, NodeJsClient } from "./smithy-types";
+
+// Creating an AssertiveClient type instance for S3 which ensures input params are non-undefined
+const s3a = new S3Client({}) as AssertiveClient<S3Client>;
+
+// Creating an UncheckedClient type instance for S3 where output fields are non-null
+const s3b = new S3Client({}) as UncheckedClient<S3Client>;
+
+async function example() {
+  // Using the assertive client to get an object from S3
+  try {
+    const getObjectResponse = await s3a.getObject({
+      Bucket: "my-bucket",
+      Key: "my-key",
+    });
+    // Handle the response if needed
+  } catch (error) {
+    console.error("Error with AssertiveClient:", error);
+  }
+
+  // Using the unchecked client example to get and process the object's body as a string
+  const body = await (
+    await s3b.getObject({
+      Bucket: "my-bucket",
+      Key: "my-key",
+    })
+  ).Body.transformToString();
+  console.log("Body as string:", body);
+
+  // Setting up input with no undefined properties using NoUndefined type
+  const getObjectInput: NoUndefined<GetObjectCommandInput> = {
+    Bucket: "my-bucket",
+    Key: "my-key",
+  };
+  // Using a NodeJsClient with streaming responses
+  const s3c = new S3Client({}) as NodeJsClient<S3Client>;
+  const commandOutput = await s3c.send(new GetObjectCommand(getObjectInput));
+  console.log("Command output body:", await commandOutput.Body.transformToString());
+}
+
+example().catch(console.error);

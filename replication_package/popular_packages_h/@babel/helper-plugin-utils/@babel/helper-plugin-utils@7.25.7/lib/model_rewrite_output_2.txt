@@ -1,0 +1,92 @@
+The provided Node.js code is a module that exports two functions, `declare` and `declarePreset`. This module creates a mechanism for ensuring compatibility with specific Babel API versions, offering polyfills for certain API features if they are absent. The main functionality of this module is to construct and return a modified API object with certain properties defined, depending on the Babel API version used.
+
+Here's a breakdown of the functionality:
+
+1. **apiPolyfills**: This object defines default implementations for certain API features (`assertVersion`, `targets`, `assumption`, and `addExternalDependency`) using polyfills. These are generally no-op implementations or throw compatibility errors.
+
+2. **declare Function**: This is the main function exported by this module. It takes a `builder` function as an argument and returns a function. This returned function takes the Babel API object, options, and dirname as arguments. The `declare` function checks if the API object lacks certain methods defined in `apiPolyfills`, and if so, creates a modified clone of the API object with these methods added. The `builder` function is then invoked with this possibly modified API object.
+
+3. **declarePreset**: This is an alias for the `declare` function, allowing it to be used in the context of declaring Babel presets as well.
+
+4. **copyApiObject Function**: This utility function creates a "safe" clone of the API object to ensure that it behaves correctly with the polyfills.
+
+5. **throwVersionError Function**: This helper function is used in the `assertVersion` polyfill to throw an error if the API version doesn't match the expected range, providing a detailed error message to help diagnose version mismatches.
+
+Below is the rewritten code according to the above explanation:
+
+```javascript
+"use strict";
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports.declare = declare;
+exports.declarePreset = declare;
+
+const apiPolyfills = {
+  assertVersion: api => range => {
+    throwVersionError(range, api.version);
+  },
+  targets: () => () => ({}),
+  assumption: () => () => undefined,
+  addExternalDependency: () => () => {}
+};
+
+function declare(builder) {
+  return (api, options = {}, dirname) => {
+    let clonedApi;
+    for (const key in apiPolyfills) {
+      if (!api[key]) {
+        clonedApi = clonedApi || copyApiObject(api);
+        clonedApi[key] = apiPolyfills[key](clonedApi);
+      }
+    }
+    return builder(clonedApi || api, options, dirname);
+  };
+}
+
+function copyApiObject(api) {
+  let proto = null;
+  if (typeof api.version === "string" && api.version.startsWith("7.")) {
+    proto = Object.getPrototypeOf(api);
+    if (proto && !['version', 'transform', 'template', 'types'].every(prop => hasOwnProperty.call(proto, prop))) {
+      proto = null;
+    }
+  }
+  return Object.assign({}, proto, api);
+}
+
+function throwVersionError(range, version) {
+  if (typeof range === "number") {
+    if (!Number.isInteger(range)) {
+      throw new Error("Expected string or integer value.");
+    }
+    range = `^${range}.0.0-0`;
+  }
+  if (typeof range !== "string") {
+    throw new Error("Expected string or integer value.");
+  }
+
+  const originalStackTraceLimit = Error.stackTraceLimit;
+  if (typeof originalStackTraceLimit === "number" && originalStackTraceLimit < 25) {
+    Error.stackTraceLimit = 25;
+  }
+
+  const errorMessage = version.startsWith("7.") 
+    ? `Requires Babel "^7.0.0-beta.41", but was loaded with "${version}". Update your @babel/core version.` 
+    : `Requires Babel "${range}", but was loaded with "${version}". Ensure a compatible version of @babel/core is used, and inspect the build process.`;
+
+  const err = new Error(errorMessage);
+  Object.assign(err, {
+    code: "BABEL_VERSION_UNSUPPORTED",
+    version,
+    range
+  });
+
+  if (typeof originalStackTraceLimit === "number") {
+    Error.stackTraceLimit = originalStackTraceLimit;
+  }
+
+  throw err;
+}
+```

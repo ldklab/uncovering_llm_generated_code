@@ -1,0 +1,127 @@
+The given code defines a TerserPlugin class for use in a Node.js environment, specifically targeting Webpack projects. This plugin is responsible for minimizing JavaScript assets during the Webpack build process. Here's a breakdown of its functionality:
+
+1. **Imports and Type Definitions**: 
+   - Imports necessary modules for file path handling, OS interactions, schema validation, and utility functions for JavaScript minification.
+   - Defines TypeScript type annotations to assist in type-checking various parts of the plugin, including options and results.
+
+2. **Memoization Functions**: Utilizes memoization for requiring modules that handle source map tracing and JavaScript serialization to optimize performance.
+
+3. **TerserPlugin Class**:
+   - **Constructor**: Initializes the plugin with specified options, validating them against a provided JSON schema. The constructor sets default values for minification implementation, parallel processing, and asset inclusion/exclusion rules.
+   - **isSourceMap Method**: Determines whether a given input object is a valid source map.
+   - **buildWarning and buildError Methods**: Constructs error and warning objects to be used in the minification process, incorporating details from the source map for better error localization.
+   - **getAvailableNumberOfCores Method**: Calculates the number of CPU cores that can be utilized for parallel processing based on user options.
+   - **optimize Method**: Main logic to minify assets. It processes all assets according to defined rules, using worker threads for parallel processing when beneficial. Manages source maps, extracted comments, caching, and records errors and warnings.
+   - **getEcmaVersion Method**: Determines the ECMAScript version to use for minification based on the target environment.
+   - **apply Method**: Integrates the plugin with Webpack's compilation hooks, defining how assets should be processed for minimization.
+
+4. **Static Minifier Functions**: Provides various static methods for different minification techniques (Terser, UglifyJs, SWC, esbuild).
+
+Here's a streamlined version of the code reflecting the explained functionality:
+
+```javascript
+"use strict";
+
+const path = require("path");
+const os = require("os");
+const { validate } = require("schema-utils");
+const { throttleAll, memoize, terserMinify, uglifyJsMinify, swcMinify, esbuildMinify } = require("./utils");
+const schema = require("./options.json");
+const { minify } = require("./minify");
+
+class TerserPlugin {
+  constructor(options = {}) {
+    validate(schema, options, { name: "Terser Plugin", baseDataPath: "options" });
+    this.options = {
+      test: /\.[cm]?js(\?.*)?$/i,
+      extractComments: true,
+      parallel: true,
+      ...options
+    };
+  }
+
+  static isSourceMap(input) {
+    return Boolean(input && input.version && input.sources && Array.isArray(input.sources) && typeof input.mappings === "string");
+  }
+
+  static buildWarning(warning, file) {
+    const builtWarning = new Error(warning.toString());
+    builtWarning.name = "Warning";
+    builtWarning.hideStack = true;
+    builtWarning.file = file;
+    return builtWarning;
+  }
+
+  static buildError(error, file, sourceMap, requestShortener) {
+    let builtError;
+    if (typeof error === "string") {
+      return new Error(`${file} from Terser plugin\n${error}`);
+    }
+    if (error.line) {
+      const original = sourceMap && require("@jridgewell/trace-mapping").originalPositionFor(sourceMap, { line: error.line, column: error.col });
+      if (original && original.source && requestShortener) {
+        return new Error(`${file} from Terser plugin\n${error.message} [${requestShortener.shorten(original.source)}:${original.line},${original.column}][${file}:${error.line},${error.col}]`);
+      }
+      return new Error(`${file} from Terser plugin\n${error.message} [${file}:${error.line},${error.col}]`);
+    }
+    return new Error(`${file} from Terser plugin\n${error.message}`);
+  }
+
+  static getAvailableNumberOfCores(parallel) {
+    const cpus = os.cpus() || { length: 1 };
+    return parallel === true ? cpus.length - 1 : Math.min(Number(parallel) || 0, cpus.length - 1);
+  }
+
+  async optimize(compiler, compilation, assets, optimizeOptions) {
+    const cache = compilation.getCache("TerserWebpackPlugin");
+    const assetsForMinify = await Promise.all(Object.keys(assets).filter((name) => {
+      const { info } = compilation.getAsset(name);
+      return !info.minimized && !info.extractedComments && compiler.webpack.ModuleFilenameHelpers.matchObject.bind(undefined, this.options)(name);
+    }).map(async (name) => {
+      const { info, source } = compilation.getAsset(name);
+      const eTag = cache.getLazyHashedEtag(source);
+      const cacheItem = cache.getItemCache(name, eTag);
+      const output = await cacheItem.getPromise();
+      return { name, info, inputSource: source, output, cacheItem };
+    }));
+
+    if (!assetsForMinify.length) return;
+
+    const { minimizer } = this.options;
+    const tasks = assetsForMinify.map(async ({ name, inputSource, cacheItem }) => {
+      const { source: sourceFromInputSource, map } = inputSource.sourceAndMap();
+      const input = Buffer.isBuffer(sourceFromInputSource) ? sourceFromInputSource.toString() : sourceFromInputSource;
+      const inputSourceMap = TerserPlugin.isSourceMap(map) ? map : undefined;
+
+      const minifyOptions = { name, input, inputSourceMap, minimizer: { implementation: minimizer.implementation, options: minimizer.options } };
+      let output;
+
+      try {
+        output = await minify(minifyOptions);
+      } catch (error) {
+        compilation.errors.push(TerserPlugin.buildError(error, name, inputSourceMap, compilation.requestShortener));
+        return;
+      }
+
+      await cacheItem.storePromise({ source: output.source, errors: output.errors, warnings: output.warnings });
+    });
+
+    await throttleAll(TerserPlugin.getAvailableNumberOfCores(this.options.parallel), tasks);
+  }
+
+  apply(compiler) {
+    const pluginName = this.constructor.name;
+    compiler.hooks.compilation.tap(pluginName, (compilation) => {
+      compilation.hooks.processAssets.tapPromise({ name: pluginName, stage: compiler.webpack.Compilation.PROCESS_ASSETS_STAGE_OPTIMIZE_SIZE }, (assets) => 
+        this.optimize(compiler, compilation, assets, { availableNumberOfCores: TerserPlugin.getAvailableNumberOfCores(this.options.parallel) }));
+    });
+  }
+}
+
+TerserPlugin.terserMinify = terserMinify;
+TerserPlugin.uglifyJsMinify = uglifyJsMinify;
+TerserPlugin.swcMinify = swcMinify;
+TerserPlugin.esbuildMinify = esbuildMinify;
+
+module.exports = TerserPlugin;
+```

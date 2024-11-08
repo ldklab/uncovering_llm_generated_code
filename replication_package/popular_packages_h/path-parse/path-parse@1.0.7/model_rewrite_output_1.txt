@@ -1,0 +1,57 @@
+The given Node.js code provides a utility for parsing file path strings into their components, specifically targeting Windows and POSIX (Unix-like) systems. It contains two main parsing methods, `win32.parse` and `posix.parse`, designed to handle path strings formatted for Windows and POSIX systems, respectively. Depending on the operating system, it exports the appropriate parsing function by default using the `process.platform` property. Additionally, it always attaches both parsing methods as properties `win32` and `posix` on the module exports for explicit usage regardless of the default export. The functions split the input path strings into components such as root, directory, basename, extension, and name based on system-specific regular expressions.
+
+```javascript
+'use strict';
+
+const platform = process.platform;
+const isWindows = platform === 'win32';
+
+// Regex to split a Windows path into [dir, root, basename, name, ext]
+const splitWindowsRe =
+  /^(((?:[a-zA-Z]:|[\\\/]{2}[^\\\/]+[\\\/]+[^\\\/]+)?[\\\/]?)(?:[^\\\/]*[\\\/])*)((\.{1,2}|[^\\\/]+?|)(\.[^.\/\\]*|))[\\\/]*$/;
+
+// Regex to split a POSIX path into [dir, root, basename, name, ext]
+const splitPosixRe =
+  /^((\/?)(?:[^\/]*\/)*)((\.{1,2}|[^\/]+?|)(\.[^.\/]*|))[\/]*$/;
+
+const parser = {
+  win32: function(pathString) {
+    validatePathString(pathString);
+    const parts = splitPath(pathString, splitWindowsRe);
+    return formatParts(parts);
+  },
+  posix: function(pathString) {
+    validatePathString(pathString);
+    const parts = splitPath(pathString, splitPosixRe);
+    return formatParts(parts);
+  }
+};
+
+function validatePathString(pathString) {
+  if (typeof pathString !== 'string') {
+    throw new TypeError(`Parameter 'pathString' must be a string, not ${typeof pathString}`);
+  }
+}
+
+function splitPath(pathString, regex) {
+  const parts = regex.exec(pathString);
+  if (!parts || parts.length !== 6) {
+    throw new TypeError(`Invalid path '${pathString}'`);
+  }
+  return parts.slice(1);
+}
+
+function formatParts(parts) {
+  return {
+    root: parts[1],
+    dir: parts[0] === parts[1] ? parts[0] : parts[0].slice(0, -1),
+    base: parts[2],
+    ext: parts[4],
+    name: parts[3]
+  };
+}
+
+module.exports = isWindows ? parser.win32 : parser.posix;
+module.exports.win32 = parser.win32;
+module.exports.posix = parser.posix;
+```

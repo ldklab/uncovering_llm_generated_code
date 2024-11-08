@@ -1,0 +1,60 @@
+The `pathe` package provides a set of utilities for handling filesystem paths in a consistent manner across different operating systems. It is designed as a replacement for Node.js's built-in `path` module, which behaves differently depending on the operating system (Windows or POSIX). The `pathe` package normalizes path separators to use slashes (`/`) universally, ensuring consistent behavior regardless of the platform on which the code is executed. It exports functions similar to those in Node.js's `path` module, making it easy to integrate into existing codebases with minimal changes.
+
+In addition to mirroring the functionality of the Node.js `path` module, `pathe` also offers additional utilities such as `filename`, `normalizeAliases`, and `resolveAlias` for extra path manipulation capabilities. These can be imported from the `pathe/utils` subpath.
+
+Here's how you might implement such a package in Node.js:
+
+```js
+// src/index.js
+import path from 'path';
+
+// Normalize a path to use forward slashes
+const normalize = (p) => p.replace(/\\/g, '/');
+
+// Example implementation of some path functions
+export const resolve = (...paths) => normalize(path.resolve(...paths));
+export const join = (...paths) => normalize(path.join(...paths));
+export const dirname = (p) => normalize(path.dirname(p));
+export const basename = (p, ext) => path.basename(normalize(p), ext);
+export const extname = (p) => path.extname(normalize(p));
+
+// src/utils.js
+export const filename = (p) => {
+  const base = basename(p);
+  return base.substring(0, base.length - extname(p).length);
+};
+
+export const normalizeAliases = (aliases) => {
+  const normalized = {};
+  for (const alias in aliases) {
+    normalized[normalize(alias)] = normalize(aliases[alias]);
+  }
+  return normalized;
+};
+
+export const resolveAlias = (p, aliases) => {
+  const normalizedAliases = normalizeAliases(aliases);
+  const aliasKeys = Object.keys(normalizedAliases);
+  for (const alias of aliasKeys) {
+    if (p.startsWith(alias)) {
+      return p.replace(alias, normalizedAliases[alias]);
+    }
+  }
+  return p;
+};
+
+// package.json
+{
+  "name": "pathe",
+  "version": "1.0.0",
+  "main": "src/index.js",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.js",
+    "./utils": "./src/utils.js"
+  },
+  "dependencies": {}
+}
+```
+
+This implementation includes basic path operations with normalization of paths to forward slashes, and additional utility functions for path aliases. Users can import these functions either from the main package or from the `utils` subpath.

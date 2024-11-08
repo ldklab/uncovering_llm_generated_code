@@ -1,0 +1,349 @@
+// This code defines utility functions for handling TypeScript tokens, comments, and types. It also manages scopes, identifies TypeScript declarations, and collects variable usage information. The code employs TypeScript APIs extensively to perform these tasks, particularly focusing on TypeScript's abstract syntax tree. Here's a clear breakdown of what each part does:
+
+// Utilities for handling access and manipulation of private members
+const __accessCheck = (obj, member, msg) => {
+  if (!member.has(obj))
+    throw TypeError("Cannot " + msg);
+};
+const __privateGet = (obj, member, getter) => {
+  __accessCheck(obj, member, "read from private field");
+  return getter ? getter.call(obj) : member.get(obj);
+};
+const __privateAdd = (obj, member, value) => {
+  if (member.has(obj))
+    throw TypeError("Cannot add the same private member more than once");
+  member instanceof WeakSet ? member.add(obj) : member.set(obj, value);
+};
+const __privateSet = (obj, member, value, setter) => {
+  __accessCheck(obj, member, "write to private field");
+  setter ? setter.call(obj, value) : member.set(obj, value);
+  return value;
+};
+const __privateMethod = (obj, member, method) => {
+  __accessCheck(obj, member, "access private method");
+  return method;
+};
+
+// Importing TypeScript API
+import ts from "typescript";
+
+// Functions for iterating over tokens and comments in TypeScript nodes
+function forEachToken(node, callback, sourceFile = node.getSourceFile()) {
+  const queue = [];
+  while (true) {
+    if (ts.isTokenKind(node.kind)) {
+      callback(node);
+    } else if (node.kind !== ts.SyntaxKind.JSDocComment) {
+      const children = node.getChildren(sourceFile);
+      if (children.length === 1) {
+        node = children[0];
+        continue;
+      }
+      for (let i = children.length - 1; i >= 0; --i) {
+        queue.push(children[i]);
+      }
+    }
+    if (queue.length === 0) {
+      break;
+    }
+    node = queue.pop();
+  }
+}
+
+function forEachComment(node, callback, sourceFile = node.getSourceFile()) {
+  const fullText = sourceFile.text;
+  const notJsx = sourceFile.languageVariant !== ts.LanguageVariant.JSX;
+  return forEachToken(
+    node,
+    (token) => {
+      if (token.pos === token.end) {
+        return;
+      }
+      if (token.kind !== ts.SyntaxKind.JsxText) {
+        ts.forEachLeadingCommentRange(
+          fullText,
+          token.pos === 0 ? (ts.getShebang(fullText) ?? "").length : token.pos,
+          commentCallback
+        );
+      }
+      if (notJsx || canHaveTrailingTrivia(token)) {
+        return ts.forEachTrailingCommentRange(
+          fullText,
+          token.end,
+          commentCallback
+        );
+      }
+    },
+    sourceFile
+  );
+
+  function commentCallback(pos, end, kind) {
+    callback(fullText, { end, kind, pos });
+  }
+}
+
+// Comment handling functionality for JSX tokens
+function canHaveTrailingTrivia(token) {
+  // Handling different kinds of tokens such as JSX elements
+  switch (token.kind) {
+    case ts.SyntaxKind.CloseBraceToken:
+      return token.parent.kind !== ts.SyntaxKind.JsxExpression || !isJsxElementOrFragment(token.parent.parent);
+    case ts.SyntaxKind.GreaterThanToken:
+      switch (token.parent.kind) {
+        case ts.SyntaxKind.JsxOpeningElement:
+          return token.end !== token.parent.end;
+        case ts.SyntaxKind.JsxOpeningFragment:
+          return false;
+        case ts.SyntaxKind.JsxSelfClosingElement:
+          return token.end !== token.parent.end ||
+          !isJsxElementOrFragment(token.parent.parent);
+        case ts.SyntaxKind.JsxClosingElement:
+        case ts.SyntaxKind.JsxClosingFragment:
+          return !isJsxElementOrFragment(token.parent.parent.parent);
+      }
+  }
+  return true;
+}
+
+function isJsxElementOrFragment(node) {
+  return node.kind === ts.SyntaxKind.JsxElement || node.kind === ts.SyntaxKind.JsxFragment;
+}
+
+// Checking the status of different compiler options for TypeScript code
+function isCompilerOptionEnabled(options, option) {
+  switch (option) {
+    case "stripInternal":
+    case "declarationMap":
+    case "emitDeclarationOnly":
+      return options[option] === true && isCompilerOptionEnabled(options, "declaration");
+    case "declaration":
+      return options.declaration || isCompilerOptionEnabled(options, "composite");
+    case "incremental":
+      return options.incremental === void 0 ? isCompilerOptionEnabled(options, "composite") : options.incremental;
+    case "skipDefaultLibCheck":
+      return options.skipDefaultLibCheck || isCompilerOptionEnabled(options, "skipLibCheck");
+    case "suppressImplicitAnyIndexErrors":
+      return options.suppressImplicitAnyIndexErrors === true && isCompilerOptionEnabled(options, "noImplicitAny");
+    case "allowSyntheticDefaultImports":
+      return options.allowSyntheticDefaultImports !== void 0 ? options.allowSyntheticDefaultImports : isCompilerOptionEnabled(options, "esModuleInterop") || options.module === ts.ModuleKind.System;
+    case "noUncheckedIndexedAccess":
+      return options.noUncheckedIndexedAccess === true && isCompilerOptionEnabled(options, "strictNullChecks");
+    case "allowJs":
+      return options.allowJs === void 0 ? isCompilerOptionEnabled(options, "checkJs") : options.allowJs;
+    case "noImplicitAny":
+    case "noImplicitThis":
+    case "strictNullChecks":
+    case "strictFunctionTypes":
+    case "strictPropertyInitialization":
+    case "alwaysStrict":
+    case "strictBindCallApply":
+      return isStrictCompilerOptionEnabled(
+        options,
+        option
+      );
+  }
+  return options[option] === true;
+}
+
+function isStrictCompilerOptionEnabled(options, option) {
+  return (options.strict ? options[option] !== false : options[option] === true) && (option !== "strictPropertyInitialization" || isStrictCompilerOptionEnabled(options, "strictNullChecks"));
+}
+
+// Utility functions for managing flags in TypeScript nodes
+function isFlagSet(allFlags, flag) {
+  return (allFlags & flag) !== 0;
+}
+
+function isModifierFlagSet(node, flag) {
+  return isFlagSet(ts.getCombinedModifierFlags(node), flag);
+}
+
+function includesModifier(modifiers, ...kinds) {
+  if (modifiers === undefined) {
+    return false;
+  }
+  for (const modifier of modifiers) {
+    if (kinds.includes(modifier.kind)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// Functions related to identifying types and syntax in TypeScript nodes
+function isAssignmentKind(kind) {
+  return kind >= ts.SyntaxKind.FirstAssignment && kind <= ts.SyntaxKind.LastAssignment;
+}
+
+function isNumericPropertyName(name) {
+  return String(+name) === name;
+}
+
+function charSize(ch) {
+  return ch >= 65536 ? 2 : 1;
+}
+
+function isValidPropertyAccess(text, languageVersion = ts.ScriptTarget.Latest) {
+  if (text.length === 0) {
+    return false;
+  }
+  let ch = text.codePointAt(0);
+  if (!ts.isIdentifierStart(ch, languageVersion)) {
+    return false;
+  }
+  for (let i = charSize(ch); i < text.length; i += charSize(ch)) {
+    ch = text.codePointAt(i);
+    if (!ts.isIdentifierPart(ch, languageVersion)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+// Access kind constants and functions for identifying access kind in TypeScript expressions
+var AccessKind = /* @__PURE__ */ ((AccessKind2) => {
+  AccessKind2[AccessKind2["None"] = 0] = "None";
+  AccessKind2[AccessKind2["Read"] = 1] = "Read";
+  AccessKind2[AccessKind2["Write"] = 2] = "Write";
+  AccessKind2[AccessKind2["Delete"] = 4] = "Delete";
+  AccessKind2[AccessKind2["ReadWrite"] = 3] = "ReadWrite";
+  return AccessKind2;
+})(AccessKind || {});
+
+function getAccessKind(node) {
+  const parent = node.parent;
+  switch (parent.kind) {
+    case ts.SyntaxKind.DeleteExpression:
+      return AccessKind.Delete;
+    case ts.SyntaxKind.PostfixUnaryExpression:
+      return AccessKind.ReadWrite;
+    case ts.SyntaxKind.PrefixUnaryExpression:
+      return parent.operator === ts.SyntaxKind.PlusPlusToken || parent.operator === ts.SyntaxKind.MinusMinusToken ? AccessKind.ReadWrite : AccessKind.Read;
+    case ts.SyntaxKind.BinaryExpression:
+      return parent.right === node ? AccessKind.Read : !isAssignmentKind(parent.operatorToken.kind) ? AccessKind.Read : parent.operatorToken.kind === ts.SyntaxKind.EqualsToken ? AccessKind.Write : AccessKind.ReadWrite;
+    case ts.SyntaxKind.ShorthandPropertyAssignment:
+      return parent.objectAssignmentInitializer === node ? AccessKind.Read : isInDestructuringAssignment(parent) ? AccessKind.Write : AccessKind.Read;
+    case ts.SyntaxKind.PropertyAssignment:
+      return parent.name === node ? AccessKind.None : isInDestructuringAssignment(parent) ? AccessKind.Write : AccessKind.Read;
+    case ts.SyntaxKind.ArrayLiteralExpression:
+    case ts.SyntaxKind.SpreadElement:
+    case ts.SyntaxKind.SpreadAssignment:
+      return isInDestructuringAssignment(parent) ? AccessKind.Write : AccessKind.Read;
+    case ts.SyntaxKind.ParenthesizedExpression:
+    case ts.SyntaxKind.NonNullExpression:
+    case ts.SyntaxKind.TypeAssertionExpression:
+    case ts.SyntaxKind.AsExpression:
+      return getAccessKind(parent);
+    case ts.SyntaxKind.ForOfStatement:
+    case ts.SyntaxKind.ForInStatement:
+      return parent.initializer === node ? AccessKind.Write : AccessKind.Read;
+    case ts.SyntaxKind.ExpressionWithTypeArguments:
+      return parent.parent.token === ts.SyntaxKind.ExtendsKeyword && parent.parent.parent.kind !== ts.SyntaxKind.InterfaceDeclaration ? AccessKind.Read : AccessKind.None;
+    case ts.SyntaxKind.ComputedPropertyName:
+    case ts.SyntaxKind.ExpressionStatement:
+    case ts.SyntaxKind.TypeOfExpression:
+    case ts.SyntaxKind.ElementAccessExpression:
+    case ts.SyntaxKind.ForStatement:
+    case ts.SyntaxKind.IfStatement:
+    case ts.SyntaxKind.DoStatement:
+    case ts.SyntaxKind.WhileStatement:
+    case ts.SyntaxKind.SwitchStatement:
+    case ts.SyntaxKind.WithStatement:
+    case ts.SyntaxKind.ThrowStatement:
+    case ts.SyntaxKind.CallExpression:
+    case ts.SyntaxKind.NewExpression:
+    case ts.SyntaxKind.TaggedTemplateExpression:
+    case ts.SyntaxKind.JsxExpression:
+    case ts.SyntaxKind.Decorator:
+    case ts.SyntaxKind.TemplateSpan:
+    case ts.SyntaxKind.JsxOpeningElement:
+    case ts.SyntaxKind.JsxSelfClosingElement:
+    case ts.SyntaxKind.JsxSpreadAttribute:
+    case ts.SyntaxKind.VoidExpression:
+    case ts.SyntaxKind.ReturnStatement:
+    case ts.SyntaxKind.AwaitExpression:
+    case ts.SyntaxKind.YieldExpression:
+    case ts.SyntaxKind.ConditionalExpression:
+    case ts.SyntaxKind.CaseClause:
+    case ts.SyntaxKind.JsxElement:
+      return AccessKind.Read;
+    case ts.SyntaxKind.ArrowFunction:
+      return parent.body === node ? AccessKind.Read : AccessKind.Write;
+    case ts.SyntaxKind.PropertyDeclaration:
+    case ts.SyntaxKind.VariableDeclaration:
+    case ts.SyntaxKind.Parameter:
+    case ts.SyntaxKind.EnumMember:
+    case ts.SyntaxKind.BindingElement:
+    case ts.SyntaxKind.JsxAttribute:
+      return parent.initializer === node ? AccessKind.Read : AccessKind.None;
+    case ts.SyntaxKind.PropertyAccessExpression:
+      return parent.expression === node ? AccessKind.Read : AccessKind.None;
+    case ts.SyntaxKind.ExportAssignment:
+      return parent.isExportEquals ? AccessKind.Read : AccessKind.None;
+  }
+  return AccessKind.None;
+}
+
+function isInDestructuringAssignment(node) {
+  switch (node.kind) {
+    case ts.SyntaxKind.ShorthandPropertyAssignment:
+      if (node.objectAssignmentInitializer !== undefined) {
+        return true;
+      }
+    case ts.SyntaxKind.PropertyAssignment:
+    case ts.SyntaxKind.SpreadAssignment:
+      node = node.parent;
+      break;
+    case ts.SyntaxKind.SpreadElement:
+      if (node.parent.kind !== ts.SyntaxKind.ArrayLiteralExpression) {
+        return false;
+      }
+      node = node.parent;
+  }
+  while (true) {
+    switch (node.parent.kind) {
+      case ts.SyntaxKind.BinaryExpression:
+        return node.parent.left === node && node.parent.operatorToken.kind === ts.SyntaxKind.EqualsToken;
+      case ts.SyntaxKind.ForOfStatement:
+        return node.parent.initializer === node;
+      case ts.SyntaxKind.ArrayLiteralExpression:
+      case ts.SyntaxKind.ObjectLiteralExpression:
+        node = node.parent;
+        break;
+      case ts.SyntaxKind.SpreadAssignment:
+      case ts.SyntaxKind.PropertyAssignment:
+        node = node.parent.parent;
+        break;
+      case ts.SyntaxKind.SpreadElement:
+        if (node.parent.parent.kind !== ts.SyntaxKind.ArrayLiteralExpression) {
+          return false;
+        }
+        node = node.parent.parent;
+        break;
+      default:
+        return false;
+    }
+  }
+}
+
+// Utility functions to check TypeScript versions and compatibilities
+let [tsMajor, tsMinor] = ts.versionMajorMinor.split(".").map((raw) => Number.parseInt(raw, 10));
+
+function isTsVersionAtLeast(major, minor = 0) {
+  return tsMajor > major || tsMajor === major && tsMinor >= minor;
+}
+
+// Define exportable TypeScript utility functions for module usage
+export {
+  AccessKind,
+  forEachComment,
+  forEachToken,
+  getAccessKind,
+  includesModifier,
+  isAssignmentKind,
+  isFlagSet,
+  isModifierFlagSet,
+  isNumericPropertyName,
+  isTsVersionAtLeast,
+  isValidPropertyAccess
+};

@@ -1,0 +1,83 @@
+```javascript
+// This Node.js code is a module which exports a mechanism to handle retry strategies for requests, specifically for an S3Client. 
+
+// A `StandardRetryStrategy` class is defined with a constructor accepting a maximum number of attempts. 
+// It includes a method `shouldRetry` to decide if a request should be retried based on the error and the current attempt number.
+// It also includes a default method `retryBackoff` which defines the delay before a retry, based on the attempt number.
+
+// A `ConfiguredRetryStrategy` class inherits from `StandardRetryStrategy`.
+// It allows a custom backoff function to be passed in, overriding the standard backoff calculation.
+
+// An `S3Client` class is implemented to simulate making requests. 
+// The constructor takes configuration, specifically allowing a retry strategy to be passed in, with a fallback to a standard strategy.
+// It has a `sendRequest` method that simulates the execution of a request, implementing a retry logic using the retry strategy, retrying as long as `shouldRetry` returns true, using `retryBackoff` to determine the waiting period between retries. 
+// `performRequest` simulates the actual handling of the request. 
+// `wait` is a utility method for delaying execution using Promises.
+
+// Example usage is included for creating an S3Client with both the default retry strategy and a configured custom strategy.
+
+export class StandardRetryStrategy {
+  constructor(maxAttempts = 3) {
+    this.maxAttempts = maxAttempts;
+  }
+
+  shouldRetry(error, attempt) {
+    return attempt < this.maxAttempts && error.retryable;
+  }
+
+  retryBackoff(attempt) {
+    return 100 + attempt * 1000;
+  }
+}
+
+export class ConfiguredRetryStrategy extends StandardRetryStrategy {
+  constructor(maxAttempts, backoffFunction) {
+    super(maxAttempts);
+    this.backoffFunction = backoffFunction;
+  }
+
+  retryBackoff(attempt) {
+    return this.backoffFunction(attempt);
+  }
+}
+
+export class S3Client {
+  constructor(config = {}) {
+    const { maxAttempts, retryStrategy } = config;
+    this.retryStrategy = retryStrategy || new StandardRetryStrategy(maxAttempts);
+  }
+
+  async sendRequest(request, attempt = 1) {
+    try {
+      return await this.performRequest(request);
+    } catch (error) {
+      if (this.retryStrategy.shouldRetry(error, attempt)) {
+        const backoff = this.retryStrategy.retryBackoff(attempt);
+        await this.wait(backoff);
+        return this.sendRequest(request, attempt + 1);
+      } else {
+        throw error;
+      }
+    }
+  }
+
+  async performRequest(request) {
+    return Promise.resolve("Request successful");
+  }
+
+  async wait(duration) {
+    return new Promise(resolve => setTimeout(resolve, duration));
+  }
+}
+
+const defaultClient = new S3Client(); 
+const configuredClient = new S3Client({
+  retryStrategy: new ConfiguredRetryStrategy(4, (attempt) => 100 + attempt * 1000),
+});
+
+export default {
+  S3Client,
+  StandardRetryStrategy,
+  ConfiguredRetryStrategy
+};
+```

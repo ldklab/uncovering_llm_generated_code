@@ -1,0 +1,72 @@
+The `https-proxy-agent` package is a Node.js module that provides an HTTP/HTTPS proxy `http.Agent` implementation. This `Agent` can be used with Node.js's built-in `https` module to establish secure connections through a specified HTTP or HTTPS proxy server. The core functionality of this package is to handle the HTTP `CONNECT` method, which asks a proxy server to open a direct TCP connection to a destination server.
+
+### Key Functionalities:
+- **Proxy Server Connection**: The module allows `https` requests to be routed through a proxy server by creating an instance of `HttpsProxyAgent` with the proxy server's URL. 
+- **WebSocket Support**: Since it implements the `CONNECT` method, the agent can also facilitate WebSocket connections through proxies.
+- **API Overview**: 
+  - **Constructor**: `new HttpsProxyAgent(proxy: string | URL, options?: HttpsProxyAgentOptions)`
+    - **Parameters**:
+      - `proxy`: The URL of the proxy server to connect through.
+      - `options`: Additional options which include standard `http.Agent` options and custom headers for the `CONNECT` request to the proxy.
+
+### Usage Examples:
+- **HTTPS Request via Proxy**: Demonstrates setting up an HTTPS connection through a proxy.
+- **WebSocket Connection via Proxy**: Shows how to initialize a WebSocket connection through a proxy.
+
+Below is the code implementation of a simple Node.js package using the `https-proxy-agent` package's functionality:
+
+```javascript
+// Import required modules
+import * as http from 'http';
+import * as https from 'https';
+import { URL } from 'url';
+
+// HttpsProxyAgent class definition
+class HttpsProxyAgent extends http.Agent {
+  constructor(proxyUrl, options) {
+    super(options);
+    this.proxy = new URL(proxyUrl);
+    this.headers = options.headers || {};
+  }
+
+  // Method to handle connection via proxy
+  createConnection(options, callback) {
+    const proxyOptions = {
+      hostname: this.proxy.hostname,
+      port: this.proxy.port,
+      method: 'CONNECT',
+      path: `${options.hostname}:${options.port}`,
+      headers: this.headers,
+    };
+
+    const req = http.request(proxyOptions);
+    req.end();
+
+    req.on('connect', (res, socket, head) => {
+      if (res.statusCode === 200) {
+        options.socket = socket;
+        const conn = super.createConnection(options, callback);
+        return callback(null, conn);
+      } else {
+        callback(new Error(`Proxy connection failed with status code: ${res.statusCode}`));
+      }
+    });
+
+    req.on('error', callback);
+  }
+}
+
+// Usage example: HTTPS request via HTTPS proxy
+function httpsRequestExample() {
+  const agent = new HttpsProxyAgent('http://168.63.76.32:3128');
+  https.get('https://example.com', { agent }, (res) => {
+    console.log('"response" event!', res.headers);
+    res.pipe(process.stdout);
+  });
+}
+
+// Exporting the HttpsProxyAgent and examples for use in other modules
+export { HttpsProxyAgent, httpsRequestExample };
+```
+
+In this code, the `HttpsProxyAgent` class is defined to extend the `http.Agent` and establish a connection through a proxy server. The `createConnection` method implements the `CONNECT` HTTP method, enabling the proxy communication. The example demonstrates initiating an HTTPS request via a proxy using this custom agent.

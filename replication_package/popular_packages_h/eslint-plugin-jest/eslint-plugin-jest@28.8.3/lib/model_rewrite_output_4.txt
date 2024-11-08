@@ -1,0 +1,128 @@
+The provided Node.js code is a setup for an ESLint plugin specifically designed for Jest, a JavaScript testing framework. The code defines and configures rules that are checked when linting Jest test files. Here's a breakdown of its functionality:
+
+1. **Dependencies and Imports**: The code imports necessary modules, including `fs` for filesystem interactions, `path` for path resolution, a package configuration, and globalization data from local JSON files. A special function, `interopRequireDefault`, is used to handle module imports.
+
+2. **Rules Initialization**: It reads all files in a `rules` directory, excluding certain filenames, and creates an object (`rules`) mapping rule names to their respective module exports.
+
+3. **Rule Sets**: It defines specific sets of rules, such as `recommendedRules`, `styleRules`, and `allRules`. These specify how certain aspects of Jest should be linted, categorizing them into warnings or errors.
+
+4. **Plugin Configuration**: A `plugin` object is created that includes metadata about the plugin, environments, and the defined rules. In particular, it sets up global variables available when running Jest tests.
+
+5. **Configuration Creation Functions**: Two functions, `createRCConfig` and `createFlatConfig`, create different styles of configuration objects (`RC` for the traditional config and `Flat` for a more modern setup) using the defined rules.
+
+6. **Plugin Exports**: Finally, the `plugin` object is populated with these configurations and environments, and it is exported as the module output.
+
+The following code block is a rewritten version of the original code using updated syntax and reflecting the described functionality:
+
+```javascript
+"use strict";
+
+const fs = require("fs");
+const path = require("path");
+const packageConfig = require("../package.json");
+const globals = require("./globals.json");
+
+// Function to handle default imports
+const interopRequireDefault = (obj) => (obj && obj.__esModule ? obj : { default: obj });
+
+// Function to import the default export from a module
+const importDefault = (moduleName) =>
+  interopRequireDefault(require(moduleName)).default;
+
+// Directory containing rule modules
+const rulesDir = path.join(__dirname, 'rules');
+
+// Files to exclude when loading rule modules
+const excludedFiles = ['__tests__', 'detectJestVersion', 'utils'];
+
+// Load and initialize rules
+const rules = Object.fromEntries(
+  fs.readdirSync(rulesDir)
+    .map(rule => path.parse(rule).name)
+    .filter(rule => !excludedFiles.includes(rule))
+    .map(rule => [rule, importDefault(path.join(rulesDir, rule))])
+);
+
+// Rule sets
+const recommendedRules = {
+  'jest/expect-expect': 'warn',
+  'jest/no-alias-methods': 'error',
+  'jest/no-commented-out-tests': 'warn',
+  'jest/no-conditional-expect': 'error',
+  'jest/no-deprecated-functions': 'error',
+  'jest/no-disabled-tests': 'warn',
+  'jest/no-done-callback': 'error',
+  'jest/no-export': 'error',
+  'jest/no-focused-tests': 'error',
+  'jest/no-identical-title': 'error',
+  'jest/no-interpolation-in-snapshots': 'error',
+  'jest/no-jasmine-globals': 'error',
+  'jest/no-mocks-import': 'error',
+  'jest/no-standalone-expect': 'error',
+  'jest/no-test-prefixes': 'error',
+  'jest/valid-describe-callback': 'error',
+  'jest/valid-expect': 'error',
+  'jest/valid-expect-in-promise': 'error',
+  'jest/valid-title': 'error'
+};
+
+const styleRules = {
+  'jest/no-alias-methods': 'warn',
+  'jest/prefer-to-be': 'error',
+  'jest/prefer-to-contain': 'error',
+  'jest/prefer-to-have-length': 'error'
+};
+
+const allRules = Object.fromEntries(
+  Object.entries(rules)
+    .filter(([, rule]) => !rule.meta.deprecated)
+    .map(([name]) => [`jest/${name}`, 'error'])
+);
+
+// Plugin setup
+const plugin = {
+  meta: {
+    name: packageConfig.name,
+    version: packageConfig.version
+  },
+  configs: {},
+  environments: {
+    globals: {
+      globals
+    }
+  },
+  rules
+};
+
+// Configuration creators
+const createRCConfig = (rules) => ({
+  plugins: ['jest'],
+  env: {
+    'jest/globals': true
+  },
+  rules
+});
+
+const createFlatConfig = (rules) => ({
+  plugins: {
+    jest: plugin
+  },
+  languageOptions: {
+    globals
+  },
+  rules
+});
+
+// Assign configurations to the plugin
+plugin.configs = {
+  all: createRCConfig(allRules),
+  recommended: createRCConfig(recommendedRules),
+  style: createRCConfig(styleRules),
+  'flat/all': createFlatConfig(allRules),
+  'flat/recommended': createFlatConfig(recommendedRules),
+  'flat/style': createFlatConfig(styleRules)
+};
+
+// Export the configured plugin
+module.exports = plugin;
+```

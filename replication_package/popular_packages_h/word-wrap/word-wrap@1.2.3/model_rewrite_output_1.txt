@@ -1,0 +1,57 @@
+The Node.js code provided is a module for a function that wraps a given string (`str`) into lines of a specific width specified in the `options` object. Here's a breakdown of the key functionality:
+
+1. **Module Export**: The module exports a single function that takes a string and an optional configuration object.
+
+2. **Default Options**: It sets defaults for `width`, `indent`, `newline`, and `escape` in case they're not provided by the `options` argument. `width` defaults to 50 characters. `indent` defaults to two spaces, while `newline` defaults to a new line followed by the indent. `escape` defaults to an identity function that returns the string unchanged.
+
+3. **Regex Construction**: Constructs a regular expression to match lines of text up to the specified width. The behavior changes based on the `cut` option:
+   - If `cut` is `true`, it will cut words if necessary to fit the width.
+   - If `cut` is not `true`, it tries to match whole words or splits the text at whitespace boundaries.
+
+4. **Line Matching and Construction**: Matches lines from the input string using the constructed regex, maps over each line, applies the escape function, joins them with newlines, and adds indentations.
+
+5. **Trailing Whitespace Removal**: If the `trim` option is set, it removes trailing spaces or tabs from each line.
+
+Here's a refactored version of the code:
+
+```javascript
+/*!
+ * word-wrap <https://github.com/jonschlinkert/word-wrap>
+ * 
+ * Copyright (c) 2014-2017, Jon Schlinkert.
+ * Released under the MIT License.
+ */
+
+module.exports = function(str, options = {}) {
+  if (str == null) return str;
+
+  const width = options.width || 50;
+  const indent = (typeof options.indent === 'string') ? options.indent : '  ';
+  const newline = options.newline || '\n' + indent;
+  const escape = (typeof options.escape === 'function') ? options.escape : identity;
+  
+  let regexString = `.{1,${width}}`;
+  if (!options.cut) {
+    regexString += '([\\s\u200B]+|$)|[^\\s\u200B]+?([\\s\u200B]+|$)';
+  }
+  
+  const re = new RegExp(regexString, 'g');
+  const lines = str.match(re) || [];
+  let result = lines.map(line => {
+    if (line.endsWith('\n')) {
+      line = line.slice(0, -1);
+    }
+    return escape(line);
+  }).join(newline);
+
+  if (options.trim) {
+    result = result.replace(/[ \t]*$/gm, '');
+  }
+
+  return indent + result;
+};
+
+function identity(str) {
+  return str;
+}
+```

@@ -1,0 +1,88 @@
+The provided Node.js code defines a utility function `dequal` to deeply compare two values, `foo` and `bar`, for equality. It checks if these values are of the same type and have equivalent contents. The `dequal` function supports various data structures including primitive types, arrays, objects, sets, maps, dates, regular expressions, array buffers, and typed arrays. 
+
+1. **Primitive Type Check**: If two values are strictly equal (`===`), the function returns `true`.
+2. **NaN Check**: Recognizes `NaN` comparisons since `NaN !== NaN`.
+3. **Object and Built-in Objects Handling**:
+   - **Date**: Compares by their time values.
+   - **RegExp**: Compares by their string representations.
+   - **Array**: Checks for equal lengths and recursively compares elements.
+   - **Set** and **Map**: Compares sizes, and uses a helper function, `find`, to ensure all elements and key-value pairs correspond between structures.
+   - **ArrayBuffer and Typed Arrays**: Compares byte lengths and contents.
+4. **Objects**: Checks the presence of keys with the same names and deeply compares the values of each key.
+5. **`find` Helper Function**: Assists in locating keys (or elements) in a Set or Map that are structurally equal (using `dequal`).
+
+For export, the `dequal` function is made accessible as a module export. Below is the rewritten code implementing the identical functionality:
+
+```javascript
+const hasOwnProp = Object.prototype.hasOwnProperty;
+
+function findKey(iterator, target) {
+    for (let key of iterator.keys()) {
+        if (dequal(key, target)) return key;
+    }
+}
+
+function dequal(x, y) {
+    if (x === y) return true;
+    if (x !== x && y !== y) return true; // Handle NaN
+
+    if (x && y && x.constructor === y.constructor) {
+        const ctor = x.constructor;
+
+        if (ctor === Date) return x.getTime() === y.getTime();
+        if (ctor === RegExp) return x.toString() === y.toString();
+        
+        if (ctor === Array) {
+            if (x.length !== y.length) return false;
+            for (let i = 0; i < x.length; i++) {
+                if (!dequal(x[i], y[i])) return false;
+            }
+            return true;
+        }
+
+        if (ctor === Set) {
+            if (x.size !== y.size) return false;
+            for (let value of x) {
+                let objValue = value;
+                if (typeof value === 'object') objValue = findKey(y, value);
+                if (!y.has(objValue)) return false;
+            }
+            return true;
+        }
+
+        if (ctor === Map) {
+            if (x.size !== y.size) return false;
+            for (let [key, val] of x) {
+                let objKey = key;
+                if (typeof key === 'object') objKey = findKey(y, key);
+                if (!dequal(val, y.get(objKey))) return false;
+            }
+            return true;
+        }
+
+        if (ctor === ArrayBuffer || ArrayBuffer.isView(x)) {
+            if (x.byteLength !== y.byteLength) return false;
+            const xArr = new Uint8Array(x);
+            const yArr = new Uint8Array(y);
+            for (let i = 0; i < x.byteLength; i++) {
+                if (xArr[i] !== yArr[i]) return false;
+            }
+            return true;
+        }
+
+        if (typeof x === 'object') {
+            const xKeys = Object.keys(x);
+            const yKeys = Object.keys(y);
+            if (xKeys.length !== yKeys.length) return false;
+            for (let key of xKeys) {
+                if (!hasOwnProp.call(y, key) || !dequal(x[key], y[key])) return false;
+            }
+            return true;
+        }
+    }
+
+    return false;
+}
+
+module.exports.dequal = dequal;
+```

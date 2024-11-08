@@ -1,0 +1,45 @@
+The provided Node.js code defines a `CoverageInstrumenter` class designed to collect detailed code coverage information using the `inspector` module, which interfaces with the V8 inspector in Node.js. The class manages an inspector session and provides methods to start and stop the precise code coverage. Here's a breakdown of its functionality:
+
+1. **Constructor**: Initializes a new `inspector.Session` and promisifies the `session.post` method for asynchronous operation.
+
+2. **startInstrumenting()**: Connects to the inspector session and sends commands to enable the profiler and start collecting precise coverage data, including call counts and detailed coverage information.
+
+3. **stopInstrumenting()**: 
+    - Retrieves and returns the coverage data using the `Profiler.takePreciseCoverage` command.
+    - Stops the coverage collection and disables the profiler.
+
+The class is then exported as `CoverageInstrumenter` for use in other modules.
+
+Here is a possible rewrite of the given code:
+
+```javascript
+'use strict';
+
+const { Session } = require('inspector');
+const { promisify } = require('util');
+
+class CoverageInstrumenter {
+  constructor() {
+    this.session = new Session();
+    this.postSession = promisify(this.session.post.bind(this.session));
+  }
+
+  async startInstrumenting() {
+    this.session.connect();
+    await this.postSession('Profiler.enable');
+    await this.postSession('Profiler.startPreciseCoverage', {
+      callCount: true,
+      detailed: true,
+    });
+  }
+
+  async stopInstrumenting() {
+    const { result } = await this.postSession('Profiler.takePreciseCoverage');
+    await this.postSession('Profiler.stopPreciseCoverage');
+    await this.postSession('Profiler.disable');
+    return result;
+  }
+}
+
+module.exports.CoverageInstrumenter = CoverageInstrumenter;
+```

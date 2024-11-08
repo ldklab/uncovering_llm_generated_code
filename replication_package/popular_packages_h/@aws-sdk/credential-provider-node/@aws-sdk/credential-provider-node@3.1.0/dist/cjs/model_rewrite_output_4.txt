@@ -1,0 +1,54 @@
+The provided Node.js code is a module that exports two constants, `ENV_IMDS_DISABLED` and `defaultProvider`. The module is primarily used for obtaining AWS credentials using the AWS SDK for JavaScript. The `defaultProvider` function is a credential provider that attempts to retrieve AWS credentials through a sequence of sources, in the following order of precedence:
+
+1. Environment variables (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`).
+2. Shared credentials and config INI files.
+3. EC2/ECS Instance Metadata Service.
+
+It employs various AWS SDK modules to create a chain of credential providers (`fromEnv`, `fromIni`, `fromProcess`, `fromInstanceMetadata`, `fromContainerMetadata`). The `defaultProvider` function is optimized to cache credentials and handle expiration, checking if the credentials are nearing expiration and refreshing them accordingly. The `remoteProvider` function helps in selecting the appropriate provider (Instance Metadata Service or Container Metadata Service) based on the environment variables.
+
+The code also checks if the `AWS_EC2_METADATA_DISABLED` environment variable is set to disable the use of the EC2 Instance Metadata Service. All this is done within a modular and dynamic approach using AWS SDK's property-based credential providers.
+
+```javascript
+"use strict";
+const { fromEnv } = require("@aws-sdk/credential-provider-env");
+const { 
+  ENV_CMDS_FULL_URI,
+  ENV_CMDS_RELATIVE_URI,
+  fromContainerMetadata,
+  fromInstanceMetadata,
+  RemoteProviderInit,
+} = require("@aws-sdk/credential-provider-imds");
+const { ENV_PROFILE, fromIni, FromIniInit } = require("@aws-sdk/credential-provider-ini");
+const { fromProcess, FromProcessInit } = require("@aws-sdk/credential-provider-process");
+const { chain, memoize, ProviderError } = require("@aws-sdk/property-provider");
+const { CredentialProvider } = require("@aws-sdk/types");
+
+exports.ENV_IMDS_DISABLED = "AWS_EC2_METADATA_DISABLED";
+
+function defaultProvider(init = {}) {
+  const { profile = process.env[ENV_PROFILE] } = init;
+  const providerChain = profile
+    ? chain(fromIni(init), fromProcess(init))
+    : chain(fromEnv(), fromIni(init), fromProcess(init), remoteProvider(init));
+
+  return memoize(
+    providerChain,
+    (credentials) => credentials.expiration !== undefined && credentials.expiration.getTime() - Date.now() < 300000,
+    (credentials) => credentials.expiration !== undefined
+  );
+}
+
+exports.defaultProvider = defaultProvider;
+
+function remoteProvider(init) {
+  if (process.env[ENV_CMDS_RELATIVE_URI] || process.env[ENV_CMDS_FULL_URI]) {
+    return fromContainerMetadata(init);
+  }
+
+  if (process.env[exports.ENV_IMDS_DISABLED]) {
+    return () => Promise.reject(new ProviderError("EC2 Instance Metadata Service access disabled"));
+  }
+
+  return fromInstanceMetadata(init);
+}
+```

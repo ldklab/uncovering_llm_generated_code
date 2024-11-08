@@ -1,0 +1,86 @@
+The provided Node.js code is a module that provides a function called `prepare`. This function attempts to register a module loader for a specified file. Here's a breakdown of its functionality:
+
+1. **Imports**: The code imports several modules using the `require` function:
+   - `path`: This is a core Node.js module used for handling and transforming file paths.
+   - `extension`, `normalize`, `register`: These appear to be custom modules stored in the `lib` directory.
+
+2. **Function `prepare`**: The main function, `prepare`, takes four parameters: 
+   - `extensions`: An object with file extensions as keys and configuration options for corresponding modules as values.
+   - `filepath`: The path to a file for which a module loader should be prepared.
+   - `cwd`: Current working directory. If not provided, it defaults to the directory of `filepath`.
+   - `nothrow`: A boolean that determines if errors should be thrown or returned.
+
+3. **Execution logic in `prepare`**:
+   - **Determine extension**: It leverages the `extension` module to get all possible extensions for the file.
+   - **Configuration normalization**: Attempts to find a configuration for one of these extensions using the `normalize` function.
+   - **Require Extension Check**: If the extension is already recognized by Node.js (via `require.extensions`), it returns `true`.
+   - **Attempt loading modules**: If a configuration is found and not implemented, it attempts to register the module(s) specified in that configuration using the `register` module. If registration fails for all configurations, an error is created or thrown (depending on the `nothrow` flag).
+   - **Return**: Returns an array of attempts which contain info about the module, and any errors encountered.
+
+Here's a rewritten version of the code:
+
+```javascript
+const path = require('path');
+const extension = require('./lib/extension');
+const normalize = require('./lib/normalize');
+const register = require('./lib/register');
+
+exports.prepare = function (extensions, filepath, cwd, nothrow) {
+  let config, usedExtension;
+  const attempts = [];
+  let onlyErrors = true;
+  const exts = extension(filepath);
+
+  if (exts) {
+    exts.some(ext => {
+      usedExtension = ext;
+      config = normalize(extensions[ext]);
+      return !!config;
+    });
+  }
+
+  if (Object.keys(require.extensions).includes(usedExtension)) {
+    return true;
+  }
+
+  if (!config) {
+    if (nothrow) {
+      return;
+    }
+    throw new Error(`No module loader found for "${usedExtension}".`);
+  }
+
+  if (!cwd) {
+    cwd = path.dirname(path.resolve(filepath));
+  }
+  if (!Array.isArray(config)) {
+    config = [config];
+  }
+
+  config.forEach(option => {
+    const attempt = register(cwd, option.module, option.register);
+    const error = attempt instanceof Error ? attempt : null;
+    attempts.push({
+      moduleName: option.module,
+      module: error ? null : attempt,
+      error: error
+    });
+
+    if (!error) {
+      onlyErrors = false;
+      return;
+    }
+  });
+
+  if (onlyErrors) {
+    const err = new Error(`Unable to use specified module loaders for "${usedExtension}".`);
+    err.failures = attempts;
+    if (nothrow) {
+      return err;
+    }
+    throw err;
+  }
+
+  return attempts;
+};
+```

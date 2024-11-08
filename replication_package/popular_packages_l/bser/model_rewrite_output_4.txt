@@ -1,0 +1,76 @@
+The provided Node.js code defines a simple utility for encoding and decoding data using a format similar to BSER. Here's a breakdown of the functionality contained within the code:
+
+1. **Bser Class**: This class provides static methods to convert data to and from a buffer format.
+    - `loadFromBuffer(buffer)`: This static method takes a buffer, checks if it's a valid buffer, then reads a 4-byte integer from the start of the buffer to determine the length of the JSON content following it. It extracts this content as a string and parses it into an object.
+    - `dumpToBuffer(value)`: This static method takes a JavaScript value, converts it into JSON, prefixes it with its length as a 4-byte integer, and returns the entire sequence as a new buffer.
+
+2. **BunserBuf Class**: This class extends `EventEmitter` and is designed to handle and parse incoming chunks of buffers using the specified BSER-like protocol.
+    - It holds an internal buffer and appends incoming chunks to it.
+    - `_process()`: This method loops through the internal buffer to try and read complete messages. A complete message consists of a 4-byte length followed by content of that length. If a complete message is found, it emits a `'value'` event with the parsed JSON object. If parsing fails, it emits an `'error'` event.
+
+The code then exports the `loadFromBuffer`, `dumpToBuffer` functions, and the `BunserBuf` class for use in other modules.
+
+Here is a possible rewrite of the code provided:
+
+```javascript
+const EventEmitter = require('events');
+
+class Bser {
+  static loadFromBuffer(buffer) {
+    if (!Buffer.isBuffer(buffer)) {
+      throw new Error('Invalid input: expected Buffer');
+    }
+    try {
+      const length = buffer.readUIntBE(0, 4);
+      const content = buffer.slice(4, 4 + length).toString();
+      return JSON.parse(content);
+    } catch (e) {
+      throw new Error('Failed to parse buffer');
+    }
+  }
+
+  static dumpToBuffer(value) {
+    const json = JSON.stringify(value);
+    const buffer = Buffer.alloc(4 + Buffer.byteLength(json));
+    buffer.writeUIntBE(Buffer.byteLength(json), 0, 4);
+    buffer.write(json, 4);
+    return buffer;
+  }
+}
+
+class BunserBuf extends EventEmitter {
+  constructor() {
+    super();
+    this.buffer = Buffer.alloc(0);
+  }
+
+  append(chunk) {
+    this.buffer = Buffer.concat([this.buffer, chunk]);
+    this._process();
+  }
+
+  _process() {
+    try {
+      while (this.buffer.length > 4) {
+        const length = this.buffer.readUIntBE(0, 4);
+        if (this.buffer.length >= 4 + length) {
+          const valueBuffer = this.buffer.slice(4, 4 + length);
+          const value = Bser.loadFromBuffer(Buffer.concat([Buffer.alloc(4), valueBuffer]));
+          this.emit('value', value);
+          this.buffer = this.buffer.slice(4 + length);
+        } else {
+          break;
+        }
+      }
+    } catch (e) {
+      this.emit('error', e);
+    }
+  }
+}
+
+module.exports = {
+  loadFromBuffer: Bser.loadFromBuffer,
+  dumpToBuffer: Bser.dumpToBuffer,
+  BunserBuf: BunserBuf,
+};
+```

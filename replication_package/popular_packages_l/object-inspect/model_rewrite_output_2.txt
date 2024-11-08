@@ -1,0 +1,52 @@
+The provided Node.js code defines a custom object inspection function that formats JavaScript objects into a string representation, similar to how `util.inspect` works, but with more customizable options. The main functionality includes setting options such as depth for recursion, the style of quotes surrounding strings, handling circular references, representing arrays and objects, and minimal support for HTML elements. These options allow users to control how deeply nested objects are inspected and how they should appear in the output.
+
+Below is the rewritten version of the code, aligning with the explained functionality:
+
+```javascript
+const util = require('util');
+
+function customInspect(obj, options = {}) {
+  const {
+    depth = 2,
+    quoteStyle = 'single',
+    maxStringLength = Infinity,
+    customInspect = true,
+    indent = null,
+    numericSeparator = false
+  } = options;
+
+  const wrapWithQuotes = str => (quoteStyle === 'single' ? `'${str}'` : `"${str}"`);
+
+  const recursiveInspect = (obj, currentDepth, seenObjects) => {
+    if (obj === null || typeof obj !== 'object') {
+      return typeof obj === 'string' ? wrapWithQuotes(obj) : String(obj);
+    }
+
+    if (seenObjects.has(obj)) {
+      return '[Circular]';
+    }
+
+    seenObjects.add(obj);
+
+    if (Array.isArray(obj)) {
+      if (currentDepth > depth) return '[Array]';
+      return `[ ${obj.map(item => recursiveInspect(item, currentDepth + 1, seenObjects)).join(', ')} ]`;
+    } else if (obj instanceof HTMLElement) {
+      if (currentDepth > depth) return `<${obj.tagName.toLowerCase()}>...</${obj.tagName.toLowerCase()}>`;
+      return `<${obj.tagName.toLowerCase()} id="${obj.id}">...</${obj.tagName.toLowerCase()}>`;
+    } else {
+      if (currentDepth > depth) return '[Object]';
+      const entries = Object.keys(obj).map(key => `${wrapWithQuotes(key)}: ${recursiveInspect(obj[key], currentDepth + 1, seenObjects)}`);
+      return `{ ${entries.join(', ')} }`;
+    }
+  };
+
+  return recursiveInspect(obj, 0, new WeakSet());
+}
+
+function inspect(obj, opts) {
+  return customInspect(obj, opts);
+}
+
+module.exports = inspect;
+```

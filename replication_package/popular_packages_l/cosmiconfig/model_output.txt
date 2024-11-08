@@ -1,0 +1,148 @@
+The Cosmiconfig package is a Node.js utility designed to search for and load configuration files for applications. It offers flexible and intelligent defaults to efficiently locate configuration data, common in various programming tools and libraries.
+
+Here's a summary of its primary functionality:
+
+1. **Automatic Configuration Search:** Cosmiconfig can automatically search for configuration files or properties related to a specific module name starting from a directory and working its way up the directory tree. It looks for configurations in various common locations, such as:
+    - A property in `package.json`.
+    - Files named with "rc" (for "run command") extensions like `.rc`, `.rc.json`, `.rc.yml`.
+    - JavaScript or TypeScript files named like `.config.js`, `.config.ts`.
+    - JSON or YAML files sometimes located in a subdirectory `.config/`.
+
+2. **Customizable Search Locations:** Users can customize where the tool searches for configuration files by specifying both the filenames/extensions and directories to include in the search.
+
+3. **Load and Parse Configurations:** Cosmiconfig reads and parses these configuration files. It supports formats like JSON, YAML, CommonJS, and ECMAScript modules by default and can be extended with custom loaders for other formats.
+
+4. **Caching:** It caches search results for improved performance, reducing redundant file-system access during repeated configuration retrievals.
+
+5. **Synchronous and Asynchronous APIs:** Allows both sync and async operations for finding and loading configuration files, making it adaptable to various programming environments.
+
+6. **Configuration Transformations:** Users may specify transformations on configurations post-load, which can be useful for applying defaults or interpreting configuration data structures.
+
+7. **Clearable Caches:** Users have methods to clear the load and search caches, which can be necessary when the configuration files change at runtime.
+
+Now, here's the implementation of a basic version of Cosmiconfig:
+
+```javascript
+const fs = require('fs');
+const path = require('path');
+const yaml = require('js-yaml');
+const JSON5 = require('json5');
+
+// Default loaders for file types
+const defaultLoaders = {
+  '.json': (filepath, content) => JSON5.parse(content),
+  '.yaml': (filepath, content) => yaml.load(content),
+  '.yml': (filepath, content) => yaml.load(content),
+  '.js': (filepath) => require(filepath),
+  '.ts': (filepath) => require(filepath),
+};
+
+// Helper to read files
+const readFile = (filepath) => fs.promises.readFile(filepath, 'utf8');
+
+// Explore configuration points
+const searchPlaces = (moduleName) => [
+  'package.json',
+  `.${moduleName}rc`,
+  `.${moduleName}rc.json`,
+  `.${moduleName}rc.yaml`,
+  `.${moduleName}rc.yml`,
+  `${moduleName}.config.js`,
+];
+
+class Cosmiconfig {
+  constructor(moduleName, options = {}) {
+    this.moduleName = moduleName;
+    this.searchPlaces = options.searchPlaces || searchPlaces(moduleName);
+    this.loaders = { ...defaultLoaders, ...options.loaders };
+    this.cache = new Map();
+  }
+
+  async search(searchFrom = process.cwd()) {
+    let currentDir = searchFrom;
+
+    while (currentDir) {
+      for (const place of this.searchPlaces) {
+        const filepath = path.join(currentDir, place);
+        if (fs.existsSync(filepath)) {
+          const result = await this.load(filepath);
+          if (result) return result;
+        }
+      }
+      const parentDir = path.dirname(currentDir);
+      if (currentDir === parentDir) break;
+      currentDir = parentDir;
+    }
+
+    return null;
+  }
+
+  async load(filepath) {
+    const ext = path.extname(filepath) || 'noExt';
+    const loader = this.loaders[ext];
+    if (!loader) return null;
+
+    const content = await readFile(filepath);
+    const config = loader(filepath, content);
+
+    return { config, filepath, isEmpty: !config || Object.keys(config).length === 0 };
+  }
+
+  clearCache() {
+    this.cache.clear();
+  }
+}
+
+// Synchronous API for Cosmiconfig
+class CosmiconfigSync extends Cosmiconfig {
+  constructor(moduleName, options = {}) {
+    super(moduleName, options);
+    this.loaders = { ...defaultLoaders, ...this._syncLoaders() };
+  }
+
+  _syncLoaders() {
+    return {
+      '.json': (filepath, content) => JSON5.parse(content),
+      '.yaml': (filepath, content) => yaml.load(content),
+      '.yml': (filepath, content) => yaml.load(content),
+      '.js': (filepath) => require(filepath),
+      '.ts': (filepath) => require(filepath),
+    };
+  }
+
+  search(searchFrom = process.cwd()) {
+    let currentDir = searchFrom;
+
+    while (currentDir) {
+      for (const place of this.searchPlaces) {
+        const filepath = path.join(currentDir, place);
+        if (fs.existsSync(filepath)) {
+          const result = this.load(filepath);
+          if (result) return result;
+        }
+      }
+      const parentDir = path.dirname(currentDir);
+      if (currentDir === parentDir) break;
+      currentDir = parentDir;
+    }
+
+    return null;
+  }
+
+  load(filepath) {
+    const ext = path.extname(filepath) || 'noExt';
+    const loader = this.loaders[ext];
+    if (!loader) return null;
+
+    const content = fs.readFileSync(filepath, 'utf8');
+    const config = loader(filepath, content);
+
+    return { config, filepath, isEmpty: !config || Object.keys(config).length === 0 };
+  }
+}
+
+const cosmiconfig = (moduleName, options) => new Cosmiconfig(moduleName, options);
+const cosmiconfigSync = (moduleName, options) => new CosmiconfigSync(moduleName, options);
+
+module.exports = { cosmiconfig, cosmiconfigSync };
+```

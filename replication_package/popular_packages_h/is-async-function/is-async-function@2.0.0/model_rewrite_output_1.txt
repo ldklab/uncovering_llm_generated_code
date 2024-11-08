@@ -1,0 +1,65 @@
+The provided Node.js code is a module that exports a function called `isAsyncFunction`. This function is designed to check whether a given JavaScript function is an asynchronous function. It does so by using various checks, as follows:
+
+1. **Initial Type Check**: It first checks if the input `fn` is of type 'function'. If not, it immediately returns false.
+
+2. **Regular Expression Test**: It uses a regular expression to check if the function's string representation starts with an "async function" declaration.
+
+3. **Object String Tag Check**: If the environment does not support the `toStringTag` property, it falls back to checking if the function's string representation matches `[object AsyncFunction]`.
+
+4. **Prototype Chain Check**: If the environment does support `toStringTag`, it attempts to use the function's prototype to determine if it is an async function. It creates an async function dynamically, retrieves its prototype, and caches it for comparison with `fn`.
+
+Here's the rewritten code:
+
+```javascript
+'use strict';
+
+var toStr = Object.prototype.toString;
+var fnToStr = Function.prototype.toString;
+var isFnRegex = /^\s*async(?:\s+function(?:\s+|\()|\s*\()/;
+var hasToStringTag = require('has-tostringtag/shams')();
+var getProto = Object.getPrototypeOf;
+var createAsyncFunc = function () {
+	if (!hasToStringTag) {
+		return null;
+	}
+	try {
+		// Returns a dynamically created async function
+		return Function('return async function () {}')();
+	} catch (e) {
+		// Fallback for environments that don't support dynamic async function creation
+		return null;
+	}
+};
+var AsyncFunctionPrototype;
+
+module.exports = function isAsyncFunction(fn) {
+	// Check if the argument is a function
+	if (typeof fn !== 'function') {
+		return false;
+	}
+
+	// Use regex to test if it's an async function
+	if (isFnRegex.test(fnToStr.call(fn))) {
+		return true;
+	}
+
+	// Fallback for environments without toStringTag support
+	if (!hasToStringTag) {
+		return toStr.call(fn) === '[object AsyncFunction]';
+	}
+
+	// Ensure getPrototypeOf is available
+	if (!getProto) {
+		return false;
+	}
+
+	// Initialize the AsyncFunctionPrototype if it hasn't been already
+	if (typeof AsyncFunctionPrototype === 'undefined') {
+		var asyncFunc = createAsyncFunc();
+		AsyncFunctionPrototype = asyncFunc ? getProto(asyncFunc) : null;
+	}
+
+	// Compare the prototype of the given function with AsyncFunctionPrototype
+	return getProto(fn) === AsyncFunctionPrototype;
+};
+```

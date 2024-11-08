@@ -1,0 +1,89 @@
+The provided Node.js code is a module that handles parsing XML data into JSON format and validates input XML according to given options. Here's a breakdown of its functionality:
+
+1. **Dependencies**: The code imports several modules responsible for different functionalities:
+   - `nodeToJson`: Converts a node object to JSON.
+   - `xmlToNodeobj` and `x2xmlnode`: Parse XML strings into node objects.
+   - `buildOptions`: Helper function to construct options for parsing.
+   - `validator`: Validates the XML data against provided rules.
+
+2. **Exports**: 
+   - `parse`: This function takes XML data, applies optional validation through `validator.validate()`, converts it to a traversable object, and then converts that object to JSON.
+   - `convertTonimn`: Converts a node object to a specific format (likely an intermediary format).
+   - `getTraversalObj`: Returns a traversable object representation of the XML data.
+   - `convertToJson`: Converts a node object to JSON format.
+   - `convertToJsonString`: Converts a node object directly to a JSON string.
+   - `validate`: Validates XML input.
+   - `j2xParser`: Another utility to handle JSON to XML conversion.
+   - `parseToNimn`: Converts XML data to a specific format (likely Nimn) using a schema.
+
+3. **Utility Function**:
+   - The `print` function provides a way to print XML-like node objects in a formatted manner by recursively traversing the nodes.
+
+Here's the rewritten code:
+
+```javascript
+'use strict';
+
+const nodeToJson = require('./node2json');
+const xmlToNodeobj = require('./xmlstr2xmlnode');
+const buildOptions = require('./util').buildOptions;
+const validator = require('./validator');
+
+exports.parse = function(xmlData, options, validationOption) {
+  if (validationOption) {
+    if (validationOption === true) validationOption = {};
+    const result = validator.validate(xmlData, validationOption);
+    if (result !== true) {
+      throw Error(result.err.msg);
+    }
+  }
+  options = buildOptions(options, xmlToNodeobj.defaultOptions, xmlToNodeobj.props);
+  const traversableObj = xmlToNodeobj.getTraversalObj(xmlData, options);
+  return nodeToJson.convertToJson(traversableObj, options);
+};
+
+exports.convertTonimn = require('../src/nimndata').convert2nimn;
+exports.getTraversalObj = xmlToNodeobj.getTraversalObj;
+exports.convertToJson = nodeToJson.convertToJson;
+exports.convertToJsonString = require('./node2json_str').convertToJsonString;
+exports.validate = validator.validate;
+exports.j2xParser = require('./json2xml');
+
+exports.parseToNimn = function(xmlData, schema, options) {
+  return exports.convertTonimn(exports.getTraversalObj(xmlData, options), schema, options);
+};
+
+function print(xmlNode, indentation) {
+  if (xmlNode) {
+    console.log(indentation + "{");
+    console.log(indentation + "  \"tagName\": \"" + xmlNode.tagname + "\", ");
+    if (xmlNode.parent) {
+      console.log(indentation + "  \"parent\": \"" + xmlNode.parent.tagname + "\", ");
+    }
+    console.log(indentation + "  \"val\": \"" + xmlNode.val + "\", ");
+    console.log(indentation + "  \"attrs\": " + JSON.stringify(xmlNode.attrsMap, null, 4) + ", ");
+
+    if (xmlNode.child) {
+      console.log(indentation + "\"child\": {");
+      const indentation2 = indentation + indentation;
+      Object.keys(xmlNode.child).forEach(function(key) {
+        const node = xmlNode.child[key];
+
+        if (Array.isArray(node)) {
+          console.log(indentation + "\"" + key + "\" :[");
+          node.forEach(function(item) {
+            print(item, indentation2);
+          });
+          console.log(indentation + "],");
+        } else {
+          console.log(indentation + "\"" + key + "\" : {");
+          print(node, indentation2);
+          console.log(indentation + "},");
+        }
+      });
+      console.log(indentation + "},");
+    }
+    console.log(indentation + "},");
+  }
+}
+```

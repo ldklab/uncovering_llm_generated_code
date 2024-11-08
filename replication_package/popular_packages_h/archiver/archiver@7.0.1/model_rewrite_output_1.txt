@@ -1,0 +1,98 @@
+The Node.js code provided defines a module for managing different archive formats using the 'Archiver' functionality. The primary actions include creating new Archiver instances, registering new formats, and checking if a format is already registered. 
+
+Here's a breakdown of the key operations:
+
+1. **Variable `formats`:** This is an object that stores registered archive format modules keyed by format name.
+
+2. **Function `vending`:** This is a constructor function that creates a new Archiver instance based on the format and options provided. It uses the `create` method to perform this task.
+
+3. **Method `vending.create`:** It checks if the requested format is registered, then creates and returns a new Archiver instance, setting the format and module for the Archiver.
+
+4. **Method `vending.registerFormat`:** Registers a new format by taking a format name and a module function. It checks if the format is already registered, the validity of the module, and whether it has required methods. If everything is valid, the format is registered.
+
+5. **Method `vending.isRegisteredFormat`:** Checks if a format is already registered, returning true if it is, otherwise false.
+
+6. **Initial Registration:** The script registers 'zip', 'tar', and 'json' formats with associated modules using `registerFormat`.
+
+Here's the rewritten version of the code:
+
+```javascript
+const Archiver = require('./lib/core');
+
+const formats = {};
+
+/**
+ * Dispenses a new Archiver instance.
+ * 
+ * @param {String} format - The archive format to use.
+ * @param {Object} options - Configuration options for Archiver.
+ * @returns {Archiver} - The Archiver instance.
+ */
+function vending(format, options) {
+  return createArchiverInstance(format, options);
+}
+
+/**
+ * Creates a new Archiver instance.
+ * 
+ * @param {String} format - The archive format to use.
+ * @param {Object} options - Configuration options for Archiver.
+ * @returns {Archiver} - The Archiver instance.
+ * @throws Will throw an error if the format is not registered.
+ */
+function createArchiverInstance(format, options) {
+  if (formats[format]) {
+    const instance = new Archiver(format, options);
+    instance.setFormat(format);
+    instance.setModule(new formats[format](options));
+    return instance;
+  } else {
+    throw new Error(`create(${format}): format not registered`);
+  }
+}
+
+vending.create = createArchiverInstance;
+
+/**
+ * Registers a format for use with archiver.
+ * 
+ * @param {String} format - The name of the format.
+ * @param {Function} module - The function for archiver to interact with.
+ * @throws Will throw an error if the format is already registered, the module is invalid, or missing methods.
+ */
+function registerFormat(format, module) {
+  if (formats[format]) {
+    throw new Error(`register(${format}): format already registered`);
+  }
+
+  if (typeof module !== 'function') {
+    throw new Error(`register(${format}): format module invalid`);
+  }
+
+  if (typeof module.prototype.append !== 'function' || typeof module.prototype.finalize !== 'function') {
+    throw new Error(`register(${format}): format module missing methods`);
+  }
+
+  formats[format] = module;
+}
+
+vending.registerFormat = registerFormat;
+
+/**
+ * Check if the format is already registered.
+ * 
+ * @param {String} format - The name of the format.
+ * @returns {boolean} - True if the format is registered, otherwise false.
+ */
+function isFormatRegistered(format) {
+  return Boolean(formats[format]);
+}
+
+vending.isRegisteredFormat = isFormatRegistered;
+
+vending.registerFormat('zip', require('./lib/plugins/zip'));
+vending.registerFormat('tar', require('./lib/plugins/tar'));
+vending.registerFormat('json', require('./lib/plugins/json'));
+
+module.exports = vending;
+```

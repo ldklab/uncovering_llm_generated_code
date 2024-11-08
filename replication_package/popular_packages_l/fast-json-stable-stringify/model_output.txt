@@ -1,0 +1,84 @@
+The `fast-json-stable-stringify` package is a Node.js utility that provides a deterministic version of `JSON.stringify()`. It ensures that the JSON string representation of an object is consistent across different executions, which is particularly useful when performing operations that rely on the stability of string output, such as creating consistent hash values for objects.
+
+Below is a detailed explanation of the package's features:
+
+1. **Deterministic Stringification**: The default behavior of the package is to produce a JSON string where the properties of objects are sorted in a stable order. This is generally in lexicographical order by property names.
+
+2. **Custom Comparison Function**: The user can provide an options object with a custom comparison function (`opts.cmp`) to control how object keys are sorted during stringification. This function can define any sorting logic, such as sorting keys in reverse order or by their values.
+
+3. **Handling Cycles**: There is an option (`opts.cycles`) to manage circular references in objects. If this option is set to `true`, circular properties are stringified as `__cycle__`. If this option is not set and a circular reference is detected, a `TypeError` is thrown.
+
+4. **Installation and Usage**: The package can be installed via npm and used by requiring it in your Node.js code. The main function `stringify` takes an object and an optional options object and returns a stable JSON string.
+
+5. **Performance**: The package claims to be faster than some other JSON stable stringification libraries and provides benchmark results to support this claim.
+
+6. **Enterprise Support and Security**: The package is part of Tidelift's enterprise subscription, offering commercial support and a coordinated security contact system for vulnerability reporting.
+
+The following is the implementation of the described functionality:
+
+```javascript
+// fast-json-stable-stringify/index.js
+
+function stringify(obj, opts) {
+    var seen = [];
+    opts = opts || {};
+    var cycles = opts.cycles || false;
+    var cmp = opts.cmp && (function(f) {
+        return function(node) {
+            return function(a, b) {
+                var aobj = { key: a, value: node[a] };
+                var bobj = { key: b, value: node[b] };
+                return f(aobj, bobj);
+            };
+        };
+    })(opts.cmp);
+    
+    function stringifyNode(node) {
+        if (node && typeof node.toJSON === 'function') node = node.toJSON();
+        
+        if (node === null || node === undefined) return String(node);
+        if (typeof node === 'number') return isFinite(node) ? String(node) : 'null';
+        if (typeof node !== 'object') return JSON.stringify(node);
+        
+        if (Array.isArray(node)) {
+            var out = [];
+            for (var i = 0; i < node.length; i++) {
+                out.push(stringifyNode(node[i]) || 'null');
+            }
+            return '[' + out.join(',') + ']';
+        } else {
+            if (seen.indexOf(node) !== -1) {
+                if (cycles) return JSON.stringify('__cycle__');
+                throw new TypeError('Converting circular structure to JSON');
+            } else {
+                seen.push(node);
+            }
+
+            var keys = Object.keys(node).sort(cmp && cmp(node));
+            var out = [];
+            for (var i = 0; i < keys.length; i++) {
+                var key = keys[i];
+                var value = stringifyNode(node[key]);
+
+                if (value) out.push(JSON.stringify(key) + ':' + value);
+            }
+            seen.pop();
+            return '{' + out.join(',') + '}';
+        }
+    }
+    
+    return stringifyNode(obj);
+}
+
+module.exports = stringify;
+
+// Usage example
+// var stringify = require('./index');
+// var obj = { c: 8, b: [{z:6,y:5,x:4},7], a: 3 };
+// console.log(stringify(obj));
+
+// var s = stringify(obj, { cmp: function(a, b) { return a.key < b.key ? 1 : -1; } });
+// console.log(s);
+```
+
+To install the package for use in your own projects, you would run the command `npm install fast-json-stable-stringify`. To utilize the custom comparison or handle cycles, options can be passed when calling the `stringify()` function as shown in the examples.

@@ -1,0 +1,56 @@
+The given Node.js code defines a module for calculating the CRC32 checksum of a given buffer or string. It sets up a CRC table for quick lookups when processing data and provides two functions for retrieving the CRC32 value either as a signed or unsigned integer.
+
+**Explanation of the functionality:**
+
+1. **CRC Table Initialization:** 
+   - The `makeCrcTable` function populates the `crcTable` array with values derived from the polynomial `0xEDB88320`. This table is used to efficiently compute the CRC32 checksum.
+
+2. **CRC32 Calculation:**
+   - The `crc32` function calculates the CRC32 checksum for a given input, which can be either a string or a Buffer. 
+   - If a string is provided, it is first converted to a Buffer.
+   - The function computes the checksum using bitwise operations and returns a Buffer containing the CRC32 result.
+
+3. **CRC32 Variants:**
+   - `crc32.signed`: Returns the CRC32 value as a signed 32-bit integer.
+   - `crc32.unsigned`: Returns the CRC32 value as an unsigned 32-bit integer.
+
+4. **Export:**
+   - The `crc32` function is exported from the module, along with its `signed` and `unsigned` variants.
+
+Here's a rewritten version of the code that maintains the same functionality:
+
+```javascript
+// buffer-crc32.js
+const crcTable = [];
+
+(function initializeCrcTable() {
+  for (let n = 0; n < 256; n++) {
+    let c = n;
+    for (let k = 0; k < 8; k++) {
+      c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+    }
+    crcTable[n] = c;
+  }
+})();
+
+function calculateCrc32(input, initialCrc = 0) {
+  let buffer = typeof input === 'string' ? Buffer.from(input, 'utf8') : input;
+  let crc = ~initialCrc;
+  for (let byte of buffer) {
+    crc = crcTable[(crc ^ byte) & 0xff] ^ (crc >>> 8);
+  }
+  return Buffer.from([~crc >>> 24 & 0xff, ~crc >>> 16 & 0xff, ~crc >>> 8 & 0xff, ~crc & 0xff]);
+}
+
+calculateCrc32.signed = function(input) {
+  const crcBuffer = calculateCrc32(input);
+  return crcBuffer.readInt32BE(0);
+};
+
+calculateCrc32.unsigned = function(input) {
+  const crcBuffer = calculateCrc32(input);
+  return crcBuffer.readUInt32BE(0);
+};
+
+module.exports = calculateCrc32;
+```

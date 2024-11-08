@@ -1,0 +1,96 @@
+The provided Node.js code defines a simple utility module named `he`, which includes a few functions for encoding and decoding HTML entities, as well as escaping certain characters. Here’s a breakdown of its functionalities:
+
+1. `encode`: This function replaces special or non-ASCII characters in a string with their corresponding HTML entities. It takes an input string `text` and an optional configuration `options` to modify its behavior:
+   - `useNamedReferences`: If `true`, tries to use named entities instead of numeric ones.
+   - `decimal`: If `true`, uses decimal numeric references; otherwise, hexadecimal.
+   - `encodeEverything`: If `true`, encodes all characters.
+   - `strict`: If `true`, throws error for invalid characters, like the NULL character.
+   - `allowUnsafeSymbols`: If `true`, allows unsafe HTML symbols without encoding.
+
+2. `decode`: This function converts HTML entities in a string back to their corresponding characters. Provides an optional `options` object:
+   - `isAttributeValue`: Placeholder, has no effect in current implementation.
+   - `strict`: If `true`, throws error for invalid character references.
+
+3. `escape`: Converts a subset of HTML special characters into their respective named HTML entities to prevent issues like code injection, suitable for escaping characters in HTML content.
+
+The `he` module exports these functions so they can be utilized in other parts of a Node.js application.
+
+Here's a possible rewrite of the code:
+
+```markdown
+// he.js
+
+const he = {
+  version: '1.0.0',
+
+  encode(text, options = {}) {
+    const {
+      useNamedReferences = false,
+      decimal = false,
+      encodeEverything = false,
+      strict = false,
+      allowUnsafeSymbols = false
+    } = options;
+
+    const namedEntities = {
+      '©': '&copy;',
+      '≠': '&ne;',
+      '𝌆': '&#x1D306;'
+    };
+
+    return [...text].map(char => {
+      let code = char.codePointAt(0);
+      if (useNamedReferences && namedEntities[char]) {
+        return namedEntities[char];
+      }
+      if (encodeEverything || code < 32 || code > 126) {
+        return decimal ? `&#${code};` : `&#x${code.toString(16).toUpperCase()};`;
+      }
+      if (strict && char === '\0' || !allowUnsafeSymbols && /[&<>"'`]/.test(char)) {
+        throw new Error('Invalid character.');
+      }
+      return char;
+    }).join('');
+  },
+
+  decode(html, options = {}) {
+    const { strict = false } = options;
+
+    const namedEntities = {
+      '&copy;': '©',
+      '&ne;': '≠',
+      '&#x1D306;': '𝌆'
+    };
+
+    return html.replace(/&(?:#x[0-9A-Fa-f]+|#[0-9]+|[a-zA-Z]+);/g, match => {
+      if (namedEntities[match]) return namedEntities[match];
+
+      if (match.startsWith('&#x')) {
+        let num = parseInt(match.slice(3, -1), 16);
+        if (num && (num < 32 || num > 126)) return String.fromCodePoint(num);
+      } else if (match.startsWith('&#')) {
+        let num = parseInt(match.slice(2, -1), 10);
+        if (num && (num < 32 || num > 126)) return String.fromCodePoint(num);
+      }
+
+      if (strict) throw new Error('Invalid character reference.');
+      return match;
+    });
+  },
+
+  escape(text) {
+    const escapeMap = {
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#x27;',
+      '`': '&#x60;'
+    };
+
+    return text.replace(/[&<>"'`]/g, char => escapeMap[char]);
+  }
+};
+
+module.exports = he;
+```

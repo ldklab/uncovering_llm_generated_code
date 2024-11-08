@@ -1,0 +1,73 @@
+The Node.js code provided is meant to create a polyfill for the `Object.entries` method. This polyfill ensures compatibility with environments where `Object.entries` might not be natively available or behaves incorrectly under certain circumstances, such as when dealing with string objects. Here's an explanation of each part of the code:
+
+1. **Dependencies and Helpers**: The code imports required functions from external modules such as `callBind` and `es-abstract`. It leverages these functions to create internal versions of `Object.prototype.propertyIsEnumerable` and `String.prototype.slice`.
+
+2. **Native Check**: The script checks whether a native implementation of `Object.entries` is available. If it is, it proceeds to validate if it behaves correctly with string objects.
+
+3. **Polyfill Function (`entries`)**: 
+   - Converts the input into an object and then iterates over its own enumerable properties. 
+   - Collects key-value pairs for regular properties. 
+   - If the JavaScript environment supports symbols and the object is a plain one, it also collects symbol-keyed properties.
+   - Returns an array of these entries.
+
+4. **Shim Function**: 
+   - It first checks if the native `Object.entries` exists.
+   - Validates if the native implementation works correctly with string inputs. If not, it overrides `Object.entries` to correct its behavior.
+   - If no native `Object.entries` exists, it assigns the polyfill implementation to `Object.entries`.
+
+5. **Exports**: The polyfill function (`entries`) and the shim function (to ensure `Object.entries` works correctly) are exported.
+
+Here's a possible rewrite of the Node.js code with the explained functionality:
+
+```javascript
+'use strict';
+
+const callBound = require('call-bind/callBound');
+const hasSymbols = typeof Symbol === 'function' && typeof Symbol('') === 'symbol';
+const $propIsEnumerable = callBound('Object.prototype.propertyIsEnumerable');
+const toObject = require('es-abstract/2019/ToObject');
+
+function entries(O) {
+    const obj = toObject(O);
+    const entrys = [];
+    
+    for (const key in obj) {
+        if ($propIsEnumerable(obj, key)) {
+            entrys.push([key, obj[key]]);
+        }
+    }
+    
+    if (hasSymbols && Object.prototype.toString.call(obj) === '[object Object]') {
+        const symbols = Object.getOwnPropertySymbols(obj);
+        for (const sym of symbols) {
+            if ($propIsEnumerable(obj, sym)) {
+                entrys.push([sym, obj[sym]]);
+            }
+        }
+    }
+    
+    return entrys;
+}
+
+function shimObjectEntries() {
+    if (Object.entries) {
+        const entriesWorksWithStrings = (function() {
+            return Object.entries('foo')[0][0] === '0';
+        }());
+
+        if (!entriesWorksWithStrings) {
+            const originalObjectEntries = Object.entries;
+            Object.entries = function(it) {
+                return originalObjectEntries.call(Object, it);
+            };
+        }
+    } else {
+        Object.entries = entries;
+    }
+    
+    return Object.entries;
+}
+
+module.exports = entries;
+module.exports.shim = shimObjectEntries;
+```

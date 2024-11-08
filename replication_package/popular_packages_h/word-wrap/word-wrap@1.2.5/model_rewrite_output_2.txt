@@ -1,0 +1,48 @@
+The provided code is a Node.js module aimed at formatting or "wrapping" text to fit a specified width. Here's a breakdown of its functionality:
+
+1. **trimEnd Function**: This sub-function removes trailing spaces or tabs from the end of a given string. It iterates from the end of the string backward, truncating the string at the last non-space/tab character.
+
+2. **trimTabAndSpaces Function**: This function splits a string into lines, trims trailing spaces and tabs from each line using the `trimEnd` function, and then joins the lines back together with newline characters.
+
+3. **Main Export Function**: The main function, which is exported as a module, accepts a string and an `options` object. It formats the input string according to several optional parameters:
+   - `width`: Specifies the desired maximum line length. Default is 50.
+   - `indent`: String to be prefixed to each line. Default is two spaces.
+   - `newline`: String to use for newline characters. Default is newline + `indent`.
+   - `escape`: Optional function to modify each line. Defaults to an identity function that returns the line unchanged.
+   - `cut`: Boolean indicating whether to cut words longer than the width. Defaults to false, meaning words will not be split.
+   - `trim`: Boolean indicating whether trailing spaces and tabs should be removed from the result. Defaults to false.
+
+The primary logic involves using a regular expression to match sections of the string that fit within the specified width, while optionally considering whitespace and keeping whole words intact unless `cut` is set to true. The result is constructed by prepending each line with the `indent` string and joining the lines with the `newline` string. If `trim` is true, trailing whitespace and tabs are removed from the final output.
+
+Here is a possible rewrite of the code considering these functionalities:
+
+```javascript
+function trimEnd(str) {
+  let lastCharPos = str.length - 1;
+  while (lastCharPos >= 0 && (str[lastCharPos] === ' ' || str[lastCharPos] === '\t')) {
+    lastCharPos--;
+  }
+  return str.substring(0, lastCharPos + 1);
+}
+
+function trimTabAndSpaces(str) {
+  return str.split('\n').map(trimEnd).join('\n');
+}
+
+module.exports = function wrapText(str, options = {}) {
+  if (str == null) return str;
+
+  const width = options.width || 50;
+  const indent = typeof options.indent === 'string' ? options.indent : '  ';
+  const newline = options.newline || '\n' + indent;
+  const escape = typeof options.escape === 'function' ? options.escape : (s) => s;
+
+  const regexPattern = options.cut === true ? '.{1,' + width + '}' : '.{1,' + width + '}([\\s\u200B]+|$)|[^\\s\u200B]+?([\\s\u200B]+|$)';
+  const regex = new RegExp(regexPattern, 'g');
+  const lines = str.match(regex) || [];
+
+  let result = indent + lines.map(line => escape(line.trimEnd())).join(newline);
+
+  return options.trim === true ? trimTabAndSpaces(result) : result;
+};
+```

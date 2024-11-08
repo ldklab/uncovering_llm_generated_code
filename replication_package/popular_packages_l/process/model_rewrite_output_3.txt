@@ -1,0 +1,95 @@
+The provided Node.js code is an implementation of a custom `process` object for environments where Node.js's built-in `process.nextTick()` isn't available, particularly in browsers. Here's a breakdown of its functionality:
+
+1. **Immediate Execution Queue**: It manages an execution queue to schedule functions to run asynchronously, similar to `process.nextTick()` in Node.js.
+
+2. **Internal Variables**:
+   - `queue`: Stores tasks to be executed.
+   - `draining`: A flag indicating if the task queue is currently being processed.
+   - `currentQueue`: The current set of tasks being processed.
+   - `queueIndex`: The index of the current task being executed in `currentQueue`.
+
+3. **Task Handling**:
+   - Tasks are represented by a `Task` object, which stores the function to be executed and its arguments.
+   - A `Task.run` method calls the stored function with the provided arguments.
+
+4. **Task Processing**:
+   - `process.nextTick(func, ...args)`: Adds a task to the queue. If the queue isn't currently being processed (`draining` is false), it triggers `drainQueue`.
+   - `drainQueue()`: Processes each task in the queue by executing its `run()` method. It utilizes `setTimeout` to ensure tasks are processed asynchronously. The queue is refreshed with any new tasks added during execution.
+
+5. **Queue Management**:
+   - `cleanUpNextTick()`: Ensures proper queue processing by reappending any remaining tasks back to the main queue and triggering further processing if necessary.
+
+6. **Environment Adaptability**:
+   - Exports the `process` object depending on the environment context, such as Node.js (`module.exports`) or browser (`global.process`).
+
+Here's the rewritten version of the code:
+
+```javascript
+// Custom process.nextTick implementation for browsers or non-Node.js environments
+(function(global) {
+  var process = {
+    queue: [],
+    draining: false,
+    currentQueue: null,
+    queueIndex: -1
+  };
+
+  function cleanUpNextTick() {
+    if (!process.draining || !process.currentQueue) return;
+    process.draining = false;
+    if (process.currentQueue.length) {
+      process.queue = process.currentQueue.concat(process.queue);
+    } else {
+      process.queueIndex = -1;
+    }
+    if (process.queue.length) {
+      drainQueue();
+    }
+  }
+
+  function drainQueue() {
+    if (process.draining) return;
+    var timeout = setTimeout(cleanUpNextTick, 0);
+    process.draining = true;
+    var len = process.queue.length;
+    
+    while (len) {
+      process.currentQueue = process.queue;
+      process.queue = [];
+      while (++process.queueIndex < len) {
+        if (process.currentQueue) {
+          process.currentQueue[process.queueIndex].run();
+        }
+      }
+      process.queueIndex = -1;
+      len = process.queue.length;
+    }
+    process.currentQueue = null;
+    process.draining = false;
+    clearTimeout(timeout);
+  }
+
+  process.nextTick = function(func, ...args) {
+    process.queue.push(new Task(func, args));
+    if (process.queue.length === 1 && !process.draining) {
+      setTimeout(drainQueue, 0);
+    }
+  };
+
+  function Task(func, args) {
+    this.func = func;
+    this.args = args;
+  }
+  Task.prototype.run = function() {
+    this.func.apply(null, this.args);
+  };
+
+  process.browser = true;
+
+  if (typeof module !== 'undefined' && module.exports) {
+    module.exports = process;
+  } else {
+    global.process = process;
+  }
+})(typeof global !== 'undefined' ? global : typeof self !== 'undefined' ? self : this);
+```

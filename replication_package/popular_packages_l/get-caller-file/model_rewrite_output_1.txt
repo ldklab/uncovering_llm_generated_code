@@ -1,0 +1,47 @@
+The provided Node.js code consists of three separate files that work together to determine and log the file path of the caller function. Here's a breakdown of their functionalities:
+
+1. **get-caller-file.js**: This module exports a function `getCallerFile` that retrieves the filename of the caller in the call stack at a given `position`. By default, this `position` is set to 2, which typically corresponds to the file that invoked a module or function. The function uses a custom stack trace by temporarily modifying `Error.prepareStackTrace` to obtain the file path. It checks that the given position is a non-negative number and catches errors that might occur during stack retrieval. If successful, it returns the file path extracted from the stack trace; otherwise, it returns `undefined`.
+
+2. **foo.js**: This module imports the `getCallerFile` function and exports another function that calls `getCallerFile` without any arguments, thereby relying on the default position value to identify its own caller.
+
+3. **index.js**: This script imports the function from `foo.js` and executes it, thereby printing the full path of the file where the call originated, which is `index.js`.
+
+Below is the complete code rewritten in a single block:
+
+```javascript
+// get-caller-file.js
+module.exports = function getCallerFile(position = 2) {
+  if (isNaN(position) || position < 0) {
+    throw new TypeError("Position must be a non-negative number");
+  }
+
+  const oldPrepareStackTrace = Error.prepareStackTrace;
+  try {
+    const err = new Error();
+    Error.prepareStackTrace = (err, stack) => stack;
+    const stack = err.stack;
+
+    if (stack && stack.length > position) {
+      return stack[position].getFileName();
+    }
+  } catch (err) {
+    // Handle possible errors reading the stack
+  } finally {
+    Error.prepareStackTrace = oldPrepareStackTrace;
+  }
+  
+  return undefined;
+};
+
+// foo.js
+const getCallerFile = require('./get-caller-file');
+
+module.exports = function() {
+  return getCallerFile(); // Figures out who called this function
+};
+
+// index.js
+const foo = require('./foo');
+
+console.log(foo()); // Prints the full path of 'index.js'
+```

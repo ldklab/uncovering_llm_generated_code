@@ -1,0 +1,149 @@
+The ESQuery library allows users to query the Abstract Syntax Tree (AST) produced by the Esprima JavaScript parser using a CSS-style selector syntax. This facilitates searching for specific syntax patterns within JavaScript code, making it easier to analyze and manipulate code programmatically. Here's a breakdown of the features supported by ESQuery:
+
+1. **AST Node Type**: You can directly select nodes based on their type, such as `ForStatement`.
+2. **Wildcard Selector**: Use `*` to select any node type.
+3. **Attribute Selectors**: 
+   - **Existence**: `[attr]` selects nodes with the specified attribute.
+   - **Value**: `[attr="foo"]` or `[attr=123]` selects nodes where an attribute matches a specific value.
+   - **Regex Matching**: `[attr=/foo.*/]` or `[attr=/foo.*/is]` (with flags) selects nodes where an attribute matches a regex pattern.
+   - **Comparison**: Attributes can be compared using operators like `!=`, `>`, `<`, `>=`, `<=`.
+   - **Nested Attributes**: Select nodes with nested attributes using a dot notation, e.g., `[attr.level2="foo"]`.
+
+4. **Field Selection**: `FunctionDeclaration > Identifier.id` selects specific properties (fields) on nodes.
+
+5. **Child Selectors**:
+   - `:first-child`, `:last-child` to select the first or last child.
+   - `:nth-child(n)`, `:nth-last-child(n)` to select a specific child by index.
+
+6. **Combinators**:
+   - **Descendant**: `ancestor descendant`
+   - **Child**: `parent > child`
+   - **Siblings**:
+     - **Following**: `node ~ sibling`
+     - **Adjacent**: `node + adjacent`
+
+7. **Negation and Pseudo-selectors**:
+   - **Negation**: `:not(ForStatement)` to exclude specified node types.
+   - **Has**: `:has(ForStatement)`, `:has(> ForStatement)` checks for descendant or direct child nodes.
+   - **Matches-any**: Allows combining multiple conditions `:matches([attr] > :first-child, :last-child)`.
+   - **Subject Indicator**: `!IfStatement > [name="foo"]` identifies specific query parts in results.
+
+8. **Node Classes**: Select nodes based on predefined class categories like `:statement`, `:expression`, `:declaration`, `:function`, `:pattern`.
+
+Here is the implementation code of the ESQuery library in Node.js:
+
+```javascript
+const esprima = require('esprima');
+
+class ESQuery {
+    constructor(ast) {
+        this.ast = ast;
+    }
+
+    query(selector) {
+        // Parse the selector into a query object
+        const queryObj = this.parseSelector(selector);
+
+        // Traverse the AST and collect nodes matching the query
+        return this.findMatches(this.ast, queryObj);
+    }
+    
+    parseSelector(selector) {
+        // Split selector into components (naive parsing)
+        // In production, consider using a proper CSS selector parser
+        const components = selector.split(' ');
+        // Convert the components to a structured query object or tree
+        return components.map(component => this.parseComponent(component));
+    }
+
+    parseComponent(component) {
+        // Example logic: handle node types, attribute selectors, and basic combinators
+        if (component.includes('[')) {
+            // Attribute selector
+            const [attr, value] = component.match(/\[(.*?)\]/)[1].split('=');
+            return { type: 'attribute', attribute: attr, value: value };
+        }
+        if (component.startsWith(':')) {
+            // Pseudo-class
+            return { type: 'pseudo', pseudo: component.slice(1) };
+        }
+        if (component === '>') {
+            // Child combinator
+            return { type: 'combinator', combinator: 'child' };
+        }
+        // Default to node type
+        return { type: 'node', nodeType: component };
+    }
+
+    findMatches(node, queryObj, results = [], parent = null) {
+        // Perform recursive AST traversal to find matches
+        // This function needs a full implementation to apply all queries
+
+        for (let query of queryObj) {
+            // Check if node matches the query
+            if (this.isMatch(node, query, parent)) {
+                results.push(node);
+            }
+
+            // Traverse child nodes
+            if (node.body && Array.isArray(node.body)) {
+                node.body.forEach(child => this.findMatches(child, queryObj, results, node));
+            }
+        }
+        
+        return results;
+    }
+
+    isMatch(node, query, parent) {
+        // Determine if a node matches a query component
+        switch (query.type) {
+            case 'node':
+                return node.type === query.nodeType;
+            case 'attribute':
+                return node[query.attribute] === query.value;
+            case 'pseudo':
+                return this.matchPseudo(node, query.pseudo);
+            case 'combinator':
+                return parent && parent.type === query.parentNodeType;
+            default:
+                return false;
+        }
+    }
+    
+    matchPseudo(node, pseudo) {
+        // Implement pseudo-selector condition checks
+        if (pseudo === 'first-child') {
+            return node.parent && node.parent.body[0] === node;
+        }
+        if (pseudo === 'last-child') {
+            return node.parent && node.parent.body[node.parent.body.length - 1] === node;
+        }
+        // Add more pseudo-conditions as necessary
+        return false;
+    }
+
+    // Additional methods to handle other selectors can be added here
+}
+
+// Example usage:
+
+// Parse some JavaScript code into an AST
+const code = `
+    function example(a, b) {
+        return a + b;
+    }
+
+    for (let i = 0; i < 10; i++) {
+        console.log(i);
+    }
+`;
+
+const ast = esprima.parseScript(code);
+const esquery = new ESQuery(ast);
+
+// Query the AST using a selector
+const results = esquery.query('ForStatement');
+console.log('Query Results:', results);
+```
+
+**Note**: This implementation is highly simplified to give an overview of how such a library would look. A full-featured implementation would require a sophisticated parsing of selectors and support for all the CSS selector-like features described.

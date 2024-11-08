@@ -1,0 +1,79 @@
+The Node.js code is a simplified example of a module lexer implemented for ES modules, which uses WebAssembly (Wasm). The primary functionality of this code includes:
+
+1. **WebAssembly Loading**: It simulates asynchronous loading of WebAssembly by using a delay with `setTimeout`. The `loadWasm` function sets a `wasmLoaded` flag to true once the simulated loading is complete.
+
+2. **Initialization Function (`init`)**: This checks if WebAssembly has been loaded (via the `wasmLoaded` flag). If not, `init` calls the `loadWasm` function and awaits its completion. This ensures that parsing can only occur after the imitation of Wasm loading is complete.
+
+3. **Parsing Function (`parse`)**: The `parse` function analyzes a given code source to identify ES module imports and exports using regular expressions.
+   - It throws an error if called before Wasm initialization.
+   - Uses `exportRegex` to detect and record positions of export statements.
+   - Uses `importRegex` to detect and record positions of import statements.
+   - Returns an array with two lists of objects: imports and exports, and additional status information regarding the presence of imports or exports in the provided source.
+
+Here's a rewrite of the code:
+
+```javascript
+// es-module-lexer.js
+
+let wasmLoaded = false;
+
+// Simulates the loading of WebAssembly by using a delay
+async function loadWasm() {
+  return new Promise((resolve) => {
+    setTimeout(() => {
+      wasmLoaded = true;
+      resolve();
+    }, 1);
+  });
+}
+
+// Ensures that WebAssembly is loaded before parsing
+async function init() {
+  if (!wasmLoaded) {
+    await loadWasm();
+  }
+}
+
+// Parses the source code to identify ES module imports and exports
+function parse(source, sourcename = '') {
+  if (!wasmLoaded) {
+    throw new Error('Wasm is not initialized. Call and await `init()` first.');
+  }
+
+  const exports = [];
+  const imports = [];
+
+  // Regex to find export statements
+  const exportRegex = /export\s+(?:var|let|const|function|class|default)\s+([a-zA-Z_$][0-9a-zA-Z_$]*)/g;
+  let match;
+
+  while ((match = exportRegex.exec(source)) !== null) {
+    exports.push({
+      s: match.index,
+      e: match.index + match[1].length,
+      ls: match.index,
+      le: match.index + match[1].length,
+    });
+  }
+
+  // Regex to find import statements
+  const importRegex = /import\s+([^;'"]+)\s+from\s+(['"])(.*?)\2/g;
+
+  while ((match = importRegex.exec(source)) !== null) {
+    imports.push({
+      s: match.index + match[1].length + 7,
+      e: match.index + match[0].length - (match[2].length + 1),
+      ss: match.index,
+      se: match.index + match[0].length,
+      n: match[3],
+      t: 1, // usually indicates static import
+      a: -1,
+      d: -1,
+    });
+  }
+
+  return [imports, exports, false, imports.length > 0 || exports.length > 0];
+}
+
+module.exports = { init, parse };
+```

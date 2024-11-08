@@ -1,0 +1,47 @@
+The given Node.js code defines a module that exports a function `setFunctionName`. This function allows setting a name for a provided function `fn`. Here's a breakdown of the functionality:
+
+1. The module imports several dependencies:
+   - `define-data-property`: Likely used to define a property on an object.
+   - `has-property-descriptors`: Checks if property descriptors are supported.
+   - `functions-have-names`: Checks if functions have configurable names.
+   - `es-errors/type`: Provides a custom `TypeError`.
+
+2. The exported function `setFunctionName(fn, name, loose)` performs the following operations:
+   - Checks if `fn` is a function; if not, throws a `TypeError`.
+   - Checks an optional third argument `loose` (defaults to `false` if not provided) and uses it to determine whether to proceed with setting a function name.
+   - If not running in "loose" mode or if functions' names are configurable, attempts to define the `name` property on the function `fn`.
+   - The `define` function is called with different arguments based on whether property descriptors are supported by the environment.
+   - Returns the function `fn` after attempting to set its name.
+
+```javascript
+'use strict';
+
+const define = require('define-data-property');
+const hasDescriptors = require('has-property-descriptors')();
+const functionsHaveConfigurableNames = require('functions-have-names').functionsHaveConfigurableNames();
+
+const $TypeError = require('es-errors/type');
+
+/**
+ * Sets the name of the specified function.
+ * @param {Function} fn - The function to set the name for.
+ * @param {string} name - The name to set for the function.
+ * @param {boolean} [loose] - If true, skips name setting unless configurable.
+ * @returns {Function} The original function with the new name set.
+ * @throws {TypeError} Throws if `fn` is not a function.
+ */
+module.exports = function setFunctionName(fn, name, loose) {
+	if (typeof fn !== 'function') {
+		throw new $TypeError('`fn` is not a function');
+	}
+	const shouldSetName = !loose || functionsHaveConfigurableNames;
+	if (shouldSetName) {
+		if (hasDescriptors) {
+			define(fn, 'name', name, true, true);
+		} else {
+			define(fn, 'name', name);
+		}
+	}
+	return fn;
+};
+```

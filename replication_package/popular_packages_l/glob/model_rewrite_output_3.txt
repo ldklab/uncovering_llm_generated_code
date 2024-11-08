@@ -1,0 +1,57 @@
+The provided Node.js code defines a `SimpleGlob` class designed to search for files matching a specified pattern within a given directory, using basic pattern matching similar to shell globbing. The key functionalities are:
+
+1. **Pattern Matching:** The class uses regular expressions for pattern matching. It translates patterns such as `"*"` to `".*"` and `"?"` to `"."` to create a regular expression that identifies matching file paths.
+
+2. **Asynchronous Directory Traversal:** The `walk` method is an asynchronous function that recursively traverses directories starting from a specified `basePath` (defaulting to the current directory `"."` if not provided in the options). It uses `fs.readdir` to read directory contents and determine whether each entry is a file or a directory. If it is a directory, the method recursively searches within it.
+
+3. **File Filtering:** After collecting all file paths, the `glob` method filters these paths through the `matches` method to return only those that fit the specified pattern.
+
+4. **Static Method:** The class includes a static `glob` method as a convenient way to instantiate `SimpleGlob` and invoke the `glob` method directly.
+
+Below is the rewritten code adhering to the original functionality:
+
+```javascript
+const fs = require('fs');
+const path = require('path');
+
+class SimpleGlob {
+  constructor(pattern, options = {}) {
+    this.pattern = pattern;
+    this.options = options;
+  }
+
+  async find() {
+    const rootPath = this.options.basePath || '.';
+    const collectedFiles = await this.traverse(rootPath);
+    return collectedFiles.filter(file => this.isMatch(file));
+  }
+
+  async traverse(directory) {
+    try {
+      const dirContents = await fs.promises.readdir(directory, { withFileTypes: true });
+      const paths = await Promise.all(dirContents.map(dirent => {
+        const resolvedPath = path.resolve(directory, dirent.name);
+        return dirent.isDirectory() ? this.traverse(resolvedPath) : resolvedPath;
+      }));
+      return paths.flat();
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  isMatch(filePath) {
+    const regex = new RegExp(this.pattern.replace(/\./g, "\\.").replace(/\*/g, ".*").replace(/\?/g, "."));
+    return regex.test(filePath);
+  }
+
+  static async glob(pattern, options) {
+    const instance = new SimpleGlob(pattern, options);
+    return instance.find();
+  }
+}
+
+// Usage example:
+SimpleGlob.glob('**/*.js', { basePath: './my-project' })
+  .then(files => console.log(files))
+  .catch(err => console.error(err));
+```

@@ -1,0 +1,74 @@
+The `ci-info` package is a Node.js module that helps determine if your code is running in a Continuous Integration (CI) environment, and if so, which CI environment it is. It provides details regarding various supported CI services and offers information on whether the code is executing within a CI server and if it's running as part of a pull request (PR).
+
+### Key Features:
+
+1. **Detection of CI Environment**: 
+   - The package exports `ci.isCI`, which returns `true` if the code is running in a CI environment, otherwise `false`.
+
+2. **Identifying the CI Server**:
+   - `ci.name` gives the name of the CI server currently running the code. If undetected, it returns `null`.
+
+3. **Pull Request Detection**:
+   - `ci.isPR` returns `true` if a pull request is being tested on supported CI servers, `false` if not, and `null` if PR detection isn't supported.
+
+4. **Vendor Constants**:
+   - Each supported CI provider has a corresponding constant, like `ci.TRAVIS` or `ci.APPVEYOR`. This boolean value determines if the code runs on the specified CI server.
+
+### Supported CI Tools:
+
+The package supports a wide range of CI tools, such as Travis CI, CircleCI, GitHub Actions, Jenkins, and many others. The list includes constants to detect each of them and check specific features, like PR support.
+
+### Usage:
+
+Install the package using npm, and then use it as follows:
+```javascript
+var ci = require('ci-info');
+
+if (ci.isCI) {
+  console.log('The name of the CI server is:', ci.name);
+} else {
+  console.log('This program is not running on a CI server');
+}
+```
+
+Below is the implementation of this package:
+
+```markdown
+// ci-info/index.js
+
+const VENDORS = [
+  { name: 'Travis CI', constant: 'TRAVIS', env: 'TRAVIS', isPR: 'TRAVIS_PULL_REQUEST' },
+  { name: 'CircleCI', constant: 'CIRCLE', env: 'CIRCLECI', isPR: 'CIRCLE_PULL_REQUEST' },
+  { name: 'GitHub Actions', constant: 'GITHUB_ACTIONS', env: 'GITHUB_ACTIONS', isPR: 'GITHUB_EVENT_NAME' },
+  { name: 'Jenkins CI', constant: 'JENKINS', env: 'JENKINS_URL', isPR: 'CHANGE_ID' },
+  // ... include other vendors as per the README
+];
+
+const ciInfo = {};
+
+ciInfo.isCI = VENDORS.some(v => process.env[v.env] !== undefined);
+
+ciInfo.name = null;
+ciInfo.isPR = null;
+
+if (ciInfo.isCI) {
+  const vendor = VENDORS.find(v => process.env[v.env] !== undefined);
+  ciInfo.name = vendor.name;
+  ciInfo.isPR = vendor.isPR ? !!process.env[vendor.isPR] && process.env[vendor.isPR] !== 'false' : null;
+  VENDORS.forEach(v => {
+    ciInfo[v.constant] = v.name === ciInfo.name;
+  });
+  if (!ciInfo[vendor.constant]) {
+    ciInfo[vendor.constant] = true;
+  }
+} else {
+  VENDORS.forEach(v => {
+    ciInfo[v.constant] = false;
+  });
+}
+
+module.exports = ciInfo;
+
+```
+
+The code uses standard Node.js techniques to check environment variables predefined by the CI environments to determine which CI, if any, is currently running the code. The constants and detection conditions are tailored to match the information provided in the README.

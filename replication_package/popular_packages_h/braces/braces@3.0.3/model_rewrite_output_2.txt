@@ -1,0 +1,82 @@
+The provided Node.js module `braces` is designed to process string patterns with brace expansions. Here's a summary of its key functionalities:
+
+1. **braces(input, options):** The main function that processes a brace pattern. It can either expand it into all possible combinations or compile it into a regex-compatible string depending on the options provided. This function supports arrays of patterns and deduplication of results.
+
+2. **braces.parse(input, options):** Parses the given brace pattern and returns an abstract syntax tree (AST). This is useful for analysis or transformations on the pattern structure.
+
+3. **braces.stringify(input, options):** Converts an AST back into a brace expression string. The input can be a brace pattern or an AST node.
+
+4. **braces.compile(input, options):** Compiles a brace pattern or AST into a regex-compatible string. This is called by default in the main function unless expansion is specified.
+
+5. **braces.expand(input, options):** Expands a brace pattern into an array of string combinations. This is an alternative to the compile method and is enabled via an option.
+
+6. **braces.create(input, options):** Decides whether to compile or expand a pattern based on the options provided. It is the underlying function used by the main `braces` function.
+
+Below is a possible rewrite of the Node.js code:
+
+```javascript
+'use strict';
+
+const stringify = require('./lib/stringify');
+const compile = require('./lib/compile');
+const expand = require('./lib/expand');
+const parse = require('./lib/parse');
+
+const braces = (input, options = {}) => {
+  const processPattern = pattern => {
+    const result = braces.create(pattern, options);
+    return Array.isArray(result) ? result : [result];
+  };
+
+  let output = Array.isArray(input) ? input.flatMap(processPattern) : processPattern(input);
+
+  if (options.expand && options.nodupes) {
+    output = [...new Set(output)];
+  }
+
+  return output;
+};
+
+braces.parse = (input, options = {}) => parse(input, options);
+
+braces.stringify = (input, options = {}) => {
+  return typeof input === 'string' 
+    ? stringify(braces.parse(input, options)) 
+    : stringify(input, options);
+};
+
+braces.compile = (input, options = {}) => {
+  if (typeof input === 'string') {
+    input = braces.parse(input, options);
+  }
+  return compile(input, options);
+};
+
+braces.expand = (input, options = {}) => {
+  if (typeof input === 'string') {
+    input = braces.parse(input, options);
+  }
+  let result = expand(input, options);
+
+  if (options.noempty) {
+    result = result.filter(Boolean);
+  }
+
+  if (options.nodupes) {
+    result = [...new Set(result)];
+  }
+
+  return result;
+};
+
+braces.create = (input, options = {}) => {
+  if (!input || input.length < 3) {
+    return [input];
+  }
+  return options.expand 
+    ? braces.expand(input, options) 
+    : braces.compile(input, options);
+};
+
+module.exports = braces;
+```

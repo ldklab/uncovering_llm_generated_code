@@ -1,0 +1,70 @@
+The provided Node.js code determines whether a given file path points to an executable file. It supports both asynchronous and synchronous operations and takes into account potential platform differences (Windows vs. other platforms). Here's a breakdown of the functionality:
+
+1. **Module Dependencies**: 
+   - It uses Node's `fs` (file system) module to interact with the file system.
+   - It conditionally requires a different module based on the operating system: `windows.js` for Windows platforms or `mode.js` for others.
+
+2. **Exported Functions**:
+   - The module exports an `isexe` function to check if the file at the given path is executable.
+   - An additional `sync` method is exported, allowing for synchronous checking.
+
+3. **`isexe` Function**:
+   - Accepts a file path, optional options object, and a callback function.
+   - If no callback function is provided and Promises are available, it returns a Promise.
+   - Internally, it calls a platform-specific function (`core`) to determine executability.
+   - Handles errors, specifically `EACCES` (access denied), by optionally ignoring them and treating the file as non-executable if requested via options.
+
+4. **`sync` Function**:
+   - A synchronous version of `isexe`, using `try-catch` to handle errors.
+   - If specified in options or encountering an `EACCES` error, it returns `false` instead of throwing an error.
+
+```javascript
+const fs = require('fs');
+let core;
+
+if (process.platform === 'win32' || global.TESTING_WINDOWS) {
+  core = require('./windows.js');
+} else {
+  core = require('./mode.js');
+}
+
+module.exports = { isexe, sync };
+
+function isexe(path, options, cb) {
+  if (typeof options === 'function') {
+    cb = options;
+    options = {};
+  }
+
+  if (!cb) {
+    if (typeof Promise !== 'function') {
+      throw new TypeError('callback not provided');
+    }
+
+    return new Promise((resolve, reject) => {
+      isexe(path, options || {}, (er, is) => {
+        er ? reject(er) : resolve(is);
+      });
+    });
+  }
+
+  core(path, options || {}, (er, is) => {
+    if (er && (er.code === 'EACCES' || (options && options.ignoreErrors))) {
+      er = null;
+      is = false;
+    }
+    cb(er, is);
+  });
+}
+
+function sync(path, options) {
+  try {
+    return core.sync(path, options || {});
+  } catch (er) {
+    if (options && options.ignoreErrors || er.code === 'EACCES') {
+      return false;
+    }
+    throw er;
+  }
+}
+```

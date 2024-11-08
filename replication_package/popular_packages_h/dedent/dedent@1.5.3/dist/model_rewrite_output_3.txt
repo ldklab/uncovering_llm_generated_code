@@ -1,0 +1,88 @@
+The given Node.js code defines a function for creating a "dedent" utility, which processes template strings to remove common leading whitespace, trim leading and trailing whitespace, and optionally handle escaped characters. This utility can create variations with custom options.
+
+Here's a breakdown of the functionality:
+
+1. **Exports and Module Setup**: It exports a `dedent` function as the default export and assigns it to `module.exports`.
+
+2. **createDedent Function**: This is the core function responsible for creating the `dedent` utility. It allows creating a `dedent` function with specific options. It supports having different configurations using `withOptions`.
+
+3. **dedent Function**: This inner function takes template literals (or regular strings) and removes common leading whitespace. It interpolates values into the template while handling escaped characters like backticks, dollar signs, and escaped newlines, based on provided options. It calculates the smallest common leading whitespace (indent) and removes it from each line.
+
+4. **Options and Flexibility**: The `dedent` function can be configured to escape special characters according to the given or default options.
+
+Here is the rewritten code:
+
+```javascript
+"use strict";
+
+// Export dedent functionality
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports.default = void 0;
+
+// Create dedent with default options
+const dedent = createDedent({});
+exports.default = dedent;
+
+// Function to create a dedent utility with specific options
+function createDedent(options) {
+  // Allow extending options
+  dedent.withOptions = newOptions => createDedent({ ...options, ...newOptions });
+  return dedent;
+
+  // Dedent function to process template strings
+  function dedent(strings, ...values) {
+    const raw = typeof strings === "string" ? [strings] : strings.raw;
+    const { escapeSpecialCharacters = Array.isArray(strings) } = options;
+
+    // Interpolate values into the template
+    let result = "";
+    for (let i = 0; i < raw.length; i++) {
+      let next = raw[i];
+      if (escapeSpecialCharacters) {
+        next = next
+          .replace(/\\\n[ \t]*/g, "")
+          .replace(/\\`/g, "`")
+          .replace(/\\\$/g, "$")
+          .replace(/\\\{/g, "{");
+      }
+      result += next;
+      if (i < values.length) {
+        result += values[i];
+      }
+    }
+
+    // Strip common leading whitespace from each line
+    const lines = result.split("\n");
+    let mindent = null;
+    for (const line of lines) {
+      const match = line.match(/^(\s+)\S+/);
+      if (match) {
+        const indentLength = match[1].length;
+        mindent = mindent === null ? indentLength : Math.min(mindent, indentLength);
+      }
+    }
+
+    if (mindent !== null) {
+      result = lines
+        .map(line => (line[0] === " " || line[0] === "\t" ? line.slice(mindent) : line))
+        .join("\n");
+    }
+
+    // Trim leading and trailing whitespace
+    result = result.trim();
+
+    // Replace escaped newline characters if needed
+    if (escapeSpecialCharacters) {
+      result = result.replace(/\\n/g, "\n");
+    }
+
+    return result;
+  }
+}
+
+// Export the module
+module.exports = exports.default;
+module.exports.default = exports.default;
+```

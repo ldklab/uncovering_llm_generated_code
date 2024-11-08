@@ -1,0 +1,67 @@
+The given Node.js code is a Babel plugin designed to inject polyfills selectively into a JavaScript project using `core-js2`, based on the mode specified. The purpose of the plugin is to ensure that JavaScript features not supported in older browsers can be included as needed.
+
+Here is how it generally works:
+- The plugin provides a configuration option (`method`) to determine the mode of operation. By default, it uses `usage-global`.
+- It processes the program (JavaScript AST) in a visit-based approach, examining the code at specific points of interest.
+- Depending on the `method` option, it can:
+  - `usage-pure`: Add only the necessary polyfills selectively without affecting the global scope by analyzing feature usage e.g., `Array.from`.
+  - `usage-global`: Add the necessary polyfills but allow some global modifications.
+  - `entry-global`: Replace all import statements starting with `core-js` with a standard `core-js` entry point import to ensure required polyfills are loaded globally.
+- If an unknown `method` is specified, it throws an error.
+
+Here is a rewritten version of the code:
+```javascript
+// babel-plugin-polyfill-corejs2/index.js
+module.exports = function(babel) {
+  const { types: t } = babel;
+
+  return {
+    name: "babel-plugin-polyfill-corejs2",
+    visitor: {
+      Program(path, state) {
+        const method = state.opts.method || 'usage-global';
+
+        const addPolyfill = (libraryPath) => {
+          path.unshiftContainer('body', t.importDeclaration([], t.stringLiteral(libraryPath)));
+        };
+
+        const handleArrayFromPolyfill = (path) => {
+          const isArrayFromCall = t.isMemberExpression(path.node.callee) &&
+                                  path.node.callee.object.name === 'Array' &&
+                                  path.node.callee.property.name === 'from';
+
+          if (isArrayFromCall) {
+            const polyfillPath = method === 'usage-pure'
+              ? 'core-js/modules/es6.array.from'
+              : 'core-js/library/fn/array/from';
+            addPolyfill(polyfillPath);
+          }
+        };
+
+        const replaceCoreImports = (node, index) => {
+          const isCoreJSImport = t.isImportDeclaration(node) && node.source.value.startsWith('core-js');
+          if (isCoreJSImport) {
+            path.get('body')[index].replaceWith(t.importDeclaration([], t.stringLiteral('core-js/modules/index')));
+          }
+        };
+
+        switch (method) {
+          case 'usage-pure':
+          case 'usage-global':
+            path.traverse({
+              CallExpression: handleArrayFromPolyfill,
+            });
+            break;
+
+          case 'entry-global':
+            path.node.body.forEach(replaceCoreImports);
+            break;
+
+          default:
+            throw new Error(`Unknown method "${method}"`);
+        }
+      },
+    },
+  };
+};
+```

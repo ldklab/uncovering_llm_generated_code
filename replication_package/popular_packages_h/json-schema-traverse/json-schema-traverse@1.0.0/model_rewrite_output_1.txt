@@ -1,0 +1,106 @@
+The Node.js code defines a module for traversing JSON schemas. The primary function, `traverse`, walks through the schema structure and applies callback functions at each step. There are options for supporting legacy callback formats, executing pre- and post-visit operations on each schema node, and handling specific categories of JSON schema keywords.
+
+- **traverse**: This is the main function for handling the traversal of a schema. It switches between pre- and post-callback functions depending on options and legacy support. The actual traversal is performed by a helper function.
+
+- **Keywords**: The traversal uses several keyword sets (`keywords`, `arrayKeywords`, `propsKeywords`, `skipKeywords`) to determine how to navigate and process different parts of the schema. For instance, `arrayKeywords` help identify sections that might contain an array of schemas, like `items`, while `propsKeywords` indicate sections with properties schemes.
+
+- **_traverse**: This internal function recursively traverses the schema object. When schema parts are arrays or objects associated with specific keywords (as defined in `traverse.arrayKeywords` or `traverse.propsKeywords`), it recursively processes each part. The pre- and post-functions are called to allow users to perform operations at each schema node.
+
+- **escapeJsonPtr**: This utility function escapes special characters in JSON pointers, which are used as identifiers within a JSON structure.
+
+Here is a simplified rewrite:
+
+```javascript
+'use strict';
+
+module.exports = function traverse(schema, opts, callback) {
+  // Handle legacy support
+  if (typeof opts === 'function') {
+    callback = opts;
+    opts = {};
+  }
+
+  callback = opts.cb || callback;
+  const pre = typeof callback === 'function' ? callback : callback.pre || function () {};
+  const post = callback.post || function () {};
+
+  _traverseSchema(opts, pre, post, schema, '', schema);
+};
+
+const keywords = {
+  additionalItems: true,
+  items: true,
+  contains: true,
+  additionalProperties: true,
+  propertyNames: true,
+  not: true,
+  if: true,
+  then: true,
+  else: true
+};
+
+const arrayKeywords = {
+  items: true,
+  allOf: true,
+  anyOf: true,
+  oneOf: true
+};
+
+const propsKeywords = {
+  $defs: true,
+  definitions: true,
+  properties: true,
+  patternProperties: true,
+  dependencies: true
+};
+
+const skipKeywords = {
+  default: true,
+  enum: true,
+  const: true,
+  required: true,
+  maximum: true,
+  minimum: true,
+  exclusiveMaximum: true,
+  exclusiveMinimum: true,
+  multipleOf: true,
+  maxLength: true,
+  minLength: true,
+  pattern: true,
+  format: true,
+  maxItems: true,
+  minItems: true,
+  uniqueItems: true,
+  maxProperties: true,
+  minProperties: true
+};
+
+function _traverseSchema(opts, pre, post, schema, jsonPtr, rootSchema, parentJsonPtr, parentKeyword, parentSchema, keyIndex) {
+  if (schema && typeof schema === 'object' && !Array.isArray(schema)) {
+    pre(schema, jsonPtr, rootSchema, parentJsonPtr, parentKeyword, parentSchema, keyIndex);
+    for (const key in schema) {
+      const subSchema = schema[key];
+      if (Array.isArray(subSchema)) {
+        if (key in arrayKeywords) {
+          subSchema.forEach((item, index) => {
+            _traverseSchema(opts, pre, post, item, `${jsonPtr}/${key}/${index}`, rootSchema, jsonPtr, key, schema, index);
+          });
+        }
+      } else if (key in propsKeywords) {
+        if (subSchema && typeof subSchema === 'object') {
+          for (const prop in subSchema) {
+            _traverseSchema(opts, pre, post, subSchema[prop], `${jsonPtr}/${key}/${escapeJsonRef(prop)}`, rootSchema, jsonPtr, key, schema, prop);
+          }
+        }
+      } else if (key in keywords || (opts.allKeys && !(key in skipKeywords))) {
+        _traverseSchema(opts, pre, post, subSchema, `${jsonPtr}/${key}`, rootSchema, jsonPtr, key, schema);
+      }
+    }
+    post(schema, jsonPtr, rootSchema, parentJsonPtr, parentKeyword, parentSchema, keyIndex);
+  }
+}
+
+function escapeJsonRef(string) {
+  return string.replace(/~/g, '~0').replace(/\//g, '~1');
+}
+```

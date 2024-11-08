@@ -1,0 +1,62 @@
+The provided Node.js code is a module that checks if a given file path is an executable file. It adapts its behavior based on the operating system—using different modules for Windows and other platforms. The `isexe` function acts as the main asynchronous function to perform the check, while its `sync` method provides a synchronous alternative.
+
+For Windows platforms, it uses the `windows.js` module, while for other platforms, it uses the `mode.js` module. The main `isexe` function can work with or without a callback, allowing it to return a Promise if no callback is provided. The synchronous version `sync` handles errors similarly by returning false if an error is due to permissions or if `ignoreErrors` is set. 
+
+Here's a refactored version of this code:
+
+```javascript
+const fs = require('fs');
+let core;
+
+if (process.platform === 'win32' || global.TESTING_WINDOWS) {
+  core = require('./windows.js');
+} else {
+  core = require('./mode.js');
+}
+
+module.exports = isExecutable;
+isExecutable.sync = checkExecutableSync;
+
+function isExecutable(path, options, callback) {
+  if (typeof options === 'function') {
+    callback = options;
+    options = {};
+  }
+
+  if (!callback) {
+    if (typeof Promise !== 'function') {
+      throw new TypeError('callback not provided');
+    }
+
+    return new Promise((resolve, reject) => {
+      isExecutable(path, options || {}, (error, isExec) => {
+        if (error) {
+          reject(error);
+        } else {
+          resolve(isExec);
+        }
+      });
+    });
+  }
+
+  core(path, options || {}, (error, isExec) => {
+    if (error && (error.code === 'EACCES' || (options && options.ignoreErrors))) {
+      error = null;
+      isExec = false;
+    }
+    callback(error, isExec);
+  });
+}
+
+function checkExecutableSync(path, options) {
+  try {
+    return core.sync(path, options || {});
+  } catch (error) {
+    if ((options && options.ignoreErrors) || error.code === 'EACCES') {
+      return false;
+    } else {
+      throw error;
+    }
+  }
+}
+```

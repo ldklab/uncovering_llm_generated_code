@@ -1,0 +1,108 @@
+The provided Node.js code is a module implementing a `deepEqual` function that checks if two values are deeply equivalent, similar to Node.js' assert module. It handles various data types including numbers, strings, dates, arrays, and objects by examining their structure and content.
+
+Here's a breakdown of its functionality:
+
+1. **Primitive Comparison**: The function first checks if the two values are strictly equal (`===`) or considered equal (`==`) when neither is an object.
+
+2. **Handling Special Cases**: It accounts for special cases like `0` vs `-0` and `NaN`, ensuring a proper comparison in these instances.
+
+3. **Objects and Arrays**: For objects, it compares their prototypes and checks if they have the same number of properties, sorting and comparing the property keys. For both arrays and objects, it then recursively compares each property value using `deepEqual`.
+
+4. **Utility Functions**:
+   - `isUndefinedOrNull`: Checks if a value is `null` or `undefined`.
+   - `isArguments`: Determines if a given object is an `arguments` object.
+   - `isNumberNaN`: Specially checks if a value is `NaN`.
+   - `areZerosEqual`: Distinguishes between `+0` and `-0`.
+
+5. **Fallback for Object.keys**: Defines a fallback function for `Object.keys` if not available.
+
+Based on this explanation, here's the rewritten code:
+
+```javascript
+const arraySlice = Array.prototype.slice;
+const getObjectKeys = Object.keys || function (obj) {
+    const keys = [];
+    for (const key in obj) keys.push(key);
+    return keys;
+};
+
+const deepEqual = module.exports = function (actual, expected) {
+    if (actual === 0 && expected === 0) {
+        return compareZeros(actual, expected);
+    } else if (actual === expected) {
+        return true;
+    } else if (actual instanceof Date && expected instanceof Date) {
+        return actual.getTime() === expected.getTime();
+    } else if (isNaN(actual)) {
+        return isNaN(expected);
+    } else if (typeof actual !== 'object' && typeof expected !== 'object') {
+        return actual == expected;
+    } else {
+        return areObjectsEquivalent(actual, expected);
+    }
+};
+
+function isUndefinedOrNull(value) {
+    return value === null || value === undefined;
+}
+
+function isArguments(object) {
+    return Object.prototype.toString.call(object) === '[object Arguments]';
+}
+
+function isNaN(value) {
+    return typeof value === 'number' && value !== value;
+}
+
+function compareZeros(zeroA, zeroB) {
+    return (1 / zeroA) === (1 / zeroB);
+}
+
+function areObjectsEquivalent(a, b) {
+    if (isUndefinedOrNull(a) || isUndefinedOrNull(b)) {
+        return false;
+    }
+
+    if (a.prototype !== b.prototype) {
+        return false;
+    }
+
+    if (isArguments(a)) {
+        if (!isArguments(b)) {
+            return false;
+        }
+        a = arraySlice.call(a);
+        b = arraySlice.call(b);
+        return deepEqual(a, b);
+    }
+
+    try {
+        const keysA = getObjectKeys(a);
+        const keysB = getObjectKeys(b);
+
+        if (keysA.length !== keysB.length) {
+            return false;
+        }
+
+        keysA.sort();
+        keysB.sort();
+
+        for (let i = keysA.length - 1; i >= 0; i--) {
+            if (keysA[i] !== keysB[i]) {
+                return false;
+            }
+        }
+
+        for (let i = keysA.length - 1; i >= 0; i--) {
+            const key = keysA[i];
+            if (!deepEqual(a[key], b[key])) {
+                return false;
+            }
+        }
+
+        return true;
+    } catch (e) {
+        return false;
+    }
+}
+```

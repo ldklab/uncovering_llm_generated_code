@@ -1,0 +1,98 @@
+The given Node.js code is a module for retrieving image dimensions, regardless of the file type, and it supports both asynchronous and synchronous methods of reading the file. Here's a concise breakdown of its functionality:
+
+1. **Imports and Setup**:
+   - It imports necessary modules like `fs` for file system operations, `path` for handling file paths, and `queue` for managing asynchronous tasks.
+   - It imports custom modules `types` and `detector` to handle different image file types and detect the types, respectively.
+
+2. **Constants & Queue**:
+   - Sets a constant `MaxBufferSize` to 512 KB, indicating the maximum amount of data to read from an image file to determine its type and dimensions.
+   - Initializes a queue from the `queue` module to manage asynchronous file reading operations with a concurrency of 100.
+
+3. **Core Functionality**:
+   - `lookup(buffer, filepath)`: Determines the image type from the buffer, retrieves the appropriate handler from `typeHandlers` to calculate the size, and returns the dimensions.
+   - `asyncFileToBuffer(filepath)`: Reads a file into a buffer asynchronously, suitable for larger files or many file operations to prevent blocking.
+   - `syncFileToBuffer(filepath)`: Reads a file synchronously, blocking the Node.js process until the operation completes.
+   - `imageSize(input, callback)`: Main function that determines the image size. It handles both buffer input and file path input, supporting both sync and async behavior through a callback.
+
+4. **Concurrency & Types**:
+   - Ability to set queue concurrency with `setConcurrency`.
+   - Exposes available types through `types`.
+
+Here is a possible rewrite of the provided Node.js code:
+
+```javascript
+"use strict";
+
+const fs = require("fs");
+const path = require("path");
+const Queue = require("queue");
+const { typeHandlers } = require("./types");
+const { detector } = require("./detector");
+
+const MaxBufferSize = 512 * 1024; // 512 KB max buffer size
+const queue = new Queue({ concurrency: 100, autostart: true }); // Async ops queue
+
+function lookup(buffer, filepath) {
+    const type = detector(buffer); // Detecting file type
+    if (type && type in typeHandlers) {
+        const size = typeHandlers[type].calculate(buffer, filepath); // Calculate size
+        if (size !== undefined) {
+            size.type = type;
+            return size;
+        }
+    }
+    throw new TypeError(`unsupported file type: ${type} (file: ${filepath})`);
+}
+
+async function asyncFileToBuffer(filepath) {
+    const handle = await fs.promises.open(filepath, 'r');
+    const { size } = await handle.stat();
+    if (size <= 0) {
+        await handle.close();
+        throw new Error('Empty file');
+    }
+    const bufferSize = Math.min(size, MaxBufferSize);
+    const buffer = Buffer.alloc(bufferSize);
+    await handle.read(buffer, 0, bufferSize, 0);
+    await handle.close();
+    return buffer;
+}
+
+function syncFileToBuffer(filepath) {
+    const descriptor = fs.openSync(filepath, 'r');
+    const { size } = fs.fstatSync(descriptor);
+    if (size <= 0) {
+        fs.closeSync(descriptor);
+        throw new Error('Empty file');
+    }
+    const bufferSize = Math.min(size, MaxBufferSize);
+    const buffer = Buffer.alloc(bufferSize);
+    fs.readSync(descriptor, buffer, 0, bufferSize, 0);
+    fs.closeSync(descriptor);
+    return buffer;
+}
+
+function imageSize(input, callback) {
+    if (Buffer.isBuffer(input)) {
+        return lookup(input); // Direct buffer handling
+    }
+    if (typeof input !== 'string') {
+        throw new TypeError('invalid invocation');
+    }
+    const filepath = path.resolve(input);
+    if (typeof callback === 'function') {
+        queue.push(() => asyncFileToBuffer(filepath)
+            .then(buffer => process.nextTick(callback, null, lookup(buffer, filepath)))
+            .catch(callback));
+    } else {
+        const buffer = syncFileToBuffer(filepath);
+        return lookup(buffer, filepath);
+    }
+}
+
+module.exports = imageSize;
+exports.default = imageSize;
+exports.imageSize = imageSize;
+exports.setConcurrency = (c) => { queue.concurrency = c; };
+exports.types = Object.keys(typeHandlers);
+```

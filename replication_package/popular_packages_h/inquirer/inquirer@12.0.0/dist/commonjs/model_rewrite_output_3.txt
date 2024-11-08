@@ -1,0 +1,81 @@
+The provided Node.js code defines a module that serves as a custom implementation of the Inquirer.js library. This library is used to create command-line interfaces that can ask questions and receive input from users interactively.
+
+Here's a summary of the functionality:
+1. **Module Imports**: It imports built-in prompt functions from `@inquirer/prompts` and a custom `prompt.js` module.
+2. **Built-in Prompts**: Predefined prompt types like `input`, `select`, `number`, etc., are stored in an object named `builtInPrompts`.
+3. **Prompt Module Creation**: The `createPromptModule` function sets up a self-contained prompt module that can run prompt sessions with methods to register custom prompts and restore default prompts.
+4. **Prompt Registration**: The prompt module allows for dynamic registration of additional prompt types via `registerPrompt` or restoring defaults with `restoreDefaultPrompts`.
+5. **Inquirer Interface**: The main `inquirer` object is exported, exposing helper functions and the prompt instance, which users can use to interact with the command line.
+
+Here is a possible rewrite of the Node.js code:
+
+```javascript
+"use strict";
+
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.createPromptModule = createPromptModule;
+
+const prompts_1 = require("@inquirer/prompts");
+const prompt_js_1 = __importDefault(require("./ui/prompt.js"));
+
+const builtInPrompts = {
+    input: prompts_1.input,
+    select: prompts_1.select,
+    list: prompts_1.select, // Note: `list` is deprecated
+    number: prompts_1.number,
+    confirm: prompts_1.confirm,
+    rawlist: prompts_1.rawlist,
+    expand: prompts_1.expand,
+    checkbox: prompts_1.checkbox,
+    password: prompts_1.password,
+    editor: prompts_1.editor,
+    search: prompts_1.search,
+};
+
+function createPromptModule(opt) {
+    function promptModule(questions, answers) {
+        const runner = new prompt_js_1.default(promptModule.prompts, opt);
+        const promptPromise = runner.run(questions, answers);
+        return Object.assign(promptPromise, { ui: runner });
+    }
+    promptModule.prompts = { ...builtInPrompts };
+    
+    promptModule.registerPrompt = function (name, prompt) {
+        this.prompts[name] = prompt;
+        return this;
+    };
+
+    promptModule.restoreDefaultPrompts = function () {
+        this.prompts = { ...builtInPrompts };
+    };
+    
+    return promptModule;
+}
+
+const prompt = createPromptModule();
+
+function registerPrompt(name, newPrompt) {
+    prompt.registerPrompt(name, newPrompt);
+}
+
+function restoreDefaultPrompts() {
+    prompt.restoreDefaultPrompts();
+}
+
+const inquirer = {
+    prompt,
+    ui: {
+        Prompt: prompt_js_1.default,
+    },
+    createPromptModule,
+    registerPrompt,
+    restoreDefaultPrompts,
+    Separator: prompts_1.Separator,
+};
+
+exports.default = inquirer;
+```

@@ -1,0 +1,104 @@
+The `istanbul-reports` package provides a set of functionality mainly intended for formatting and presenting code coverage data in Node.js applications. The package appears to offer several methods and properties, which are likely used in generating and formatting coverage reports. Here's an explanation of each documented feature:
+
+1. **node.getRelativeName**: This function is likely intended to take a full file path or some node identifier and transform it into a relative path or a simpler identifier name. This could be used in reports to present names in a more readable format.
+
+2. **context.getSource(filePath)**: Retrieves the source code associated with a given file path. This would be useful for displaying the source code inline with coverage statistics.
+
+3. **context.classForPercent(type, percent)**: Determines and returns a CSS class name (perhaps for styling HTML reports) based on the type of coverage (e.g., lines, statements, functions, or branches) and the coverage percentage. This allows percentages to be displayed with different styles depending on their level (e.g., red for low, green for high coverage). 
+
+4. **context.console.colorize(str, class)**: Provides a mechanism to apply styling to a string using a specific class. This is likely used for terminal output, allowing colored or otherwise styled text.
+
+5. **context.writer**: This could be an abstraction over file or console output, providing methods to write out the report. The writer would likely handle tasks like generating files, writing to stdout, etc.
+
+6. **context.console.write**: Writes output to the console or a specified output stream, but doesn’t add a new line at the end.
+
+7. **context.console.println**: Similar to `write`, but ensures a newline is appended, similar to `console.log`.
+
+Let's put this description into a code implementation.
+
+```javascript
+class IstanbulReports {
+    constructor() {
+        this.writer = new Writer();
+        this.console = new Console(this.writer);
+    }
+
+    node = {
+        getRelativeName: (fullPath) => {
+            const basePath = process.cwd();
+            return fullPath.replace(basePath, '').replace(/^\/|\\/, '');
+        }
+    }
+
+    context = {
+        getSource: (filePath) => {
+            const fs = require('fs');
+            if (fs.existsSync(filePath)) {
+                return fs.readFileSync(filePath, 'utf-8');
+            }
+            throw new Error(`File not found: ${filePath}`);
+        },
+
+        classForPercent: (type, percent) => {
+            if (percent === 100) return 'high';
+            if (percent >= 80) return 'medium';
+            return 'low';
+        },
+
+        console: {
+            colorize: (str, styleClass) => {
+                const styles = {
+                    high: '\x1b[32m',    // green
+                    medium: '\x1b[33m',  // yellow
+                    low: '\x1b[31m',     // red
+                    reset: '\x1b[0m'
+                };
+                return `${styles[styleClass] || ''}${str}${styles.reset}`;
+            },
+
+            write: (str) => {
+                this.writer.write(str);
+            },
+
+            println: (str) => {
+                this.writer.write(`${str}\n`);
+            }
+        }
+    }
+}
+
+class Writer {
+    constructor() {
+        this.output = '';
+    }
+
+    write(data) {
+        this.output += data;
+        // In real usage, you'd perhaps write this to an actual file or console.
+    }
+
+    getOutput() {
+        return this.output;
+    }
+}
+
+class Console {
+    constructor(writer) {
+        this.writer = writer;
+    }
+
+    colorize(str, deviceClass) {
+        return this.writer.colorize(str, deviceClass);
+    }
+
+    write(str) {
+        this.writer.write(str);
+    }
+
+    println(str) {
+        this.writer.write(`${str}\n`);
+    }
+}
+
+module.exports = IstanbulReports;
+```

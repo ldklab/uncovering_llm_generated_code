@@ -1,0 +1,391 @@
+The provided Node.js code defines a custom doubly linked list implementation named `Yallist`. The `Yallist` class allows for efficient addition, removal, and traversal of elements in both forward and reverse directions. The code also includes a `Node` class, which represents individual elements within the `Yallist`. Each node holds a value and references to its neighboring nodes, enabling navigation through the list.
+
+Key functional features of this code include:
+- Method `create` to instantiate a new `Yallist`.
+- Constructor and methods for managing nodes: `push`, `unshift`, `pop`, `shift` to add or remove elements from the list.
+- Methods for iterating the list both forwards and backwards: `forEach`, `forEachReverse`, `map`, `mapReverse`.
+- Methods to retrieve elements or slices of the list: `get`, `getReverse`, `slice`, `sliceReverse`.
+- A `splice` method to remove and optionally insert new nodes at a certain position.
+- A `reverse` method to reverse the order of the list.
+
+The `Node` class supports the `Yallist` operations by linking elements with pointers to both previous and next nodes, as well as a reference to the list they belong to.
+
+Here is a rewritten version of the original code:
+
+```javascript
+"use strict";
+
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.Node = exports.Yallist = void 0;
+
+class Yallist {
+    constructor(list = []) {
+        this.tail = null;
+        this.head = null;
+        this.length = 0;
+        
+        for (const item of list) {
+            this.push(item);
+        }
+    }
+
+    static create(list = []) {
+        return new Yallist(list);
+    }
+
+    *[Symbol.iterator]() {
+        for (let current = this.head; current; current = current.next) {
+            yield current.value;
+        }
+    }
+
+    removeNode(node) {
+        if (node.list !== this) {
+            throw new Error('Removing node which does not belong to this list');
+        }
+
+        const { next, prev } = node;
+
+        if (next) next.prev = prev;
+        if (prev) prev.next = next;
+
+        if (node === this.head) this.head = next;
+        if (node === this.tail) this.tail = prev;
+
+        this.length--;
+        node.list = node.next = node.prev = null;
+
+        return next;
+    }
+
+    unshiftNode(node) {
+        if (node === this.head) return;
+
+        if (node.list) {
+            node.list.removeNode(node);
+        }
+
+        node.list = this;
+        node.next = this.head;
+        if (this.head) this.head.prev = node;
+        this.head = node;
+
+        if (!this.tail) this.tail = node;
+        this.length++;
+    }
+
+    pushNode(node) {
+        if (node === this.tail) return;
+
+        if (node.list) {
+            node.list.removeNode(node);
+        }
+
+        node.list = this;
+        node.prev = this.tail;
+        if (this.tail) this.tail.next = node;
+        this.tail = node;
+
+        if (!this.head) this.head = node;
+        this.length++;
+    }
+
+    push(...values) {
+        values.forEach(value => push(this, value));
+        return this.length;
+    }
+
+    unshift(...values) {
+        values.forEach(value => unshift(this, value));
+        return this.length;
+    }
+
+    pop() {
+        if (!this.tail) return undefined;
+
+        const value = this.tail.value;
+        this.tail = this.tail.prev;
+
+        if (this.tail) this.tail.next = null;
+        else this.head = null;
+
+        this.length--;
+        return value;
+    }
+
+    shift() {
+        if (!this.head) return undefined;
+
+        const value = this.head.value;
+        this.head = this.head.next;
+
+        if (this.head) this.head.prev = null;
+        else this.tail = null;
+
+        this.length--;
+        return value;
+    }
+
+    forEach(callback, thisArg) {
+        thisArg = thisArg || this;
+        let current = this.head;
+
+        for (let index = 0; current; index++) {
+            callback.call(thisArg, current.value, index, this);
+            current = current.next;
+        }
+    }
+
+    forEachReverse(callback, thisArg) {
+        thisArg = thisArg || this;
+        let current = this.tail;
+
+        for (let index = this.length - 1; current; index--) {
+            callback.call(thisArg, current.value, index, this);
+            current = current.prev;
+        }
+    }
+
+    get(n) {
+        let walker = this.head;
+
+        for (let i = 0; walker && i < n; i++) {
+            walker = walker.next;
+        }
+
+        return walker ? walker.value : undefined;
+    }
+
+    getReverse(n) {
+        let walker = this.tail;
+
+        for (let i = 0; walker && i < n; i++) {
+            walker = walker.prev;
+        }
+
+        return walker ? walker.value : undefined;
+    }
+
+    map(callback, thisArg) {
+        const result = new Yallist();
+        thisArg = thisArg || this;
+
+        for (let walker = this.head; walker; walker = walker.next) {
+            result.push(callback.call(thisArg, walker.value, this));
+        }
+
+        return result;
+    }
+
+    mapReverse(callback, thisArg) {
+        const result = new Yallist();
+        thisArg = thisArg || this;
+
+        for (let walker = this.tail; walker; walker = walker.prev) {
+            result.push(callback.call(thisArg, walker.value, this));
+        }
+
+        return result;
+    }
+
+    reduce(callback, initialValue) {
+        let accumulator = initialValue;
+        let current = this.head;
+
+        if (arguments.length < 2) {
+            if (!current) {
+                throw new TypeError('Reduce of empty list with no initial value');
+            }
+            accumulator = current.value;
+            current = current.next;
+        }
+
+        for (let index = 0; current; index++) {
+            accumulator = callback(accumulator, current.value, index, this);
+            current = current.next;
+        }
+
+        return accumulator;
+    }
+
+    reduceReverse(callback, initialValue) {
+        let accumulator = initialValue;
+        let current = this.tail;
+
+        if (arguments.length < 2) {
+            if (!current) {
+                throw new TypeError('Reduce of empty list with no initial value');
+            }
+            accumulator = current.value;
+            current = current.prev;
+        }
+
+        for (let index = this.length - 1; current; index--) {
+            accumulator = callback(accumulator, current.value, index, this);
+            current = current.prev;
+        }
+
+        return accumulator;
+    }
+
+    toArray() {
+        const array = new Array(this.length);
+        let current = this.head;
+
+        for (let index = 0; current; index++) {
+            array[index] = current.value;
+            current = current.next;
+        }
+
+        return array;
+    }
+
+    toArrayReverse() {
+        const array = new Array(this.length);
+        let current = this.tail;
+
+        for (let index = 0; current; index++) {
+            array[index] = current.value;
+            current = current.prev;
+        }
+
+        return array;
+    }
+
+    slice(start = 0, end = this.length) {
+        if (end < 0) end += this.length;
+        if (start < 0) start += this.length;
+
+        const result = new Yallist();
+
+        if (end < start || end < 0) return result;
+
+        if (start < 0) start = 0;
+        if (end > this.length) end = this.length;
+
+        let current = this.head;
+        for (let i = 0; current && i < start; i++) {
+            current = current.next;
+        }
+        for (let i = start; current && i < end; i++, current = current.next) {
+            result.push(current.value);
+        }
+
+        return result;
+    }
+
+    sliceReverse(start = 0, end = this.length) {
+        if (end < 0) end += this.length;
+        if (start < 0) start += this.length;
+
+        const result = new Yallist();
+
+        if (end < start || end < 0) return result;
+
+        if (start < 0) start = 0;
+        if (end > this.length) end = this.length;
+
+        let current = this.tail;
+        let i = this.length;
+
+        for (; current && i > end; i--) {
+            current = current.prev;
+        }
+        for (; current && i > start; i--, current = current.prev) {
+            result.push(current.value);
+        }
+
+        return result;
+    }
+
+    splice(start, deleteCount = 0, ...insertNodes) {
+        if (start > this.length) start = this.length;
+        if (start < 0) start += this.length;
+
+        let current = this.head;
+        for (let i = 0; current && i < start; i++) {
+            current = current.next;
+        }
+
+        const output = [];
+        for (let i = 0; current && i < deleteCount; i++) {
+            output.push(current.value);
+            current = this.removeNode(current);
+        }
+
+        if (!current) current = this.tail;
+        else if (current !== this.tail) current = current.prev;
+
+        insertNodes.forEach(value => {
+            current = insertAfter(this, current, value);
+        });
+
+        return output;
+    }
+
+    reverse() {
+        let current = this.head;
+        let prev = null;
+        this.tail = this.head;
+
+        while (current) {
+            const next = current.next;
+            current.next = prev;
+            current.prev = next;
+            prev = current;
+            current = next;
+        }
+
+        this.head = prev;
+        return this;
+    }
+}
+
+exports.Yallist = Yallist;
+
+function insertAfter(list, node, value) {
+    const prev = node;
+    const next = node ? node.next : list.head;
+    const newNode = new Node(value, prev, next, list);
+
+    if (!next) list.tail = newNode;
+    if (!prev) list.head = newNode;
+    list.length++;
+
+    return newNode;
+}
+
+function push(list, value) {
+    const newNode = new Node(value, list.tail, null, list);
+
+    if (!list.head) list.head = newNode;
+    if (list.tail) list.tail.next = newNode;
+    
+    list.tail = newNode;
+    list.length++;
+}
+
+function unshift(list, value) {
+    const newNode = new Node(value, null, list.head, list);
+
+    if (!list.tail) list.tail = newNode;
+    if (list.head) list.head.prev = newNode;
+    
+    list.head = newNode;
+    list.length++;
+}
+
+class Node {
+    constructor(value, prev = null, next = null, list = null) {
+        this.value = value;
+        this.prev = prev;
+        this.next = next;
+        this.list = list;
+
+        if (prev) prev.next = this;
+        if (next) next.prev = this;
+    }
+}
+
+exports.Node = Node;
+```

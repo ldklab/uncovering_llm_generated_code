@@ -1,0 +1,109 @@
+The provided Node.js code appears to be handling some form of parsing operation, using WebAssembly for performance optimization. Here's a breakdown of its functionality:
+
+1. **Endianness Check**: The code checks the system's endianness using a memory-buffer trick to determine if it's little-endian (boolean `A`).
+
+2. **WebAssembly Initialization**: The WebAssembly module is compiled and instantiated asynchronously. The compiled module is stored in a variable `B` upon successful instantiation.
+
+3. **Parsing Function**: The main function `parse` is exported and is responsible for parsing a given input string `E`. If the WebAssembly module is not ready (`!B`), it waits for the initialization promise `init` to resolve and then retries the parsing.
+
+4. **Memory Handling**: The code dynamically manages WebAssembly memory needed for processing the input string:
+   - It computes the required additional memory and grows the module's memory if necessary.
+   - It writes the input string `E` into memory, taking into account the system's endianness.
+
+5. **Invocation of WebAssembly Function**: After preparing the memory, it attempts to invoke a `parse` function defined within the WebAssembly module. If parsing fails (as indicated by a return value check), it throws an error with details on the failure location in the input string.
+
+6. **Result Extraction**: If parsing succeeds, it extracts and returns structured results from the WebAssembly module:
+   - It collects parsed data segments (with start/end positions and ids).
+   - It extracts any remaining data.
+   - It checks the final state of parsing to determine success.
+
+7. **Support Functions**: Two helper functions `Q()` and `C()` copy strings into WebAssembly memory, handling different byte orders.
+
+8. **Asynchronous Setup**: The code exports an `init` variable that houses the promise handling the WebAssembly compilation and instantiation, which sets up necessary exports ready for immediate use once resolved.
+
+Here is the rewritten code based on this explanation:
+
+```javascript
+"use strict";
+
+exports.parse = parse;
+exports.init = void 0;
+
+// Check if the system is little-endian
+const isLittleEndian = 1 === new Uint8Array(new Uint16Array([1]).buffer)[0];
+
+let wasmExports;
+
+// WebAssembly initialization
+const init = WebAssembly.compile(
+  Uint8Array.from(
+    typeof atob === "function"
+      ? atob("AGFzbQEAAAABWAxgAX8Bf2AEf39/fwBgAn9/AGAAAX9gAABgBn9/f39/fwF/YAR/f39/AX8...")
+      : Buffer.from("AGFzbQEAAAABWAxgAX8Bf2AEf39/fwBgAn9/AGAAAX9gAABgBn9/f39/fwF/YAR/f39/AX8...", "base64"),
+    char => char.charCodeAt(0)
+  )
+).then(WebAssembly.instantiate).then(({ exports }) => {
+  wasmExports = exports;
+});
+
+exports.init = init;
+
+function parse(input, locationHint = "@") {
+  if (!wasmExports) {
+    // If WebAssembly not ready, initialize and retry
+    return init.then(() => parse(input));
+  }
+
+  const inputLength = input.length + 1;
+  const memoryOffset = (wasmExports.__heap_base.value || wasmExports.__heap_base) + 4 * inputLength - wasmExports.memory.buffer.byteLength;
+
+  // Grow memory as needed
+  if (memoryOffset > 0) {
+    wasmExports.memory.grow(Math.ceil(memoryOffset / 65536));
+  }
+
+  // Allocate memory for the input
+  const inputPointer = wasmExports.sa(inputLength - 1);
+
+  // Write the input into memory, considering system endianness
+  (isLittleEndian ? writeLE : writeBE)(input, new Uint16Array(wasmExports.memory.buffer, inputPointer, inputLength));
+
+  // Execute parsing using the WebAssembly module
+  if (!wasmExports.parse()) {
+    const errorPosition = wasmExports.e();
+    const errorLine = input.slice(0, errorPosition).split("\n").length;
+    throw Object.assign(new Error(`Parse error ${locationHint}:${errorLine}:${errorPosition - input.lastIndexOf("\n", errorPosition - 1)}`), { idx: errorPosition });
+  }
+
+  // Collect parse results
+  const segments = [], remnants = [];
+  while (wasmExports.ri()) {
+    segments.push({ s: wasmExports.is(), e: wasmExports.ie(), ss: wasmExports.ss(), se: wasmExports.se(), d: wasmExports.id() });
+  }
+  while (wasmExports.re()) {
+    remnants.push(input.slice(wasmExports.es(), wasmExports.ee()));
+  }
+
+  return [segments, remnants, !!wasmExports.f()];
+}
+
+// Copy input string to memory in little-endian order
+function writeLE(input, memoryArray) {
+  let i = 0;
+  while (i < input.length) {
+    const code = input.charCodeAt(i);
+    memoryArray[i] = code;
+    i++;
+  }
+}
+
+// Copy input string to memory in big-endian order
+function writeBE(input, memoryArray) {
+  let i = 0;
+  while (i < input.length) {
+    const code = input.charCodeAt(i);
+    memoryArray[i] = ((code & 255) << 8) | (code >>> 8);
+    i++;
+  }
+}
+```

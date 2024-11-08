@@ -1,0 +1,105 @@
+The `gRPC Protobuf Loader` package is a utility for loading protobuf files for use with gRPC. It relies on the `protobuf.js` library to handle protobuf file parsing and provides a way to integrate these definitions into gRPC services.
+
+Here's a breakdown of its functionality:
+
+1. **Installation**: The package can be installed using npm.
+
+2. **Core Functionality**:
+   - It exposes an API to load `.proto` files into objects that can be used with gRPC libraries.
+   - The major function provided is `protoLoader.load` which returns a promise that resolves with the protobuf package definition.
+   - It also provides a synchronous alternative `protoLoader.loadSync`.
+
+3. **Integration with gRPC**:
+   - Once a package definition is obtained, it can be converted into a gRPC service or client using the gRPC library, available in two flavors (`grpc` or `@grpc/grpc-js`).
+
+4. **Options**: The `load` and `loadSync` functions accept an optional options object to customize the behavior of the loader. Options allow tweaking field name casing, representation of `long`, `enum`, and `bytes` data types, and setting default values for output objects, among other things.
+
+5. **TypeScript Support**:
+   - The package includes a script `proto-loader-gen-types` to generate TypeScript type definitions from `.proto` files, enabling better integration in TypeScript projects.
+
+Here's the implementation of this functionality in a Node.js package:
+
+```javascript
+// index.js
+const protobuf = require('protobufjs');
+const fs = require('fs');
+const path = require('path');
+
+class GRPCProtoLoader {
+    static async load(filePath, options = {}) {
+        const root = new protobuf.Root();
+        if (options.includeDirs) {
+            options.includeDirs.forEach(dir => root.resolvePath = protobuf.util.path.resolvePath);
+        }
+        return protobuf.load(filePath, root, options);
+    }
+
+    static loadSync(filePath, options = {}) {
+        const root = new protobuf.Root();
+        if (options.includeDirs) {
+            options.includeDirs.forEach(dir => root.resolvePath = protobuf.util.path.resolvePath);
+        }
+        const rootLoaded = protobuf.loadSync(filePath, root, options);
+        return protobuf.toDescriptor(rootLoaded);
+    }
+}
+
+module.exports = GRPCProtoLoader;
+
+// proto-loader-gen-types.js
+const yargs = require('yargs');
+const protobuf = require('protobufjs');
+const fs = require('fs');
+const path = require('path');
+
+function generateTypeScript(filePath, options) {
+    const root = new protobuf.Root();
+    
+    if (options.includeDirs) {
+        protobuf.util.path.resolvePath = (origin, target) => {
+            const paths = [path.join(process.cwd(), origin), ...options.includeDirs];
+            for (const p of paths) {
+                const resolved = path.join(p, target);
+                if (fs.existsSync(resolved)) return resolved;
+            }
+            return null;
+        };
+    }
+    
+    protobuf.loadSync(filePath, root);
+
+    const outputDir = options.outDir || 'proto';
+    const fileName = path.basename(filePath, '.proto') + '.ts';
+    const outputPath = path.join(outputDir, fileName);
+
+    const writeFileContent = (namespace) => {
+        let typescriptCode = '// Generated TypeScript for ' + fileName + '\n';
+        namespace.nestedArray.forEach(child => {
+            if (child instanceof protobuf.Type) {
+                typescriptCode += protobuf.Type.toDescriptor(child).toString();
+            }
+        });
+
+        if (!fs.existsSync(outputDir)) fs.mkdirSync(outputDir, { recursive: true });
+        fs.writeFileSync(outputPath, typescriptCode);
+    };
+
+    writeFileContent(root);
+}
+
+const argv = yargs
+    .option('includeDirs', {
+        alias: 'I',
+        type: 'array',
+    })
+    .option('outDir', {
+        alias: 'O',
+        type: 'string',
+        demandOption: true,
+    })
+    .argv;
+
+argv._.forEach(filePath => generateTypeScript(filePath, argv));
+```
+
+This code provides a basic implementation of the package described. It includes functionality to load, configure, and generate TypeScript types based on .proto files. grpcServer and client integration would be done externally using the generated types and loaded packages.

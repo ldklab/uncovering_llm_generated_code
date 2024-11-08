@@ -1,0 +1,26 @@
+The code defines a module that exports a `queueMicrotask` function. It checks if the environment (`globalThis`) already has a built-in `queueMicrotask` function, and if so, it uses that directly. If not, it provides a fallback implementation using JavaScript Promises. 
+
+Here's a detailed breakdown of the functionality:
+- **Check for Native `queueMicrotask`:** If `queueMicrotask` is a function, it is bound to `globalThis` and used directly. This is useful for environments where `queueMicrotask` is natively supported.
+- **Fallback Implementation:** If `queueMicrotask` is not available, the module defines a custom function using a resolved Promise to simulate microtask scheduling:
+  - It lazily initializes a promise (only when needed) and uses it to schedule a callback (`cb`) using `.then`.
+  - If any error occurs, it handles it by throwing the error asynchronously in a `setTimeout`, so it won't disrupt the microtask queue.
+
+```javascript
+/*! queue-microtask. MIT License. Feross Aboukhadijeh <https://feross.org/opensource> */
+let promise;
+
+module.exports = (function() {
+  if (typeof queueMicrotask === 'function') {
+    // Use the built-in queueMicrotask if available
+    return queueMicrotask.bind(globalThis);
+  } else {
+    // Custom implementation using a resolved Promise
+    return function(cb) {
+      (promise || (promise = Promise.resolve()))
+        .then(cb)
+        .catch(err => setTimeout(() => { throw err }, 0));
+    };
+  }
+})();
+```

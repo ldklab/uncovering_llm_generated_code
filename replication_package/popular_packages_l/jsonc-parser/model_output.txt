@@ -1,0 +1,133 @@
+The `jsonc-parser` package is a Node.js module designed to handle JSONC, which is JSON with JavaScript-style comments. This package includes a variety of tools to parse, modify, and navigate JSONC and JSON documents, and is flexible enough to handle faults in JSON input while still returning meaningful output. Here's a breakdown of the specified functionalities:
+
+1. **Scanner:** Tokenizes an input JSONC string into tokens and token offsets. The scanner is able to ignore trivia like whitespace or comments if specified.
+
+2. **Visitor (SAX style parsing):** The `visit` function operates as a SAX parser, providing callbacks for various JSON elements like objects, arrays, properties, and literals encountered in the document.
+
+3. **Parse Tree:** Generates a hierarchical document object model (DOM) that represents the JSON content, complete with offsets for each element. This approach attempts to be fault-tolerant.
+
+4. **Parse Function:** Evaluates and returns a JavaScript object represented by a JSON string. It tries to manage errors without abortion, allowing users to inspect a list of errors.
+
+5. **Location Utility:** The `getLocation` API returns a location object that describes a property or value at a specific offset in a JSON document.
+
+6. **Node Finding:** `findNodeAtLocation` enables finding a specific node in a JSON DOM given a path, and `findNodeAtOffset` helps locate nodes based on their offset.
+
+7. **Format and Modify:** The `format` API computes necessary edits to properly format a JSON document, while the `modify` API edits operations like inserting, removing, or replacing properties in a JSON document. The `applyEdits` API applies these edits to a document efficiently.
+
+8. **Other Utilities:** Functions like `stripComments`, `getNodePath`, and `getNodeValue` help with comment removal and extracting node paths and values from JSON.
+
+Now, I'll provide a basic implementation code for the `jsonc-parser` package:
+
+```javascript
+// jsonc-parser.js
+
+class JSONScanner {
+    constructor(text, ignoreTrivia) {
+        this.text = text;
+        this.ignoreTrivia = ignoreTrivia;
+        this.reset();
+    }
+    
+    reset() {
+        this.pos = 0;
+        this.token = null;
+    }
+    
+    setPosition(pos) {
+        this.pos = pos;
+        this.token = null;
+    }
+    
+    scan() {
+        return this._scanNext();
+    }
+    
+    _scanNext() {
+        // simplify this logic, scanning would be more complex in reality
+        if (this.pos >= this.text.length) return 'EOF';
+        const char = this.text[this.pos++];
+        if (!this.ignoreTrivia || (char !== ' ' && char !== '\n')) {
+            this.token = char;
+            return char;
+        }
+        return this._scanNext();
+    }
+
+    getPosition() {
+        return this.pos;
+    }
+
+    getToken() {
+        return this.token;
+    }
+
+    getTokenValue() {
+        return this.token; // Simplified, this should be managed based on the token type
+    }
+
+    getTokenOffset() {
+        return this.pos - 1;
+    }
+
+    getTokenLength() {
+        return this.token ? this.token.length : 0;
+    }
+    
+    // ... other methods as per the README would follow similarly
+}
+
+function createScanner(text, ignoreTrivia = false) {
+    return new JSONScanner(text, ignoreTrivia);
+}
+
+// Similar simplistic functions for parse, visit, etc.
+function parse(text, errors = [], options = {}) {
+    // Directly evaluate simple JSON or JSONC with faults ignored
+    let result;
+    try {
+        result = JSON.parse(text);
+    } catch (error) {
+        errors.push({ error: 'PARSE_ERROR' });
+        result = {}; // Default fault tolerant response
+    }
+    return result;
+}
+
+function stripComments(text, replaceCh = '') {
+    return text.replace(/\/\*[\s\S]*?\*\/|\/\/.*/g, replaceCh);
+}
+
+function getLocation(text, position) {
+    // Simulate finding location in JSON text
+    return {
+        path: [], // Simplifying; would be more detailed
+        isAtPropertyKey: false
+    };
+}
+
+function format(documentText, range = null, options = {}) {
+    // Simplified format logic producing replace same text
+    return [{ offset: 0, length: documentText.length, content: documentText.trim() }];
+}
+
+function applyEdits(text, edits) {
+    edits.forEach(edit => {
+        text = text.substring(0, edit.offset) + edit.content + text.substring(edit.offset + edit.length);
+    });
+    return text;
+}
+
+module.exports = {
+    createScanner,
+    parse,
+    parseTree: parse,
+    visit: parse, // Over simplified example as full logic is long
+    stripComments,
+    getLocation,
+    format,
+    applyEdits
+    // ...other functions
+};
+```
+
+This code presents a simplified and basic structure for the `jsonc-parser` package functionalities explained above. In practice, these functionalities would require more detailed implementations for handling the specific JSON and JSONC nuances, errors, and editing requirements.

@@ -1,0 +1,41 @@
+The functionality of the given Node.js code is to set up a module that dynamically imports a file with specific options and error handling using `jiti`, which is a lightweight JavaScript/TypeScript runtime that supports ES Modules. Here's a breakdown of how it works:
+
+1. **Dynamic Import Setup**: The code tries to import `dynamicImport` from a local './esm' module. If the environment does not support this syntax, it catches the error but does nothing with it, effectively ignoring it.
+
+2. **Error Handling Function**: An `onError` function is defined to handle errors by simply throwing them so that the stack trace can be checked.
+
+3. **Exported Module Function**: The module exports a function that takes a `filename` and `opts` (options) as parameters. Within this function:
+   - It requires two modules: `dist/v8cache` for possible caching and `dist/jiti` for the main functionality.
+   - The options passed in `opts` are extended to include `dynamicImport` and `onError`. This allows for additional configuration and ensures that errors are properly handled.
+   - If there isn't a `transform` option already provided, it sets one using `dist/babel`, presumably to handle code transformations.
+   - Finally, it runs `jiti` with the `filename` and the composed `opts`, then returns whatever `jiti` outputs.
+
+Here's a possible rewrite of the Node.js code:
+
+```javascript
+let dynamicImport;
+
+try {
+  dynamicImport = require('./esm').dynamicImport;
+} catch (_err) {
+  // Syntax is not supported, ignore the error
+}
+
+function handleError(err) {
+  throw err; // Display stack trace for debugging
+}
+
+module.exports = function loadModule(filename, options) {
+  require('../dist/v8cache');  // Import caching logic
+  const jitiExecutor = require('../dist/jiti');  // Import jiti runtime
+
+  options = { dynamicImport, onError: handleError, ...options };  // Extend options
+
+  // Set default transformer if not provided
+  if (!options.transform) {
+    options.transform = require('../dist/babel');
+  }
+
+  return jitiExecutor(filename, options);  // Execute jiti with the supplied filename and options
+};
+```

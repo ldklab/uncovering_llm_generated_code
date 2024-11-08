@@ -1,0 +1,98 @@
+The provided Node.js code is a polyfill implementation of native JavaScript Promises. A polyfill is code that brings modern functionality to older environments that do not natively support it. Here's a breakdown of its functionality:
+
+1. **Promise Constructor**: The `Promise` function accepts an `executor` function with `resolve` and `reject` methods, managing an inner `state` (either 'pending', 'fulfilled', or 'rejected') and a `value`.
+
+2. **State Management**: The `resolve` and `reject` functions transition the Promise's state and set its value based on either successful fulfillment or rejection.
+
+3. **Promise Chaining**: The `then` method allows chaining with success (`onFulfilled`) and failure (`onRejected`) callbacks, returning a new Promise to facilitate further chaining.
+
+4. **Error Handling**: The `catch` method is provided for handling rejected cases, directly utilizing the `then` construct.
+
+5. **Cleanup with `finally`**: The `finally` method ensures a given callback executes after the Promise is settled, irrespective of outcome, for consistent resource cleanup.
+
+6. **Global Polyfill**: The `polyfill` method attaches this custom promise to the global `Promise` object if it's undefined, thus polyfilling the functionality.
+
+7. **Environment Handling**: It conditionally attaches the polyfill based on whether the code is running in a browser environment (checking for `window`) or as a Node.js module (using `module.exports`).
+
+Below is the rewritten code, maintaining the original functionality:
+
+```javascript
+// es6-promise-polyfill.js
+
+(function (global) {
+  class CustomPromise {
+    constructor(executor) {
+      this.state = 'pending';
+      this.value = undefined;
+      
+      const resolve = value => this._handleResolution(() => value);
+      const reject = reason => this._handleResolution(() => { throw reason; });
+      
+      try {
+        executor(resolve, reject);
+      } catch (error) {
+        reject(error);
+      }
+    }
+
+    _handleResolution(execFunction) {
+      if (this.state !== 'pending') return;
+      try {
+        this.value = execFunction();
+        this.state = 'fulfilled';
+      } catch (error) {
+        this.value = error;
+        this.state = 'rejected';
+      }
+    }
+
+    then(onFulfilled, onRejected) {
+      return new CustomPromise((resolve, reject) => {
+        if (this.state === 'fulfilled' && onFulfilled) {
+          try {
+            resolve(onFulfilled(this.value));
+          } catch (error) {
+            reject(error);
+          }
+        } else if (this.state === 'rejected' && onRejected) {
+          try {
+            resolve(onRejected(this.value));
+          } catch (error) {
+            reject(error);
+          }
+        }
+      });
+    }
+
+    catch(onRejected) {
+      return this.then(null, onRejected);
+    }
+
+    finally(onFinally) {
+      const callback = () => CustomPromise.resolve(onFinally()).then(() => this.value);
+      return this.then(callback, reason => CustomPromise.resolve(onFinally()).then(() => { throw reason; }));
+    }
+
+    static polyfill() {
+      if (!global.Promise) {
+        global.Promise = CustomPromise;
+      }
+    }
+
+    static resolve(value) {
+      return new CustomPromise(resolve => resolve(value));
+    }
+  }
+
+  // Auto-polyfill if required
+  if (typeof window !== 'undefined') {
+    CustomPromise.polyfill();
+  }
+
+  // Exporting the CustomPromise library
+  if (typeof module !== 'undefined') {
+    module.exports = { CustomPromise };
+  }
+
+}(typeof window !== 'undefined' ? window : global));
+```

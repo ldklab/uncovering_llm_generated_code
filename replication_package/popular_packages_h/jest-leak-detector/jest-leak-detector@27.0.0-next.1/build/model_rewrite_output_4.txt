@@ -1,0 +1,99 @@
+The Node.js code provided is a module that exports a class designed to detect memory leaks in non-primitive JavaScript objects. Here's what the code does:
+
+1. **Module Imports**: The code imports various modules: `util` for utilities, `v8` and `vm` for interacting with the JavaScript runtime and garbage collector, `jest-get-type` to check if a value is primitive, and `pretty-format` to format values for error messages.
+
+2. **Custom Interop Function**: It includes a utility function `_interopRequireDefault` to handle default imports, ensuring compatibility with CommonJS and ES Module interop.
+
+3. **Property Definition Utility**: Uses `_defineProperty` to define or modify properties on objects.
+
+4. **Class Definition**: The main export is a class `_default` which:
+   - **Constructor**: Accepts a value and checks if it's a primitive. If so, it throws an error. It attempts to require the `weak-napi` package to create a weak reference to the object, allowing detection of when the object is garbage collected.
+   - **Memory Leak Detection**: The class has a method `isLeaking` that triggers garbage collection using Node.js's garbage collector interface and checks if the reference to the object still exists.
+   - **Garbage Collector Exposure**: It uses V8 engine flags to expose the garbage collector function (`gc`) and runs it in a new VM context.
+
+```javascript
+'use strict';
+
+Object.defineProperty(exports, '__esModule', {
+  value: true
+});
+exports.default = void 0;
+
+const util = require('util');
+const v8 = require('v8');
+const vm = require('vm');
+const jestGetType = require('jest-get-type');
+const prettyFormat = require('pretty-format').default;
+
+function _defineProperty(obj, key, value) {
+  if (key in obj) {
+    Object.defineProperty(obj, key, {
+      value: value,
+      enumerable: true,
+      configurable: true,
+      writable: true
+    });
+  } else {
+    obj[key] = value;
+  }
+  return obj;
+}
+
+const tick = util.promisify(setImmediate);
+
+class LeakingDetector {
+  constructor(value) {
+    _defineProperty(this, '_isReferenceBeingHeld', void 0);
+
+    if (jestGetType.isPrimitive(value)) {
+      throw new TypeError(
+        `Primitives cannot leak memory. You passed a ${typeof value}: <${prettyFormat(value)}>`
+      );
+    }
+
+    let weak;
+
+    try {
+      weak = require('weak-napi');
+    } catch (err) {
+      if (!err || err.code !== 'MODULE_NOT_FOUND') {
+        throw err;
+      }
+
+      throw new Error(
+        'The leaking detection mechanism requires the "weak-napi" package to be installed. ' +
+        'Please install it as a dependency on your main project'
+      );
+    }
+
+    weak(value, () => (this._isReferenceBeingHeld = false));
+    this._isReferenceBeingHeld = true;
+
+    // Ensure the value is not leaked by the closure.
+    value = null;
+  }
+
+  async isLeaking() {
+    this._runGarbageCollector();
+
+    for (let i = 0; i < 10; i++) {
+      await tick();
+    }
+
+    return this._isReferenceBeingHeld;
+  }
+
+  _runGarbageCollector() {
+    const gcExposed = !!global.gc;
+
+    v8.setFlagsFromString('--expose-gc');
+    vm.runInNewContext('gc')();
+
+    if (!gcExposed) {
+      v8.setFlagsFromString('--no-expose-gc');
+    }
+  }
+}
+
+exports.default = LeakingDetector;
+```

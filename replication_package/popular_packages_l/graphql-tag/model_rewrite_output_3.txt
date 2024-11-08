@@ -1,0 +1,85 @@
+The given Node.js code provides functionality for parsing and caching GraphQL queries using the `graphql` package's `parse` function. It offers a template literal tag function `gql` that takes GraphQL queries as input and returns their parsed AST representation. The parsed queries are cached to improve performance for repeated queries.
+
+Key features of the code include:
+
+1. **`gql` Function:** This is a tagged template literal function that constructs a GraphQL query from literals and placeholders, caches it, and returns its parsed representation. If the query is already cached, it returns the cached version.
+
+2. **Caching System:** Utilizes a simple cache (an object) to avoid re-parsing previously parsed queries.
+
+3. **Fragment Warning System:** Exposes an interface to enable or disable warnings for duplicate fragment names in the parsed query AST.
+
+4. **Experimental Fragment Variable Support:** Allows toggling support for experimental fragment variables using functions to enable and disable support.
+
+5. **Demonstration and Example Usage:** Includes example usage of main functionalities and checks for duplicate fragment names.
+
+Here is a possible rewrite of the Node.js code according to the explanation:
+
+```javascript
+const { parse } = require('graphql');
+const cache = {};
+
+function gql(literals, ...placeholders) {
+  const query = literals
+    .map((literal, index) => literal + (placeholders[index] || ''))
+    .join('');
+  
+  if (!cache[query]) {
+    cache[query] = parse(query);
+  }
+  
+  return cache[query];
+}
+
+exports.gql = gql;
+
+let fragmentWarningsEnabled = true;
+
+exports.disableFragmentWarnings = () => {
+  fragmentWarningsEnabled = false;
+};
+
+const fragmentVariableSupport = { enabled: false };
+
+exports.enableExperimentalFragmentVariables = () => {
+  fragmentVariableSupport.enabled = true;
+};
+
+exports.disableExperimentalFragmentVariables = () => {
+  fragmentVariableSupport.enabled = false;
+};
+
+function checkFragmentWarnings(queryAST) {
+  if (!fragmentWarningsEnabled) return;
+  const fragmentNames = new Set();
+  queryAST.definitions.forEach(def => {
+    if (def.kind === 'FragmentDefinition') {
+      if (fragmentNames.has(def.name.value)) {
+        console.warn(`Duplicate fragment name: ${def.name.value}`);
+      }
+      fragmentNames.add(def.name.value);
+    }
+  });
+}
+
+// Example Usage
+const exampleQuery = gql`
+  {
+    user(id: 5) {
+      firstName
+      lastName
+    }
+  }
+`;
+
+console.log(JSON.stringify(exampleQuery, null, 2)); // Visualize the AST
+checkFragmentWarnings(exampleQuery);
+
+if (fragmentVariableSupport.enabled) {
+  const fragmentWithVariables = gql`
+  fragment ExampleFragment($arg: String!) on Type {
+    field
+  }
+  `;
+  console.log(fragmentWithVariables);
+}
+```

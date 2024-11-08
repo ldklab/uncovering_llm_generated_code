@@ -1,0 +1,88 @@
+The provided Node.js code implements a `debounce` function, which limits how often a function can run. The `debounce` function takes another function (`function_`) as a primary input, along with a wait time in milliseconds (`wait`) and an options object. The `debounce` function returns a new function that, when invoked, will invoke the original function only after a specified delay has passed without it being called again.
+
+Key features and behaviors:
+1. **Execution Context Preservation:** Keeps track of the context (`this`) and arguments of the last call.
+2. **Immediate Execution Option:** Can execute the function immediately on the first call and then wait for the specified delay before executing subsequent calls, if the `immediate` flag is set to `true`.
+3. **Clearing and Flushing:** Provides methods to cancel any pending invocations (`clear`) or to immediately invoke the function with the latest context and arguments (`flush`).
+4. **Error Handling:** Throws an error if called with a different context from the same prototype after being debounced.
+5. **Parameters Validation:** Validates that the `function_` parameter is indeed a function and that `wait` is non-negative.
+
+Here's a possible rewrite of the code:
+
+```javascript
+function debounce(func, wait = 100, options = {}) {
+  if (typeof func !== 'function') {
+    throw new TypeError(`Expected a function, but got ${typeof func}.`);
+  }
+  if (wait < 0) {
+    throw new RangeError('Wait time cannot be negative.');
+  }
+
+  const { immediate } = typeof options === 'boolean' ? { immediate: options } : options;
+
+  let timeoutId, lastArgs, lastContext, result, lastCallTime;
+
+  function invokeFunc() {
+    const context = lastContext;
+    const args = lastArgs;
+    lastContext = lastArgs = undefined;
+    result = func.apply(context, args);
+    return result;
+  }
+
+  function startTimer(pendingFunc, wait) {
+    return setTimeout(pendingFunc, wait);
+  }
+
+  function shouldInvoke(time) {
+    const timeSinceLastCall = time - lastCallTime;
+    return lastCallTime === undefined || timeSinceLastCall >= wait;
+  }
+
+  function debounceFunc(...args) {
+    const now = Date.now();
+    const isInvoking = shouldInvoke(now);
+    lastContext = this;
+    lastArgs = args;
+    lastCallTime = now;
+
+    if (isInvoking) {
+      if (!timeoutId && immediate) {
+        timeoutId = startTimer(() => {
+          timeoutId = undefined;
+        }, wait);
+        return invokeFunc();
+      }
+    }
+
+    if (!timeoutId) {
+      timeoutId = startTimer(() => {
+        timeoutId = undefined;
+        if (!immediate) {
+          invokeFunc();
+        }
+      }, wait);
+    }
+
+    return result;
+  }
+
+  debounceFunc.cancel = () => {
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+      timeoutId = undefined;
+    }
+  };
+
+  debounceFunc.flush = () => {
+    if (timeoutId) {
+      invokeFunc();
+      debounceFunc.cancel();
+    }
+  };
+
+  return debounceFunc;
+}
+
+module.exports = debounce;
+```

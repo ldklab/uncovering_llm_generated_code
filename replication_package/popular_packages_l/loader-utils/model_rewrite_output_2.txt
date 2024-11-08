@@ -1,0 +1,107 @@
+The code defines a utility object for use primarily in module loaders for resolving URLs and generating file names based on certain patterns or options. Here's a breakdown of the functionality:
+
+1. **isUrlRequest(url):** Determines if a given URL is a requestable resource. It returns false for data URIs, chrome URIs, or URLs with HTTP/HTTPS protocol.
+
+2. **urlToRequest(url, root):** Converts a URL to a request path. It handles module request denoted by `~`, root-relative URLs if a `root` is specified, and normalizes paths by prepending `./` for relative paths.
+
+3. **interpolateName(loaderContext, name, options):** Generates a file name by replacing placeholders in `name` with values derived from the file path, content, and other context-sensitive data. It can use regular expressions to match and replace parts of the resource path and apply hashing to content if specified.
+
+4. **getHashDigest(buffer, hashType, digestType, maxLength):** Computes the hash digest of a buffer using the specified hashing algorithms and options. It can also handle base64-safe encoding.
+
+Here is the rewritten code:
+
+```javascript
+// loader-utils.js
+
+const path = require('path');
+const crypto = require('crypto');
+
+const loaderUtils = {
+  isUrlRequest(url) {
+    return !/^data:|^chrome:|^https?:/.test(url);
+  },
+
+  urlToRequest(url, root = '') {
+    if (url.startsWith('~')) {
+      return url.slice(1);
+    }
+
+    if (root) {
+      if (root === '~') {
+        return url.slice(1);
+      }
+      if (url.startsWith('/')) {
+        return path.posix.join(root, url.slice(1));
+      }
+    }
+
+    if (!/^\.\.?\/|^\//.test(url)) {
+      return './' + url;
+    }
+    return url;
+  },
+
+  interpolateName(loaderContext, name, options = {}) {
+    const { resourcePath = '', resourceQuery = '' } = loaderContext;
+    const context = options.context || process.cwd();
+    const content = options.content || '';
+    
+    let regExp = options.regExp;
+    if (typeof regExp === 'string') regExp = new RegExp(regExp);
+
+    const ext = path.extname(resourcePath);
+    const baseName = path.basename(resourcePath, ext);
+    const dirName = path.dirname(resourcePath);
+    const folderName = path.basename(dirName);
+
+    const hashOptions = { content, hashType: 'xxhash64', digestType: 'hex', maxLength: undefined };
+    const contentHash = this.getHashDigest(Buffer.from(content), hashOptions.hashType, hashOptions.digestType, hashOptions.maxLength);
+    
+    const replacements = {
+      '[ext]': ext.slice(1),
+      '[name]': baseName,
+      '[path]': path.relative(context, dirName),
+      '[folder]': folderName,
+      '[query]': resourceQuery,
+      '[contenthash]': contentHash,
+      '[hash]': contentHash,
+    };
+
+    if (regExp && resourcePath) {
+      const match = resourcePath.match(regExp);
+      if (match) {
+        match.forEach((matched, idx) => {
+          replacements[`[${idx}]`] = matched;
+        });
+      }
+    }
+
+    return name.replace(/\[(\w+)(?::(\w+))?(?::(\w+))?(?::(\d+))?\]/gi, (match, token, hashType, digestType, maxLength) => {
+      if (replacements[match] !== undefined) {
+        return replacements[match];
+      }
+      if (token === 'hash' || token === 'contenthash') {
+        return this.getHashDigest(content, hashType || 'xxhash64', digestType || 'hex', parseInt(maxLength, 10));
+      }
+      return match;
+    });
+  },
+
+  getHashDigest(buffer, hashType = 'xxhash64', digestType = 'hex', maxLength) {
+    const hash = crypto.createHash(hashType);
+    hash.update(buffer);
+    let digest = hash.digest(digestType);
+    if (maxLength) {
+      digest = digest.slice(0, maxLength);
+    }
+
+    if (digestType === 'base64safe') {
+      digest = digest.replace(/[/+]/g, '_').replace(/=/g, '');
+    }
+
+    return digest;
+  }
+};
+
+module.exports = loaderUtils;
+```

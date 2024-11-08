@@ -1,0 +1,74 @@
+The given Node.js code is part of a CommonJS module that exports several components related to a user agent configuration for AWS SDK, possibly for JavaScript or Node.js environments. Here's a breakdown of its functionality:
+
+1. **Helper Functions and Variables**:
+   - The beginning of the code defines several utility functions for property definition, property copying, and exporting for CommonJS modules. These are necessary for handling JavaScript properties and exports in a controlled way, ensuring configurability and enumerability.
+
+2. **Exported Module**:
+   - The main module (`src_exports`) exports several constants and functions using the `__export` utility function. These include:
+     - `NODE_APP_ID_CONFIG_OPTIONS`: A configuration object for deriving the application ID from environment variables or configuration files.
+     - `UA_APP_ID_ENV_NAME` and `UA_APP_ID_INI_NAME`: Strings representing the environment variable and INI configuration name for UserAgent App ID.
+     - `createDefaultUserAgentProvider`: A function that returns an asynchronous function to generate the default user agent string based on various parameters like service ID, client version, and environment.
+     - `crtAvailability`: An object indicating whether the CRT (C runtime) feature is available.
+     - `defaultUserAgent`: The default user agent provider function.
+
+3. **Functionality**:
+   - `createDefaultUserAgentProvider`: This function returns a promise-based function that generates a user agent string for the SDK, encapsulating information like SDK version, execution environment, operating system, and optional application ID.
+   - `crtAvailability` and `isCrtAvailable`: This indicates the availability of CRT features within the environment, enhancing the user agent detail if available.
+   - Configuration options to select the application ID from either environment variables or configuration files, using defaults from AWS SDK middleware.
+
+Below is a possible rewrite of this Node.js code:
+
+```javascript
+"use strict";
+const os = require("os");
+const process = require("process");
+const { DEFAULT_UA_APP_ID } = require("@aws-sdk/middleware-user-agent");
+
+const UA_APP_ID_ENV_NAME = "AWS_SDK_UA_APP_ID";
+const UA_APP_ID_INI_NAME = "sdk-ua-app-id";
+
+const NODE_APP_ID_CONFIG_OPTIONS = {
+  environmentVariableSelector: (env) => env[UA_APP_ID_ENV_NAME],
+  configFileSelector: (profile) => profile[UA_APP_ID_INI_NAME],
+  default: DEFAULT_UA_APP_ID
+};
+
+const crtAvailability = {
+  isCrtAvailable: false
+};
+
+const isCrtAvailable = () => {
+  return crtAvailability.isCrtAvailable ? ["md/crt-avail"] : null;
+};
+
+const createDefaultUserAgentProvider = ({ serviceId, clientVersion }) => {
+  return async (config) => {
+    const sections = [
+      ["aws-sdk-js", clientVersion],
+      ["ua", "2.1"],
+      [`os/${os.platform()}`, os.release()],
+      ["lang/js"],
+      ["md/nodejs", process.versions.node]
+    ];
+    const crtAvailable = isCrtAvailable();
+    if (crtAvailable) sections.push(crtAvailable);
+    if (serviceId) sections.push([`api/${serviceId}`, clientVersion]);
+    if (process.env.AWS_EXECUTION_ENV) sections.push([`exec-env/${process.env.AWS_EXECUTION_ENV}`]);
+
+    const appId = await config?.userAgentAppId?.();
+    const resolvedUserAgent = appId ? [...sections, [`app/${appId}`]] : sections;
+    return resolvedUserAgent;
+  };
+};
+
+const defaultUserAgent = createDefaultUserAgentProvider;
+
+module.exports = {
+  NODE_APP_ID_CONFIG_OPTIONS,
+  UA_APP_ID_ENV_NAME,
+  UA_APP_ID_INI_NAME,
+  createDefaultUserAgentProvider,
+  crtAvailability,
+  defaultUserAgent
+};
+```

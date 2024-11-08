@@ -1,0 +1,51 @@
+The provided Node.js code defines a utility module for creating and managing Babel plugins with some validation functionality for options.
+
+1. **declare(plugin)**: This is a higher-order function that takes a Babel plugin function as an argument and returns a new function. The returned function takes three arguments: the Babel API (`api`), `options` for the plugin, and the `dirname` where the plugin is executed. It first checks if the `assertVersion` method is available in the Babel API, ensuring the use of Babel version 7 or higher. If not, it throws an error. Then, it asserts that the Babel version is 7. Finally, it calls the provided plugin with the given API, options (defaulting to an empty object if none are provided), and directory name.
+
+2. **validateOptions(options, schema)**: This function takes two arguments: options to be validated and a schema describing the validation rules. It iterates over the schema keys and applies the validation function for each key to the corresponding option value. If any validation fails, it adds the returned validation error message to an errors array. If there are any errors, it throws an `Error` with a list of all the invalid options.
+
+3. **pluginUtilFactory()**: This is a factory function that returns an object containing the `declare` and `validateOptions` functions. This encapsulation provides modularity and ease of use for plugin developers needing these utilities.
+
+The module exports an instance of this factory function, providing both `declare` and `validateOptions` as utilities for use in other parts of an application or package.
+
+Here's a possible rewrite of the given code:
+
+```javascript
+// utils.js
+function declarePluginDefinition(plugin) {
+  return (babelApi, pluginConfig, pluginDirectory) => {
+    if (!babelApi.assertVersion) {
+      throw new Error('Babel 7+ is required. Ensure api.assertVersion is available.');
+    }
+    
+    babelApi.assertVersion(7);
+
+    return plugin(babelApi, pluginConfig || {}, pluginDirectory);
+  };
+}
+
+function validatePluginOptions(options, validationSchema) {
+  const validationErrors = [];
+  for (const property in validationSchema) {
+    if (Object.prototype.hasOwnProperty.call(validationSchema, property)) {
+      const validationResult = validationSchema[property](options[property]);
+      if (validationResult !== true) {
+        validationErrors.push(validationResult);
+      }
+    }
+  }
+  
+  if (validationErrors.length > 0) {
+    throw new Error(`Invalid options detected:\n${validationErrors.join('\n')}`);
+  }
+}
+
+function createPluginUtilities() {
+  return {
+    declare: declarePluginDefinition,
+    validateOptions: validatePluginOptions,
+  };
+}
+
+module.exports = createPluginUtilities();
+```

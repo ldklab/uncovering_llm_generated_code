@@ -1,0 +1,93 @@
+This Node.js module defines a `CLIUI` class meant for creating command-line user interfaces (UI). It allows for structuring and rendering text-based interfaces with rows and columns, similar to HTML tables. Here’s a breakdown of its functionalities:
+
+1. **Constructor**: Initializes an instance with options determining the width of the UI and text wrapping.
+
+2. **Method `div(...)`**: Adds a new row of columns (passed as arguments) to the UI.
+
+3. **Method `span(...)`**: Adds columns to the last row; if no rows exist, it creates a new one.
+
+4. **Method `resetOutput()`**: Clears all rows in the current UI instance.
+
+5. **Method `toString()`**: Converts the current structure of rows and columns into a formatted string, respecting specified column widths, paddings, and text alignment (left, right, center).
+
+6. **Method `wrapText(text, width)`**: Handles the text wrapping for columns based on the specified width.
+
+7. **Method `alignText(text, width, align)`**: Aligns text (either left, center, or right) within the column width.
+
+8. **Static method `create()`**: Factory method to generate new instances of `CLIUI`.
+
+9. **Module export**: Provides a function that creates and returns a new instance of `CLIUI` with specified options.
+
+Below is a possible rewrite for this code:
+
+```javascript
+const util = require('util');
+
+class CLIUI {
+  constructor({ width = 80, wrap = true } = {}) {
+    this.width = width;
+    this.wrap = wrap;
+    this.rows = [];
+  }
+
+  div(...columns) {
+    this.rows.push(columns);
+  }
+
+  span(...columns) {
+    if (this.rows.length === 0) {
+      this.div(...columns);
+    } else {
+      this.rows[this.rows.length - 1].push(...columns);
+    }
+  }
+
+  resetOutput() {
+    this.rows = [];
+  }
+
+  toString() {
+    return this.rows.map(row => {
+      return row.map(col => {
+        const text = typeof col === 'string' ? col : col.text || '';
+        const colWidth = typeof col === 'object' && col.width ? col.width : this.width / row.length;
+        const padding = typeof col === 'object' && col.padding ? col.padding : [0, 0, 0, 0];
+        const align = typeof col === 'object' && col.align ? col.align : 'left';
+
+        const paddedText = ' '.repeat(padding[3]) + text + ' '.repeat(padding[1]);
+        const wrappedText = this.wrapText(paddedText, colWidth);
+        return this.alignText(wrappedText, colWidth, align);
+      }).join('');
+    }).join('\n') + '\n';
+  }
+
+  wrapText(text, width) {
+    if (!this.wrap) return text;
+    const regex = new RegExp(`(.{1,${width}})(\\s+|$)`, 'g');
+    return text.match(regex).join('\n');
+  }
+
+  alignText(text, width, align) {
+    const lines = text.split('\n');
+    return lines.map(line => {
+      const extraSpaces = width - line.length;
+      switch (align) {
+        case 'right':
+          return ' '.repeat(extraSpaces) + line;
+        case 'center':
+          return ' '.repeat(Math.floor(extraSpaces / 2)) + line + ' '.repeat(Math.ceil(extraSpaces / 2));
+        default:
+          return line + ' '.repeat(extraSpaces);
+      }
+    }).join('');
+  }
+
+  static create(options) {
+    return new CLIUI(options);
+  }
+}
+
+module.exports = function (options) {
+  return CLIUI.create(options);
+};
+```

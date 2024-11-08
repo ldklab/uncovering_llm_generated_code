@@ -1,0 +1,54 @@
+The provided Node.js code defines a utility module that extends an AJV (Another JSON Validator) instance with custom format validators and potentially some custom keywords. The module starts by defining various regular expression patterns for different standard formats such as `date`, `time`, `dateTime`, `uri`, and `email`. Additionally, it defines a function `addFormats` which takes an AJV instance and an optional configuration object. The configuration object can specify which formats should be added, the operational mode (though the mode is not used in the code), and whether additional keywords should be added.
+
+When executed, the `addFormats` function will:
+1. Determine the set of formats to be enabled, either from the provided options or by default including all predefined formats.
+2. Add each enabled format to the AJV instance using its corresponding regular expression.
+3. Optionally add custom keywords to the AJV instance, such as `formatMinimum` and `formatExclusiveMaximum`, which validate date strings against minimum and exclusive maximum constraints.
+4. Return the modified AJV instance for further use.
+
+Below is a possible rewrite of the original Node.js code:
+
+```javascript
+// ajv-formats/index.js
+
+const url = require('url');
+
+const formats = {
+  date: /^\d{4}-\d{2}-\d{2}$/,
+  time: /^\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+\-]\d{2}:\d{2})$/,
+  dateTime: /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+\-]\d{2}:\d{2})$/,
+  uri: url.URL, 
+  email: /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/
+};
+
+function addFormats(ajv, options = {}) {
+  const normalizedOptions = Array.isArray(options) ? { formats: options } : options;
+  const { formats: enabledFormatsList, mode = "full", keywords = false } = normalizedOptions;
+  const enabledFormats = new Set(enabledFormatsList || Object.keys(formats));
+
+  Object.entries(formats).forEach(([format, validator]) => {
+    if (enabledFormats.has(format)) {
+      ajv.addFormat(format, validator);
+    }
+  });
+
+  if (keywords) {
+    ajv.addKeyword('formatMinimum', {
+      type: 'string',
+      validate(schema, data) {
+        return new Date(data) >= new Date(schema);
+      }
+    });
+    ajv.addKeyword('formatExclusiveMaximum', {
+      type: 'string',
+      validate(schema, data) {
+        return new Date(data) < new Date(schema);
+      }
+    });
+  }
+
+  return ajv;
+}
+
+module.exports = addFormats;
+```

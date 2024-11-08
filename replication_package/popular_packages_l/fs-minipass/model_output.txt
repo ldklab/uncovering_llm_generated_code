@@ -1,0 +1,146 @@
+The `fs-minipass` package provides a streamlined interface for handling file reading and writing streams based on the minipass module. It offers both asynchronous and synchronous interfaces.
+
+### Exported Classes
+
+1. **ReadStream**: Provides an asynchronous stream interface similar to Node.js's native `fs.createReadStream`. It is suitable for reading files asynchronously and supports options such as custom file descriptors, read sizes, and auto-closing of file descriptors.
+
+2. **ReadStreamSync**: Provides a synchronous read stream interface where all data is immediately available upon consumption. It reads and pipes data synchronously respecting backpressure without buffering during stream construction.
+
+3. **WriteStream**: Provides an asynchronous write stream interface compatible with Node.js's native `fs.createWriteStream`. It allows writing data to files asynchronously with options for mode, start position, and flexible flag settings.
+
+4. **WriteStreamSync**: Provides a synchronous write stream interface where each write operation is flushed to the file instantaneously. It can handle multiple writes occurring within the same execution tick.
+
+### Common Usage
+
+- **Reading and Writing Files**: You can use these streams to read from a file and write to another file using piping, much like you would with native Node.js streams.
+  
+- **Options**: Each stream type accepts various options to fine-tune operations such as file descriptor re-use, setting read/write sizes, setting modes, positions, and flags, as well as controlling whether file descriptors are auto-closed.
+
+### Example
+
+In the given usage example, a `ReadStream` is created to read `file.txt` while a `WriteStream` is used to write to `output.txt`. The content from `file.txt` is piped into `output.txt` with some additional headers. 
+
+```js
+// fs-minipass.js
+
+const { EventEmitter } = require('events');
+const fs = require('fs');
+const Minipass = require('minipass');
+
+class FsMinipassReadStream extends Minipass {
+    constructor(path, options = {}) {
+        super();
+        this.path = path;
+        this.readSize = options.readSize || 16 * 1024 * 1024; // Default to 16MB
+        this.autoClose = options.autoClose !== false;
+        this.fd = options.fd;
+
+        if (!this.fd) {
+            fs.open(this.path, 'r', (err, fd) => {
+                if (err) return this.emit('error', err);
+                this.fd = fd;
+                this._read();
+            });
+        } else {
+            process.nextTick(() => this._read());
+        }
+    }
+
+    _read() {
+        const buffer = Buffer.allocUnsafe(this.readSize);
+        fs.read(this.fd, buffer, 0, this.readSize, null, (err, bytesRead) => {
+            if (err) return this.emit('error', err);
+            if (bytesRead > 0) {
+                this.write(buffer.slice(0, bytesRead));
+                this._read();
+            } else {
+                this.end();
+                if (this.autoClose) this._close();
+            }
+        });
+    }
+
+    _close() {
+        if (this.fd) fs.close(this.fd, () => this.emit('close'));
+    }
+}
+
+class FsMinipassReadStreamSync extends Minipass {
+    constructor(path, options = {}) {
+        super();
+        this.fd = options.fd || fs.openSync(path, 'r');
+        let bytesRead;
+        const buffer = Buffer.allocUnsafe(options.size || fs.fstatSync(this.fd).size);
+        
+        bytesRead = fs.readSync(this.fd, buffer, 0, buffer.length, null);
+        this.write(buffer.slice(0, bytesRead));
+        this.end();
+        
+        if (options.autoClose !== false) fs.closeSync(this.fd);
+    }
+}
+
+class FsMinipassWriteStream extends Minipass {
+    constructor(path, options = {}) {
+        super();
+        this.path = path;
+        this.flags = options.flags || 'w';
+        this.mode = options.mode || 0o666;
+        this.start = options.start || 0;
+        this.autoClose = options.autoClose !== false;
+        this.fd = options.fd;
+
+        if (!this.fd) {
+            fs.open(this.path, this.flags, this.mode, (err, fd) => {
+                if (err) return this.emit('error', err);
+                this.fd = fd;
+                this._writeBuffer();
+            });
+        }
+
+        this.on('data', chunk => this._writeChunk(chunk));
+        this.on('end', () => this._end());
+    }
+
+    _writeChunk(chunk) {
+        if (!this.fd) return;
+        fs.write(this.fd, chunk, 0, chunk.length, this.start, err => {
+            if (err) this.emit('error', err);
+        });
+    }
+
+    _end() {
+        if (this.autoClose && this.fd) {
+            fs.close(this.fd, err => {
+                if (err) this.emit('error', err);
+                this.emit('close');
+            });
+            this.fd = null;
+        }
+    }
+}
+
+class FsMinipassWriteStreamSync extends Minipass {
+    constructor(path, options = {}) {
+        super();
+        this.fd = options.fd || fs.openSync(path, options.flags || 'w', options.mode || 0o666);
+    }
+
+    write(chunk) {
+        fs.writeSync(this.fd, chunk, 0, chunk.length);
+        return true;
+    }
+
+    end() {
+        if (this.fd) fs.closeSync(this.fd);
+        super.end();
+    }
+}
+
+module.exports = {
+    ReadStream: FsMinipassReadStream,
+    ReadStreamSync: FsMinipassReadStreamSync,
+    WriteStream: FsMinipassWriteStream,
+    WriteStreamSync: FsMinipassWriteStreamSync
+};
+```

@@ -1,0 +1,105 @@
+The provided Node.js code defines a module for a key-value storage system called `Keyv`. It uses different storage backends through adapters, which can include Redis, MongoDB, SQLite, PostgreSQL, or MySQL. The module leverages the `events` module to handle events, particularly errors, and uses the `json-buffer` package for serializing and deserializing data.
+
+The main components of the code are:
+
+1. **`loadStore` Function**: Determines the correct storage adapter to use based on options provided. It returns a storage instance that interacts with different databases. If no adapter is specified, a `Map` is used for in-memory storage.
+
+2. **`Keyv` Class**: Inherits from `EventEmitter` to emit and handle events (like errors). The class provides methods to interact with the key-value store:
+   - **Constructor**: Initializes `Keyv` with a URI and options, sets up the storage adapter, and assigns a namespace for the keys. It also sets up an event listener for storage-related errors.
+   - **`get` Method**: Retrieves a value for a particular key and checks if it is expired. It deserializes and returns the value or `undefined` if not found.
+   - **`set` Method**: Stores a value with an optional time-to-live (TTL) expiry. It serializes the value and sets it in the storage.
+   - **`delete` Method**: Removes a value for a particular key.
+   - **`clear` Method**: Clears all entries from the storage.
+   
+3. **Export Statement**: Exports the `Keyv` class as a module.
+
+```javascript
+'use strict';
+
+const EventEmitter = require('events');
+const JSONB = require('json-buffer');
+
+const availableAdapters = {
+    redis: '@keyv/redis',
+    mongodb: '@keyv/mongo',
+    mongo: '@keyv/mongo',
+    sqlite: '@keyv/sqlite',
+    postgresql: '@keyv/postgres',
+    postgres: '@keyv/postgres',
+    mysql: '@keyv/mysql'
+};
+
+function getAdapter(opts) {
+    if (opts.adapter || opts.uri) {
+        const adapter = opts.adapter || /^[^:]*/.exec(opts.uri)[0];
+        return new (require(availableAdapters[adapter]))(opts);
+    }
+    return new Map();
+}
+
+class Keyv extends EventEmitter {
+    constructor(uri, options) {
+        super();
+        this.opts = {
+            namespace: 'keyv',
+            serialize: JSONB.stringify,
+            deserialize: JSONB.parse,
+            ...(typeof uri === 'string' ? { uri } : uri),
+            ...options
+        };
+
+        if (!this.opts.store) {
+            this.opts.store = getAdapter({ ...this.opts });
+        }
+
+        if (typeof this.opts.store.on === 'function') {
+            this.opts.store.on('error', (err) => this.emit('error', err));
+        }
+
+        this.opts.store.namespace = this.opts.namespace;
+    }
+
+    _getPrefixedKey(key) {
+        return `${this.opts.namespace}:${key}`;
+    }
+
+    async get(key, options) {
+        const keyPrefixed = this._getPrefixedKey(key);
+        const data = await this.opts.store.get(keyPrefixed);
+        const deserializedData = (typeof data === 'string') ? this.opts.deserialize(data) : data;
+
+        if (!deserializedData) {
+            return undefined;
+        }
+
+        if (typeof deserializedData.expires === 'number' && Date.now() > deserializedData.expires) {
+            await this.delete(key);
+            return undefined;
+        }
+
+        return options?.raw ? deserializedData : deserializedData.value;
+    }
+
+    async set(key, value, ttl) {
+        const keyPrefixed = this._getPrefixedKey(key);
+        ttl = ttl === undefined ? this.opts.ttl : ttl;
+        ttl = ttl === 0 ? undefined : ttl;
+
+        const expires = typeof ttl === 'number' ? Date.now() + ttl : null;
+        const serializedValue = await this.opts.serialize({ value, expires });
+        await this.opts.store.set(keyPrefixed, serializedValue, ttl);
+        return true;
+    }
+
+    async delete(key) {
+        const keyPrefixed = this._getPrefixedKey(key);
+        await this.opts.store.delete(keyPrefixed);
+    }
+
+    async clear() {
+        await this.opts.store.clear();
+    }
+}
+
+module.exports = Keyv;
+```

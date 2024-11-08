@@ -1,0 +1,104 @@
+The provided Node.js code defines a simple mapping utility for generating and managing source maps, which are used to map code within a transformed file back to its original source. The functionality is covered by several essential components:
+
+1. **GenMapping Class**: This object stores:
+   - `file`: the file name of the generated code.
+   - `sourceRoot`: the base URL for finding the sources.
+   - `names`, `sources`, `sourcesContent`, `mappings`: arrays to maintain lists of variable names, source files, their contents, and the mapping information respectively.
+
+2. **`addMapping` function**: Adds a mapping entry to the instance by:
+   - Updating the `sources` and, optionally, the `names` if they do not already include the provided source and name.
+   - Adding a structured mapping array that holds generated and original positions, along with the indices of the source and name.
+
+3. **`setSourceContent` function**: Updates the source content for a specific source within the mapping if it exists.
+
+4. **`toEncodedMap` function**: Returns a serialized (but simplified/encoded as a CSV string) representation of the source map, suitable for exporting a source map file format.
+
+5. **`toDecodedMap` function**: Converts the mapping data into a readable, structured JSON format that duplicates mappings with additional contextual names/sources.
+
+6. **`maybeAddMapping` function**: Adds a new mapping if no existing one matches the line positions, to prevent redundant or duplicate entries.
+
+7. **Usage**: Demonstrates creating a `GenMapping`, setting source content, adding mappings, and outputting both decoded and encoded forms.
+
+Here is the possible rewrite of the provided Node.js code based on the explanation:
+
+```javascript
+class GenMapping {
+  constructor({ file, sourceRoot } = {}) {
+    this.file = file || '';
+    this.sourceRoot = sourceRoot || '';
+    this.names = [];
+    this.sources = [];
+    this.sourcesContent = [];
+    this.mappings = [];
+  }
+}
+
+function addMapping(map, { generated, source, original, name }) {
+  if (!map.sources.includes(source)) {
+    map.sources.push(source);
+    map.sourcesContent.push(null);
+  }
+  if (name && !map.names.includes(name)) {
+    map.names.push(name);
+  }
+  map.mappings.push([generated, original, map.sources.indexOf(source), map.names.indexOf(name)]);
+}
+
+function setSourceContent(map, source, content) {
+  const index = map.sources.indexOf(source);
+  if (index === -1) return;
+  map.sourcesContent[index] = content;
+}
+
+function toEncodedMap(map) {
+  let encodedMappings = '';
+  for (const mapping of map.mappings) {
+    const [generated, original, sourceIndex, nameIndex] = mapping;
+    encodedMappings += `${generated.line},${generated.column},${sourceIndex},${original.line},${original.column},${nameIndex};`;
+  }
+  return {
+    version: 3,
+    file: map.file,
+    sourceRoot: map.sourceRoot,
+    sources: map.sources,
+    sourcesContent: map.sourcesContent,
+    names: map.names,
+    mappings: encodedMappings,
+  };
+}
+
+function toDecodedMap(map) {
+  return {
+    version: 3,
+    file: map.file,
+    sourceRoot: map.sourceRoot,
+    sources: map.sources,
+    sourcesContent: map.sourcesContent,
+    names: map.names,
+    mappings: map.mappings.map(([gen, orig, src, name]) => ({
+      generated: gen,
+      source: map.sources[src],
+      original: orig,
+      name: map.names[name],
+    })),
+  };
+}
+
+function maybeAddMapping(map, { generated, source, original, name }) {
+  if (!source) return;
+  const noMatchingMapping = !map.mappings.some(([gen, orig]) => 
+    gen.line === generated.line && orig.line === original.line
+  );
+  if (noMatchingMapping) {
+    addMapping(map, { generated, source, original, name });
+  }
+}
+
+// Usage example:
+const map = new GenMapping({ file: 'output.js', sourceRoot: 'https://example.com/' });
+setSourceContent(map, 'input.js', 'function foo() {}');
+addMapping(map, { generated: { line: 1, column: 0 }, source: 'input.js', original: { line: 1, column: 0 } });
+addMapping(map, { generated: { line: 1, column: 9 }, source: 'input.js', original: { line: 1, column: 9 }, name: 'foo' });
+console.log(toDecodedMap(map));
+console.log(toEncodedMap(map));
+```

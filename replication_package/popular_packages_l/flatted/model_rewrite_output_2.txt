@@ -1,0 +1,109 @@
+The provided Node.js code is a custom serialization library that offers a way to handle cyclic structures and repeated references in JavaScript objects when converting them to and from JSON. The module exports four functions: `stringify`, `parse`, `toJSON`, and `fromJSON`. 
+
+1. **stringify**: This function takes an object and serializes it into a JSON string. It uses a Map to track the objects it processes and assigns a unique identifier to each object to manage references. This allows it to handle cycles and repeated references effectively.
+
+2. **parse**: This function takes a JSON string and deserializes it back into a JavaScript object. It reconstructs the original object structure while respecting cycles and references, similar to how `stringify` establishes them.
+
+3. **toJSON**: This function is a simple wrapper around the `stringify` function.
+
+4. **fromJSON**: This function is a wrapper around the `parse` function allowing an optional `reviver` function to be passed which is used to transform values during parsing.
+
+Here's a possible rewrite of this Node.js code:
+
+```javascript
+// flatted.js
+'use strict';
+
+const Primitive = String;
+const primitive = 'string';
+
+function stringify(value, replacer, space) {
+  let uniqueIndex = 0;
+  const objectMap = new Map();
+
+  function flatten(obj) {
+    if (typeof obj === primitive) return obj;
+    if (objectMap.has(obj)) return objectMap.get(obj);
+
+    const reference = new Primitive(String(++uniqueIndex));
+    objectMap.set(obj, reference);
+
+    if (typeof obj === 'object' && obj !== null) {
+      const isArray = Array.isArray(obj);
+      const flatObj = isArray ? [] : {};
+      objectMap.set(reference, flatObj);
+
+      if (isArray) {
+        for (let i = 0; i < obj.length; i++) {
+          flatObj[i] = flatten(obj[i]);
+        }
+      } else {
+        for (const key in obj) {
+          flatObj[key] = flatten(obj[key]);
+        }
+      }
+    }
+
+    return reference;
+  }
+
+  const flattenedValue = flatten(value);
+  return JSON.stringify(flattenedValue, replacer, space);
+}
+
+function parse(text, reviver) {
+  const parsedData = JSON.parse(text);
+  const objectMap = new Map();
+
+  function reconstruct(obj) {
+    if (objectMap.has(obj)) return objectMap.get(obj);
+
+    const isArray = Array.isArray(obj);
+    const rebuiltObj = isArray ? [] : {};
+    objectMap.set(obj, rebuiltObj);
+
+    if (isArray) {
+      obj.forEach((item, index) => {
+        rebuiltObj[index] = (typeof item === primitive && objectMap.has(item)) ? objectMap.get(item) : reconstruct(item);
+      });
+    } else {
+      for (const key in obj) {
+        const value = obj[key];
+        rebuiltObj[key] = (typeof value === primitive && objectMap.has(value)) ? objectMap.get(value) : reconstruct(value);
+      }
+    }
+    return rebuiltObj;
+  }
+
+  const result = reconstruct(parsedData);
+  if (!reviver) return result;
+
+  function deepRevive(holder, key) {
+    const value = holder[key];
+    if (value && typeof value === 'object') {
+      for (const k in value) {
+        deepRevive(value, k);
+      }
+      holder[key] = reviver.call(holder, key, value);
+    }
+  }
+
+  deepRevive({ "": result }, "");
+  return result;
+}
+
+function toJSON(value) {
+  return stringify(value);
+}
+
+function fromJSON(value, reviver) {
+  return parse(value, reviver);
+}
+
+module.exports = {
+  stringify,
+  parse,
+  toJSON,
+  fromJSON
+};
+```

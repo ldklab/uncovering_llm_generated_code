@@ -1,0 +1,980 @@
+```javascript
+'use strict';
+
+/**
+ * Get the default options for the parser.
+ */
+function getDefaultOptions() {
+    return {
+        async: false,
+        breaks: false,
+        extensions: null,
+        gfm: true,
+        hooks: null,
+        pedantic: false,
+        renderer: null,
+        silent: false,
+        tokenizer: null,
+        walkTokens: null,
+    };
+}
+
+exports.defaultOptions = getDefaultOptions();
+
+function updateDefaultOptions(newOptions) {
+    exports.defaultOptions = newOptions;
+}
+
+/**
+ * Helpers for handling escape sequences in HTML.
+ */
+const escapePatterns = {
+    specialChars: /[&<>"']/,
+    regexEscapeReplace: new RegExp(/[&<>"']/.source, 'g'),
+    noEncode: /[<>"']|&(?!(#\d{1,7}|#[Xx][a-fA-F0-9]{1,6}|\w+);)/,
+    regexEscapeReplaceNoEncode: new RegExp(/[<>"']|&(?!#[\d;]{1,7}|#[Xx][A-Fa-f0-9]{1,6}|[\w]+;)/.source, 'g'),
+};
+
+const replacements = {
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;',
+};
+
+const escapeReplacement = (character) => replacements[character];
+
+function escape(html, encode = false) {
+    if (encode && escapePatterns.specialChars.test(html)) {
+        return html.replace(escapePatterns.regexEscapeReplace, escapeReplacement);
+    }
+    if (!encode && escapePatterns.noEncode.test(html)) {
+        return html.replace(escapePatterns.regexEscapeReplaceNoEncode, escapeReplacement);
+    }
+    return html;
+}
+
+const caretPattern = /(^|[^\[])\^/g;
+
+function modifyRegex(regex, opt = '') {
+    let source = typeof regex === 'string' ? regex : regex.source;
+    const modifiedRegex = {
+        replace: (name, val) => {
+            let valueSource = typeof val === 'string' ? val : val.source;
+            valueSource = valueSource.replace(caretPattern, '$1');
+            source = source.replace(name, valueSource);
+            return modifiedRegex;
+        },
+        getRegex: () => new RegExp(source, opt),
+    };
+    return modifiedRegex;
+}
+
+function sanitizeUrl(href) {
+    try {
+        return encodeURI(href).replace(/%25/g, '%');
+    } catch {
+        return null;
+    }
+}
+
+const noopTestObject = { exec: () => null };
+
+function splitTableCells(row, numberOfCells) {
+    const formattedRow = row.replace(/\|/g, (match, offset, str) => {
+        let isEscaped = false;
+        let curr = offset;
+        while (--curr >= 0 && str[curr] === '\\') {
+            isEscaped = !isEscaped;
+        }
+        return isEscaped ? '|' : ' |';
+    });
+    const cells = formattedRow.split(/ \|/);
+
+    if (!cells[0].trim()) cells.shift();
+    if (cells.length && !cells[cells.length - 1].trim()) cells.pop();
+
+    if (numberOfCells) {
+        if (cells.length > numberOfCells) {
+            cells.splice(numberOfCells);
+        } else {
+            while (cells.length < numberOfCells) cells.push('');
+        }
+    }
+
+    for (let i = 0; i < cells.length; i++) {
+        cells[i] = cells[i].trim().replace(/\\\|/g, '|');
+    }
+    return cells;
+}
+
+function trimSuffix(str, char, invert = false) {
+    let suffixLength = 0;
+    const totalLength = str.length;
+    while (suffixLength < totalLength) {
+        const currChar = str.charAt(totalLength - suffixLength - 1);
+        if (currChar === char && !invert) suffixLength++;
+        else if (currChar !== char && invert) suffixLength++;
+        else break;
+    }
+    return str.slice(0, totalLength - suffixLength);
+}
+
+function findClosingBracketIndex(str, brackets) {
+    if (!str.includes(brackets[1])) return -1;
+
+    let level = 0;
+    for (let i = 0; i < str.length; i++) {
+        if (str[i] === '\\') {
+            i++;
+        } else if (str[i] === brackets[0]) {
+            level++;
+        } else if (str[i] === brackets[1]) {
+            level--;
+            if (level < 0) return i;
+        }
+    }
+    return -1;
+}
+
+function createLinkOutput(match, link, raw, lexer) {
+    const href = link.href;
+    const title = link.title ? escape(link.title) : null;
+    const text = match[1].replace(/\\([\[\]])/g, '$1');
+    if (match[0].charAt(0) !== '!') {
+        lexer.state.inLink = true;
+        const token = {
+            type: 'link',
+            raw,
+            href,
+            title,
+            text,
+            tokens: lexer.inlineTokens(text),
+        };
+        lexer.state.inLink = false;
+        return token;
+    }
+    return {
+        type: 'image',
+        raw,
+        href,
+        title,
+        text: escape(text),
+    };
+}
+
+function adjustCodeIndentation(raw, text) {
+    const indentMatch = raw.match(/^(\s+)(?:```)/);
+    if (indentMatch === null) return text;
+
+    const indent = indentMatch[1];
+    return text
+        .split('\n')
+        .map(line => {
+            const lineIndentMatch = line.match(/^\s+/);
+            if (lineIndentMatch === null) return line;
+
+            const [lineIndent] = lineIndentMatch;
+            return lineIndent.length >= indent.length ? line.slice(indent.length) : line;
+        })
+        .join('\n');
+}
+
+class Tokenizer {
+    options;
+    rules;
+    lexer;
+
+    constructor(options) {
+        this.options = options || exports.defaultOptions;
+    }
+
+    space(src) {
+        const match = this.rules.block.newline.exec(src);
+        return match && match[0].length > 0 ? { type: 'space', raw: match[0] } : null;
+    }
+
+    code(src) {
+        const match = this.rules.block.code.exec(src);
+        if (match) {
+            const text = match[0].replace(/^(?: {1,4}| {0,3}\t)/gm, '');
+            return {
+                type: 'code',
+                raw: match[0],
+                codeBlockStyle: 'indented',
+                text: !this.options.pedantic ? trimSuffix(text, '\n') : text,
+            };
+        }
+        return null;
+    }
+
+    fences(src) {
+        const match = this.rules.block.fences.exec(src);
+        if (match) {
+            const raw = match[0];
+            const text = adjustCodeIndentation(raw, match[3] || '');
+            return {
+                type: 'code',
+                raw,
+                lang: match[2] ? match[2].trim().replace(this.rules.inline.anyPunctuation, '$1') : match[2],
+                text,
+            };
+        }
+        return null;
+    }
+
+    heading(src) {
+        const match = this.rules.block.heading.exec(src);
+        if (match) {
+            let text = match[2].trim();
+            if (/#$/.test(text)) {
+                const trimmed = trimSuffix(text, '#');
+                if (this.options.pedantic) {
+                    text = trimmed.trim();
+                } else if (!trimmed || / $/.test(trimmed)) {
+                    text = trimmed.trim();
+                }
+            }
+            return {
+                type: 'heading',
+                raw: match[0],
+                depth: match[1].length,
+                text,
+                tokens: this.lexer.inline(text),
+            };
+        }
+        return null;
+    }
+
+    hr(src) {
+        const match = this.rules.block.hr.exec(src);
+        return match ? { type: 'hr', raw: trimSuffix(match[0], '\n') } : null;
+    }
+
+    blockquote(src) {
+        const pattern = this.rules.block.blockquote.exec(src);
+        if (!pattern) return null;
+
+        let lines = trimSuffix(pattern[0], '\n').split('\n');
+        let raw = '';
+        let text = '';
+        const tokens = [];
+        while (lines.length > 0) {
+            let continueBlockquote = false;
+            const currentLines = [];
+            let i;
+            for (i = 0; i < lines.length; i++) {
+                if (/^ {0,3}>/.test(lines[i])) {
+                    currentLines.push(lines[i]);
+                    continueBlockquote = true;
+                } else if (!continueBlockquote) {
+                    currentLines.push(lines[i]);
+                } else {
+                    break;
+                }
+            }
+            lines = lines.slice(i);
+            const currentRaw = currentLines.join('\n');
+            const currentText = currentRaw.replace(/\n {0,3}((?:=+|-+) *)(?=\n|$)/g, '\n    $1').replace(/^ {0,3}>[ \t]?/gm, '');
+            raw = raw ? `${raw}\n${currentRaw}` : currentRaw;
+            text = text ? `${text}\n${currentText}` : currentText;
+
+            const topState = this.lexer.state.top;
+            this.lexer.state.top = true;
+            this.lexer.blockTokens(currentText, tokens, true);
+            this.lexer.state.top = topState;
+            if (lines.length === 0) break;
+
+            const lastToken = tokens[tokens.length - 1];
+            if (lastToken?.type === 'code') break;
+
+            if (lastToken?.type === 'blockquote') {
+                const oldToken = lastToken;
+                const newText = `${oldToken.raw}\n${lines.join('\n')}`;
+                const newToken = this.blockquote(newText);
+                tokens[tokens.length - 1] = newToken;
+                raw = raw.substring(0, raw.length - oldToken.raw.length) + newToken.raw;
+                text = text.substring(0, text.length - oldToken.text.length) + newToken.text;
+                break;
+            }
+
+            if (lastToken?.type === 'list') {
+                const oldToken = lastToken;
+                const newText = `${oldToken.raw}\n${lines.join('\n')}`;
+                const newToken = this.list(newText);
+                tokens[tokens.length - 1] = newToken;
+                raw = raw.substring(0, raw.length - lastToken.raw.length) + newToken.raw;
+                text = text.substring(0, text.length - oldToken.raw.length) + newToken.raw;
+                lines = newText.substring(tokens[tokens.length - 1].raw.length).split('\n');
+                continue;
+            }
+        }
+        return { type: 'blockquote', raw, tokens, text };
+    }
+
+    list(src) {
+        let pattern = this.rules.block.list.exec(src);
+
+        if (!pattern) return null;
+
+        let bullet = pattern[1].trim();
+        const isOrdered = bullet.length > 1;
+        const list = {
+            type: 'list',
+            raw: '',
+            ordered: isOrdered,
+            start: isOrdered ? +bullet.slice(0, -1) : '',
+            loose: false,
+            items: [],
+        };
+
+        bullet = isOrdered ? `\\d{1,9}\\${bullet.slice(-1)}` : `\\${bullet}`;
+        if (this.options.pedantic) {
+            bullet = isOrdered ? bullet : '[*+-]';
+        }
+
+        const itemRegex = new RegExp(`^( {0,3}${bullet})((?:[\t ][^\\n]*)?(?:\\n|$))`);
+        let endsWithBlankLine = false;
+        while (src) {
+            let endEarly = false;
+            let raw = '';
+            let itemContents = '';
+            if (!(pattern = itemRegex.exec(src))) {
+                break;
+            }
+            if (this.rules.block.hr.test(src)) {
+                break;
+            }
+            raw = pattern[0];
+            src = src.substring(raw.length);
+            let line = pattern[2].split('\n', 1)[0].replace(/^\t+/, (t) => ' '.repeat(3 * t.length));
+            let nextLine = src.split('\n', 1)[0];
+            let blankLine = !line.trim();
+            let indent = 0;
+
+            if (this.options.pedantic) {
+                indent = 2;
+                itemContents = line.trimStart();
+            } else if (blankLine) {
+                indent = pattern[1].length + 1;
+            } else {
+                indent = pattern[2].search(/[^ ]/);
+                indent = indent > 4 ? 1 : indent;
+                itemContents = line.slice(indent);
+                indent += pattern[1].length;
+            }
+
+            if (blankLine && /^[ \t]*$/.test(nextLine)) {
+                raw += nextLine + '\n';
+                src = src.substring(nextLine.length + 1);
+                endEarly = true;
+            }
+
+            if (!endEarly) {
+                const nextBulletRegex = new RegExp(`^ {0,${Math.min(3, indent - 1)}}(?:[*+-]|\\d{1,9}[.)])((?:[ \t][^\\n]*)?(?:\\n|$))`);
+                const hrRegex = new RegExp(`^ {0,${Math.min(3, indent - 1)}}((?:- *){3,}|(?:_ *){3,}|(?:\\* *){3,})(?:\\n+|$)`);
+                const fencesBeginRegex = new RegExp(`^ {0,${Math.min(3, indent - 1)}}(?:\`\`\`|~~~)`);
+                const headingBeginRegex = new RegExp(`^ {0,${Math.min(3, indent - 1)}}#`);
+                const htmlBeginRegex = new RegExp(`^ {0,${Math.min(3, indent - 1)}}<[a-z].*>`, 'i');
+                while (src) {
+                    const rawLine = src.split('\n', 1)[0];
+                    let nextLineWithoutTabs;
+                    nextLine = rawLine;
+
+                    if (this.options.pedantic) {
+                        nextLine = nextLine.replace(/^ {1,4}(?=( {4})*[^ ])/g, '  ');
+                        nextLineWithoutTabs = nextLine;
+                    } else {
+                        nextLineWithoutTabs = nextLine.replace(/\t/g, '    ');
+                    }
+
+                    if (fencesBeginRegex.test(nextLine)) {
+                        break;
+                    }
+
+                    if (headingBeginRegex.test(nextLine)) {
+                        break;
+                    }
+
+                    if (htmlBeginRegex.test(nextLine)) {
+                        break;
+                    }
+
+                    if (nextBulletRegex.test(nextLine)) {
+                        break;
+                    }
+
+                    if (hrRegex.test(nextLine)) {
+                        break;
+                    }
+
+                    if (nextLineWithoutTabs.search(/[^ ]/) >= indent || !nextLine.trim()) {
+                        itemContents += '\n' + nextLineWithoutTabs.slice(indent);
+                    } else {
+                        if (blankLine) {
+                            break;
+                        }
+                        if (line.replace(/\t/g, '    ').search(/[^ ]/) >= 4) {
+                            break;
+                        }
+                        if (fencesBeginRegex.test(line)) {
+                            break;
+                        }
+                        if (headingBeginRegex.test(line)) {
+                            break;
+                        }
+                        if (hrRegex.test(line)) {
+                            break;
+                        }
+                        itemContents += '\n' + nextLine;
+                    }
+                    if (!blankLine && !nextLine.trim()) {
+                        blankLine = true;
+                    }
+                    raw += rawLine + '\n';
+                    src = src.substring(rawLine.length + 1);
+                    line = nextLineWithoutTabs.slice(indent);
+                }
+            }
+            if (!list.loose) {
+                if (endsWithBlankLine) {
+                    list.loose = true;
+                } else if (/\n[ \t]*\n[ \t]*$/.test(raw)) {
+                    endsWithBlankLine = true;
+                }
+            }
+
+            let isTask = null;
+            let isChecked;
+
+            if (this.options.gfm) {
+                isTask = /^\[[ xX]\] /.exec(itemContents);
+                if (isTask) {
+                    isChecked = isTask[0] !== '[ ] ';
+                    itemContents = itemContents.replace(/^\[[ xX]\] +/, '');
+                }
+            }
+            list.items.push({
+                type: 'list_item',
+                raw,
+                task: !!isTask,
+                checked: isChecked,
+                loose: false,
+                text: itemContents,
+                tokens: [],
+            });
+            list.raw += raw;
+        }
+
+        list.items[list.items.length - 1].raw = list.items[list.items.length - 1].raw.trimEnd();
+        list.items[list.items.length - 1].text = list.items[list.items.length - 1].text.trimEnd();
+        list.raw = list.raw.trimEnd();
+
+        for (let i = 0; i < list.items.length; i++) {
+            this.lexer.state.top = false;
+            list.items[i].tokens = this.lexer.blockTokens(list.items[i].text, []);
+            if (!list.loose) {
+                const spacers = list.items[i].tokens.filter(token => token.type === 'space');
+                const hasMultipleLineBreaks = spacers.some(token => /\n.*\n/.test(token.raw));
+                list.loose = hasMultipleLineBreaks;
+            }
+        }
+
+        if (list.loose) {
+            for (let i = 0; i < list.items.length; i++) {
+                list.items[i].loose = true;
+            }
+        }
+        return list;
+    }
+
+    html(src) {
+        const match = this.rules.block.html.exec(src);
+        if (match) {
+            return {
+                type: 'html',
+                block: true,
+                raw: match[0],
+                pre: match[1] === 'pre' || match[1] === 'script' || match[1] === 'style',
+                text: match[0],
+            };
+        }
+        return null;
+    }
+
+    def(src) {
+        const match = this.rules.block.def.exec(src);
+        if (match) {
+            const tag = match[1].toLowerCase().replace(/\s+/g, ' ');
+            const href = match[2] ? match[2]
+                .replace(/^<(.*)>$/, '$1').replace(this.rules.inline.anyPunctuation, '$1') : '';
+            const title = match[3] ? match[3].substring(1, match[3].length - 1).replace(this.rules.inline.anyPunctuation, '$1') : match[3];
+            return { type: 'def', tag, raw: match[0], href, title };
+        }
+        return null;
+    }
+
+    table(src) {
+        const match = this.rules.block.table.exec(src);
+
+        if (!match || !/[:|]/.test(match[2])) return null;
+
+        const headers = splitTableCells(match[1]);
+        const aligns = match[2].replace(/^\||\| *$/g, '').split('|');
+        const rows = match[3] && match[3].trim() ? match[3].replace(/\n[ \t]*$/, '').split('\n') : [];
+        const table = { type: 'table', raw: match[0], header: [], align: [], rows: [] };
+
+        if (headers.length !== aligns.length) return null;
+
+        aligns.forEach((align, index) => {
+            if (/^ *-+: *$/.test(align)) {
+                table.align.push('right');
+            } else if (/^ *:-+: *$/.test(align)) {
+                table.align.push('center');
+            } else if (/^ *:-+ *$/.test(align)) {
+                table.align.push('left');
+            } else {
+                table.align.push(null);
+            }
+        });
+
+        headers.forEach((header, index) => {
+            table.header.push({
+                text: header,
+                tokens: this.lexer.inline(header),
+                header: true,
+                align: table.align[index],
+            });
+        });
+
+        rows.forEach(row => {
+            table.rows.push(splitTableCells(row, table.header.length).map((cell, i) => ({
+                text: cell,
+                tokens: this.lexer.inline(cell),
+                header: false,
+                align: table.align[i],
+            })));
+        });
+
+        return table;
+    }
+
+    lheading(src) {
+        const match = this.rules.block.lheading.exec(src);
+        if (match) {
+            return {
+                type: 'heading',
+                raw: match[0],
+                depth: match[2].charAt(0) === '=' ? 1 : 2,
+                text: match[1],
+                tokens: this.lexer.inline(match[1]),
+            };
+        }
+        return null;
+    }
+
+    paragraph(src) {
+        const match = this.rules.block.paragraph.exec(src);
+        if (match) {
+            const text = match[1].charAt(match[1].length - 1) === '\n' ? match[1].slice(0, -1) : match[1];
+            return { type: 'paragraph', raw: match[0], text, tokens: this.lexer.inline(text) };
+        }
+        return null;
+    }
+
+    text(src) {
+        const match = this.rules.block.text.exec(src);
+        if (match) {
+            return { type: 'text', raw: match[0], text: match[0], tokens: this.lexer.inline(match[0]) };
+        }
+        return null;
+    }
+
+    escape(src) {
+        const match = this.rules.inline.escape.exec(src);
+        if (match) {
+            return { type: 'escape', raw: match[0], text: escape(match[1]) };
+        }
+        return null;
+    }
+
+    tag(src) {
+        const match = this.rules.inline.tag.exec(src);
+        if (match) {
+            if (!this.lexer.state.inLink && /^<a /i.test(match[0])) {
+                this.lexer.state.inLink = true;
+            } else if (this.lexer.state.inLink && /^<\/a>/i.test(match[0])) {
+                this.lexer.state.inLink = false;
+            }
+            if (!this.lexer.state.inRawBlock && /^<(pre|code|kbd|script)(\s|>)/i.test(match[0])) {
+                this.lexer.state.inRawBlock = true;
+            } else if (this.lexer.state.inRawBlock && /^<\/(pre|code|kbd|script)(\s|>)/i.test(match[0])) {
+                this.lexer.state.inRawBlock = false;
+            }
+            return { type: 'html', raw: match[0], inLink: this.lexer.state.inLink, inRawBlock: this.lexer.state.inRawBlock, block: false, text: match[0] };
+        }
+        return null;
+    }
+
+    link(src) {
+        const match = this.rules.inline.link.exec(src);
+        if (match) {
+            const parsedUrl = match[2].trim();
+            if (!this.options.pedantic && /^</.test(parsedUrl)) {
+                if (!(/>$/.test(parsedUrl))) return null;
+
+                const sanitizedUrl = trimSuffix(parsedUrl.slice(0, -1), '\\');
+                if ((parsedUrl.length - sanitizedUrl.length) % 2 === 0) return null;
+            } else {
+                const closingParenIndex = findClosingBracketIndex(match[2], '()');
+                if (closingParenIndex > -1) {
+                    const start = match[0].startsWith('!') ? 5 : 4;
+                    const linkLen = start + match[1].length + closingParenIndex;
+                    match[2] = match[2].substring(0, closingParenIndex);
+                    match[0] = match[0].substring(0, linkLen).trim();
+                    match[3] = '';
+                }
+            }
+
+            let href = match[2];
+            let title = '';
+            if (this.options.pedantic) {
+                const link = /^([^'"]*[^\s])\s+(['"])(.*)\2/.exec(href);
+                if (link) {
+                    href = link[1];
+                    title = link[3];
+                }
+            } else {
+                title = match[3] ? match[3].slice(1, -1) : '';
+            }
+            href = href.trim();
+            if (/^</.test(href)) {
+                if (this.options.pedantic && !(/>$/.test(parsedUrl))) {
+                    href = href.slice(1);
+                } else {
+                    href = href.slice(1, -1);
+                }
+            }
+            return createLinkOutput(match, { href: href.replace(this.rules.inline.anyPunctuation, '$1'), title: title.replace(this.rules.inline.anyPunctuation, '$1') }, match[0], this.lexer);
+        }
+        return null;
+    }
+
+    reflink(src, links) {
+        let match;
+        if ((match = this.rules.inline.reflink.exec(src)) || (match = this.rules.inline.nolink.exec(src))) {
+            const linkText = (match[2] || match[1]).replace(/\s+/g, ' ');
+            const link = links[linkText.toLowerCase()];
+            if (!link) {
+                const text = match[0].charAt(0);
+                return { type: 'text', raw: text, text };
+            }
+            return createLinkOutput(match, link, match[0], this.lexer);
+        }
+        return null;
+    }
+
+    emStrong(src, maskedSrc, prevChar = '') {
+        let match = this.rules.inline.emStrongLDelim.exec(src);
+        if (!match) return null;
+
+        if (match[3] && prevChar.match(/[\p{L}\p{N}]/u)) return null;
+
+        const nextChar = match[1] || match[2] || '';
+        if (!nextChar || !prevChar || this.rules.inline.punctuation.exec(prevChar)) {
+            const lengthL = [...match[0]].length - 1;
+            let rightDelim, rightLength, totalLength = lengthL, middleLength = 0;
+            const endReg = match[0][0] === '*' ? this.rules.inline.emStrongRDelimAst : this.rules.inline.emStrongRDelimUnd;
+            endReg.lastIndex = 0;
+            maskedSrc = maskedSrc.slice(-1 * src.length + lengthL);
+            while ((match = endReg.exec(maskedSrc)) != null) {
+                rightDelim = match[1] || match[2] || match[3] || match[4] || match[5] || match[6];
+                if (!rightDelim) continue;
+
+                rightLength = [...rightDelim].length;
+                if (match[3] || match[4]) {
+                    totalLength += rightLength;
+                    continue;
+                } else if (match[5] || match[6]) {
+                    if (lengthL % 3 && !((lengthL + rightLength) % 3)) {
+                        middleLength += rightLength;
+                        continue;
+                    }
+                }
+                totalLength -= rightLength;
+                if (totalLength > 0) continue;
+
+                rightLength = Math.min(rightLength, rightLength + totalLength + middleLength);
+                const raw = src.slice(0, lengthL + match.index + rightLength + [...match[0]][0].length);
+                if (Math.min(lengthL, rightLength) % 2) {
+                    const text = raw.slice(1, -1);
+                    return { type: 'em', raw, text, tokens: this.lexer.inlineTokens(text) };
+                }
+
+                const text = raw.slice(2, -2);
+                return { type: 'strong', raw, text, tokens: this.lexer.inlineTokens(text) };
+            }
+        }
+        return null;
+    }
+
+    codespan(src) {
+        const match = this.rules.inline.code.exec(src);
+        if (match) {
+            let text = match[2].replace(/\n/g, ' ');
+            const hasNonSpaceChars = /[^ ]/.test(text);
+            const hasSpaceCharsOnBothEnds = /^ /.test(text) && / $/.test(text);
+
+            if (hasNonSpaceChars && hasSpaceCharsOnBothEnds) {
+                text = text.substring(1, text.length - 1);
+            }
+            text = escape(text, true);
+            return { type: 'codespan', raw: match[0], text };
+        }
+        return null;
+    }
+
+    br(src) {
+        const match = this.rules.inline.br.exec(src);
+        return match ? { type: 'br', raw: match[0] } : null;
+    }
+
+    del(src) {
+        const match = this.rules.inline.del.exec(src);
+        if (match) {
+            return { type: 'del', raw: match[0], text: match[2], tokens: this.lexer.inlineTokens(match[2]) };
+        }
+        return null;
+    }
+
+    autolink(src) {
+        const match = this.rules.inline.autolink.exec(src);
+        if (match) {
+            let text, href;
+            if (match[2] === '@') {
+                text = escape(match[1]);
+                href = `mailto:${text}`;
+            } else {
+                text = escape(match[1]);
+                href = text;
+            }
+            return { type: 'link', raw: match[0], text, href, tokens: [{ type: 'text', raw: text, text }] };
+        }
+        return null;
+    }
+
+    url(src) {
+        let match;
+        if (match = this.rules.inline.url.exec(src)) {
+            let text, href;
+            if (match[2] === '@') {
+                text = escape(match[0]);
+                href = `mailto:${text}`;
+            } else {
+                let previousMatch = '';
+                do {
+                    previousMatch = match[0];
+                    match[0] = this.rules.inline._backpedal.exec(match[0])?.[0] ?? '';
+                } while (previousMatch !== match[0]);
+
+                text = escape(match[0]);
+                href = match[1] === 'www.' ? `http://${match[0]}` : match[0];
+            }
+            return { type: 'link', raw: match[0], text, href, tokens: [{ type: 'text', raw: text, text }] };
+        }
+        return null;
+    }
+
+    inlineText(src) {
+        const match = this.rules.inline.text.exec(src);
+        if (match) {
+            let text;
+            if (this.lexer.state.inRawBlock) {
+                text = match[0];
+            } else {
+                text = escape(match[0]);
+            }
+            return { type: 'text', raw: match[0], text };
+        }
+        return null;
+    }
+}
+
+/**
+ * Block-Level Grammar
+ */
+const newline = /^(?:[ \t]*(?:\n|$))+/;
+const blockCode = /^((?: {4}| {0,3}\t)[^\n]+(?:\n(?:[ \t]*(?:\n|$))*)?)+/;
+const fences = /^ {0,3}(`{3,}(?=[^`\n]*(?:\n|$))|~{3,})([^\n]*)(?:\n|$)(?:|([\s\S]*?)(?:\n|$))(?: {0,3}\1[~`]* *(?=\n|$)|$)/;
+const hr = /^ {0,3}((?:-[\t ]*){3,}|(?:_[ \t]*){3,}|(?:\*[ \t]*){3,})(?:\n+|$)/;
+const heading = /^ {0,3}(#{1,6})(?=\s|$)(.*)(?:\n+|$)/;
+const bullet = /(?:[*+-]|\d{1,9}[.)])/;
+const lheading = modifyRegex(/^(?!bull |blockCode|fences|blockquote|heading|html)((?:.|\n(?!\s*?\n|bull |blockCode|fences|blockquote|heading|html))+?)\n {0,3}(=+|-+) *(?:\n+|$)/)
+    .replace(/bull/g, bullet)
+    .replace(/blockCode/g, /(?: {4}| {0,3}\t)/)
+    .replace(/fences/g, / {0,3}(?:`{3,}|~{3,})/)
+    .replace(/blockquote/g, / {0,3}>/)
+    .replace(/heading/g, / {0,3}#{1,6}/)
+    .replace(/html/g, / {0,3}<[^\n>]+>\n/)
+    .getRegex();
+const paragraph = /^([^\n]+(?:\n(?!hr|heading|lheading|blockquote|fences|list|html|table| +\n)[^\n]+)*)/;
+const blockText = /^[^\n]+/;
+const blockLabel = /(?!\s*\])(?:\\.|[^\[\]\\])+/;
+const def = modifyRegex(/^ {0,3}\[(label)\]: *(?:\n[ \t]*)?([^<\s][^\s]*|<.*?>)(?:(?: +(?:\n[ \t]*)?| *\n[ \t]*)(title))? *(?:\n+|$)/)
+    .replace('label', blockLabel)
+    .replace('title', /(?:"(?:\\"?|[^"\\])*"|'[^'\n]*(?:\n[^'\n]+)*\n?'|\([^()]*\))/)
+    .getRegex();
+const list = modifyRegex(/^( {0,3}bull)([ \t][^\n]+?)?(?:\n|$)/)
+    .replace(/bull/g, bullet)
+    .getRegex();
+const tag = 'address|article|aside|base|basefont|blockquote|body|caption|center|col|colgroup|dd|details|dialog|dir|div|dl|dt|fieldset|figcaption|figure|footer|form|frame|frameset|h[1-6]|head|header|hr|html|iframe|legend|li|link|main|menu|menuitem|meta|nav|noframes|ol|optgroup|option|p|param|search|section|summary|table|tbody|td|tfoot|th|thead|title|tr|track|ul';
+const comment = /<!--(?:-?>|[\s\S]*?(?:-->|$))/;
+const html = modifyRegex('^ {0,3}(?:' 
+    + '<(script|pre|style|textarea)[\\s>][\\s\\S]*?(?:</\\1>(?:[\\s>]*\\n+|$)|$)' 
+    + '|comment(?:-?)(?:\\n+|$)' 
+    + '|<\\?[\\s\\S]*?(?:\\?>\\n*|$)' 
+    + '|<![A-Z][\\s\\S]*?(?:>\\n*|$)' 
+    + '|<!\\[CDATA\\[[\\s\\S]*?(?:\\]\\]>\\n*|$)' 
+    + '|</?(tag)(?: +|\\n|/?>)[\\s\\S]*?(?:(?:\\n[ \t]*)+\\n|$)' 
+    + '|<(?!script|pre|style|textarea)([a-z][\\w-]*)(?:attribute)*?\\s*/?>(?=[ \\t]*(?:\\n|$))[\\s\\S]*?(?:(?:\\n[ \t]*)+\\n|$)' 
+    + '|</(?!script|pre|style|textarea)[a-z][\\w-]*>(?=[ \\t]*(?:\\n|$))[\\s\\S]*?(?:(?:\\n[ \t]*)+\\n|$)'
+    + ')', 'i')
+    .replace('comment', comment)
+    .replace('tag', tag)
+    .replace('attribute', / +[a-zA-Z:_][\w.:-]*(?: *= *"[^"\n]*"| *= *'[^'\n]*'| *= *[^\s"'=<>`]+)?/)
+    .getRegex();
+
+/**
+ * Grammars for different modes of markdown processing.
+ */
+const blockNormal = {
+    blockquote,
+    code: blockCode,
+    def,
+    fences,
+    heading,
+    hr,
+    html,
+    lheading,
+    list,
+    newline,
+    paragraph,
+    table: noopTestObject,
+    text: blockText,
+};
+
+const gfmTable = modifyRegex('^ *([^\\n ].*)\\n' 
+    + ' {0,3}((?:\\| *)?:?-+:? *(?:\\| *:?-+:? *)*(?:\\| *)?)' 
+    + '(?:\\n((?:(?! *\\n|hr|heading|blockquote|code|fences|list|html).*(?:\\n|$))*)\\n*|$)')
+    .replace('hr', hr)
+    .replace('heading', ' {0,3}#{1,6}(?:\\s|$)')
+    .replace('blockquote', ' {0,3}>')
+    .replace('code', '(?: {4}| {0,3}\t)[^\\n]')
+    .replace('fences', ' {0,3}(?:`{3,}(?=[^`\\n]*\\n)|~{3,})[^\\n]*\\n')
+    .replace('list', ' {0,3}(?:[*+-]|1[.)]) ')
+    .replace('html', '</?(?:tag)(?: +|\\n|/?>)|<(?:script|pre|style|textarea|!--)')
+    .replace('tag', tag)
+    .getRegex();
+
+const blockGfm = {
+    ...blockNormal,
+    table: gfmTable,
+    paragraph: modifyRegex(paragraph)
+        .replace('hr', hr)
+        .replace('heading', ' {0,3}#{1,6}(?:\\s|$)')
+        .replace('|lheading', '')
+        .replace('table', gfmTable)
+        .replace('blockquote', ' {0,3}>')
+        .replace('fences', ' {0,3}(?:`{3,}(?=[^`\\n]*\\n)|~{3,})[^\\n]*\\n')
+        .replace('list', ' {0,3}(?:[*+-]|1[.)]) ')
+        .replace('html', '</?(?:tag)(?: +|\\n|/?>)|<(?:script|pre|style|textarea|!--)')
+        .replace('tag', tag)
+        .getRegex(),
+};
+
+const blockPedantic = {
+    ...blockNormal,
+    html: modifyRegex('^ *(?:comment *(?:\\n|\\s*$)'
+        + '|<(tag)[\\s\\S]+?</\\1> *(?:\\n{2,}|\\s*$)'
+        + '|<tag(?:"[^"]*"|\'[^\']*\'|\\s[^\'"/>\\s]*)*?/?> *(?:\\n{2,}|\\s*$))')
+        .replace('comment', comment)
+        .replace(/tag/g, '(?!(?:'
+        + 'a|em|strong|small|s|cite|q|dfn|abbr|data|time|code|var|samp|kbd|sub'
+        + '|sup|i|b|u|mark|ruby|rt|rp|bdi|bdo|span|br|wbr|ins|del|img)'
+        + '\\b)\\w+(?!:|[^\\w\\s@]*@)\\b')
+        .getRegex(),
+    def: /^ *\[([^\]]+)\]: *<?([^\s>]+)>?(?: +(["(][^\n]+[")]))? *(?:\n+|$)/,
+    heading: /^(#{1,6})(.*)(?:\n+|$)/,
+    fences: noopTestObject,
+    lheading: /^(.+?)\n {0,3}(=+|-+) *(?:\n+|$)/,
+    paragraph: modifyRegex(paragraph)
+        .replace('hr', hr)
+        .replace('heading', ' *#{1,6} *[^\n]')
+        .replace('lheading', lheading)
+        .replace('|table', '')
+        .replace('blockquote', ' {0,3}>')
+        .replace('|fences', '')
+        .replace('|list', '')
+        .replace('|html', '')
+        .replace('|tag', '')
+        .getRegex(),
+};
+
+/**
+ * Inline-Level Grammar
+ */
+const escapePattern = /^\\([!"#$%&'()*+,\-./:;<=>?@\[\]\\^_`{|}~])/;
+const codePattern = /^(`+)([^`]|[^`][\s\S]*?[^`])\1(?!`)/;
+const brPattern = /^( {2,}|\\)\n(?!\s*$)/;
+const inlineTextPattern = /^(`+|[^`])(?:(?= {2,}\n)|[\s\S]*?(?:(?=[\\<!\[`*_]|\b_|$)|[^ ](?= {2,}\n)))/;
+
+const punctuation = '\\p{P}\\p{S}';
+const inlineBlockSkip = /\[[^[\]]*?\]\([^\(\)]*?\)|`[^`]*?`|<[^<>]*?>/g;
+const emStrongLDelim = modifyRegex(/^(?:\*+(?:((?!\*)[\p{P}\p{S}])|[^\s*]))|^_+(?:((?!_)[\p{P}\p{S}])|([^\s_]))/, 'u').getRegex();
+const emStrongRDelimAst = modifyRegex(/^[^_*]*?__[^_*]*?\*[^_*]*?(?=__)|[^*]+(?=[^*])|\(?!\*\)[\p{P}\p{S}](\*+)(?=[\s]|$)|[^punct\s](\*+)(?!\*)(?=[punct\s]|$)|\(?!\*\)[punct\s](\*+)(?=[^punct\s])|[\s](\*+)(?!\*)(?=[punct])|\(?!\*\)[punct]__(\*+)(?!\*)(?=[punct])|[^punct\s]__(\*+)(?=[^punct\s])/, 'gu')
+    .replace(/punct/g, punctuation)
+    .getRegex();
+const anyPunctuation = modifyRegex(/\\([\p{P}\p{S}])/gu).getRegex();
+const autolinkPattern = modifyRegex(/^<(scheme:[^\s\x00-\x1f<>]*|email)>/).getRegex();
+const inlineComment = modifyRegex(comment).replace('(?:-->|$)', '-->').getRegex();
+const tagPattern = modifyRegex('^comment|^</[a-zA-Z][\\w:-]*\\s*>|^<[a-zA-Z][\\w-]*(?:attribute)*?\\s*/?>|^<\\?[\\s\\S]*?\\?>|^<![a-zA-Z]+\\s[\\s\\S]*?>|<!\\[CDATA\\[[\\s\\S]*?\\]\\]>')
+    .replace('comment', inlineComment)
+    .replace('attribute', /\s+[a-zA-Z:_][\w.:-]*(?:\s*=\s*"[^"]*"|\s*=\s*'[^']*'|\s*=\s*[^"'=<>`]*)?/)
+    .getRegex();
+
+/**
+ * Inline Grammers for different styles.
+ */
+const inlineNormal = {
+    anyPunctuation,
+    autolink: autolinkPattern,
+    blockSkip: inlineBlockSkip,
+    br: brPattern,
+    code: codePattern,
+    del: noopTestObject,
+    emStrongLDelim,
+    emStrongRDelimAst,
+    emStrongRDelimUnd: emStrongRDelimAst,
+    escape: escapePattern,
+    link: /^\[label\]\(\s*(href)(?:\s+(title))?\s*\)/,
+    nolink: /^!\[(ref)\](?:\[\])?/,
+    punctuation: /^((?![*_])[\spunctuation])/,
+    reflink: /^!\[(label)\]\[(ref)\]/,
+    reflinkSearch: 'reflink|nolink(?!\\()',
+    tag: tagPattern,
+    text: inlineTextPattern,
+    url: noopTestObject,
+};
+
+/**
+ * Export modules
+ */
+exports.Tokenizer = Tokenizer;
+exports.getDefaultOptions = getDefaultOptions;
+
+module.exports = {
+    Tokenizer,
+    getDefaultOptions,
+};
+```

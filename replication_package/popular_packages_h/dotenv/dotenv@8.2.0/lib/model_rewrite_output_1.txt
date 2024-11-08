@@ -1,0 +1,106 @@
+The provided Node.js code is a module that handles reading and parsing environment variables from a `.env` file. Here is the breakdown of its functionality:
+
+1. **Type Definitions**: The code uses Type Annotations (Flow syntax) to define types for options and outputs of `parse` and `config` functions.
+
+2. **Dependencies**: It requires `fs` for file system operations and `path` for handling file paths.
+
+3. **Utility Function**: 
+   - `log(message)`: Logs debug messages if debug mode is enabled.
+
+4. **Constants**:
+   - Regular expressions and newline character constants are defined to help in parsing the `.env` file.
+
+5. **parse Function**:
+   - Converts the input of `.env` content into key-value pairs.
+   - Handles possible quotes around values and expands newlines in double-quoted values.
+   - Returns an object representing the environment variables.
+
+6. **config Function**:
+   - Reads the `.env` file, parses it, and populates `process.env` with the parsed key-value pairs, ensuring not to overwrite existing environment variables unless specified.
+   - It returns a result object containing either the parsed object or an error if the operation fails.
+
+7. **Export**: The `config` and `parse` functions are exported as part of the module's public API.
+
+Here's a possible rewrite while retaining the functionality:
+
+```javascript
+const fs = require('fs');
+const path = require('path');
+
+function log(message) {
+  console.log(`[dotenv][DEBUG] ${message}`);
+}
+
+const NEWLINE = '\n';
+const RE_INI_KEY_VAL = /^\s*([\w.-]+)\s*=\s*(.*)?\s*$/;
+const RE_NEWLINES = /\\n/g;
+const NEWLINES_MATCH = /\n|\r|\r\n/;
+
+function parse(src, options) {
+  const debug = Boolean(options && options.debug);
+  const obj = {};
+
+  src.toString().split(NEWLINES_MATCH).forEach((line, idx) => {
+    const keyValueArr = line.match(RE_INI_KEY_VAL);
+    if (keyValueArr != null) {
+      const key = keyValueArr[1];
+      let val = (keyValueArr[2] || '');
+      const end = val.length - 1;
+      const isDoubleQuoted = val[0] === '"' && val[end] === '"';
+      const isSingleQuoted = val[0] === "'" && val[end] === "'";
+
+      if (isSingleQuoted || isDoubleQuoted) {
+        val = val.substring(1, end);
+        if (isDoubleQuoted) {
+          val = val.replace(RE_NEWLINES, NEWLINE);
+        }
+      } else {
+        val = val.trim();
+      }
+
+      obj[key] = val;
+    } else if (debug) {
+      log(`did not match key and value when parsing line ${idx + 1}: ${line}`);
+    }
+  });
+
+  return obj;
+}
+
+function config(options) {
+  let dotenvPath = path.resolve(process.cwd(), '.env');
+  let encoding = 'utf8';
+  let debug = false;
+
+  if (options) {
+    if (options.path != null) {
+      dotenvPath = options.path;
+    }
+    if (options.encoding != null) {
+      encoding = options.encoding;
+    }
+    if (options.debug != null) {
+      debug = true;
+    }
+  }
+
+  try {
+    const parsed = parse(fs.readFileSync(dotenvPath, { encoding }), { debug });
+
+    Object.keys(parsed).forEach((key) => {
+      if (!Object.prototype.hasOwnProperty.call(process.env, key)) {
+        process.env[key] = parsed[key];
+      } else if (debug) {
+        log(`"${key}" is already defined in \`process.env\` and will not be overwritten`);
+      }
+    });
+
+    return { parsed };
+  } catch (e) {
+    return { error: e };
+  }
+}
+
+module.exports.config = config;
+module.exports.parse = parse;
+```

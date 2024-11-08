@@ -1,0 +1,117 @@
+The given Node.js code is a module that provides a utility for adding ANSI color codes to text. This allows colored formatting in terminal output. Here's a breakdown of its functionality:
+
+1. **Environment Detection:**
+   - The code first checks the environment to determine if colors should be enabled. This is based on several environment variables (`FORCE_COLOR`, `NODE_DISABLE_COLORS`, `NO_COLOR`, `TERM`) and whether the standard output is a TTY (which typically indicates a terminal).
+   
+2. **Color and Modifier Definitions:**
+   - A set of functions (`init`) are defined that return styling functions for each color and text modification (like `bold`, `underline`, and various colors). These functions wrap text with the appropriate ANSI escape codes for the desired style.
+   
+3. **Function `init`:**
+   - This function takes a pair of ANSI codes (one to apply the style, one to reset it) and returns a new function that applies this style to given text.
+   
+4. **Text Styling:**
+   - The style application is managed via the `run` function, which ensures proper ordering and nesting of the applied styles, preventing conflicts.
+   
+5. **Chaining:**
+   - Styles can be chained together using the `chain` function. This allows multiple styles to be applied to the same string by chaining methods (e.g., `$.bold.underline.red('text')`).
+
+6. **Export:**
+   - All the style functions are organized under an object `$` and exported as a module for use in other JavaScript files.
+
+Here's a possible rewrite of the Node.js code based on this explanation:
+
+```javascript
+'use strict';
+
+// Check for environment variables related to color output
+let FORCE_COLOR, NODE_DISABLE_COLORS, NO_COLOR, TERM;
+let isTTY = true;
+
+if (typeof process !== 'undefined') {
+    ({ FORCE_COLOR, NODE_DISABLE_COLORS, NO_COLOR, TERM } = process.env);
+    isTTY = process.stdout && process.stdout.isTTY;
+}
+
+const $ = {
+    enabled: !NODE_DISABLE_COLORS && NO_COLOR == null && TERM !== 'dumb' && (
+        FORCE_COLOR != null && FORCE_COLOR !== '0' || isTTY
+    ),
+
+    // Text styles and colors
+    reset: init(0, 0),
+    bold: init(1, 22),
+    dim: init(2, 22),
+    italic: init(3, 23),
+    underline: init(4, 24),
+    inverse: init(7, 27),
+    hidden: init(8, 28),
+    strikethrough: init(9, 29),
+
+    // Foreground colors
+    black: init(30, 39),
+    red: init(31, 39),
+    green: init(32, 39),
+    yellow: init(33, 39),
+    blue: init(34, 39),
+    magenta: init(35, 39),
+    cyan: init(36, 39),
+    white: init(37, 39),
+    gray: init(90, 39),
+    grey: init(90, 39),
+
+    // Background colors
+    bgBlack: init(40, 49),
+    bgRed: init(41, 49),
+    bgGreen: init(42, 49),
+    bgYellow: init(43, 49),
+    bgBlue: init(44, 49),
+    bgMagenta: init(45, 49),
+    bgCyan: init(46, 49),
+    bgWhite: init(47, 49)
+};
+
+function run(styles, text) {
+    let start = '', end = '';
+    for (let style of styles) {
+        start += style.open;
+        end += style.close;
+        if (text.includes(style.close)) {
+            text = text.replace(style.rgx, style.close + style.open);
+        }
+    }
+    return start + text + end;
+}
+
+function chain(activeStyles, keys) {
+    const context = { activeStyles, keys };
+
+    Object.keys($).forEach(key => {
+        if (key !== 'enabled') {
+            context[key] = $.enabled ? $.key.bind(context) : (txt) => txt;
+        }
+    });
+
+    return context;
+}
+
+function init(open, close) {
+    const styleBlock = {
+        open: `\x1b[${open}m`,
+        close: `\x1b[${close}m`,
+        rgx: new RegExp(`\\x1b\\[${close}m`, 'g')
+    };
+
+    return function (text) {
+        if (this !== void 0 && this.activeStyles !== void 0) {
+            if (!this.activeStyles.includes(open)) {
+                this.activeStyles.push(open);
+                this.keys.push(styleBlock);
+            }
+            return text === void 0 ? this : $.enabled ? run(this.keys, String(text)) : String(text);
+        }
+        return text === void 0 ? chain([open], [styleBlock]) : $.enabled ? run([styleBlock], String(text)) : String(text);
+    };
+}
+
+module.exports = $;
+```

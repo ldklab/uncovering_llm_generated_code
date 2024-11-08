@@ -1,0 +1,89 @@
+The given Node.js code is a utility module designed to perform a deep recursive merge of multiple JavaScript objects. The core function, `deepExtend`, merges properties from one or more source objects into a target object. Here's a breakdown of its functionality:
+
+1. **Value Type Checking**: The utility differentiates between general objects, specific value types (such as Buffers, Dates, and RegExp), and arrays.
+
+2. **Deep Cloning Specific Values**: A function `cloneSpecificValue` is provided to handle cloning of specific objects like Buffer, Date, and RegExp.
+
+3. **Array Cloning**: The function `deepCloneArray` is responsible for creating deep copies of arrays, including nested arrays and objects within them.
+
+4. **Recursive Deep Extending**: The main function `deepExtend` merges properties from multiple source objects into a target object. It can handle deep merging of objects, cloning of arrays, and accommodates specific value types appropriately. The function ensures that prototypes (`__proto__`) are not tampered with and includes recursion protection to avoid infinite loops.
+
+5. **Error Handling**: The code includes some error handling for unexpected value types.
+
+The primary extensibility offered by this utility is to make deep copies or merged versions of JavaScript objects while properly handling various complex or specific data types without mutating the original sources.
+
+Here's a rewritten version of the code utilizing modern JavaScript syntax:
+
+```javascript
+'use strict';
+
+const isSpecificValue = (val) => {
+  return val instanceof Buffer || val instanceof Date || val instanceof RegExp;
+};
+
+const cloneSpecificValue = (val) => {
+  if (val instanceof Buffer) {
+    const x = Buffer.alloc ? Buffer.alloc(val.length) : new Buffer(val.length);
+    val.copy(x);
+    return x;
+  } else if (val instanceof Date) {
+    return new Date(val.getTime());
+  } else if (val instanceof RegExp) {
+    return new RegExp(val);
+  } else {
+    throw new Error('Unexpected situation');
+  }
+};
+
+const deepCloneArray = (arr) => {
+  return arr.map((item) => {
+    if (typeof item === 'object' && item !== null) {
+      if (Array.isArray(item)) {
+        return deepCloneArray(item);
+      } else if (isSpecificValue(item)) {
+        return cloneSpecificValue(item);
+      } else {
+        return deepExtend({}, item);
+      }
+    } else {
+      return item;
+    }
+  });
+};
+
+const safeGetProperty = (object, property) => {
+  return property === '__proto__' ? undefined : object[property];
+};
+
+const deepExtend = function (target, ...sources) {
+  if (!target || typeof target !== 'object') return false;
+  if (sources.length === 0) return target;
+
+  sources.forEach((obj) => {
+    if (typeof obj !== 'object' || obj === null || Array.isArray(obj)) return;
+
+    Object.keys(obj).forEach((key) => {
+      let src = safeGetProperty(target, key);
+      const val = safeGetProperty(obj, key);
+
+      if (val === target) return;
+
+      if (typeof val !== 'object' || val === null) {
+        target[key] = val;
+      } else if (Array.isArray(val)) {
+        target[key] = deepCloneArray(val);
+      } else if (isSpecificValue(val)) {
+        target[key] = cloneSpecificValue(val);
+      } else if (typeof src !== 'object' || src === null || Array.isArray(src)) {
+        target[key] = deepExtend({}, val);
+      } else {
+        target[key] = deepExtend(src, val);
+      }
+    });
+  });
+
+  return target;
+};
+
+module.exports = deepExtend;
+```

@@ -1,0 +1,110 @@
+The provided Node.js code is a portion of the DOMPurify library, a widely-used library for sanitizing HTML to prevent XSS attacks. Here's a breakdown of the main functions and features of this code:
+
+1. **Utility Functions**:
+   - `unapply` and `unconstruct`: These functions create wrappers for applying functions with a given context and constructing instances, ensuring that certain native JavaScript methods are invoked safely or simulated if unavailable.
+   - `addToSet`: Adds string elements to an object, converting them to lowercase where applicable, and ensures each element in a given array is unique within that set.
+   - `clone`: Shallow clones an object, effectively copying all own properties from one object to a new blank object with no prototype.
+   - `lookupGetter`: Retrieves getter functions, simulating object internals for environments that do not support native methods used for this purpose.
+
+2. **Sanitization Core**:
+   - `createDOMPurify`: The core function that initializes a DOMPurify instance. It establishes default settings, utilities, and sanitization logic.
+   - `DOMPurify.sanitize`: The main public method that performs HTML sanitization. It processes a string or DOM node against the configured settings to remove or mitigate potential XSS threats.
+   - `_sanitizeElements` and `_sanitizeAttributes`: These internal functions sanitize individual elements and attributes, respectively, applying rules defined in the configuration.
+
+3. **Configuration and Hooks**:
+   - `DOMPurify.setConfig` and `DOMPurify.clearConfig`: Methods to set or reset the configuration for sanitization, allowing customization of allowed tags/attributes/etc.
+   - `DOMPurify.addHook`, `DOMPurify.removeHook`, etc.: Manage hooks for extending or modifying DOMPurify's behavior at specified points in the sanitization process.
+
+4. **Trusted Types and Environment Compatibility**:
+   - `_createTrustedTypesPolicy`: Creates a Trusted Types policy if supported in the environment, aiming to prevent DOM-based XSS by ensuring type safety.
+   - Environment checks: The code checks for availability of native browser features (like DOMParser and Trusted Types) and adapts by providing fallbacks.
+
+5. **Constants and Defaults**:
+   - Definitions of allowed tags, attributes, and protocols ensure that only safe content is retained.
+   - Various regular expressions are used to detect unsafe content or patterns.
+
+This code represents a comprehensive XSS prevention toolkit for HTML content within browsers by safely parsing, examining, and reconstructing the content according to security rules. Here's a simplified Node.js reimplementation focusing on key features:
+
+```javascript
+'use strict';
+
+function createDOMPurify() {
+  let hooks = {};
+  
+  function addToSet(set, array) {
+    array.forEach(element => {
+      if (typeof element === 'string') {
+        set[element.toLowerCase()] = true;
+      }
+    });
+    return set;
+  }
+
+  function clone(object) {
+    const newObject = Object.create(null);
+    for (const property in object) {
+      if (Object.prototype.hasOwnProperty.call(object, property)) {
+        newObject[property] = object[property];
+      }
+    }
+    return newObject;
+  }
+
+  function isValidAttribute(tag, attr, value) {
+    const allowedAttrs = { /* Define allowed attributes here */ };
+    const safeUriPattern = /^(http|https|mailto|tel):/;
+    const lcAttr = attr.toLowerCase();
+    if (allowedAttrs[lcAttr]) {
+      return safeUriPattern.test(value) || ['id', 'class', 'name'].includes(lcAttr);
+    }
+    return false;
+  }
+
+  function sanitizeAttributes(node) {
+    const attributes = node.attributes;
+    [...attributes].forEach(attr => {
+      const { name, value } = attr;
+      if (!isValidAttribute(node.nodeName, name, value)) {
+        node.removeAttribute(name);
+      }
+    });
+  }
+
+  function sanitizeElements(node) {
+    const allowedTags = addToSet({}, ['div', 'span', 'a', 'p', 'b', 'i', 'u', 'strong']);
+    const tagName = node.nodeName.toLowerCase();
+    if (!allowedTags[tagName]) {
+      node.parentNode && node.parentNode.removeChild(node);
+    }
+  }
+
+  const DOMPurify = {
+    sanitize(dirty) {
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(dirty, 'text/html');
+      const body = doc.body;
+
+      const walk = document.createTreeWalker(body, NodeFilter.SHOW_ELEMENT, null, false);
+      while (walk.nextNode()) {
+        const currentNode = walk.currentNode;
+        sanitizeElements(currentNode);
+        sanitizeAttributes(currentNode);
+      }
+
+      return body.innerHTML;
+    },
+    addHook(entryPoint, hookFunction) {
+      if (!hooks[entryPoint]) hooks[entryPoint] = [];
+      hooks[entryPoint].push(hookFunction);
+    },
+    removeHooks(entryPoint) {
+      if (hooks[entryPoint]) hooks[entryPoint] = [];
+    }
+  };
+
+  return DOMPurify;
+}
+
+const purify = createDOMPurify();
+module.exports = purify;
+```

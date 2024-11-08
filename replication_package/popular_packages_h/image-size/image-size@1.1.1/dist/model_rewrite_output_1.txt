@@ -1,0 +1,107 @@
+The provided Node.js code is a module designed to determine the size of image files. It operates by first attempting to determine the image type using a `detector` function, then calculates the size based on predefined handlers for different image types. The core functionality is supported by asynchronous and synchronous file reading methods to accommodate varied inputs, such as Uint8Array data blocks or file paths. The module features global options that allow toggling of the file system and various image type handlers. Additionally, it manages file reading requests using a queue to avoid overloading the system with too many file descriptors.
+
+Here's a possible rewrite of the code:
+
+```javascript
+"use strict";
+const fs = require("fs");
+const path = require("path");
+const Queue = require("queue");
+const { typeHandlers } = require("./types/index");
+const { detector } = require("./detector");
+
+const MaxInputSize = 512 * 1024;
+const queue = new Queue({ concurrency: 100, autostart: true });
+const globalOptions = {
+    disabledFS: false,
+    disabledTypes: []
+};
+
+function lookup(input, filepath) {
+    const type = detector(input);
+    if (type !== undefined) {
+        if (globalOptions.disabledTypes.includes(type)) {
+            throw new TypeError(`disabled file type: ${type}`);
+        }
+        if (typeHandlers[type]) {
+            const size = typeHandlers[type].calculate(input, filepath);
+            if (size) {
+                size.type = size.type ?? type;
+                return size;
+            }
+        }
+    }
+    throw new TypeError(`unsupported file type: ${type} (file: ${filepath})`);
+}
+
+async function readFileAsync(filepath) {
+    const handle = await fs.promises.open(filepath, 'r');
+    try {
+        const { size } = await handle.stat();
+        if (size <= 0) {
+            throw new Error('Empty file');
+        }
+        const inputSize = Math.min(size, MaxInputSize);
+        const input = new Uint8Array(inputSize);
+        await handle.read(input, 0, inputSize, 0);
+        return input;
+    } finally {
+        await handle.close();
+    }
+}
+
+function readFileSync(filepath) {
+    const descriptor = fs.openSync(filepath, 'r');
+    try {
+        const { size } = fs.fstatSync(descriptor);
+        if (size <= 0) {
+            throw new Error('Empty file');
+        }
+        const inputSize = Math.min(size, MaxInputSize);
+        const input = new Uint8Array(inputSize);
+        fs.readSync(descriptor, input, 0, inputSize, 0);
+        return input;
+    } finally {
+        fs.closeSync(descriptor);
+    }
+}
+
+function imageSize(input, callback) {
+    if (input instanceof Uint8Array) {
+        return lookup(input);
+    }
+
+    if (typeof input !== 'string' || globalOptions.disabledFS) {
+        throw new TypeError('invalid invocation. input should be a Uint8Array');
+    }
+
+    const filepath = path.resolve(input);
+    if (typeof callback === 'function') {
+        queue.push(() => readFileAsync(filepath)
+            .then(input => process.nextTick(callback, null, lookup(input, filepath)))
+            .catch(callback));
+    } else {
+        const input = readFileSync(filepath);
+        return lookup(input, filepath);
+    }
+}
+
+function disableFS(value) {
+    globalOptions.disabledFS = value;
+}
+
+function disableTypes(types) {
+    globalOptions.disabledTypes = types;
+}
+
+function setConcurrency(concurrency) {
+    queue.concurrency = concurrency;
+}
+
+module.exports = imageSize;
+module.exports.disableFS = disableFS;
+module.exports.disableTypes = disableTypes;
+module.exports.setConcurrency = setConcurrency;
+module.exports.types = Object.keys(typeHandlers);
+module.exports.default = imageSize;
+```

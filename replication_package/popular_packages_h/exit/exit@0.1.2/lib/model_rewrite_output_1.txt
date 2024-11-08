@@ -1,0 +1,62 @@
+The Node.js code provided is a module that exports a function `exit`. This function is designed to terminate a Node.js process with a specified exit code after ensuring that all specified streams (typically `stdout` and `stderr`) are completely drained. The function works as follows:
+
+1. It takes two arguments: `exitCode` (the code with which to terminate the process) and an optional `streams` array (streams that need to be drained before exiting, defaulting to `process.stdout` and `process.stderr`).
+
+2. It defines a `drainCount` variable initialized to zero, which tracks how many streams have been fully drained.
+
+3. A helper function `tryToExit()` checks whether all streams are drained by comparing `drainCount` to the number of streams. If they are, it calls `process.exit(exitCode)` to terminate the process with the given exit code.
+
+4. The function iterates over each stream in the `streams` array. For each stream:
+   - If the stream's `bufferSize` is zero, it increments `drainCount`.
+   - If the stream still has data to flush (i.e., `bufferSize` is not zero), it writes an empty string and provides a callback that increments `drainCount` and invokes `tryToExit()`.
+   - It also modifies the stream’s `write` function to become a no-op to prevent any further writes.
+   
+5. It invokes `tryToExit()`, which will exit immediately if all streams were already drained.
+
+6. It sets up an `exit` event listener on the `process`, which ensures that the process exits with the intended `exitCode`. This is particularly useful for fixing a Node.js issue on Windows where the process may otherwise exit with a code of 0.
+
+Here is a possible rewrite of the code:
+
+```js
+/*
+ * exit
+ * https://github.com/cowboy/node-exit
+ *
+ * Copyright (c) 2013 "Cowboy" Ben Alman
+ * Licensed under the MIT license.
+ */
+
+'use strict';
+
+module.exports = function exit(exitCode, streams = [process.stdout, process.stderr]) {
+  let drainCount = 0;
+
+  function tryToExit() {
+    if (drainCount === streams.length) {
+      process.exit(exitCode);
+    }
+  }
+
+  streams.forEach((stream) => {
+    if (stream.write === writeNoOp) return;
+    if (stream.bufferSize === 0) {
+      drainCount++;
+    } else {
+      stream.write('', 'utf-8', () => {
+        drainCount++;
+        tryToExit();
+      });
+    }
+    
+    stream.write = writeNoOp;
+  });
+
+  tryToExit();
+
+  process.on('exit', () => {
+    process.exit(exitCode);
+  });
+};
+
+function writeNoOp() {}
+```

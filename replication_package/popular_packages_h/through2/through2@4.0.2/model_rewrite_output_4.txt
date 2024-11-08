@@ -1,0 +1,94 @@
+The provided Node.js code defines a utility to create custom transform streams using the `readable-stream` package. Here's a breakdown of its functionality:
+
+1. **Utility Functions:**
+   - **`inherits`**: A helper function to set up prototype inheritance between a custom constructor function and a superclass (here, the superclass is `Transform`).
+   - **`through2`**: A function that wraps the stream construction process. It handles the flexibility of argument types, allowing for various combinations of options, transform, and flush functions.
+
+2. **Exported Functions:**
+   - **`make`**: Uses `through2` to create and return a new transform stream configured with given options, a transform function, and an optional flush function.
+   - **`ctor`**: Returns a constructor function (`Through2`) that creates an instance of a transform stream. It uses the `inherits` function to ensure the stream prototype is set correctly.
+   - **`obj`**: Similar to `make`, but defaults to object mode with a predefined `highWaterMark` for handling larger chunks of data efficiently.
+
+The module exports these three functions to enable creating and using customizable transform streams with different configurations.
+
+Here is the original code rewritten with the explanation applied:
+
+```javascript
+const { Transform } = require('readable-stream');
+
+function inherits(fn, sup) {
+  fn.super_ = sup;
+  fn.prototype = Object.create(sup.prototype, {
+    constructor: { value: fn, enumerable: false, writable: true, configurable: true }
+  });
+}
+
+function through2(construct) {
+  return (options, transform, flush) => {
+    if (typeof options === 'function') {
+      flush = transform;
+      transform = options;
+      options = {};
+    }
+
+    if (typeof transform !== 'function') {
+      transform = (chunk, enc, cb) => cb(null, chunk);
+    }
+
+    if (typeof flush !== 'function') {
+      flush = null;
+    }
+
+    return construct(options, transform, flush);
+  };
+}
+
+const make = through2((options, transform, flush) => {
+  const t2 = new Transform(options);
+
+  t2._transform = transform;
+
+  if (flush) {
+    t2._flush = flush;
+  }
+
+  return t2;
+});
+
+const ctor = through2((options, transform, flush) => {
+  function Through2(override) {
+    if (!(this instanceof Through2)) {
+      return new Through2(override);
+    }
+
+    this.options = Object.assign({}, options, override);
+
+    Transform.call(this, this.options);
+
+    this._transform = transform;
+    if (flush) {
+      this._flush = flush;
+    }
+  }
+
+  inherits(Through2, Transform);
+
+  return Through2;
+});
+
+const obj = through2(function (options, transform, flush) {
+  const t2 = new Transform(Object.assign({ objectMode: true, highWaterMark: 16 }, options));
+
+  t2._transform = transform;
+
+  if (flush) {
+    t2._flush = flush;
+  }
+
+  return t2;
+});
+
+module.exports = make;
+module.exports.ctor = ctor;
+module.exports.obj = obj;
+```

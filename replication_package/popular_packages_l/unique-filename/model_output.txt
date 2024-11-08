@@ -1,0 +1,58 @@
+The `unique-filename` package is designed to generate unique filenames, which can be useful for creating temporary files in a directory, often within a system's temporary files directory or a cache. This is particularly useful in scenarios where multiple processes or instances might need to create temporary files without colliding names.
+
+### How the Package Works:
+
+- **Function Signature**: `uniqueFilename(dir, fileprefix, uniqstr) → String`
+
+- **Parameters**:
+  - `dir`: Specifies the directory path where the unique filename will be created. It is mandatory. Often, this is set to the system's temporary directory.
+  - `fileprefix`: An optional string that, if provided, will be prepended to the unique part of the filename, followed by a hyphen. If `uniqstr` is provided, `fileprefix` becomes required.
+  - `uniqstr`: This optional parameter allows generating a reproducible unique filename if provided. Otherwise, the uniqueness is based on randomness.
+
+- **Functionality**:
+  - The function returns a string representing the path to the generated unique filename.
+  - If `uniqstr` is not provided, the unique part of the filename is generated randomly.
+  - If `uniqstr` is provided, the unique part of the filename is derived in a reproducible way from this string, allowing for deterministic filename generation based on the same input string.
+
+### Node.js Code Implementation:
+
+Below is the implementation of the `unique-filename` function in JavaScript for Node.js environments:
+
+```javascript
+const crypto = require('crypto');
+const path = require('path');
+
+function generateUniquePart(uniqstr) {
+  if (uniqstr) {
+    // Create a hash based on the given unique string for deterministic uniqueness
+    return crypto.createHash('sha256').update(uniqstr).digest('hex').slice(0, 8);
+  } else {
+    // Generate a random 8 character string
+    return crypto.randomBytes(4).toString('hex');
+  }
+}
+
+function uniqueFilename(dir, fileprefix = '', uniqstr = null) {
+  // Generate the unique part of the filename
+  const uniquePart = generateUniquePart(uniqstr);
+
+  // Construct the filename
+  let filename = uniquePart;
+  if (fileprefix && fileprefix.length > 0) {
+    filename = `${fileprefix}-${uniquePart}`;
+  }
+  
+  // Return the full path
+  return path.join(dir, filename);
+}
+
+module.exports = uniqueFilename;
+
+// Example Usage
+// const os = require('os');
+// console.log(uniqueFilename(os.tmpdir())); // returns something like: '/tmp/3b9c5191'
+// console.log(uniqueFilename(os.tmpdir(), 'my-test')); // returns something like: '/tmp/my-test-3b9c5191'
+// console.log(uniqueFilename('/my-tmp-dir', 'testing', '/my/thing/to/uniq/on')); // returns deterministic, e.g., '/my-tmp-dir/testing-5f4dcc3b'
+```
+
+This implementation uses Node.js's `crypto` module to generate an 8-character unique part of the filename either randomly or based on a hash of the provided `uniqstr`. The resulting filename includes the optional `fileprefix` joined with the unique part, ensuring that it is unique within the specified directory `dir`.

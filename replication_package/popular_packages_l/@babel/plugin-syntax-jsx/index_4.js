@@ -1,0 +1,19 @@
+// Import necessary utilities from Babel's helper library
+const { declare } = require('@babel/helper-plugin-utils');
+
+// Export a Babel plugin module using the helper function 'declare'
+module.exports = declare((api) => {
+  // Assert that this plugin is running with a compatible version of Babel
+  api.assertVersion("^7.0.0");
+
+  return {
+    // Set the name of the Babel plugin
+    name: 'syntax-jsx',
+    
+    // Function to modify parser configurations
+    manipulateOptions(opts, parserOpts) {
+      // Add JSX support to Babel's parser options
+      parserOpts.plugins.push('jsx');
+    }
+  };
+});

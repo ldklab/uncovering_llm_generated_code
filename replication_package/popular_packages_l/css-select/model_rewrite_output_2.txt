@@ -1,0 +1,52 @@
+The provided Node.js code implements a basic CSS selector engine, which can select DOM elements based on CSS selectors. It leverages two external libraries: `css-what` for parsing CSS selectors into a structured format, and `domutils` for DOM manipulation.
+
+### Explanation:
+- **CSSselect class**: The core of this implementation, encapsulating methods to work with CSS selectors.
+- **selectAll(selector, elems, options)**: This static method selects all elements matching the given CSS selector from a list of elements. It compiles the selector into a function and uses `domutils.findAll` to perform the selection.
+- **compile(selector, options)**: This method compiles a CSS selector into a function. It uses `css-what` to parse the selector and then translates each part into a function using `compilePart`.
+- **compilePart(part, options)**: Given a part of the parsed selector, this function returns a function that can test whether a single element matches that part of the selector. Supported types in this code are 'tag' and 'descendant'.
+- **is(elem, query, options)**: Checks whether a single element matches the given CSS selector, using the compiled selector function.
+- **selectOne(selector, elems, options)**: Finds and returns the first element matching the selector using `domutils.findOne`.
+
+### Rewritten Code:
+
+```javascript
+const cssWhat = require('css-what');
+const domutils = require('domutils');
+
+class CSSselectorEngine {
+  static findAll(selector, elements, options = {}) {
+    const filterFunction = CSSselectorEngine.createFilterFunction(selector, options);
+    return domutils.findAll(filterFunction, elements, options);
+  }
+
+  static createFilterFunction(selector, options = {}) {
+    const parsedSelector = cssWhat.parse(selector);
+    const filterFunctions = parsedSelector[0].map(part => CSSselectorEngine.createPartFunction(part, options));
+    return element => filterFunctions.every(func => func(element));
+  }
+
+  static createPartFunction(part, options) {
+    switch (part.type) {
+      case 'tag':
+        return element => element.tagName === part.name;
+      case 'descendant':
+        return element => element.parentNode !== null;
+      default:
+        throw new Error(`Unsupported selector type: ${part.type}`);
+    }
+  }
+
+  static matchesElement(element, selector, options = {}) {
+    const filterFunction = CSSselectorEngine.createFilterFunction(selector, options);
+    return filterFunction(element);
+  }
+
+  static findFirst(selector, elements, options = {}) {
+    const filterFunction = CSSselectorEngine.createFilterFunction(selector, options);
+    return domutils.findOne(filterFunction, elements, options);
+  }
+}
+
+module.exports = CSSselectorEngine;
+```

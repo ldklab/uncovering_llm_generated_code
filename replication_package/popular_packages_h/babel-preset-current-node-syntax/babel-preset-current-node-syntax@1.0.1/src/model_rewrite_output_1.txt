@@ -1,0 +1,62 @@
+The Node.js code is a module that detects JavaScript language features (syntax) supported by the current Node.js runtime and returns an array of Babel plugin names for the compatible JavaScript features. 
+
+### Functionality Explanation:
+
+1. **ECMAScript Feature Tests:**
+   - A `tests` object maps feature names to JavaScript syntax snippets that represent those features. 
+
+2. **Testing Feature Support:**
+   - The `works` function takes a syntax test, wraps it in an immediately-invoked function expression, attempts to evaluate it with `eval`, and returns `true` if no error is thrown (indicating support), or `false` otherwise.
+
+3. **Checking Each Feature:**
+   - Iterates through `tests`. For each feature, it checks if any of the syntax cases work in the current environment. Supported features are added to the `plugins` array in the form of Babel plugin paths.
+
+4. **Special Cases:**
+   - `import.meta` and top-level `await` cannot be runtime-checked but are determined based on Node.js version numbers (10.4+ for `import.meta` and 14.3+ for top-level `await`).
+
+5. **Export:**
+   - The module exports a function that returns an object containing the collected Babel plugins.
+
+Here's the rewritten code:
+
+```javascript
+const tests = {
+  "object-rest-spread": ["({ ...{} })", "({ ...x } = {})"],
+  "async-generators": ["async function* f() {}"],
+  "optional-catch-binding": ["try {} catch {}"],
+  "json-strings": ["'\\u2028'"],
+  "bigint": ["1n"],
+  "optional-chaining": ["a?.b"],
+  "nullish-coalescing-operator": ["a ?? b"],
+  "numeric-separator": ["1_2"],
+  "class-properties": ["(class { x = 1 })", "(class { #x = 1 })", "(class { #x() {} })"],
+  "logical-assignment-operators": ["a ||= b", "a &&= b", "a ??= c"],
+};
+
+const plugins = [];
+const works = (test) => {
+  try {
+    (0, eval)(`(() => { ${test} })`);
+    return true;
+  } catch (_error) {
+    return false;
+  }
+};
+
+for (const [name, cases] of Object.entries(tests)) {
+  if (cases.some(works)) {
+    plugins.push(require.resolve(`@babel/plugin-syntax-${name}`));
+  }
+}
+
+const major = parseInt(process.versions.node, 10);
+const minor = parseInt(process.versions.node.match(/^\d+\.(\d+)/)[1], 10);
+if (major > 10 || (major === 10 && minor >= 4)) {
+  plugins.push(require.resolve("@babel/plugin-syntax-import-meta"));
+}
+if (major > 14 || (major === 14 && minor >= 3)) {
+  plugins.push(require.resolve("@babel/plugin-syntax-top-level-await"));
+}
+
+module.exports = () => ({ plugins });
+```

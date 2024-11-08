@@ -1,0 +1,43 @@
+The provided Node.js code determines a method to check if a given value is an arguments object. It comprises two primary functionalities:
+
+1. **Check for Standard Arguments (isStandardArguments):** This function uses a combination of checking the `Symbol.toStringTag` and the output of the `Object.prototype.toString` method to ascertain if a given value is an arguments object, following the ECMAScript standard.
+
+2. **Check for Legacy Arguments (isLegacyArguments):** If the `isStandardArguments` check fails, this function performs additional checks to identify arguments objects in legacy environments. It checks that the value is not `null`, is an object with a numeric `length`, is not an array, and has a `callee` property that is a function.
+
+3. **Determine Which Function to Use:** It determines which function (`isStandardArguments` or `isLegacyArguments`) should be the primary export from the module, based on the environment's support for standard arguments. If the environment supports standard arguments as determined by calling `isStandardArguments` with the special `arguments` object, it uses `isStandardArguments`; otherwise, it falls back to `isLegacyArguments`.
+
+Here is a rewritten version of the code:
+
+```javascript
+'use strict';
+
+const hasToStringTag = typeof Symbol === 'function' && typeof Symbol.toStringTag === 'symbol';
+const callBound = require('call-bind/callBound');
+
+const $toString = callBound('Object.prototype.toString');
+
+const isStandardArguments = function(value) {
+    if (hasToStringTag && value && typeof value === 'object' && Symbol.toStringTag in value) {
+        return false;
+    }
+    return $toString(value) === '[object Arguments]';
+};
+
+const isLegacyArguments = function(value) {
+    if (isStandardArguments(value)) {
+        return true;
+    }
+    return value !== null &&
+        typeof value === 'object' &&
+        typeof value.length === 'number' &&
+        value.length >= 0 &&
+        $toString(value) !== '[object Array]' &&
+        $toString(value.callee) === '[object Function]';
+};
+
+const supportsStandardArguments = (() => isStandardArguments(arguments))();
+
+isStandardArguments.isLegacyArguments = isLegacyArguments; // for tests
+
+module.exports = supportsStandardArguments ? isStandardArguments : isLegacyArguments;
+```

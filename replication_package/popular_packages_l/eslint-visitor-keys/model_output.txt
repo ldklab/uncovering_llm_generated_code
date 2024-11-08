@@ -1,0 +1,72 @@
+The `eslint-visitor-keys` package provides constants and utilities for working with abstract syntax tree (AST) visitor keys, primarily related to traversing the ESTree format used by ESLint and other JavaScript parsers. 
+
+### Key Functionalities:
+
+1. **`evk.KEYS`**: This is a frozen object where the keys are the types of ESTree nodes, and the values are arrays of property names that represent child nodes. For instance, the `AssignmentExpression` node type has children on properties `left` and `right`.
+
+2. **`evk.getKeys(node)`**: This function takes an AST node object as input and returns an array of property names. It filters out keys such as `parent`, `leadingComments`, `trailingComments`, and any key starting with `_`, which are not helpful for standard traversal operations.
+
+3. **`evk.unionWith(additionalKeys)`**: This function takes an object with additional visitor keys and combines them with the existing default keys (`evk.KEYS`). The entries from `additionalKeys` take precedence, and duplicates are removed, maintaining the initial occurrence.
+
+### Code Implementation:
+
+```js
+// eslint-visitor-keys/index.js
+
+const KEYS = Object.freeze({
+    AssignmentExpression: ["left", "right"],
+    // Other node types can be added here.
+    MethodDefinition: ["key", "value"]
+});
+
+function getKeys(node) {
+    if (node == null) {
+        return [];
+    }
+    return Object.keys(node).filter(key => (
+        !key.startsWith("_") && !['parent', 'leadingComments', 'trailingComments'].includes(key)
+    ));
+}
+
+function unionWith(additionalKeys) {
+    const result = {};
+    for (const key in additionalKeys) {
+        result[key] = additionalKeys[key];
+    }
+    for (const key in KEYS) {
+        if (!result.hasOwnProperty(key)) {
+            result[key] = KEYS[key];
+        } else {
+            result[key] = [...new Set([...result[key], ...KEYS[key]])];
+        }
+    }
+    return result;
+}
+
+module.exports = {
+    KEYS,
+    getKeys,
+    unionWith
+};
+
+// Usage Examples:
+// In an ESM module:
+// import * as evk from "./index.js";
+
+// In a CommonJS module:
+// const evk = require("./index.js");
+
+// Example Usage:
+const node = {
+    type: "AssignmentExpression",
+    left: { type: "Identifier", name: "foo" },
+    right: { type: "Literal", value: 0 }
+};
+console.log(getKeys(node)); // Output: ["type", "left", "right"]
+
+console.log(unionWith({
+    MethodDefinition: ["decorators"]
+})); // Output: { ..., MethodDefinition: ["decorators", "key", "value"], ... }
+```
+
+This code encapsulates the main features of the `eslint-visitor-keys` along with example usage to demonstrate functionality. The `KEYS` constant, `getKeys` function, and `unionWith` function are all included in a typical Node.js module setup.

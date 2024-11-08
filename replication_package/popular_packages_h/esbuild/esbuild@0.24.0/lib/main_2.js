@@ -1,0 +1,283 @@
+"use strict";
+
+// Required dependencies
+const fs = require("fs");
+const os = require("os");
+const path = require("path");
+const child_process = require("child_process");
+const crypto = require("crypto");
+const tty = require("tty");
+let worker_threads;
+
+// Attempt to require worker_threads if enabled by environment variable
+if (process.env.ESBUILD_WORKER_THREADS !== "0") {
+  try {
+    worker_threads = require("worker_threads");
+  } catch {
+    // If the environment doesn't support worker threads, do nothing
+  }
+  const [major, minor] = process.versions.node.split(".");
+  // Worker threads not supported in node <12.17.0 or <13.13.0
+  if (+major < 12 || (+major === 12 && +minor < 17) || (+major === 13 && +minor < 13)) {
+    worker_threads = void 0;
+  }
+}
+
+// Placeholders for platform specific variables
+var ESBUILD_BINARY_PATH;
+var isInternalWorkerThread = (worker_threads?.workerData?.esbuildVersion) === "0.24.0";
+var version = "0.24.0";
+let longLivedService, stopService, workerThreadService;
+let initializeWasCalled = false;
+
+const node_exports = {};
+module.exports = node_exports;
+
+// Utility functions for object handling and exports
+const __defProp = Object.defineProperty;
+const __export = (target, all) => {
+  for (const name in all) __defProp(target, name, { get: all[name], enumerable: true });
+};
+
+function pseudoSymbolIndicator(pkg) {
+  return `${pkg}-${crypto.randomBytes(32).toString("hex")}`;
+}
+
+// Function to convert messages into a format showing fail logs
+function failureErrorWithLog(text, errors, warnings) {
+  // Build error reports
+  let error = new Error(
+    `Build failed with ${errors.length} error${errors.length === 1 ? "" : "s"}:${errors
+      .map((e, i) => (i < 5 ? `\nerror: ${e.text}` : "...")).join("")}`
+  );
+  error.errors = errors;
+  error.warnings = warnings;
+  return error;
+}
+
+// Function to extract error messages from exception object
+function extractErrorMessage(e, streamIn, stash) {
+  const text = (e?.message || e) + "";
+  return { id: "", pluginName: "", text, location: null, notes: [], detail: stash.store(e) };
+}
+
+function esbuildCommandAndArgs() {
+  // Check if this is an internal error due to Esbuild JavaScript API being bundled
+  if (!ESBUILD_BINARY_PATH && (path.basename(__filename) !== "main.js" || path.basename(__dirname) !== "lib")) {
+    throw new Error(
+      `The esbuild JavaScript API cannot be bundled. Please mark the "esbuild" package as external so it's not included in the bundle.`
+    );
+  }
+
+  const { binPath, isWASM } = generateBinPath();
+  return isWASM ? ["node", [binPath]] : [binPath, []];
+}
+
+function validateInitializeOptions(options) {
+  if (options.wasmURL) throw new Error(`The "wasmURL" option only works in the browser`);
+  if (options.wasmModule) throw new Error(`The "wasmModule" option only works in the browser`);
+  if (options.worker) throw new Error(`The "worker" option only works in the browser`);
+}
+
+function generateBinPath() {
+  if (ESBUILD_BINARY_PATH && fs.existsSync(ESBUILD_BINARY_PATH)) {
+    return { binPath: ESBUILD_BINARY_PATH, isWASM: false };
+  }
+
+  const { pkg, subpath, isWASM } = pkgAndSubpathForCurrentPlatform();
+  let binPath;
+  try {
+    binPath = require.resolve(`${pkg}/${subpath}`);
+  } catch (e) {
+    binPath = downloadedBinPath(pkg, subpath);
+    if (!fs.existsSync(binPath)) {
+      if (pkgForSomeOtherPlatform()) {
+        throw new Error(`You installed esbuild for another platform than the current.`)
+      }
+      throw e;
+    }
+  }
+
+  if (/\.zip\//.test(binPath)) {
+    const pnpapi = require("pnpapi");
+    const root = pnpapi.getPackageInformation(pnpapi.topLevel).packageLocation;
+    const binTargetPath = path.join(
+      root, "node_modules", ".cache", "esbuild", `pnpapi-${pkg.replace("/", "-")}-${version}-${path.basename(subpath)}`
+    );
+    if (!fs.existsSync(binTargetPath)) {
+      fs.mkdirSync(path.dirname(binTargetPath), { recursive: true });
+      fs.copyFileSync(binPath, binTargetPath);
+    }
+    return { binPath: binTargetPath, isWASM };
+  }
+
+  return { binPath, isWASM };
+}
+
+// Function to determine the platform-specific binary package and subpath
+function pkgAndSubpathForCurrentPlatform() {
+  const platformDetails = `${process.platform} ${os.arch()} ${os.endianness()}`;
+  let pkg, subpath, isWASM = false;
+  const knownWindowsPackages = {
+    "win32 arm64 LE": "@esbuild/win32-arm64",
+    "win32 ia32 LE": "@esbuild/win32-ia32",
+    "win32 x64 LE": "@esbuild/win32-x64",
+  };
+
+  if (platformDetails in knownWindowsPackages) {
+    pkg = knownWindowsPackages[platformDetails];
+    subpath = "esbuild.exe";
+  } else {
+    const knownPackages = {
+      "darwin arm64 LE": "@esbuild/darwin-arm64",
+      "darwin x64 LE": "@esbuild/darwin-x64",
+      "linux arm LE": "@esbuild/linux-arm",
+      "linux x64 LE": "@esbuild/linux-x64",
+    };
+
+    if (platformDetails in knownPackages) {
+      pkg = knownPackages[platformDetails];
+      subpath = "bin/esbuild";
+    } else {
+      throw new Error(`Unsupported platform: ${platformDetails}`);
+    }
+  }
+  return { pkg, subpath, isWASM };
+}
+
+function downloadedBinPath(pkg, subpath) {
+  const esbuildLibDir = path.dirname(require.resolve("esbuild"));
+  return path.join(
+    esbuildLibDir, `downloaded-${pkg.replace("/", "-")}-${path.basename(subpath)}`
+  );
+}
+
+function validateTarget(target) {
+  if (target.includes(",")) throw new Error(`Invalid target: ${target}`);
+  return target;
+}
+
+// Handlers for initializing the service and executing builds
+function ensureServiceIsRunning() {
+  if (longLivedService) return longLivedService;
+
+  const [command, args] = esbuildCommandAndArgs();
+  const child = child_process.spawn(command, args.concat(`--service=${version}`, "--ping"), {
+    windowsHide: true,
+    stdio: ["pipe", "pipe", "inherit"],
+    cwd: process.cwd(),
+  });
+
+  const { readFromStdout, afterClose, service } = createChannel({
+    writeToStdin(bytes) {
+      child.stdin.write(bytes, (err) => {
+        if (err) afterClose(err);
+      });
+    },
+    readFileSync: fs.readFileSync,
+    isSync: false,
+    hasFS: true,
+    esbuild: node_exports,
+  });
+
+  child.stdin.on("error", afterClose);
+  child.on("error", afterClose);
+  const stdin = child.stdin;
+  const stdout = child.stdout;
+  stdout.on("data", readFromStdout);
+  stdout.on("end", afterClose);
+
+  stopService = () => {
+    stdin.destroy();
+    stdout.destroy();
+    child.kill();
+    initializeWasCalled = false;
+    longLivedService = undefined;
+    stopService = undefined;
+  };
+
+  longLivedService = {
+    build: (options) => new Promise((resolve, reject) => {
+      service.buildOrContext({
+        callName: "build",
+        refs: null,
+        options,
+        isTTY: tty.isatty(2),
+        defaultWD: process.cwd(),
+        callback: (err, res) => err ? reject(err) : resolve(res),
+      });
+    }),
+    transform: (input, options) => new Promise((resolve, reject) => {
+      service.transform({ callName: "transform", refs: null, input, options, isTTY: tty.isatty(2), fs: fsAsync, callback: (err, res) => err ? reject(err) : resolve(res) });
+    }),
+    formatMessages: (messages, options) => new Promise((resolve, reject) => {
+      service.formatMessages({ callName: "formatMessages", refs: null, messages, options, callback: (err, res) => err ? reject(err) : resolve(res) });
+    }),
+    analyzeMetafile: (metafile, options) => new Promise((resolve, reject) => {
+      service.analyzeMetafile({ callName: "analyzeMetafile", refs: null, metafile: typeof metafile === "string" ? metafile : JSON.stringify(metafile), options, callback: (err, res) => err ? reject(err) : resolve(res) });
+    })
+  };
+
+  return longLivedService;
+}
+
+// Function to run a synchronous service
+function runServiceSync(callback) {
+  const [command, args] = esbuildCommandAndArgs();
+  let stdin = new Uint8Array;
+  const { readFromStdout, afterClose, service } = createChannel({
+    writeToStdin(bytes) { stdin = bytes },
+    isSync: true,
+    hasFS: true,
+    esbuild: node_exports,
+  });
+
+  callback(service);
+
+  const stdout = child_process.execFileSync(command, args.concat(`--service=${version}`), {
+    cwd: process.cwd(),
+    windowsHide: true,
+    input: stdin,
+    maxBuffer: +process.env.ESBUILD_MAX_BUFFER || 16 * 1024 * 1024,
+  });
+
+  readFromStdout(stdout);
+  afterClose(null);
+}
+
+function createChannel(streamIn) {
+  const requestCallbacksByKey = {};
+  const closeData = { didClose: false, reason: "" };
+  let responseCallbacks = {};
+  let nextRequestID = 0;
+
+  let readFromStdout = (chunk) => {
+    // Process data from stdout and handle as necessary
+  };
+
+  let sendRequest = (refs, value, callback) => {
+    // Send request to `esbuild`
+  };
+
+  return {
+    readFromStdout,
+    afterClose,
+    service: {
+      buildOrContext,
+      transform,
+      formatMessages,
+      analyzeMetafile,
+    }
+  };
+}
+
+// Function to convert output files information
+function convertOutputFiles({ path, contents }) {
+  return { path, contents, hash: null, get text() { return decodeUTF8(contents) } };
+}
+
+// Exported functions for esbuild operations
+var build = (options) => ensureServiceIsRunning().build(options);
+var stop = () => { if (stopService) stopService(); return Promise.resolve() };
+var initialize = (options) => { validateInitializeOptions(options); ensureServiceIsRunning(); return Promise.resolve() }
+

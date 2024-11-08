@@ -1,0 +1,72 @@
+The code creates a Node.js module that defines middleware for recursion detection in AWS Lambda functions using the Smithy protocol, potentially for use in AWS SDK clients. The code exports three primary functionalities:
+
+1. **`recursionDetectionMiddleware`:** A middleware function that checks if the current environment is an AWS Lambda function and if an AWS trace ID is present. It adds the trace ID to the HTTP request headers if it's not already present and if the function is running in a "node" runtime. This is used to detect and prevent recursive calls in Lambda environments by tracking the request lifecycle through trace headers.
+
+2. **`addRecursionDetectionMiddlewareOptions`:** An options object used for adding the middleware to a middleware stack. It specifies when and how the middleware should be invoked in the stack processing lifecycle.
+
+3. **`getRecursionDetectionPlugin`:** A function that applies the recursion detection middleware to a client stack, with specified options. This function is intended to integrate the middleware into a stack, ensuring it performs as part of a client’s request handling process.
+
+Below is a clearer and more organized version of the same code:
+
+```javascript
+"use strict";
+
+const { HttpRequest } = require("@smithy/protocol-http");
+
+const TRACE_ID_HEADER_NAME = "X-Amzn-Trace-Id";
+const ENV_LAMBDA_FUNCTION_NAME = "AWS_LAMBDA_FUNCTION_NAME";
+const ENV_TRACE_ID = "_X_AMZN_TRACE_ID";
+
+// Middleware to detect and handle recursion in Lambda functions
+const recursionDetectionMiddleware = (options) => (next) => async (args) => {
+  const { request } = args;
+
+  if (
+    !HttpRequest.isInstance(request) ||
+    options.runtime !== "node" ||
+    request.headers.hasOwnProperty(TRACE_ID_HEADER_NAME)
+  ) {
+    return next(args);
+  }
+
+  const functionName = process.env[ENV_LAMBDA_FUNCTION_NAME];
+  const traceId = process.env[ENV_TRACE_ID];
+
+  const nonEmptyString = (str) => typeof str === "string" && str.length > 0;
+
+  if (nonEmptyString(functionName) && nonEmptyString(traceId)) {
+    request.headers[TRACE_ID_HEADER_NAME] = traceId;
+  }
+
+  return next({
+    ...args,
+    request,
+  });
+};
+
+// Options for adding the recursion detection middleware
+const addRecursionDetectionMiddlewareOptions = {
+  step: "build",
+  tags: ["RECURSION_DETECTION"],
+  name: "recursionDetectionMiddleware",
+  override: true,
+  priority: "low",
+};
+
+// Plugin to apply the recursion detection middleware to a client stack
+const getRecursionDetectionPlugin = (options) => ({
+  applyToStack: (clientStack) => {
+    clientStack.add(
+      recursionDetectionMiddleware(options),
+      addRecursionDetectionMiddlewareOptions
+    );
+  },
+});
+
+// Exports
+module.exports = {
+  recursionDetectionMiddleware,
+  addRecursionDetectionMiddlewareOptions,
+  getRecursionDetectionPlugin,
+};
+```

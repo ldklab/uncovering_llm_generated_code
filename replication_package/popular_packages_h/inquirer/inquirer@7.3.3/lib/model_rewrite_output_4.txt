@@ -1,0 +1,90 @@
+The given Node.js code is part of a library called "Inquirer.js", which is designed to facilitate the creation of interactive command-line user interfaces. This library provides a flexible way to prompt users for input in the terminal.
+
+Here's a breakdown of the code's functionality:
+
+1. **Module Export**: The `inquirer` object is exported through `module.exports`, allowing it to be used by other modules.
+
+2. **Prompt Types & Separators**: The script sets up `inquirer` to include various prompt types and helper components:
+   - `inquirer.prompts` is initialized as an empty object to later hold different types of prompts.
+   - `inquirer.Separator` is required from './objects/separator' for separating items visually within prompts.
+
+3. **UI Components**: 
+   - `inquirer.ui` contains `BottomBar` and `Prompt`, which are UI components for interacting with the user via the command line, required from respective paths.
+
+4. **Creating Prompt Modules**: 
+   - `inquirer.createPromptModule(opt)`: This function creates a custom prompt module. It returns a function that runs the prompt UI using a list of questions and answers. 
+   - Inside this function: 
+     - `promptModule.prompts` is initiated as an empty object to register custom prompt types.
+     - `registerPrompt(name, prompt)`: Method to register a new prompt type.
+     - `restoreDefaultPrompts()`: Method to register default prompt types (like list, input, number, confirm, etc.) using requiring paths from './prompts'.
+   - Upon creation, it immediately calls `restoreDefaultPrompts()` to register the default prompt types.
+
+5. **Public Interface**:
+   - `inquirer.prompt`: Establishes a public interface to create and run prompts, initialized using `inquirer.createPromptModule()`.
+   - `inquirer.registerPrompt`: Exposed method to register new prompt types globally.
+   - `inquirer.restoreDefaultPrompts`: Exposed method to restore the default prompt types globally.
+
+This architecture allows Inquirer.js users to create, customize, and utilize various types of interactive command-line prompts easily, and exposes the necessary interfaces for extensibility.
+
+Here's a possible rewrite of the given Node.js code:
+
+```javascript
+'use strict';
+
+const inquirer = module.exports;
+
+inquirer.prompts = {};
+inquirer.Separator = require('./objects/separator');
+
+inquirer.ui = {
+  BottomBar: require('./ui/bottom-bar'),
+  Prompt: require('./ui/prompt'),
+};
+
+inquirer.createPromptModule = function (opt) {
+  const promptModule = (questions, answers) => {
+    let ui;
+    try {
+      ui = new inquirer.ui.Prompt(promptModule.prompts, opt);
+    } catch (error) {
+      return Promise.reject(error);
+    }
+    const promise = ui.run(questions, answers);
+    promise.ui = ui;
+    return promise;
+  };
+
+  promptModule.prompts = {};
+
+  promptModule.registerPrompt = function (name, prompt) {
+    this.prompts[name] = prompt;
+    return this;
+  };
+
+  promptModule.restoreDefaultPrompts = function () {
+    this.registerPrompt('list', require('./prompts/list'));
+    this.registerPrompt('input', require('./prompts/input'));
+    this.registerPrompt('number', require('./prompts/number'));
+    this.registerPrompt('confirm', require('./prompts/confirm'));
+    this.registerPrompt('rawlist', require('./prompts/rawlist'));
+    this.registerPrompt('expand', require('./prompts/expand'));
+    this.registerPrompt('checkbox', require('./prompts/checkbox'));
+    this.registerPrompt('password', require('./prompts/password'));
+    this.registerPrompt('editor', require('./prompts/editor'));
+  };
+
+  promptModule.restoreDefaultPrompts();
+
+  return promptModule;
+};
+
+inquirer.prompt = inquirer.createPromptModule();
+
+inquirer.registerPrompt = function (name, prompt) {
+  inquirer.prompt.registerPrompt(name, prompt);
+};
+
+inquirer.restoreDefaultPrompts = function () {
+  inquirer.prompt.restoreDefaultPrompts();
+};
+```

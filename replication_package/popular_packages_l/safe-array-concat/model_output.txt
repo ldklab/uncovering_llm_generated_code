@@ -1,0 +1,42 @@
+The `safe-array-concat` package provides a function that mimics the behavior of `Array.prototype.concat`, but with additional safety regarding the `Symbol.isConcatSpreadable` attribute. 
+
+When using JavaScript's native `.concat()` method on an array, some objects (like arrays or strings with the `Symbol.isConcatSpreadable` property set to true) are "flattened". This means that their elements are individually added to the resulting array. This default behavior can sometimes be undesirable, especially when dealing with objects or environments where the `Symbol.isConcatSpreadable` property might be manipulated.
+
+The `safe-array-concat` device circumvents this issue by ensuring that all objects are treated as a single element to be added to the resulting array, without spreading, regardless of their `Symbol.isConcatSpreadable` property's value. Here's how this functionality can be implemented:
+
+```js
+// safe-array-concat.js
+function safeConcat(...args) {
+  const result = [];
+
+  args.forEach(arg => {
+    if (Array.isArray(arg)) {
+      result.push(...arg);
+    } else {
+      result.push(arg);
+    }
+  });
+
+  return result;
+}
+
+module.exports = safeConcat;
+
+// test.js
+const assert = require('assert');
+const safeConcat = require('./safe-array-concat');
+
+// Tests
+assert.deepEqual([].concat([1, 2], 3, [[4]]), [1, 2, 3, [4]], 'arrays spread as expected with normal concat');
+assert.deepEqual(safeConcat([1, 2], 3, [[4]]), [1, 2, 3, [4]], 'arrays spread as expected with safe concat');
+
+String.prototype[Symbol.isConcatSpreadable] = true;
+assert.deepEqual([].concat('foo', Object('bar')), ['foo', 'b', 'a', 'r'], 'spreadable String objects are spread with normal concat!!!');
+assert.deepEqual(safeConcat('foo', Object('bar')), ['foo', Object('bar')], 'spreadable String objects are not spread with safe concat');
+
+Array.prototype[Symbol.isConcatSpreadable] = false;
+assert.deepEqual([].concat([1, 2], 3, [[4]]), [[], [1, 2], 3, [[4]]], 'non-concat-spreadable arrays do not spread with normal concat!!!');
+assert.deepEqual(safeConcat([1, 2], 3, [[4]]), [1, 2, 3, [4]], 'non-concat-spreadable arrays still spread with safe concat');
+```
+
+In this code, the `safeConcat` function iterates over its arguments, checks each item to see if it's an array, and uses the spread operator to properly concatenate arrays while not spreading any other object types. It accomplishes the goal of always treating objects as whole elements, thereby overriding any effects of `Symbol.isConcatSpreadable`.

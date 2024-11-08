@@ -1,0 +1,89 @@
+The Node.js code is a module that exports a `Hash` class. This `Hash` class provides an abstraction for creating cryptographic hash and HMAC digests. Here's a breakdown of the code's functionality:
+
+1. **Helper Functions and Variables**: 
+   - `__defProp`, `__getOwnPropDesc`, `__getOwnPropNames`, and `__hasOwnProp` are utilities to handle object property definitions and checks.
+   - `__name` is a utility function that sets the `name` property of a function or class to make it configurable.
+   - `__export` is used to define and export properties from a target object.
+   - `__copyProps` copies properties from one object to another, excluding any specified exceptions and considering property descriptors.
+   - `__toCommonJS` wraps the module exports to be compatible with CommonJS module system.
+
+2. **Hash Class**: 
+   - The `_Hash` class represents a hash or HMAC generator.
+   - The constructor initializes with an algorithm identifier and an optional secret for creating an HMAC. It invokes a `reset` method to prepare the hash state.
+   - The `update` method adds data to be hashed. It converts the input using the `castSourceData` function.
+   - The `digest` method finalizes the hash computation and returns the result as a Promise.
+   - The `reset` method initializes or resets the hash or HMAC object depending on whether a secret is provided.
+
+3. **Helper Function `castSourceData`**: 
+   - The function converts input data (`Buffer`, `string`, or `ArrayBuffer` views) into a `Buffer` object using utility functions from `@smithy/util-buffer-from`.
+
+4. **Module exports**: 
+   - The `Hash` class (alias of `_Hash`) is exported for use in other modules.
+
+Here's a rewritten version of the code with the same functionality:
+
+```javascript
+const { defineProperty, getOwnPropertyDescriptor, getOwnPropertyNames, prototype: { hasOwnProperty } } = Object;
+const { Buffer } = require("buffer");
+const { createHash, createHmac } = require("crypto");
+const { fromString, fromArrayBuffer } = require("@smithy/util-buffer-from");
+const { toUint8Array } = require("@smithy/util-utf8");
+
+const setPropName = (target, value) => defineProperty(target, "name", { value, configurable: true });
+const exportProps = (target, props) => {
+  for (const name in props) {
+    defineProperty(target, name, { get: props[name], enumerable: true });
+  }
+};
+const copyProperties = (to, from, except) => {
+  if (from && (typeof from === "object" || typeof from === "function")) {
+    for (const key of getOwnPropertyNames(from)) {
+      const desc = getOwnPropertyDescriptor(from, key);
+      if (!hasOwnProperty.call(to, key) && key !== except) {
+        defineProperty(to, key, { get: () => from[key], enumerable: !desc || desc.enumerable });
+      }
+    }
+  }
+  return to;
+};
+const toCommonJS = (mod) => copyProperties(defineProperty({}, "__esModule", { value: true }), mod);
+
+class HashClass {
+  constructor(algorithmIdentifier, secret) {
+    this.algorithmIdentifier = algorithmIdentifier;
+    this.secret = secret;
+    this.reset();
+  }
+  
+  update(toHash, encoding) {
+    this.hash.update(toUint8Array(this.castSourceData(toHash, encoding)));
+  }
+
+  digest() {
+    return Promise.resolve(this.hash.digest());
+  }
+
+  reset() {
+    this.hash = this.secret 
+      ? createHmac(this.algorithmIdentifier, this.castSourceData(this.secret)) 
+      : createHash(this.algorithmIdentifier);
+  }
+  
+  castSourceData(toCast, encoding) {
+    if (Buffer.isBuffer(toCast)) return toCast;
+    if (typeof toCast === "string") return fromString(toCast, encoding);
+    if (ArrayBuffer.isView(toCast)) {
+      return fromArrayBuffer(toCast.buffer, toCast.byteOffset, toCast.byteLength);
+    }
+    return fromArrayBuffer(toCast);
+  }
+}
+
+setPropName(HashClass, "Hash");
+
+const mod_exports = { Hash: HashClass };
+exportProps(mod_exports, { Hash: () => HashClass });
+module.exports = toCommonJS(mod_exports);
+
+0 && (module.exports = { Hash: HashClass });
+```

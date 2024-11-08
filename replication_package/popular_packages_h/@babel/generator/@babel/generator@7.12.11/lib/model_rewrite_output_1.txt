@@ -1,0 +1,100 @@
+The given Node.js code defines a module for transforming an Abstract Syntax Tree (AST) into code with formatting options, potentially adding source maps. The primary components of this code are:
+
+1. **Imports and Class Definitions**: It imports two modules: `source-map` and `printer`, which help generate source maps and handle printing tasks, respectively.
+
+2. **Generator Class**: Extends functionality from the `_printer.default`. It's used to handle ASTs and convert them into the corresponding code according to given options. It has:
+   - A constructor that takes `ast`, `opts`, and `code`, initializes configuration, potentially a source map, and sets up the class for generating results.
+   - A `generate` method to produce the final code output based on the AST.
+
+3. **normalizeOptions Function**: Configures and refines the formatting options (like comments, indentation, compactness) used in generating the output code.
+
+4. **CodeGenerator Class**: Simplifies generating code by instantiating a `Generator` and providing a `generate` method.
+
+5. **Default Export Function**: Provides a wrapper function, called `_default`, which creates a `Generator` instance and returns the generated code for an AST.
+
+Here's a possible rewrite of this code:
+
+```javascript
+"use strict";
+
+import SourceMap from "./source-map";
+import Printer from "./printer";
+
+class Generator extends Printer {
+  constructor(ast, options = {}, code) {
+    const config = normalizeOptions(code, options);
+    const sourceMap = options.sourceMaps ? new SourceMap(options, code) : null;
+    super(config, sourceMap);
+    this.ast = ast;
+  }
+
+  generate() {
+    return super.generate(this.ast);
+  }
+}
+
+function normalizeOptions(code, options) {
+  const config = {
+    auxiliaryCommentBefore: options.auxiliaryCommentBefore,
+    auxiliaryCommentAfter: options.auxiliaryCommentAfter,
+    shouldPrintComment: options.shouldPrintComment,
+    retainLines: options.retainLines,
+    retainFunctionParens: options.retainFunctionParens,
+    comments: options.comments == null || options.comments,
+    compact: options.compact,
+    minified: options.minified,
+    concise: options.concise,
+    indent: {
+      adjustMultilineComment: true,
+      style: "  ",
+      base: 0
+    },
+    decoratorsBeforeExport: !!options.decoratorsBeforeExport,
+    jsescOption: {
+      ...{
+        quotes: "double",
+        wrap: true
+      },
+      ...options.jsescOption
+    },
+    recordAndTupleSyntaxType: options.recordAndTupleSyntaxType,
+    jsonCompatibleStrings: options.jsonCompatibleStrings
+  };
+
+  if (config.minified) {
+    config.compact = true;
+    config.shouldPrintComment = config.shouldPrintComment || (() => config.comments);
+  } else {
+    config.shouldPrintComment = config.shouldPrintComment || (value => config.comments || value.includes("@license") || value.includes("@preserve"));
+  }
+
+  if (config.compact === "auto") {
+    config.compact = code.length > 500000;
+    if (config.compact) {
+      console.error(`[BABEL] Note: The code generator has deoptimized the styling of ${options.filename} as it exceeds the max of 500KB.`);
+    }
+  }
+
+  if (config.compact) {
+    config.indent.adjustMultilineComment = false;
+  }
+
+  return config;
+}
+
+class CodeGenerator {
+  constructor(ast, options, code) {
+    this.generator = new Generator(ast, options, code);
+  }
+
+  generate() {
+    return this.generator.generate();
+  }
+}
+
+export { CodeGenerator };
+export default function generateCode(ast, options, code) {
+  const generator = new Generator(ast, options, code);
+  return generator.generate();
+}
+```

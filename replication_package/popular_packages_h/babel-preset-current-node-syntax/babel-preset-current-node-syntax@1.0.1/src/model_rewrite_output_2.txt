@@ -1,0 +1,72 @@
+The provided Node.js code dynamically determines which Babel syntax plugins are necessary depending on the current Node.js environment's support for different ECMAScript features. Here's a breakdown of the functionality:
+
+1. **Tests Definition**: A dictionary called `tests` is defined, where each key represents a specific ECMAScript feature (e.g., "object-rest-spread", "async-generators"). The value for each key is an array of code snippets written in the respective ECMAScript syntax.
+
+2. **Syntax Checking Functionality**: The function `works` evaluates whether a specific syntax is supported by the current Node.js runtime:
+   - It attempts to wrap each test syntax in an immediately invoked function expression and evaluates it.
+   - If evaluation does not throw an error, the syntax is supported; otherwise, it isn't.
+
+3. **Plugin Resolution**: Using a `for...of` loop, it checks each feature's test cases. If any of the provided test cases for a feature work, it adds the corresponding Babel plugin to an array named `plugins`.
+
+4. **Special Handling for `import.meta` and Top-Level `await`**:
+   - Since `import.meta` and top-level `await` are only allowed in modules, they cannot be evaluated in the same manner as other features.
+   - It manually checks the Node.js version to determine support. If running on Node.js versions that support these features, it appends their corresponding plugins.
+
+5. **Module Export**: It exports a function that returns an object containing the required syntax plugins.
+
+Here is the rewritten code, structured similarly to the original, with slight simplifications for clarity:
+
+```js
+const tests = {
+  // ECMAScript 2018
+  "object-rest-spread": ["({ ...{} })", "({ ...x } = {})"],
+  "async-generators": ["async function* f() {}"],
+
+  // ECMAScript 2019
+  "optional-catch-binding": ["try {} catch {}"],
+  "json-strings": ["'\\u2028'"],
+
+  // ECMAScript 2020
+  "bigint": ["1n"],
+  "optional-chaining": ["a?.b"],
+  "nullish-coalescing-operator": ["a ?? b"],
+
+  // Stage 3
+  "numeric-separator": ["1_2"],
+  "class-properties": [
+    "(class { x = 1 })",
+    "(class { #x = 1 })",
+    "(class { #x() {} })",
+  ],
+  "logical-assignment-operators": ["a ||= b", "a &&= b", "a ??= c"],
+};
+
+const plugins = [];
+const works = (test) => {
+  try {
+    eval(`(() => { ${test} })`);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+for (const [name, cases] of Object.entries(tests)) {
+  if (cases.some(works)) {
+    plugins.push(require.resolve(`@babel/plugin-syntax-${name}`));
+  }
+}
+
+const major = parseInt(process.versions.node, 10);
+const minor = parseInt(process.versions.node.split('.')[1], 10);
+
+if (major > 10 || (major === 10 && minor >= 4)) {
+  plugins.push(require.resolve("@babel/plugin-syntax-import-meta"));
+}
+
+if (major > 14 || (major === 14 && minor >= 3)) {
+  plugins.push(require.resolve("@babel/plugin-syntax-top-level-await"));
+}
+
+module.exports = () => ({ plugins });
+```

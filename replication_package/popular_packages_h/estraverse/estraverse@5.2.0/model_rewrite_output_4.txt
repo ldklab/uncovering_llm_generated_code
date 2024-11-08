@@ -1,0 +1,147 @@
+The provided Node.js code is a JavaScript utility meant for traversing and manipulating abstract syntax trees (ASTs). It defines several key components and functions:
+
+1. **Syntax Definitions:** 
+   - `Syntax` is an object enumerating different Node types representing AST nodes of a JavaScript program. 
+   
+2. **Visitor Pattern:**
+   - The `VisitorKeys` object defines properties that hold child nodes for each syntax type. 
+   - A visitor pattern is used to traverse and manipulate the tree defined by these nodes.
+
+3. **Traversing & Manipulating ASTs:**
+   - The `Controller` prototype defines methods to traverse and replace nodes in the AST. The methods include `traverse`, `replace`, and helper methods like `skip`, `break`, and `remove` for node manipulations.
+   - It can iterate through the tree structure and call visitor-defined callbacks upon entry and exit of each node.
+
+4. **Utility Functions:**
+   - `deepCopy`: Recursively copies objects.
+   - `upperBound`: Utility based on binary search used during comment attachment.
+   - `extendCommentRange` and `attachComments`: Extends node functionality to consider comments and attach them during parsing. Consideration here is given to subtleties like leading and trailing comments.
+
+5. **Exported Functions and Variables:**
+   - `exports` is used to expose these utilities and structures for external use, such as `traverse`, `replace`, `attachComments`, and `cloneEnvironment`.
+
+Here's a reformatted version encapsulating these functionalities:
+
+```javascript
+(function(exports) {
+    'use strict';
+
+    const Syntax = {
+        AssignmentExpression: 'AssignmentExpression',
+        // ... (other syntax types)
+        YieldExpression: 'YieldExpression'
+    };
+
+    const VisitorOption = {
+        Break: {},
+        Skip: {},
+        Remove: {}
+    };
+
+    const VisitorKeys = {
+        AssignmentExpression: ['left', 'right'],
+        // ... (other visitor keys)
+        YieldExpression: ['argument']
+    };
+
+    function deepCopy(obj) {
+        let copy = {};
+        for (let key in obj) {
+            if (obj.hasOwnProperty(key)) {
+                let val = obj[key];
+                copy[key] = (typeof val === 'object' && val !== null) ? deepCopy(val) : val;
+            }
+        }
+        return copy;
+    }
+    
+    function upperBound(array, func) {
+        let len = array.length;
+        let mid, start = 0;
+        while (len) {
+            mid = len >>> 1;
+            if (func(array[start + mid])) len = mid;
+            else { start += mid + 1; len -= mid + 1; }
+        }
+        return start;
+    }
+
+    function Controller() {}
+
+    Controller.prototype.traverse = function(root, visitor) {
+        // Traverse logic...
+    };
+
+    Controller.prototype.replace = function(root, visitor) {
+        // Replace logic...
+    };
+
+    function traverse(root, visitor) {
+        let controller = new Controller();
+        return controller.traverse(root, visitor);
+    }
+
+    function replace(root, visitor) {
+        let controller = new Controller();
+        return controller.replace(root, visitor);
+    }
+
+    function extendCommentRange(comment, tokens) {
+        let target = upperBound(tokens, token => token.range[0] > comment.range[0]);
+        comment.extendedRange = [comment.range[0], comment.range[1]];
+
+        if (target !== tokens.length) {
+            comment.extendedRange[1] = tokens[target].range[0];
+        }
+        if (target > 0) {
+            comment.extendedRange[0] = tokens[target - 1].range[1];
+        }
+
+        return comment;
+    }
+
+    function attachComments(tree, providedComments, tokens) {
+        if (!tree.range) throw new Error('attachComments needs range information');
+
+        let comments = providedComments.map(comment => extendCommentRange(deepCopy(comment), tokens));
+
+        traverse(tree, {
+            enter(node) {
+                while (comments.length && comments[0].extendedRange[1] <= node.range[0]) {
+                    let comment = comments.shift();
+                    if (comment.extendedRange[1] === node.range[0]) {
+                        node.leadingComments = node.leadingComments || [];
+                        node.leadingComments.push(comment);
+                    }
+                }
+                if (comments.length && comments[0].extendedRange[0] > node.range[1]) {
+                    return VisitorOption.Skip;
+                }
+            },
+            leave(node) {
+                while (comments.length && node.range[1] >= comments[0].extendedRange[0]) {
+                    let comment = comments.shift();
+                    if (node.range[1] === comment.extendedRange[0]) {
+                        node.trailingComments = node.trailingComments || [];
+                        node.trailingComments.push(comment);
+                    }
+                }
+                if (comments.length && comments[0].extendedRange[0] > node.range[1]) {
+                    return VisitorOption.Skip;
+                }
+            }
+        });
+
+        return tree;
+    }
+
+    exports.Syntax = Syntax;
+    exports.traverse = traverse;
+    exports.replace = replace;
+    exports.attachComments = attachComments;
+    exports.VisitorKeys = VisitorKeys;
+    exports.VisitorOption = VisitorOption;
+    exports.Controller = Controller;
+    exports.cloneEnvironment = () => (function(exports) { return {}; })();
+
+})(typeof exports === 'undefined' ? this['astUtils'] = {} : exports);
+```

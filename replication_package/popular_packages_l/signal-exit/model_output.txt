@@ -1,0 +1,82 @@
+The `signal-exit` Node.js package provides functionality to execute a callback when a process exits, no matter the reason for the exit. This includes normal execution end, explicit calls to `process.exit(code)`, signals such as `process.kill(pid, sig)`, or receiving external fatal signals.
+
+### Key Features:
+- **Event Handler on Exit**: A function can be registered using `onExit` to handle process exit events along with the exit code and signal received (if any).
+- **Options**: 
+  - `alwaysLast`: Ensures the exit handler runs after any other handlers by monkey patching the `process.emit` method.
+- **Capture Signal Exits**: Returning `true` from the handler will capture a signal exit so that it isn't re-triggered. This requires the caller to handle any necessary exit behavior.
+- **Browser Compatibility**: Offers a noop behavior in browser environments where process signals do not apply.
+
+### Usage:
+To use the `signal-exit` package, import or require the module and register an exit handler function with `onExit`. The registered function will be invoked with the exit code and signal when the process exits.
+
+Here's the implementation of a simple version of the `signal-exit` package:
+
+```js
+// signal-exit.js
+const signals = [
+  'SIGINT', 'SIGTERM', 'SIGQUIT', 'SIGHUP', 'SIGBREAK', 
+  'SIGUSR1', 'SIGUSR2', 'SIGPIPE'
+];
+const originalEmit = process.emit;
+
+export function onExit(callback, options = {}) {
+  if (!process || typeof process.emit !== 'function') {
+    return () => {}; // No-op for unsuitable process
+  }
+
+  let fired = false;
+  let hookedSignals = new Set();
+  
+  function exitHandler(exitCode, signal) {
+    if (fired) return;
+    fired = true;
+
+    if (!hookedSignals.has(signal) || callback(exitCode, signal) !== true) {
+      process.exit(exitCode);
+    }
+  }
+
+  function signalHandler(signal) {
+    hookedSignals.add(signal);
+    exitHandler(null, signal);
+  }
+
+  process.on('exit', exitHandler);
+
+  signals.forEach(signal => {
+    try {
+      process.on(signal, signalHandler);
+    } catch (err) {}
+  });
+
+  if (options.alwaysLast) {
+    process.emit = function (...args) {
+      const type = args[0];
+      if (type === 'exit') {
+        process.removeListener('exit', exitHandler);
+        const result = originalEmit.apply(process, args);
+        process.on('exit', exitHandler);
+        return result;
+      }
+      return originalEmit.apply(process, args);
+    }
+  }
+
+  return function remove() {
+    if (fired) return;
+    process.removeListener('exit', exitHandler);
+    signals.forEach(signal => process.removeListener(signal, signalHandler));
+    if (options.alwaysLast) {
+      process.emit = originalEmit;
+    }
+  };
+}
+
+// browser.js (No operation shim for browser)
+export function onExit(callback, options = {}) {
+  return () => {}; // No-op, not applicable in browser
+}
+```
+
+This implementation hooks into process exit events and various signal events, executing a registered callback when the process exits due to these reasons. It offers a cleanup method to remove the installed handlers and ensures default functionality is preserved unless overridden by signal handling.

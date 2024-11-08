@@ -1,0 +1,102 @@
+This Node.js module provides utilities for merging JavaScript objects and arrays with customizable functions to determine how conflicts are resolved. The primary functionality includes:
+
+1. **executeFuncs**: This function checks if the input `conf` is a function. If it is, it executes it and returns the result; otherwise, it returns the input.
+
+2. **mergeWithCustomize**: This higher-order function accepts a `customizers` object and returns a `merge` function. The `merge` function takes multiple configurations, resolves them by executing functions, and then merges them into one using the `deepMerge` function.
+
+3. **deepMerge**: This function is responsible for merging two entities (either arrays or objects). It checks the types of `target` and `source` and delegates the operation to either `customizeArray` or `customizeObject`.
+
+4. **customizeArray**: Merges two arrays, optionally using a customizer. If a custom merge function (`customizeArray`) is defined in `customizers`, it is executed, and its result is used.
+
+5. **customizeObject**: Merges two objects using lodash's `mergeWith` method. If a custom merge function (`customizeObject`) is defined in `customizers`, it is executed, and its result is used.
+
+6. **unique**: Generates a `uniqueCustomizer` function for ensuring elements are unique within an array based on specific fields and matcher logic.
+
+7. **mergeWithRules**: Creates a merge function that applies specific rules when merging objects. The rules define how to handle conflicts for specific keys (i.e., `match` or `replace` behavior).
+
+Here is the rewritten code:
+
+```javascript
+const _ = require('lodash');
+
+function executeFuncs(conf) {
+  if (typeof conf === 'function') {
+    return conf();
+  }
+  return conf;
+}
+
+function mergeWithCustomize(customizers = {}) {
+  return function merge(...configurations) {
+    const resolvedConfigs = configurations.map(executeFuncs).flat();
+    return resolvedConfigs.reduce((accumulator, currentConfig) => {
+      return deepMerge(accumulator, currentConfig, customizers);
+    }, {});
+  };
+}
+
+function deepMerge(target, source, customizers) {
+  if (Array.isArray(target) && Array.isArray(source)) {
+    return customizeArray(target, source, customizers);
+  }
+  if (_.isObject(target) && _.isObject(source)) {
+    return customizeObject(target, source, customizers);
+  }
+  return source;
+}
+
+function customizeArray(targetArray, sourceArray, customizers) {
+  if (customizers.customizeArray) {
+    const customResult = customizers.customizeArray(targetArray, sourceArray);
+    if (customResult !== undefined) return customResult;
+  }
+  return [...targetArray, ...sourceArray];
+}
+
+function customizeObject(targetObject, sourceObject, customizers) {
+  if (customizers.customizeObject) {
+    const customResult = customizers.customizeObject(targetObject, sourceObject);
+    if (customResult !== undefined) return customResult;
+  }
+  return _.mergeWith({}, targetObject, sourceObject, (objValue, srcValue) =>
+    deepMerge(objValue, srcValue, customizers)
+  );
+}
+
+function unique(field, fields, matcher) {
+  return function uniqueCustomizer(targetArray, sourceArray) {
+    const existingFieldCombinationSet = new Set(
+      targetArray.map(item => fields.map(f => matcher(item[f])))
+    );
+    return [
+      ...targetArray,
+      ...sourceArray.filter(item => !existingFieldCombinationSet.has(fields.map(f => matcher(item[f]))))
+    ];
+  };
+}
+
+function mergeWithRules(rules) {
+  return function (...configs) {
+    return configs.reduce((acc, conf) =>
+      _.mergeWith(acc, conf, (objValue, srcValue, key, obj, src, stack) => {
+        if (rules[key] && typeof rules[key] === 'object' && stack.size) {
+          if (rules[key].match === 'match') {
+            return deepMerge(objValue, srcValue, {});
+          }
+          if (rules[key].options === 'replace') {
+            return srcValue;
+          }
+        }
+        return undefined;
+      }), {}
+    );
+  };
+}
+
+module.exports = {
+  merge: mergeWithCustomize({}),
+  mergeWithCustomize,
+  mergeWithRules,
+  unique,
+};
+```

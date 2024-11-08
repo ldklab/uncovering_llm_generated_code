@@ -1,0 +1,118 @@
+The `consola` package is an elegant console wrapper that improves the standard `console` logging in Node.js and browser environments, providing a consistent command-line interface (CLI) experience with various customizable features. Here is a summary of its functionality:
+
+1. **Basic Usage**: It enhances the standard console logging by providing advanced methods such as `info`, `start`, `warn`, `success`, `error`, etc. It can display fancy outputs in the terminal, with fallbacks for minimal environments.
+
+2. **Custom Reporters**: Allows the registration of custom reporters for managing log output, including JSON reporters.
+
+3. **Prompt and Input**: Supports interactive prompts with different types like `text`, `confirm`, `select`, or `multiselect`.
+
+4. **Global Redirection**: Can globally redirect console logs (`console.log`, etc.) and standard input/output (`stdout`, `stderr`) to its own handlers, with the ability to pause and resume logs.
+
+5. **Mocking and Testing**: Facilitates mocking log types, making it useful for testing using frameworks like Jest, to intercept and test log outputs effectively.
+
+6. **Log Level Management**: Provides various log levels for filtering log outputs with functionalities such as `fatal`, `error`, `warn`, `log`, `info`, etc.
+
+7. **Advanced Features**: Includes support for browser environments, the ability to throttle log messages to prevent spam, and tag-based logging for better log categorization.
+
+8. **Utilities**: Comes with utility functions for text manipulation, including aligning text, stripping ANSI codes, and colorizing console outputs.
+
+Here's the Node.js package implementation for the described functionality:
+
+```markdown
+# consola/index.js
+
+class Consola {
+  constructor(options = {}) {
+    this.level = options.level ?? 3;
+    // Additional default settings can go here
+    this.reporters = options.reporters || [new SimpleReporter()];
+    this.paused = false;
+    this.mockedTypes = {};
+  }
+
+  log(logObject) {
+    if (this.paused || this.level < logObject.level) return;
+    for (const reporter of this.reporters) {
+      reporter.log(logObject);
+    }
+  }
+
+  info(message) {
+    this.log({ level: 3, type: 'info', args: [message] });
+  }
+  
+  start(message) {
+    this.log({ level: 3, type: 'start', args: [message] });
+  }
+
+  warn(message) {
+    this.log({ level: 1, type: 'warn', args: [message] });
+  }
+
+  success(message) {
+    this.log({ level: 3, type: 'success', args: [message] });
+  }
+
+  error(error) {
+    this.log({ level: 0, type: 'error', args: [error] });
+  }
+
+  box(message) {
+    this.log({ level: 2, type: 'box', args: [message] });
+  }
+
+  async prompt(message, options) {
+    // Simplified prompt logic here
+    // This should be a Call to an interactive CLI library for real prompts
+    console.log(`${message} [y/n]:`);
+    return true; // Dummy return
+  }
+
+  wrapConsole() {
+    this.originalConsoleMethods = {};
+    for (const key of ['log', 'info', 'warn', 'error']) {
+      this.originalConsoleMethods[key] = console[key];
+      console[key] = (...args) => this[key](args.join(' '));
+    }
+  }
+
+  restoreConsole() {
+    for (const key of Object.keys(this.originalConsoleMethods)) {
+      console[key] = this.originalConsoleMethods[key];
+    }
+  }
+
+  pauseLogs() {
+    this.paused = true;
+  }
+
+  resumeLogs() {
+    this.paused = false;
+  }
+
+  mockTypes(callback) {
+    for (const type of ['info', 'start', 'warn', 'success', 'error', 'box', 'log']) {
+      const mockFn = callback(type, this[type]);
+      this.mockedTypes[type] = mockFn;
+      this[type] = mockFn || this[type];
+    }
+  }
+  
+  // Additional methods can be added based on the README
+}
+
+class SimpleReporter {
+  log(logObj) {
+    const { type, args } = logObj;
+    console[type](...args);
+  }
+}
+
+function createConsola(options) {
+  return new Consola(options);
+}
+
+const consola = new Consola();
+
+module.exports = { consola, createConsola };
+```

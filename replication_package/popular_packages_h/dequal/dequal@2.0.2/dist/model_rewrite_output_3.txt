@@ -1,0 +1,97 @@
+The provided Node.js code defines a function `dequal` that performs a deep equality check between two values. This function can compare various types of objects and data structures, including primitives, arrays, sets, maps, dates, regex objects, and typed arrays. The function checks whether both values are equal by iteratively comparing each element or property in certain complex types.
+
+Here's a breakdown of how `dequal` works:
+
+1. **Direct comparison**: It first checks if both values are the same using the strict equality operator. If they are, it returns `true`.
+
+2. **Constructor comparison**: For objects, it checks if both values have the same constructor (i.e., they are of the same type).
+
+3. **Date and RegExp**: It handles special cases for `Date` and `RegExp` objects by comparing their primitive values and string representations, respectively.
+
+4. **Arrays**: It compares arrays element-wise.
+
+5. **Sets**: It compares the size of the sets and then ensures each element of one set is present in the other.
+
+6. **Maps**: It checks the size of the maps, and then compares entries by their keys and values.
+
+7. **ArrayBuffer and Typed Arrays**: It compares byte lengths and the actual byte data.
+
+8. **Plain objects**: It compares objects by checking if they have the same properties and values. The `hasOwnProperty` method is used to only consider own properties.
+
+9. **NaN values**: There is a special case for `NaN`, recognizing it should be equal to itself in this context.
+
+The `find` function, used for locating equivalent keys in sets or maps, iterates through the keys of the provided iterable and returns a matching key using `dequal`.
+
+Here's a refactored version of the code:
+
+```javascript
+const hasOwnProperty = Object.prototype.hasOwnProperty;
+
+function findMatchingKey(iterable, target) {
+    for (const key of iterable.keys()) {
+        if (deepEqual(key, target)) return key;
+    }
+}
+
+function deepEqual(a, b) {
+    if (a === b) return true;
+
+    if (a && b && a.constructor === b.constructor) {
+        switch (a.constructor) {
+            case Date:
+                return a.getTime() === b.getTime();
+            case RegExp:
+                return a.toString() === b.toString();
+            case Array:
+                if (a.length !== b.length) return false;
+                for (let i = 0; i < a.length; i++) {
+                    if (!deepEqual(a[i], b[i])) return false;
+                }
+                return true;
+            case Set:
+                if (a.size !== b.size) return false;
+                for (const item of a) {
+                    const comparableItem = (item && typeof item === 'object') ? findMatchingKey(b, item) || item : item;
+                    if (!b.has(comparableItem)) return false;
+                }
+                return true;
+            case Map:
+                if (a.size !== b.size) return false;
+                for (const [key, value] of a) {
+                    const comparableKey = (key && typeof key === 'object') ? findMatchingKey(b, key) || key : key;
+                    if (!deepEqual(value, b.get(comparableKey))) return false;
+                }
+                return true;
+            case ArrayBuffer:
+                return deepEqual(new Uint8Array(a), new Uint8Array(b));
+            case DataView:
+                if (a.byteLength !== b.byteLength) return false;
+                for (let i = 0; i < a.byteLength; i++) {
+                    if (a.getInt8(i) !== b.getInt8(i)) return false;
+                }
+                return true;
+            default:
+                if (ArrayBuffer.isView(a)) {
+                    if (a.byteLength !== b.byteLength) return false;
+                    for (let i = 0; i < a.byteLength; i++) {
+                        if (a[i] !== b[i]) return false;
+                    }
+                    return true;
+                }
+                if (typeof a === 'object') {
+                    const aKeys = Object.keys(a);
+                    const bKeys = Object.keys(b);
+                    if (aKeys.length !== bKeys.length) return false;
+                    for (const key of aKeys) {
+                        if (!hasOwnProperty.call(b, key) || !deepEqual(a[key], b[key])) return false;
+                    }
+                    return true;
+                }
+        }
+    }
+
+    return a !== a && b !== b; // handling NaN case
+}
+
+exports.deepEqual = deepEqual;
+```

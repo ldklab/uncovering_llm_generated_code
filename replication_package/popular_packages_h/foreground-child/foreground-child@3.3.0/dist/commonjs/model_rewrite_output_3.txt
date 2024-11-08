@@ -1,0 +1,143 @@
+The provided Node.js code defines functionality to execute a child process as a "foreground child," ensuring that the parent and child process share the same standard input, output, and error streams. This means that the child process appears to the user as if it is running in the foreground, just like the parent process.
+
+### Functionality Explanation
+
+1. **Imports and Setup**:
+   - Imports required modules: `child_process`, `cross-spawn`, `signal-exit`, `proxy-signals.js`, and `watchdog.js`.
+   - Decision on whether to use `child_process.spawn` or `cross-spawn` based on the platform (`win32` or not).
+
+2. **`normalizeFgArgs` Function**:
+   - Normalizes the arguments provided to the `foregroundChild` function to ensure uniform input. Handles default values, cleanup functions, and argument types.
+
+3. **`foregroundChild` Function**:
+   - Uses normalized arguments to spawn a child process with `stdio` set to include the standard streams.
+   - Implements a custom signal handling mechanism to forward signals from the parent to the child process (`SIGHUP` or `SIGTERM`).
+   - Utilizes `signal-exit` and `proxySignals` to manage child process life cycle and exit properly.
+   - Cleans up using a `cleanup` function after the child process exits.
+   - Supports sending and receiving IPC (Inter-Process Communication) messages if `process.send` is available. 
+
+4. **Utility Function `isPromise`**:
+   - Checks if a given object is a promise by verifying its type and the presence of a `then` function.
+
+Here's a potential rewrite of the given Node.js code:
+
+```javascript
+"use strict";
+
+const { spawn } = require("child_process");
+const crossSpawn = require("cross-spawn");
+const { onExit } = require("signal-exit");
+const { proxySignals } = require("./proxy-signals.js");
+const { watchdog } = require("./watchdog.js");
+
+// Determine which spawn function to use based on the operating system platform
+const spawnFn = process.platform === 'win32' ? crossSpawn : spawn;
+
+/**
+ * Normalizes arguments passed to the `foregroundChild` function
+ *
+ * @param {Array} fgArgs - The arguments provided to `foregroundChild`.
+ * @returns {Array} Normalized arguments.
+ */
+function normalizeFgArgs(fgArgs) {
+    let [program, args = [], spawnOpts = {}, cleanup = () => {}] = fgArgs;
+
+    if (typeof args === 'function') {
+        cleanup = args;
+        spawnOpts = {};
+        args = [];
+    } else if (args && typeof args === 'object' && !Array.isArray(args)) {
+        if (typeof spawnOpts === 'function') cleanup = spawnOpts;
+        spawnOpts = args;
+        args = [];
+    } else if (typeof spawnOpts === 'function') {
+        cleanup = spawnOpts;
+        spawnOpts = {};
+    }
+
+    if (Array.isArray(program)) {
+        [program, ...args] = program;
+    }
+
+    return [program, args, { ...spawnOpts }, cleanup];
+}
+
+/**
+ * Launches a child process in the foreground, allowing signal proxying and IPC communication.
+ *
+ * @param  {...any} fgArgs - Arguments for child process.
+ * @returns {ChildProcess} - The spawned child process.
+ */
+function foregroundChild(...fgArgs) {
+    const [program, args, spawnOpts, cleanup] = normalizeFgArgs(fgArgs);
+    spawnOpts.stdio = [0, 1, 2];
+
+    if (process.send) {
+        spawnOpts.stdio.push('ipc');
+    }
+
+    const child = spawnFn(program, args, spawnOpts);
+
+    const handleChildHangup = () => {
+        try {
+            child.kill('SIGHUP');
+        } catch (_) {
+            child.kill('SIGTERM');
+        }
+    };
+
+    const exitRemover = onExit(handleChildHangup);
+    proxySignals(child);
+    const dog = watchdog(child);
+
+    let completed = false;
+    
+    child.on('close', async (code, signal) => {
+        if (completed) return;
+        completed = true;
+        const result = cleanup(code, signal, { watchdogPid: dog.pid });
+        const resolvedResult = isPromise(result) ? await result : result;
+        exitRemover();
+
+        if (resolvedResult === false) return;
+        if (typeof resolvedResult === 'string') {
+            signal = resolvedResult;
+            code = null;
+        } else if (typeof resolvedResult === 'number') {
+            code = resolvedResult;
+            signal = null;
+        }
+
+        if (signal) {
+            setTimeout(() => {}, 2000);
+            try {
+                process.kill(process.pid, signal);
+            } catch (_) {
+                process.kill(process.pid, 'SIGTERM');
+            }
+        } else {
+            process.exit(code || 0);
+        }
+    });
+
+    if (process.send) {
+        process.removeAllListeners('message');
+        child.on('message', (message, sendHandle) => process.send?.(message, sendHandle));
+        process.on('message', (message, sendHandle) => child.send(message, sendHandle));
+    }
+
+    return child;
+}
+
+/**
+ * Checks if an object is a promise by verifying the presence of a `then` method.
+ *
+ * @param {any} obj - The object to check.
+ * @returns {boolean} `true` if the object is a promise, otherwise `false`.
+ */
+const isPromise = (obj) => !!obj && typeof obj === 'object' && typeof obj.then === 'function';
+
+// Exported functions
+exports.foregroundChild = foregroundChild;
+exports.normalizeFgArgs = normalizeFgArgs;
+```

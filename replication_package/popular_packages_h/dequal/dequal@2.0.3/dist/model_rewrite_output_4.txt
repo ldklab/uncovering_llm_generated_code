@@ -1,0 +1,74 @@
+The Node.js code provided is a utility for deep comparison between two values: `foo` and `bar`. It checks whether they are equivalent in terms of value and structure. Here's a breakdown of its functionality:
+
+1. **Basic Comparison**: The function first checks if `foo` and `bar` are strictly equal or if both are `NaN`.
+
+2. **Type and Structure Checks**: 
+   - For objects with the same constructor type, it performs specific comparisons:
+     - **Dates**: Compares their timestamps using `getTime()`.
+     - **RegExps**: Compares their string representations.
+     - **Arrays**: Recursively checks each element for equality.
+     - **Sets and Maps**: Compares size first, then checks each element or entry for a match in the other Set/Map using the helper function `find` to locate objects by deep equality.
+     - **ArrayBuffer related types**: Compares their byte lengths and contents.
+   
+3. **Generic Objects**: Checks if all keys and their corresponding values in `foo` are present and equal in `bar`.
+
+4. **Exports**: The `dequal` function is exported, allowing it to be used in other modules.
+
+The function notably covers edge cases like circular references and custom objects due to its recursive structure. Here's a rewritten version of the code with a similar functionality:
+
+```js
+const hasOwnProperty = Object.prototype.hasOwnProperty;
+
+function find(iterable, target) {
+  for (let key of iterable.keys()) {
+    if (dequal(key, target)) return key;
+  }
+}
+
+function dequal(a, b) {
+  if (a === b) return true;
+
+  if (a && b && a.constructor === b.constructor) {
+    switch (a.constructor) {
+      case Date:
+        return a.getTime() === b.getTime();
+      case RegExp:
+        return a.toString() === b.toString();
+      case Array:
+        if (a.length !== b.length) return false;
+        return a.every((item, index) => dequal(item, b[index]));
+      case Set:
+        if (a.size !== b.size) return false;
+        for (let item of a) {
+          const obj = (typeof item === 'object' && item) ? find(b, item) : item;
+          if (!b.has(obj)) return false;
+        }
+        return true;
+      case Map:
+        if (a.size !== b.size) return false;
+        for (let [key, value] of a) {
+          const objKey = (typeof key === 'object' && key) ? find(b, key) : key;
+          if (!b.has(objKey) || !dequal(value, b.get(objKey))) return false;
+        }
+        return true;
+      case ArrayBuffer:
+      case DataView:
+        return dequal(new Uint8Array(a), new Uint8Array(b));
+      default:
+        if (ArrayBuffer.isView(a)) {
+          if (a.byteLength !== b.byteLength) return false;
+          return Array.from(a).every((val, idx) => val === b[idx]);
+        }
+        if (typeof a === 'object') {
+          const aKeys = Object.keys(a);
+          return aKeys.length === Object.keys(b).length &&
+                 aKeys.every(key => hasOwnProperty.call(b, key) && dequal(a[key], b[key]));
+        }
+    }
+  }
+
+  return a !== a && b !== b; // Handles NaN
+}
+
+exports.dequal = dequal;
+```

@@ -1,0 +1,81 @@
+The given Node.js code is a polyfill that provides a consistent interface for requestAnimationFrame (rAF) and cancelAnimationFrame (cAF) functions across different environments. Here's a breakdown of its functionality:
+
+1. **Environment Detection**: It checks if the code is running in a browser or as a Node.js script. This is determined by checking if `window` is undefined, in which case it defaults to `global`.
+
+2. **Vendor Prefixed Handling**: The code attempts to use vendor-prefixed implementations of `requestAnimationFrame` and `cancelAnimationFrame`. These are tried in a loop over possible vendor names (`'moz'` and `'webkit'`).
+
+3. **Fallback Implementation**: If a suitable implementation isn't found, it provides a fallback using `setTimeout` to approximate the behavior of `requestAnimationFrame`, aiming for 60 frames per second (~16.67ms per frame).
+
+4. **Custom rAF and cAF Functions**: It implements custom versions of `requestAnimationFrame` (raf) and `cancelAnimationFrame` (caf), keeping track of queued functions and managing cancellation.
+
+5. **Module Export**: The polyfill is exported as a module with methods to request and cancel animations, as well as a method to apply the polyfill to another object (e.g., a mocked window object in tests).
+
+Here's a rewritten, but equivalent version of the code:
+
+```javascript
+const now = require('performance-now');
+const root = typeof window === 'undefined' ? global : window;
+const vendors = ['moz', 'webkit'];
+const suffix = 'AnimationFrame';
+let raf = root['request' + suffix];
+let caf = root['cancel' + suffix] || root['cancelRequest' + suffix'];
+
+for (let i = 0; !raf && i < vendors.length; i++) {
+  raf = root[vendors[i] + 'Request' + suffix];
+  caf = root[vendors[i] + 'Cancel' + suffix] || root[vendors[i] + 'CancelRequest' + suffix];
+}
+
+if (!raf || !caf) {
+  let lastTime = 0;
+  let id = 0;
+  const queue = [];
+  const frameDuration = 1000 / 60;
+
+  raf = function(callback) {
+    if (queue.length === 0) {
+      const currentTime = now();
+      const nextTime = Math.max(0, frameDuration - (currentTime - lastTime));
+      lastTime = nextTime + currentTime;
+      setTimeout(() => {
+        const callbacks = queue.slice(0);
+        queue.length = 0;
+        for (let i = 0; i < callbacks.length; i++) {
+          if (!callbacks[i].cancelled) {
+            try {
+              callbacks[i].callback(lastTime);
+            } catch (e) {
+              setTimeout(() => { throw e; }, 0);
+            }
+          }
+        }
+      }, Math.round(nextTime));
+    }
+    queue.push({ handle: ++id, callback, cancelled: false });
+    return id;
+  };
+
+  caf = function(handle) {
+    for (let i = 0; i < queue.length; i++) {
+      if (queue[i].handle === handle) {
+        queue[i].cancelled = true;
+      }
+    }
+  };
+}
+
+module.exports = function(fn) {
+  return raf.call(root, fn);
+};
+
+module.exports.cancel = function() {
+  caf.apply(root, arguments);
+};
+
+module.exports.polyfill = function(object) {
+  if (!object) {
+    object = root;
+  }
+  object.requestAnimationFrame = raf;
+  object.cancelAnimationFrame = caf;
+};
+```

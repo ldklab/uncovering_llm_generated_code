@@ -1,0 +1,64 @@
+The Node.js code provided is a utility function for determining the appropriate proxy server for a given request URL. Here's a breakdown of the functionality:
+
+1. **Parsing the URL:** The `url.parse` function is used to extract components of the input URL, such as protocol, hostname, and port.
+
+2. **Determining NO_PROXY:** It checks if the environment variable `no_proxy` is set. This variable can outline hosts for which a proxy should not be used. The code handles variations in case, whitespace, and comma-separated lists of hosts within this variable.
+
+3. **Matching NO_PROXY values:** It iterates over the list of hosts in `no_proxy`, checking if the request URL matches any of these hosts or subdomains. If a match is found, it returns an empty string, which indicates no proxy should be used.
+
+4. **Default Ports:** If no specific port is provided in the URL, it assigns a default port based on the protocol (e.g., 80 for HTTP, 443 for HTTPS).
+
+5. **Selecting a Proxy:** If the URL doesn't match any `no_proxy` entry, it will construct the proxy variable name (e.g., `http_proxy` for `http` URLs), and checks if this variable or a generic `all_proxy` variable is set in the environment. If a valid proxy URL is found, it returns this proxy URL.
+
+6. **Environment Variables:** The function considers both uppercase and lowercase proxy environment variables.
+
+Here's a possible rewrite of the code:
+
+```javascript
+const url = require('url');
+
+function getProxyForUrl(requestUrl) {
+  const parsedUrl = new URL(requestUrl);
+  const protocol = parsedUrl.protocol.replace(':', '').toLowerCase();
+  if (!protocol) return '';
+
+  const hostname = parsedUrl.hostname.toLowerCase();
+  const port = parsedUrl.port || defaultPort(protocol);
+
+  const noProxyEnv = getEnv('no_proxy');
+  if (noProxyEnv) {
+    const noProxyList = noProxyEnv.split(/[\s,]+/);
+    if (noProxyList.includes('*')) return '';
+    for (let entry of noProxyList) {
+      const [noProxyHost, noProxyPort] = entry.trim().toLowerCase().split(':');
+      if (noProxyPort && noProxyPort !== port) continue;
+      if (hostname === noProxyHost || 
+          (noProxyHost.startsWith('.') && hostname.endsWith(noProxyHost)) ||
+          (noProxyHost.startsWith('*') && hostname.endsWith(noProxyHost.slice(1))) ||
+          (!noProxyHost && hostname.endsWith(noProxyHost))) {
+        return '';
+      }
+    }
+  }
+
+  const proxyVar = `${protocol}_proxy`;
+  const proxyUrl = getEnv(proxyVar) || getEnv('all_proxy');
+
+  return proxyUrl || '';
+}
+
+function defaultPort(protocol) {
+  switch (protocol) {
+    case 'http': return '80';
+    case 'https': return '443';
+    case 'ftp': return '21';
+    default: return '';
+  }
+}
+
+function getEnv(name) {
+  return process.env[name.toLowerCase()] || process.env[name.toUpperCase()] || '';
+}
+
+module.exports = { getProxyForUrl };
+```

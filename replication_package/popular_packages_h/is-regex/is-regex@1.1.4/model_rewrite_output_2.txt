@@ -1,0 +1,74 @@
+The provided Node.js code defines a module that exports a function to determine whether a given value is a regular expression (regex). It takes into account the presence of `Symbol.toStringTag` property used by some environments to imitate different object types.
+
+Here's a breakdown of the code's functionality:
+
+1. **Detecting `Symbol.toStringTag`:** 
+   - The code checks if the current environment supports `Symbol.toStringTag` using the `has-to-stringtag/shams` module.
+   
+2. **Utility Integration (`call-bind/callBound`):**
+   - It uses the `callBound` utility to securely bind and directly call methods like `Object.prototype.hasOwnProperty`, `RegExp.prototype.exec`, and `Object.prototype.toString`.
+
+3. **Creating Custom "Bad" Stringifier:**
+   - If `Symbol.toStringTag` support is detected, a "bad" stringifier object is created. This object throws an error specific to this operation whenever its `toString` or `valueOf` methods are called.
+
+4. **Function Definitions:**
+   - If `hasToStringTag` is `true`, the `isRegex` function will check an object for a `lastIndex` property typically present in regex objects. It also tries calling the regex `exec` method with a "bad" stringifier to detect non-standard behavior seen in regex objects.
+   - If `hasToStringTag` is `false`, it simply falls back to comparing the output of `Object.prototype.toString` against the expected `[object RegExp]`.
+
+Below is a possible rewrite of the code based on the above functionality:
+
+```javascript
+'use strict';
+
+const callBound = require('call-bind/callBound');
+const hasToStringTag = require('has-tostringtag/shams')();
+const $hasOwnProperty = callBound('Object.prototype.hasOwnProperty');
+const $exec = callBound('RegExp.prototype.exec');
+const $toString = callBound('Object.prototype.toString');
+const gOPD = Object.getOwnPropertyDescriptor;
+
+const isRegexMarker = {};
+const regexClass = '[object RegExp]';
+
+let badStringifier;
+
+if (hasToStringTag) {
+  const throwRegexMarker = () => { throw isRegexMarker; };
+  
+  badStringifier = {
+    toString: throwRegexMarker,
+    valueOf: throwRegexMarker
+  };
+
+  if (typeof Symbol.toPrimitive === 'symbol') {
+    badStringifier[Symbol.toPrimitive] = throwRegexMarker;
+  }
+}
+
+function isRegex(value) {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+
+  if (hasToStringTag) {
+    const descriptor = gOPD(value, 'lastIndex');
+    const hasLastIndexDataProperty = descriptor && $hasOwnProperty(descriptor, 'value');
+    if (!hasLastIndexDataProperty) {
+      return false;
+    }
+
+    try {
+      $exec(value, badStringifier);
+    } catch (e) {
+      return e === isRegexMarker;
+    }
+  } else {
+    if (typeof value === 'object' || typeof value === 'function') {
+      return $toString(value) === regexClass;
+    }
+    return false;
+  }
+}
+
+module.exports = isRegex;
+```

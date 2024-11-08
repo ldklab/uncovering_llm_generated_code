@@ -1,0 +1,60 @@
+The given Node.js code is checking if `WeakMap` and `WeakSet` are available in the current JavaScript environment and provides a function to identify if a given object is a `WeakMap`. Here's a step-by-step breakdown:
+
+1. It first checks if `WeakMap` and `WeakSet` are available in the environment and have a defined prototype. If they aren't available, they are assigned `null`.
+2. An `exported` variable is defined, initially with no assigned value.
+3. If `WeakMap` is not available, `exported` is defined as a function `isWeakMap` that always returns `false`. This is because we can't have `WeakMap` in the environment if the `WeakMap` itself is absent.
+4. Attempts to get the `has` method for `WeakMap` and `WeakSet`. If these methods are not available and `exported` has not been defined yet, `exported` is assigned a new function, `isWeakMap`, which always returns `false`.
+5. Finally, if none of the above conditions assign a function to `exported`, a more complex function is provided as the default export; this function attempts to:
+   - Check if the given input is an object.
+   - Call the `has` method on the input to determine if it behaves like a `WeakMap`.
+   - Check against `WeakSet` behaviors and use exception handling to further test the nature of the input.
+   - Determine if the input is an instance of a `WeakMap`, applying workarounds for older JavaScript environments.
+
+Below is a rewritten version of the code that maintains the same logic and structure:
+
+```javascript
+'use strict';
+
+const isFunction = (fn) => typeof fn === 'function';
+
+const $WeakMap = isFunction(WeakMap) && WeakMap.prototype ? WeakMap : null;
+const $WeakSet = isFunction(WeakSet) && WeakSet.prototype ? WeakSet : null;
+
+let exported;
+
+if (!$WeakMap) {
+	// If WeakMap is not present in the environment
+	exported = function isWeakMap(x) {
+		return false;
+	};
+}
+
+const $mapHas = $WeakMap ? $WeakMap.prototype.has : null;
+const $setHas = $WeakSet ? $WeakSet.prototype.has : null;
+
+if (!exported && !$mapHas) {
+	// If WeakMap exists, but 'has' method does not
+	exported = function isWeakMap(x) {
+		return false;
+	};
+}
+
+module.exports = exported || function isWeakMap(x) {
+	if (!x || typeof x !== 'object') {
+		return false;
+	}
+	try {
+		$mapHas.call(x, $mapHas);
+		if ($setHas) {
+			try {
+				$setHas.call(x, $setHas);
+			} catch (e) {
+				return true;
+			}
+		}
+		return x instanceof $WeakMap; // For environments with older JavaScript versions
+	} catch (e) {
+	}
+	return false;
+};
+```

@@ -1,0 +1,77 @@
+The given Node.js code defines a basic command-line interface for prompting the user with questions and collecting responses. Here's a breakdown of its functionality:
+
+1. **Enquirer Class**: This is a customizable prompt handler.
+   - It holds a registry of prompt types (`this.prompts`).
+   - You can register new prompt types using the `register` method.
+   - It provides an asynchronous method `prompt`, which takes an array of question objects and invokes the matching prompt type for each question to collect user input.
+
+2. **InputPrompt Class**: A specific type of prompt.
+   - It takes options with `name` and `message`.
+   - The `run` method uses Node.js's `readline` module to ask a question and collect input from the user.
+
+3. **Usage Example**: Demonstrates how to create an instance of `Enquirer`, register an `InputPrompt`, and then use it to ask a sample question about the user's username.
+
+Here's a rewritten version of the code:
+
+```javascript
+const readline = require('readline');
+
+class Enquirer {
+  constructor() {
+    this.prompts = {};
+  }
+
+  register(name, promptType) {
+    this.prompts[name] = promptType;
+  }
+
+  async prompt(questions) {
+    const responses = {};
+    for (const question of questions) {
+      const PromptType = this.prompts[question.type];
+      if (!PromptType) throw new Error(`Prompt type "${question.type}" not registered.`);
+      const promptInstance = new PromptType(question);
+      responses[question.name] = await promptInstance.run();
+    }
+    return responses;
+  }
+}
+
+class InputPrompt {
+  constructor({ name, message }) {
+    this.name = name;
+    this.message = message;
+  }
+
+  run() {
+    return new Promise((resolve) => {
+      const rl = readline.createInterface({
+        input: process.stdin,
+        output: process.stdout
+      });
+
+      rl.question(`${this.message}: `, (answer) => {
+        rl.close();
+        resolve(answer);
+      });
+    });
+  }
+}
+
+// Example of using the Enquirer and InputPrompt
+(async () => {
+  const enquirer = new Enquirer();
+  enquirer.register('input', InputPrompt);
+
+  const questions = [
+    { type: 'input', name: 'username', message: 'What is your username?' }
+  ];
+
+  try {
+    const answers = await enquirer.prompt(questions);
+    console.log('Your answers:', answers);
+  } catch (error) {
+    console.error(error);
+  }
+})();
+```

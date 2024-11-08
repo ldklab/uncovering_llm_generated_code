@@ -1,0 +1,136 @@
+The provided Node.js code is essentially a module for resolving file paths in a Node.js environment using input like path, context, and request. The code is organized around the concept of a resolver, which can either be synchronous or asynchronous, allowing for resource paths to be resolved taking into account the context within an environment, such as Node.js. Here’s a breakdown of the functionality:
+
+1. **File System Caching**: The `CachedInputFileSystem` from `graceful-fs` is used to cache file system calls with a default cache duration of 4000 milliseconds.
+
+2. **Node Context and Resolvers**: A context specific for node environments is set up, and both synchronous and asynchronous resolvers are created using `ResolverFactory`. These resolvers handle path resolutions with conditions such as file extensions and aiming to resolve node environment paths.
+
+3. **Resolver Functions**:
+   - **Asynchronous `resolve` function**: Accepts a context, path, request, and optional callback and resolveContext parameters. Handles calling the asynchronous resolver.
+   - **Synchronous `resolveSync` function**: Meant for synchronous resolution of paths, returning either the resolved path or `false`.
+
+4. **Custom Resolver Creators**:
+   - `create` and `createSync` functions that generate asynchronous and synchronous resolver functions, respectively, with custom options.
+
+5. **Module Exportation**: The module exports various utilities:
+   - The core `resolve` function (asynchronous).
+   - Properties for accessing the synchronous version, additional plugins, and resolver-related utilities.
+
+The code is tightly scoped around enhancing and simplifying path resolution in JavaScript/Node.js projects by abstracting various configurations and common tasks related to path resolution.
+
+Below is a rewritten version of the provided code:
+
+```javascript
+"use strict";
+
+const fs = require("graceful-fs");
+const CachedInputFileSystem = require("./CachedInputFileSystem");
+const ResolverFactory = require("./ResolverFactory");
+
+const nodeFileSystem = new CachedInputFileSystem(fs, 4000);
+
+const nodeContext = {
+  environments: ["node+es3+es5+process+native"]
+};
+
+const asyncResolver = ResolverFactory.createResolver({
+  conditionNames: ["node"],
+  extensions: [".js", ".json", ".node"],
+  fileSystem: nodeFileSystem
+});
+
+const resolve = (context, path, request, resolveContext, callback) => {
+  if (typeof context === "string") {
+    callback = resolveContext;
+    resolveContext = request;
+    request = path;
+    path = context;
+    context = nodeContext;
+  }
+  if (typeof callback !== "function") {
+    callback = resolveContext;
+  }
+  asyncResolver.resolve(context, path, request, resolveContext, callback);
+};
+
+const syncResolver = ResolverFactory.createResolver({
+  conditionNames: ["node"],
+  extensions: [".js", ".json", ".node"],
+  useSyncFileSystemCalls: true,
+  fileSystem: nodeFileSystem
+});
+
+const resolveSync = (context, path, request) => {
+  if (typeof context === "string") {
+    request = path;
+    path = context;
+    context = nodeContext;
+  }
+  return syncResolver.resolveSync(context, path, request);
+};
+
+function create(options) {
+  const resolver = ResolverFactory.createResolver({
+    fileSystem: nodeFileSystem,
+    ...options
+  });
+
+  return (context, path, request, resolveContext, callback) => {
+    if (typeof context === "string") {
+      callback = resolveContext;
+      resolveContext = request;
+      request = path;
+      path = context;
+      context = nodeContext;
+    }
+    if (typeof callback !== "function") {
+      callback = resolveContext;
+    }
+    resolver.resolve(context, path, request, resolveContext, callback);
+  };
+}
+
+function createSync(options) {
+  const resolver = ResolverFactory.createResolver({
+    useSyncFileSystemCalls: true,
+    fileSystem: nodeFileSystem,
+    ...options
+  });
+
+  return (context, path, request) => {
+    if (typeof context === "string") {
+      request = path;
+      path = context;
+      context = nodeContext;
+    }
+    return resolver.resolveSync(context, path, request);
+  };
+}
+
+const mergeExports = (obj, exports) => {
+  const descriptors = Object.getOwnPropertyDescriptors(exports);
+  Object.defineProperties(obj, descriptors);
+  return Object.freeze(obj);
+};
+
+module.exports = mergeExports(resolve, {
+  get sync() {
+    return resolveSync;
+  },
+  create: mergeExports(create, {
+    get sync() {
+      return createSync;
+    }
+  }),
+  ResolverFactory,
+  CachedInputFileSystem,
+  get CloneBasenamePlugin() {
+    return require("./CloneBasenamePlugin");
+  },
+  get LogInfoPlugin() {
+    return require("./LogInfoPlugin");
+  },
+  get forEachBail() {
+    return require("./forEachBail");
+  }
+});
+```

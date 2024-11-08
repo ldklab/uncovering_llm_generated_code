@@ -1,0 +1,79 @@
+The `array-includes` package provides a polyfill for the ECMAScript 7 `Array.prototype.includes` method, which allows arrays to be checked for the presence of a specific element. This polyfill is designed to work with environments as old as ECMAScript 3 and is compliant with the ES2016 specification. Its main functionalities include:
+
+- **Basic Check**: Determine if an element exists in an array.
+- **Starting from Index**: Start searching for the element from a specified index in the array.
+- **Handling of Special Cases**: Correctly handles cases with `NaN`, `-0`, and `+0`.
+- **Shimming**: Can replace the default `Array.prototype.includes` with the polyfill to ensure compatibility in older environments.
+- **Function Export**: The main function takes an array and a value to search for, and optionally a starting index.
+
+Here's the complete implementation of the `array-includes` package:
+
+```markdown
+## Implementation of array-includes
+
+```js
+// array-includes.js
+(function () {
+    'use strict';
+
+    var isNaN = function (value) {
+        return value !== value; // NaN is the only JS value where === is not reflexive
+    };
+
+    var isNegativeZero = function (value) {
+        return value === 0 && (1 / value) === -Infinity;
+    };
+
+    var includes = function (array, value, fromIndex) {
+        if (!Array.isArray(array)) {
+            throw new TypeError('First argument must be an array');
+        }
+
+        var length = array.length;
+        if (length === 0) {
+            return false;
+        }
+
+        var k = fromIndex || 0;
+        if (k >= length) {
+            return false;
+        }
+
+        while (k < length) {
+            if (isNaN(value)) {
+                if (isNaN(array[k])) {
+                    return true;
+                }
+            } else if (isNegativeZero(value) && isNegativeZero(array[k])) {
+                return true;
+            } else if (array[k] === value) {
+                return true;
+            }
+            k++;
+        }
+
+        return false;
+    };
+
+    includes.getPolyfill = function () {
+        return Array.prototype.includes || this;
+    };
+
+    includes.shim = function () {
+        if (!Array.prototype.includes) {
+            Array.prototype.includes = function (value, fromIndex) {
+                return includes(this, value, fromIndex);
+            };
+        }
+        return Array.prototype.includes;
+    };
+
+    if (typeof module !== 'undefined' && module.exports) {
+        module.exports = includes;
+    } else {
+        window.includes = includes;
+    }
+})();
+```
+
+The code implements a polyfill for `Array.prototype.includes`. It checks for the presence of a value in an array, starting at a specified index, with special handling for `NaN` and `-0`. The polyfill can be used directly, or it can extend the native array prototype if it is not already supported. The module exports three functions - `includes` to perform the inclusion check, `getPolyfill` to retrieve the appropriate function for inclusion checks, and `shim` to add the function to `Array.prototype` if necessary.

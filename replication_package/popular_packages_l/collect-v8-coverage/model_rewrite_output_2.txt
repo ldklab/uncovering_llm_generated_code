@@ -1,0 +1,59 @@
+The provided Node.js code defines a class `CoverageInstrumenter`, which uses the `inspector` module to interact with the V8 JavaScript engine. The primary purpose of this class is to collect code coverage data. The `CoverageInstrumenter` class has two main methods: `startInstrumenting` and `stopInstrumenting`.
+
+**Explanation:**
+
+1. **Initialization:**
+   - The constructor initializes and connects a new inspector session, which allows it to send commands to the Node.js runtime for collecting coverage data.
+
+2. **startInstrumenting:**
+   - This method enables the profiler and starts precise code coverage collection. It uses the promises to asynchronously handle the execution of commands. The `callCount` and `detailed` options ensure that the coverage data includes the number of times functions are called and detailed coverage information.
+
+3. **stopInstrumenting:**
+   - This method stops the coverage collection by taking precise coverage data and then stopping and disabling the profiler. It also handles errors using promises and returns the coverage result.
+
+Here's a possible rewrite of the code:
+
+```javascript
+// collect-v8-coverage/index.js
+const inspector = require('inspector');
+
+class CoverageInstrumenter {
+  constructor() {
+    this.session = new inspector.Session();
+    this.session.connect();
+  }
+
+  async startInstrumenting() {
+    try {
+      await this.sendCommand('Profiler.enable');
+      await this.sendCommand('Profiler.startPreciseCoverage', { callCount: true, detailed: true });
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  async stopInstrumenting() {
+    try {
+      const coverage = await this.sendCommand('Profiler.takePreciseCoverage');
+      await this.sendCommand('Profiler.stopPreciseCoverage');
+      await this.sendCommand('Profiler.disable');
+      return coverage.result;
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  sendCommand(method, params = {}) {
+    return new Promise((resolve, reject) => {
+      this.session.post(method, params, (error, result) => {
+        if (error) {
+          return reject(error);
+        }
+        resolve(result);
+      });
+    });
+  }
+}
+
+module.exports = { CoverageInstrumenter };
+```

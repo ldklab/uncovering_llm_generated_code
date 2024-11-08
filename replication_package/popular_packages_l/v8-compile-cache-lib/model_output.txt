@@ -1,0 +1,110 @@
+The `v8-compile-cache-lib` is a Node.js package that provides functionality to enhance the performance of your Node.js applications by using V8's code caching mechanism. This package is a programmatic API fork of `v8-compile-cache`. It focuses on improving the instantiation time of Node.js applications by caching the parsed and compiled code of your scripts.
+
+### Key functionalities include:
+
+1. **Require Hook**: By attaching a hook to Node.js's `require` function, the package can intercept modules as they are loaded, allowing it to utilize V8's code cache to speed up the process of compiling them.
+
+2. **Version Compatibility**: This package automatically disables itself for Node.js versions lower than 5.7.0, as the necessary V8 features were introduced in 5.7.0. The package itself needs at least Node.js version 4.0.0 to run due to its use of ES2015 syntax.
+
+3. **Environment Configuration**: Users can control the behavior of the cache using environment variables:
+   - `DISABLE_V8_COMPILE_CACHE=1`: Disables the cache completely.
+   - `V8_COMPILE_CACHE_CACHE_DIR`: Specifies the directory where the cache files are stored. If not set, it defaults to a temporary directory specific for the V8 version used.
+
+4. **Caching Mechanism**: The cache files use `.BLOB` and `.MAP` extensions and are specific to the entry module that imports `v8-compile-cache-lib`. This way, the cache is optimized for faster loading and utilizes the compiled code across application runs.
+
+5. **Benchmarks**: The package provides benchmarks indicating significant performance improvements in load times for certain JavaScript modules, showcasing its effectiveness in real-world applications.
+
+Here's a possible implementation of the described functionality:
+
+```javascript
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
+const vm = require('vm');
+
+// Environment variable to disable cache
+const DISABLED = process.env.DISABLE_V8_COMPILE_CACHE === '1';
+
+// Determine the cache directory
+const CACHE_DIR = process.env.V8_COMPILE_CACHE_CACHE_DIR || path.join(os.tmpdir(), `v8-compile-cache-${process.versions.v8}`);
+
+class FileSystemBlobStore {
+  constructor(directory) {
+    this.directory = directory;
+    if (!fs.existsSync(directory)) {
+      fs.mkdirSync(directory, { recursive: true });
+    }
+  }
+
+  getFilePath(key) {
+    return path.join(this.directory, key);
+  }
+
+  has(key) {
+    return fs.existsSync(this.getFilePath(key));
+  }
+
+  get(key) {
+    return fs.readFileSync(this.getFilePath(key));
+  }
+
+  put(key, buffer) {
+    fs.writeFileSync(this.getFilePath(key), buffer);
+  }
+}
+
+class NativeCompileCache {
+  constructor(blobStore) {
+    this.blobStore = blobStore;
+    this._moduleCompileBackup = null;
+  }
+
+  install() {
+    if (DISABLED || !this._supportsNativeCompileCache()) return;
+    this._moduleCompileBackup = Module.prototype._compile;
+    const self = this;
+
+    Module.prototype._compile = function (content, filename) {
+      const cachedDataPath = self._getCachePath(filename);
+      let cachedData;
+
+      if (self.blobStore.has(cachedDataPath)) {
+        cachedData = self.blobStore.get(cachedDataPath);
+      }
+
+      const script = new vm.Script(content, {
+        cachedData,
+        filename,
+        produceCachedData: true,
+      });
+
+      const result = script.runInThisContext();
+
+      if (script.cachedDataProduced) {
+        self.blobStore.put(cachedDataPath, script.cachedData);
+      }
+
+      return result;
+    };
+  }
+
+  _supportsNativeCompileCache() {
+    return typeof process.versions.v8 !== 'undefined';
+  }
+
+  _getCachePath(filename) {
+    const hash = crypto.createHash('sha1');
+    hash.update(filename);
+    return hash.digest('hex') + '.BLOB';
+  }
+}
+
+const blobStore = new FileSystemBlobStore(CACHE_DIR);
+const compileCache = new NativeCompileCache(blobStore);
+
+module.exports.install = function () {
+  compileCache.install();
+};
+```
+
+This code creates a mechanism to cache JavaScript files as they are `require`d by using V8's native code caching features, storing them in a specified directory for improved script instantiation times. It includes logical checks for enabling or disabling the cache based on system conditions, as described in the README.

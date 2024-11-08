@@ -1,0 +1,104 @@
+The provided Node.js code defines a function called `debounce`, which is used to limit how often a function can be called. The debounce function takes in three arguments: a function to be debounced, a wait time in milliseconds, and an options object that may contain a boolean `immediate` property.
+
+Here's a breakdown of how it works:
+- The function checks if the first argument is a function and if the wait time is a non-negative number, throwing errors if these checks fail.
+- It stores the context (`this`) and arguments of the function whenever the debounced function is called.
+- It defines two internal functions: `run`, which executes the stored function with the stored context and arguments, and `later`, which checks if enough time has passed since the last function call to execute the function again.
+- When the debounced function is invoked, it either runs immediately or schedules the execution based on the `immediate` option.
+- The debounced function also has three methods: `clear` to cancel the scheduled execution, `flush` to immediately invoke it if waiting, and `trigger` to execute immediately without scheduling.
+- The final export provides compatibility both for Node.js CommonJS modules and for ES modules.
+
+Below is the rewritten code based on the explanation:
+
+```javascript
+function debounce(func, wait = 100, options = {}) {
+	if (typeof func !== 'function') {
+		throw new TypeError(`Expected the first parameter to be a function, got \`${typeof func}\`.`);
+	}
+
+	if (wait < 0) {
+		throw new RangeError('`wait` must not be negative.');
+	}
+
+	const { immediate } = typeof options === 'boolean' ? { immediate: options } : options;
+
+	let context, args, timeout, lastCall;
+	let result;
+
+	function executeFunction() {
+		const callContext = context;
+		const callArguments = args;
+		context = undefined;
+		args = undefined;
+		result = func.apply(callContext, callArguments);
+		return result;
+	}
+
+	function checkElapsedTime() {
+		const elapsed = Date.now() - lastCall;
+
+		if (elapsed < wait && elapsed >= 0) {
+			timeout = setTimeout(checkElapsedTime, wait - elapsed);
+		} else {
+			timeout = undefined;
+
+			if (!immediate) {
+				result = executeFunction();
+			}
+		}
+	}
+
+	const debounced = function (...arguments_) {
+		if (
+			context &&
+			this !== context &&
+			Object.getPrototypeOf(this) === Object.getPrototypeOf(context)
+		) {
+			throw new Error('Debounced method called with different contexts of the same prototype.');
+		}
+
+		context = this;
+		args = arguments_;
+		lastCall = Date.now();
+
+		const callImmediately = immediate && !timeout;
+
+		if (!timeout) {
+			timeout = setTimeout(checkElapsedTime, wait);
+		}
+
+		if (callImmediately) {
+			result = executeFunction();
+		}
+
+		return result;
+	};
+
+	debounced.clear = () => {
+		if (!timeout) {
+			return;
+		}
+
+		clearTimeout(timeout);
+		timeout = undefined;
+	};
+
+	debounced.flush = () => {
+		if (!timeout) {
+			return;
+		}
+
+		debounced.trigger();
+	};
+
+	debounced.trigger = () => {
+		result = executeFunction();
+		debounced.clear();
+	};
+
+	return debounced;
+}
+
+module.exports.debounce = debounce;
+module.exports = debounce;
+```

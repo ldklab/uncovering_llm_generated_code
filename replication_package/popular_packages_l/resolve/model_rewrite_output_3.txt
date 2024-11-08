@@ -1,0 +1,68 @@
+The Node.js code provided is a module resolver, designed to locate and verify the presence of a module file within a Node.js environment. It consists of both asynchronous (`resolve`) and synchronous (`resolveSync`) functions to find modules specified by their identifiers (`id`). The resolution process involves:
+
+1. **Configuration Options**: Defaults and user-defined options ensuring customizable behavior such as start directories, file extensions, and custom checks for file existence (`isFile`) and directories (`isDirectory`).
+
+2. **Path Generation**: The `generateCandidates` function creates a list of potential file paths to check, based on the starting directory and given module identifier. It traverses up the directory tree while constructing possible file paths using specified directories (like `node_modules`) and extensions.
+
+3. **File Existence Check**: It verifies the existence of potential module paths using the `isFile` option, allowing both asynchronous (`resolve`) and synchronous (`resolveSync`) checks.
+
+4. **Asynchronous Resolution**: The asynchronous `resolve` function processes candidate paths recursively until it either finds an existing file or exhausts all candidates, reporting errors if the module isn't found.
+
+5. **Synchronous Resolution**: The synchronous `resolveSync` function sequentially iterates over the candidate paths and immediately returns upon finding a valid module path or throws an error if none are found.
+
+Here's the rewritten version of the code encapsulating the explanation:
+
+```javascript
+const fs = require('fs');
+const path = require('path');
+
+// Asynchronous module resolver
+function resolve(id, opts = {}, cb) {
+    const options = { ...defaultOptions, ...opts };
+    let candidates = generateCandidates(id, options.basedir || path.dirname(module.parent.filename), options);
+    (function findNext(paths) {
+        if (!paths.length) return cb(new Error(`MODULE_NOT_FOUND: Module ${id} not found`));
+        let current = paths.shift();
+        options.isFile(current, (err, exists) => {
+            if (err) return cb(err);
+            if (exists) return cb(null, current);
+            findNext(paths);
+        });
+    })(candidates);
+}
+
+// Synchronous module resolver
+function resolveSync(id, opts = {}) {
+    const options = { ...defaultOptions, ...opts };
+    let candidates = generateCandidates(id, options.basedir || path.dirname(module.parent.filename), options);
+    for (let path of candidates) {
+        if (options.isFile(path)) return path;
+    }
+    throw new Error(`MODULE_NOT_FOUND: Module ${id} not found`);
+}
+
+// Generate potential file paths for a module
+function generateCandidates(id, start, opts) {
+    let paths = [], dir = start;
+    while (dir !== path.parse(dir).root) {
+        for (let dirName of opts.moduleDirectory) {
+            for (let ext of (opts.extensions || ['.js'])) {
+                paths.push(path.join(dir, dirName, id + ext));
+            }
+        }
+        dir = path.dirname(dir);
+    }
+    return paths;
+}
+
+// Default options for module resolution
+const defaultOptions = {
+    basedir: __dirname,
+    extensions: ['.js'],
+    moduleDirectory: ['node_modules'],
+    isFile: (file, cb) => fs.stat(file, (err, stat) => cb(null, !err && (stat.isFile() || stat.isFIFO())))
+};
+
+module.exports = resolve;
+module.exports.sync = resolveSync;
+```

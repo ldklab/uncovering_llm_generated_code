@@ -1,0 +1,87 @@
+The Node.js code defines two modules: `callBind` and `callBound`. 
+
+1. `callBind`: This module exports a function that accepts another function `fn` as an argument and returns a new function that binds `Function.prototype.call` to `fn`. This allows `fn` to be called with a predefined context and arguments, using the `call` method even if it's deleted or modified.
+
+2. `callBound`: This module exports a function that takes a `methodPath` as a string (for example, `'Array.prototype.slice'`). It splits this path and navigates through the `globalThis` object to find the method. If found, it returns a version of the method bound using `Function.prototype.call.bind`. This ensures that the method can be invoked reliably even if the original method from the prototype is altered or deleted.
+
+The `test.js` file contains tests using the `assert` module to verify the behavior of the `callBind` and `callBound` modules. It tests the call binding and ensures that methods like `Array.prototype.slice` work correctly through the bound function.
+
+Rewritten Code:
+
+```markdown
+// call-bind/index.js
+'use strict';
+
+/**
+ * Binds `Function.prototype.call` to the provided function `fn`.
+ * @param {Function} fn - Target function to bind.
+ * @returns {Function} - A new function with `call` bound.
+ */
+module.exports = function callBind(fn) {
+  return function boundFunction() {
+    return Function.prototype.call.apply(fn, arguments);
+  };
+};
+
+// call-bind/callBound.js
+'use strict';
+
+/**
+ * Binds a specified method from an object path to ensure reliability
+ * despite prototype modifications.
+ * @param {string} methodPath - Dot-separated path to the method, e.g., 'Array.prototype.slice'.
+ * @returns {Function} - The function bound with `call`.
+ */
+module.exports = function callBound(methodPath) {
+  const pathParts = methodPath.split('.');
+  let obj = globalThis;
+
+  for (const part of pathParts) {
+    obj = obj[part];
+  }
+
+  if (typeof obj !== 'function') {
+    throw new TypeError('The path must resolve to a valid function');
+  }
+
+  return Function.prototype.call.bind(obj);
+};
+
+// package.json
+{
+  "name": "call-bind",
+  "version": "1.0.0",
+  "main": "index.js",
+  "devDependencies": {
+    "assert": "^1.5.0"
+  },
+  "scripts": {
+    "test": "node test.js"
+  }
+}
+
+// test.js
+const assert = require('assert');
+const callBind = require('./index');
+const callBound = require('./callBound');
+
+// Test callBind functionality
+function f(a, b) {
+  assert.strictEqual(this, 1);
+  assert.strictEqual(a, 2);
+  assert.strictEqual(b, 3);
+  assert.strictEqual(arguments.length, 2);
+}
+
+const fBound = callBind(f);
+delete Function.prototype.call;
+delete Function.prototype.bind;
+
+fBound(1, 2, 3);
+
+// Test callBound functionality
+const slice = callBound('Array.prototype.slice');
+assert.deepStrictEqual(slice([1, 2, 3, 4], 1, -1), [2, 3]);
+
+console.log('All tests passed.');
+```

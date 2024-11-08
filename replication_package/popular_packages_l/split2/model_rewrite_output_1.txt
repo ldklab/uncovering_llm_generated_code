@@ -1,0 +1,91 @@
+The Node.js code defines a custom transform stream in a class called `Split2` that splits input data into chunks based on a specified separator (matcher). This class extends the `Transform` stream and processes data streaming through it. Here's a breakdown of its functionality:
+
+1. **Constructor**: 
+   - Takes three parameters: `matcher` (regex to split input, defaulting to newline characters), `mapper` (function applied to each line), and `options`.
+   - Initializes internal buffers and options like `maxLength` for each line and `skipOverflow` to handle lines exceeding this maximum length.
+   - Sets `readableObjectMode` to true if a mapper is provided, making each chunk an object.
+
+2. **_transform()**:
+   - This method is called automatically as data chunks are written to the stream.
+   - Appends chunk data to an internal buffer and splits the buffer into lines using the matcher.
+   - The last part of the split (incomplete line) remains in the buffer for the next _transform call.
+   - Iterates through complete lines: checks if lines are too long, applies mapping function if provided, and pushes transformed lines to the readable side.
+
+3. **_flush()**:
+   - Invoked when there is no more data to consume.
+   - Processes the remaining buffer similarly to _transform.
+   
+4. **destroy()**:
+   - Ensures the `close` event is emitted on stream destruction, followed by cleanup operations.
+
+5. **Exported Function**:
+   - A function is exported to create and return a new `Split2` instance.
+
+Here is a rewritten version of the code with identical functionality:
+
+```javascript
+const { Transform } = require('stream');
+
+class LineSplitter extends Transform {
+  constructor(separator = /\r?\n/, transformFunction, options = {}) {
+    const objectMode = !!transformFunction;
+    super({ readableObjectMode: objectMode, ...options });
+
+    this.separator = separator;
+    this.transformFunction = transformFunction;
+    this.buffer = '';
+    this.maxLength = options.maxLength;
+    this.skipLongLines = options.skipOverflow || false;
+  }
+
+  _transform(chunk, encoding, done) {
+    this.buffer += chunk.toString();
+
+    const segments = this.buffer.split(this.separator);
+    this.buffer = segments.pop();
+
+    for (let segment of segments) {
+      if (this.maxLength && segment.length > this.maxLength) {
+        if (!this.skipLongLines) return done(new Error('Segment exceeds maximum length'));
+        continue;
+      }
+
+      if (this.transformFunction) {
+        try {
+          segment = this.transformFunction(segment);
+        } catch (error) {
+          return done(error);
+        }
+      }
+
+      this.push(segment);
+    }
+
+    done();
+  }
+
+  _flush(done) {
+    if (this.buffer) {
+      let segment = this.buffer;
+      if (this.maxLength && segment.length > this.maxLength) {
+        if (!this.skipLongLines) return done(new Error('Segment exceeds maximum length'));
+      } else {
+        try {
+          if (this.transformFunction) segment = this.transformFunction(segment);
+          this.push(segment);
+        } catch (error) {
+          return done(error);
+        }
+      }
+    }
+    done();
+  }
+
+  destroy() {
+    this.emit('close');
+    super.destroy();
+  }
+}
+
+module.exports = (separator, transformFunction, options) => new LineSplitter(separator, transformFunction, options);
+```

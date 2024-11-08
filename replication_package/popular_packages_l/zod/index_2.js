@@ -1,0 +1,69 @@
+// Importing the Zod library
+const { z } = require('zod');
+
+// Define a schema for a basic string validation
+const stringSchema = z.string();
+
+// Example of using parse() to validate a string
+try {
+    console.log(stringSchema.parse("hello")); // Outputs: "hello"
+} catch (e) {
+    console.error(e.errors);
+}
+
+// Example of using safeParse() for safer string validation
+const safeParseResult = stringSchema.safeParse("hello");
+if (safeParseResult.success) {
+    console.log(safeParseResult.data); // Outputs: "hello"
+} else {
+    console.error(safeParseResult.error);
+}
+
+// Define an object schema with specific property constraints
+const userSchema = z.object({
+  username: z.string(),
+  age: z.number().min(18),
+  email: z.string().email().optional()
+});
+
+// Using parse() to validate an object with user information
+try {
+  const user = userSchema.parse({
+    username: "john_doe",
+    age: 20,
+    email: "john@example.com"
+  });
+  console.log(user); // Outputs: { username: "john_doe", age: 20, email: "john@example.com" }
+} catch (error) {
+  console.error(error.errors);
+}
+
+// Define a schema for an optional string
+const optionalStringSchema = z.string().optional();
+console.log(optionalStringSchema.parse(undefined)); // Outputs: undefined
+
+// Define a schema for a nullable string
+const nullableStringSchema = z.string().nullable();
+console.log(nullableStringSchema.parse(null)); // Outputs: null
+
+// Define a schema with custom validation for a password
+const passwordSchema = z.string().min(8).refine(val => /[A-Z]/.test(val), {
+    message: "Must contain one uppercase letter"
+});
+
+// Attempt to parse an invalid password
+try {
+    const password = passwordSchema.parse("password");
+    console.log(password);
+} catch (e) {
+    console.error(e.errors); // Outputs: Validation error message
+}
+
+// Define a schema allowing either a number or a string
+const numberOrString = z.union([z.number(), z.string()]);
+console.log(numberOrString.parse(123)); // Outputs: 123
+console.log(numberOrString.parse("abc")); // Outputs: "abc"
+
+// Define a transformation to convert a string to upper case
+const upperCaseString = z.string().transform(str => str.toUpperCase());
+console.log(upperCaseString.parse("hello")); // Outputs: "HELLO"

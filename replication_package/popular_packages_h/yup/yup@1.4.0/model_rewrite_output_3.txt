@@ -1,0 +1,140 @@
+The Node.js code you provided appears to be a complex module for data validation and schema management. Here's a concise explanation of its functionality:
+
+1. **Validation Utilities:** The module contains utilities for validating various data types such as strings, numbers, dates, arrays, tuples, objects, and booleans. These utilities are encapsulated in respective classes like `StringSchema`, `NumberSchema`, `BooleanSchema`, etc.
+
+2. **Error Handling:** The module defines a custom error class `ValidationError` for handling validation errors. It can represent multiple errors and format error messages.
+
+3. **Schema Management:** The module supports defining data schemas with rules, validation, and transformations. A schema can validate a given value or cast it into a valid form.
+
+4. **Conditions and References:** The module includes support for conditional validations with `Condition` class and dynamic references using `Reference` class.
+
+5. **Configuration and Localization:** It allows setting localization messages for all validation errors through the `setLocale` method.
+
+6. **Extensibility:** Developers can extend existing schemas by adding custom validation methods using the `addMethod` function.
+
+7. **Interoperability:** The module supports both synchronous and asynchronous validation techniques.
+
+From the description, it seems this library is a custom implementation or inspired by libraries like `yup` for schema validation, commonly used in form validation and data structure validation tasks.
+
+Here’s a possible rewrite of the code encapsulated in a single markdown code block:
+
+```javascript
+'use strict';
+
+Object.defineProperty(exports, '__esModule', { value: true });
+
+var propertyExpr = require('property-expr');
+var tinyCase = require('tiny-case');
+var toposort = require('toposort');
+
+function _interopDefaultLegacy (e) { return e && typeof e === 'object' && 'default' in e ? e : { 'default': e }; }
+
+var toposort__default = /*#__PURE__*/_interopDefaultLegacy(toposort);
+
+// Utility functions
+function printNumber(val) {
+  return val != +val ? 'NaN' : val === 0 && 1 / val < 0 ? '-0' : '' + val;
+}
+
+function printSimpleValue(val, quoteStrings = false) {
+  if (val == null || typeof val === 'boolean') return '' + val;
+  const typeOf = typeof val;
+  if (typeOf === 'number') return printNumber(val);
+  if (typeOf === 'string') return quoteStrings ? `"${val}"` : val;
+  if (typeOf === 'function') return '[Function ' + (val.name || 'anonymous') + ']';
+  if (typeOf === 'symbol') return val.toString();
+  const tag = Object.prototype.toString.call(val).slice(8, -1);
+  if (tag === 'Date') return isNaN(val.getTime()) ? '' + val : val.toISOString();
+  if (tag === 'Error' || val instanceof Error) return '[' + val.toString() + ']';
+  if (tag === 'RegExp') return val.toString();
+  return null;
+}
+
+function printValue(value, quoteStrings) {
+  let result = printSimpleValue(value, quoteStrings);
+  if (result !== null) return result;
+  return JSON.stringify(value, function (key, value) {
+    let result = printSimpleValue(this[key], quoteStrings);
+    if (result !== null) return result;
+    return value;
+  }, 2);
+}
+
+function toArray(value) {
+  return value == null ? [] : [].concat(value);
+}
+
+// ValidationError classes
+class ValidationErrorNoStack {
+  constructor(errorOrErrors, value, field, type) {
+    this.name = 'ValidationError';
+    this.value = value;
+    this.path = field;
+    this.type = type;
+    this.errors = [];
+    this.inner = [];
+    toArray(errorOrErrors).forEach(err => {
+      if (ValidationError.isError(err)) {
+        this.errors.push(...err.errors);
+        const innerErrors = err.inner.length ? err.inner : [err];
+        this.inner.push(...innerErrors);
+      } else {
+        this.errors.push(err);
+      }
+    });
+    this.message = this.errors.length > 1 ? `${this.errors.length} errors occurred` : this.errors[0];
+  }
+}
+
+class ValidationError extends Error {
+  static formatError(message, params) {
+    const path = params.label || params.path || 'this';
+    if (path !== params.path) params = Object.assign({}, params, { path });
+    if (typeof message === 'string') return message.replace(/\$\{\s*(\w+)\s*\}/g, (_, key) => printValue(params[key]));
+    if (typeof message === 'function') return message(params);
+    return message;
+  }
+
+  static isError(err) {
+    return err && err.name === 'ValidationError';
+  }
+
+  constructor(errorOrErrors, value, field, type, disableStack) {
+    const errorNoStack = new ValidationErrorNoStack(errorOrErrors, value, field, type);
+    if (disableStack) return errorNoStack;
+    super();
+    this.name = errorNoStack.name;
+    this.message = errorNoStack.message;
+    this.type = errorNoStack.type;
+    this.value = errorNoStack.value;
+    this.path = errorNoStack.path;
+    this.errors = errorNoStack.errors;
+    this.inner = errorNoStack.inner;
+    if (Error.captureStackTrace) {
+      Error.captureStackTrace(this, ValidationError);
+    }
+  }
+}
+
+const mixed = {
+  default: '${path} is invalid',
+  required: '${path} is a required field',
+  defined: '${path} must be defined',
+  notNull: '${path} cannot be null',
+  oneOf: '${path} must be one of the following values: ${values}',
+  notOneOf: '${path} must not be one of the following values: ${values}',
+  notType: ({ path, type, value, originalValue }) => {
+    const castMsg = originalValue != null && originalValue !== value ? ` (cast from the value \`${printValue(originalValue, true)}\`).` : '.';
+    return type !== 'mixed' ? `${path} must be a \`${type}\` type, ` + `but the final value was: \`${printValue(value, true)}\`` + castMsg : `${path} must match the configured type. ` + `The validated value was: \`${printValue(value, true)}\`` + castMsg;
+  }
+};
+
+// Additional schema classes (StringSchema, NumberSchema, DateSchema, etc.) would be implemented similarly, each with specific methods tailored to their data types.
+
+exports.ValidationError = ValidationError;
+exports.printValue = printValue;
+exports.mixed = mixed;
+exports.array = function createArraySchema() { return new ArraySchema(); };
+exports.object = function createObjectSchema() { return new ObjectSchema(); };
+// Add other exports, utility functions, and schema creation functions as required...
+```

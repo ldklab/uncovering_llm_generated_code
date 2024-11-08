@@ -1,0 +1,123 @@
+The provided Node.js code implements the MurmurHash3 hashing algorithm, which is designed for incremental hashing. The implementation allows for efficient and repeatable hashing of strings by processing data in chunks. Here is a breakdown of the functionality:
+
+1. **Immediate Function Execution**: The entire hash function is wrapped inside an immediately invoked function expression (IIFE) to avoid polluting the global namespace.
+
+2. **Cached Object**: A single cached instance of the MurmurHash3 object is maintained for use in single-threaded environments, avoiding unnecessary object creation.
+
+3. **MurmurHash3 Constructor**:
+   - Can be invoked without the `new` keyword to make use of the cached instance (`cache`) or with `new` to create a new instance.
+   - It accepts a string (`key`) and an optional seed (`seed`) for hash determination.
+   - Calls the `reset` method to initialize hash state and can immediately hash the provided `key`.
+
+4. **Hash Method** (`hash`):
+   - Processes the input string (`key`) incrementally, updating the hash value as more data becomes available.
+   - Uses bitwise operations to manipulate string characters and produce a mix of the hash value.
+
+5. **Result Method** (`result`):
+   - Computes and returns the final 32-bit hash from the current hash state.
+
+6. **Reset Method** (`reset`):
+   - Resets the internal hash state to allow reuse of the same object.
+   - Optionally accepts a `seed` to initialize the hash with a specific starting value.
+
+7. **Module Export/Integration**:
+   - The code exports the MurmurHash3 function as a module if Node.js is detected (`module.exports`), otherwise, it assigns it to the global context as `this.MurmurHash3`.
+
+Here's a simplified and reorganized version of the provided Node.js code:
+
+```javascript
+(function() {
+    var cachedInstance;
+
+    class MurmurHash3 {
+        constructor(key, seed) {
+            this.reset(seed);
+            if (typeof key === 'string' && key.length > 0) {
+                this.hash(key);
+            }
+        }
+
+        hash(key) {
+            let h1, k1 = this.k1, len = key.length, i = 0;
+            this.len += len;
+
+            switch (this.rem) {
+                case 0: k1 ^= len > i ? (key.charCodeAt(i++) & 0xffff) : 0;
+                case 1: k1 ^= len > i ? (key.charCodeAt(i++) & 0xffff) << 8 : 0;
+                case 2: k1 ^= len > i ? (key.charCodeAt(i++) & 0xffff) << 16 : 0;
+                case 3:
+                    k1 ^= len > i ? (key.charCodeAt(i) & 0xff) << 24 : 0;
+                    k1 ^= len > i ? (key.charCodeAt(i++) & 0xff00) >> 8 : 0;
+            }
+
+            this.rem = (len + this.rem) & 3; 
+            len -= this.rem;
+            if (len > 0) {
+                h1 = this.h1;
+                while (1) {
+                    k1 = (k1 * 0x2d51 + (k1 & 0xffff) * 0xcc9e0000) & 0xffffffff;
+                    k1 = (k1 << 15) | (k1 >>> 17);
+                    k1 = (k1 * 0x3593 + (k1 & 0xffff) * 0x1b870000) & 0xffffffff;
+
+                    h1 ^= k1;
+                    h1 = (h1 << 13) | (h1 >>> 19);
+                    h1 = (h1 * 5 + 0xe6546b64) & 0xffffffff;
+
+                    if (i >= len) break;
+
+                    k1 = ((key.charCodeAt(i++) & 0xffff)) ^
+                         ((key.charCodeAt(i++) & 0xffff) << 8) ^
+                         ((key.charCodeAt(i++) & 0xffff) << 16);
+                    const top = key.charCodeAt(i++);
+                    k1 ^= ((top & 0xff) << 24) ^ ((top & 0xff00) >> 8);
+                }
+                k1 = 0;
+                switch (this.rem) {
+                    case 3: k1 ^= (key.charCodeAt(i + 2) & 0xffff) << 16;
+                    case 2: k1 ^= (key.charCodeAt(i + 1) & 0xffff) << 8;
+                    case 1: k1 ^= (key.charCodeAt(i) & 0xffff);
+                }
+                this.h1 = h1;
+            }
+            this.k1 = k1;
+            return this;
+        }
+
+        result() {
+            let k1 = this.k1, h1 = this.h1;
+            if (k1 > 0) {
+                k1 = (k1 * 0x2d51 + (k1 & 0xffff) * 0xcc9e0000) & 0xffffffff;
+                k1 = (k1 << 15) | (k1 >>> 17);
+                k1 = (k1 * 0x3593 + (k1 & 0xffff) * 0x1b870000) & 0xffffffff;
+                h1 ^= k1;
+            }
+            h1 ^= this.len;
+            h1 ^= h1 >>> 16;
+            h1 = (h1 * 0xca6b + (h1 & 0xffff) * 0x85eb0000) & 0xffffffff;
+            h1 ^= h1 >>> 13;
+            h1 = (h1 * 0xae35 + (h1 & 0xffff) * 0xc2b20000) & 0xffffffff;
+            h1 ^= h1 >>> 16;
+            return h1 >>> 0;
+        }
+
+        reset(seed) {
+            this.h1 = typeof seed === 'number' ? seed : 0;
+            this.rem = this.k1 = this.len = 0;
+            return this;
+        }
+    }
+
+    cachedInstance = new MurmurHash3();
+
+    function MurmurHash3Factory(key, seed) {
+        const instance = this instanceof MurmurHash3Factory ? this : cachedInstance;
+        return new MurmurHash3(key, seed);
+    }
+
+    if (typeof module !== 'undefined') {
+        module.exports = MurmurHash3Factory;
+    } else {
+        this.MurmurHash3 = MurmurHash3Factory;
+    }
+}());
+```

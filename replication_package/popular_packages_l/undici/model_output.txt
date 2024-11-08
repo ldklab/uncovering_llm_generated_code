@@ -1,0 +1,75 @@
+The `undici` package is a Node.js HTTP/1.1 client written from scratch. It provides various methods to handle HTTP requests and responses efficiently, offering functionalities similar to the Fetch API. This library aims to improve performance, especially for high-throughput applications, by taking full control of HTTP handling, avoiding some of the constraint enforced by the Fetch Standard.
+
+### Key Features:
+
+1. **HTTP/1.1 Client**: Designed for efficient HTTP/1.1 communication, implementing custom transport logic.
+2. **High Performance**: Includes features like pipelining and persistent connections to boost throughput.
+3. **API Methods**:
+   - **request**: Initiates an HTTP request and returns a promise with response details.
+   - **stream**: Utilizes streams for request/response data handling, returning a promise with the stream setup.
+   - **pipeline**: A use of Node.js Duplex streams to allow both request and response to be streamed.
+   - **upgrade**: Allows protocol change using HTTP Upgrade mechanism.
+   - **connect**: Starts two-way communication using HTTP CONNECT.
+   - **fetch**: A wrapper to use Fetch API-like syntax and options to perform HTTP requests.
+   - **setGlobalDispatcher/getGlobalDispatcher**: Allows setting/getting the global dispatcher used.
+   - **setGlobalOrigin/getGlobalOrigin**: Manage the global origin for fetch method's context.
+4. **Body Mixins**: Methods to handle various formats of request/response bodies such as `.json()`, `.text()`, `.blob()`, `.arrayBuffer()`.
+5. **Specification Deviations**: Not fully compliant with the Fetch Standard in ways that are more practical for Node.js environments (e.g., garbage collection, header control).
+6. **Manual and Automatic Workflow**: Supports both manual intervention in request processing and automatic handling.
+7. **Compatibility Enhancements**: Offers additional flexibility like the `autoSelectFamily` option to improve handling of network conditions like which DNS records to prefer.
+
+The primary focus of `undici` is to offer a robust, highly performant HTTP client for Node.js, leveraging features that standard HTTP and fetch implementations do not provide, particularly in server-side environments. 
+
+Here's a simplified implementation of undici's request functionality:
+
+```js
+import http from 'node:http';
+import { URL } from 'node:url';
+
+// Simple implementation of the undici's request function
+async function request(url, options = {}) {
+  const { method = 'GET', headers = {}, body = null } = options;
+  const urlObj = new URL(url);
+
+  const requestOptions = {
+    hostname: urlObj.hostname,
+    port: urlObj.port || (urlObj.protocol === 'https:' ? 443 : 80),
+    path: urlObj.pathname + urlObj.search,
+    method,
+    headers
+  };
+
+  return new Promise((resolve, reject) => {
+    const req = http.request(requestOptions, (res) => {
+      const chunks = [];
+      res.on('data', (chunk) => chunks.push(chunk));
+      res.on('end', () => {
+        resolve({
+          statusCode: res.statusCode,
+          headers: res.headers,
+          trailers: res.trailers,
+          body: Buffer.concat(chunks)
+        });
+      });
+    });
+
+    req.on('error', reject);
+
+    if (body) {
+      if (body instanceof URLSearchParams || body instanceof String || typeof body === 'string') {
+        req.setHeader('Content-Type', 'application/x-www-form-urlencoded');
+        req.write(body.toString());
+      } else if (typeof body === 'object') {
+        req.setHeader('Content-Type', 'application/json');
+        req.write(JSON.stringify(body));
+      }
+    }
+
+    req.end();
+  });
+}
+
+export { request };
+```
+
+This code provides a minimal implementation of the `request` function in Undici, setting up an HTTP request using Node.js's `http` module. It allows sending requests with various method types, headers, and body content, returning a promise that resolves with the response details.

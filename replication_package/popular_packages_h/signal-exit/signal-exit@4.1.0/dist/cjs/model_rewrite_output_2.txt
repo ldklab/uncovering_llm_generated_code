@@ -1,0 +1,240 @@
+The Node.js code is a module designed to manage process exit signals. Here's a breakdown of its functionality:
+
+1. **Signal Handling**: The code listens for various exit signals, such as `SIGHUP`, `SIGINT`, etc. If the process receives any of these signals, it executes specified callbacks before the process exits.
+
+2. **Emitter System**: An `Emitter` class records listeners for 'exit' and 'afterExit' events. It can emit these events selectively to registered callbacks upon process exit.
+
+3. **Signal Management**: The code uses an `Emitter` instance and captures the process's original signal handlers and `emit` method to substitute its own logic to manage the exit signals.
+
+4. **Compatibility**: The module accounts for compatibility issues across different environments, such as handling the `SIGHUP` signal differently on Windows.
+
+5. **Facade Pattern**: The `signalExitWrap` function provides a facade to interact with the signal handling functionality, so the internal implementation details are hidden.
+
+6. **Fallback Mechanism**: If the global process object is unsuitable, the module uses a `SignalExitFallback` class that provides no-op functions.
+
+7. **Global State Management**: Maintains a global state with the help of symbols to ensure it consistently tracks the number of listeners and that emissions occur exactly once per event type.
+
+Here is a possible rewrite of the code encapsulated within a markdown block:
+
+```javascript
+"use strict";
+var _a;
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.unload = exports.load = exports.onExit = exports.signals = void 0;
+
+const { signals } = require("./signals.js");
+const processOk = (process) => !!process &&
+    typeof process === 'object' &&
+    typeof process.removeListener === 'function' &&
+    typeof process.emit === 'function' &&
+    typeof process.reallyExit === 'function' &&
+    typeof process.listeners === 'function' &&
+    typeof process.kill === 'function' &&
+    typeof process.pid === 'number' &&
+    typeof process.on === 'function';
+
+const kExitEmitter = Symbol.for('signal-exit emitter');
+const global = globalThis;
+const ObjectDefineProperty = Object.defineProperty.bind(Object);
+
+class Emitter {
+    emitted = {
+        afterExit: false,
+        exit: false,
+    };
+    listeners = {
+        afterExit: [],
+        exit: [],
+    };
+    count = 0;
+    id = Math.random();
+    constructor() {
+        if (global[kExitEmitter]) {
+            return global[kExitEmitter];
+        }
+        ObjectDefineProperty(global, kExitEmitter, {
+            value: this,
+            writable: false,
+            enumerable: false,
+            configurable: false,
+        });
+    }
+    on(ev, fn) {
+        this.listeners[ev].push(fn);
+    }
+    removeListener(ev, fn) {
+        const list = this.listeners[ev];
+        const i = list.indexOf(fn);
+        if (i === -1) {
+            return;
+        }
+        if (i === 0 && list.length === 1) {
+            list.length = 0;
+        } else {
+            list.splice(i, 1);
+        }
+    }
+    emit(ev, code, signal) {
+        if (this.emitted[ev]) {
+            return false;
+        }
+        this.emitted[ev] = true;
+        let ret = false;
+        for (const fn of this.listeners[ev]) {
+            ret = fn(code, signal) === true || ret;
+        }
+        if (ev === 'exit') {
+            ret = this.emit('afterExit', code, signal) || ret;
+        }
+        return ret;
+    }
+}
+
+class SignalExitBase {}
+
+const signalExitWrap = (handler) => {
+    return {
+        onExit(cb, opts) {
+            return handler.onExit(cb, opts);
+        },
+        load() {
+            return handler.load();
+        },
+        unload() {
+            return handler.unload();
+        },
+    };
+};
+
+class SignalExitFallback extends SignalExitBase {
+    onExit() {
+        return () => { };
+    }
+    load() { }
+    unload() { }
+}
+
+class SignalExit extends SignalExitBase {
+    #hupSig = process.platform === 'win32' ? 'SIGINT' : 'SIGHUP';
+    #emitter = new Emitter();
+    #process;
+    #originalProcessEmit;
+    #originalProcessReallyExit;
+    #sigListeners = {};
+    #loaded = false;
+
+    constructor(process) {
+        super();
+        this.#process = process;
+
+        for (const sig of signals) {
+            this.#sigListeners[sig] = () => {
+                const listeners = this.#process.listeners(sig);
+                let { count } = this.#emitter;
+                const p = process;
+                if (typeof p.__signal_exit_emitter__ === 'object' &&
+                    typeof p.__signal_exit_emitter__.count === 'number') {
+                    count += p.__signal_exit_emitter__.count;
+                }
+                if (listeners.length === count) {
+                    this.unload();
+                    const ret = this.#emitter.emit('exit', null, sig);
+                    const s = sig === 'SIGHUP' ? this.#hupSig : sig;
+                    if (!ret)
+                        process.kill(process.pid, s);
+                }
+            };
+        }
+
+        this.#originalProcessReallyExit = process.reallyExit;
+        this.#originalProcessEmit = process.emit;
+    }
+
+    onExit(cb, opts) {
+        if (!processOk(this.#process)) {
+            return () => { };
+        }
+        if (this.#loaded === false) {
+            this.load();
+        }
+        const ev = opts?.alwaysLast ? 'afterExit' : 'exit';
+        this.#emitter.on(ev, cb);
+        return () => {
+            this.#emitter.removeListener(ev, cb);
+            if (this.#emitter.listeners['exit'].length === 0 &&
+                this.#emitter.listeners['afterExit'].length === 0) {
+                this.unload();
+            }
+        };
+    }
+
+    load() {
+        if (this.#loaded) {
+            return;
+        }
+        this.#loaded = true;
+        this.#emitter.count += 1;
+        for (const sig of signals) {
+            try {
+                const fn = this.#sigListeners[sig];
+                if (fn)
+                    this.#process.on(sig, fn);
+            } catch (_) { }
+        }
+        this.#process.emit = (ev, ...a) => {
+            return this.#processEmit(ev, ...a);
+        };
+        this.#process.reallyExit = (code) => {
+            return this.#processReallyExit(code);
+        };
+    }
+
+    unload() {
+        if (!this.#loaded) {
+            return;
+        }
+        this.#loaded = false;
+        signals.forEach(sig => {
+            const listener = this.#sigListeners[sig];
+            if (!listener) {
+                throw new Error('Listener not defined for signal: ' + sig);
+            }
+            try {
+                this.#process.removeListener(sig, listener);
+            } catch (_) { }
+        });
+        this.#process.emit = this.#originalProcessEmit;
+        this.#process.reallyExit = this.#originalProcessReallyExit;
+        this.#emitter.count -= 1;
+    }
+
+    #processReallyExit(code) {
+        if (!processOk(this.#process)) {
+            return 0;
+        }
+        this.#process.exitCode = code || 0;
+        this.#emitter.emit('exit', this.#process.exitCode, null);
+        return this.#originalProcessReallyExit.call(this.#process, this.#process.exitCode);
+    }
+
+    #processEmit(ev, ...args) {
+        const og = this.#originalProcessEmit;
+        if (ev === 'exit' && processOk(this.#process)) {
+            if (typeof args[0] === 'number') {
+                this.#process.exitCode = args[0];
+            }
+            const ret = og.call(this.#process, ev, ...args);
+            this.#emitter.emit('exit', this.#process.exitCode, null);
+            return ret;
+        } else {
+            return og.call(this.#process, ev, ...args);
+        }
+    }
+}
+
+const process = globalThis.process;
+_a = signalExitWrap(processOk(process) ? new SignalExit(process) : new SignalExitFallback()), 
+exports.onExit = _a.onExit, 
+exports.load = _a.load, 
+exports.unload = _a.unload;
+```

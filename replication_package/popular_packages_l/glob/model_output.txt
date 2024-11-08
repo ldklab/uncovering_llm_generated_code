@@ -1,0 +1,86 @@
+The `glob` Node.js package is a JavaScript library for finding files matching specified glob patterns. It provides both asynchronous and synchronous functions for searching file systems based on patterns similar to shell patterns. The package allows you to match **glob** patterns with files, filter files using different criteria, and handle complex search scenarios with streams and iterators.
+
+### Key Features:
+1. **Asynchronous and Synchronous APIs**: 
+   - `glob()` and `globSync()` return arrays of filenames found.
+   - `globStream()` and `globStreamSync()` return streams of filenames or `Path` objects.
+   - `Glob` class allows more controlled file matching with caching and configuration reuse.
+
+2. **Pattern Matching**:
+   - Supports standard glob patterns as well as additional features such as `**` for recursive matching.
+   - Handles advanced globbing options like ignores and multiple pattern match.
+
+3. **File System Iteration**:
+   - API supports async iteration using `for await...of`.
+   - Synchronous iteration is also available.
+
+4. **File and Path Object Support**:
+   - Can optionally return file metadata or `Path` objects for detailed file information.
+
+5. **Abortable Operations**:
+   - Supports AbortSignal for cancelling long or ongoing searches.
+
+6. **Command-line Interface**:
+   - Offers a CLI for expanded file paths.
+
+7. **Options**:
+   - Extensive options for customization, including `cwd`, `dot`, `nocase`, `ignore`, and more, tailored for complex file system searches and compatibility across different platforms.
+
+8. **Windows Compatibility**:
+   - Provides mechanisms to handle path separators and escape characters in Windows differently if necessary.
+
+Below is a basic implementation in Node.js demonstrating the usage of a `glob`-like function using Node's core filesystem method and regular expressions:
+
+```js
+const fs = require('fs');
+const path = require('path');
+
+class SimpleGlob {
+  constructor(pattern, options) {
+    this.pattern = pattern;
+    this.options = options || {};
+  }
+
+  async glob() {
+    const basePath = this.options.basePath || '.';
+    const files = await this.walk(basePath);
+    return files.filter(file => this.matches(file));
+  }
+
+  walk(dir) {
+    return new Promise((resolve, reject) => {
+      fs.readdir(dir, { withFileTypes: true }, async (err, entries) => {
+        if (err) {
+          return reject(err);
+        }
+        const results = await Promise.all(entries.map(entry => {
+          const resPath = path.resolve(dir, entry.name);
+          if (entry.isDirectory()) {
+            return this.walk(resPath);
+          }
+          return resPath;
+        }));
+        resolve(results.flat());
+      });
+    });
+  }
+
+  matches(filePath) {
+    const pattern = new RegExp(this.pattern.replace(".", "\\.").replace("*", ".*").replace("?", "."));
+    return pattern.test(filePath);
+  }
+
+  static async glob(pattern, options) {
+    const g = new SimpleGlob(pattern, options);
+    return g.glob();
+  }
+}
+
+// Usage example:
+SimpleGlob.glob('**/*.js', { basePath: './my-project' })
+  .then(files => console.log(files))
+  .catch(err => console.error(err));
+
+```
+
+This simplified example captures the essence of globbing by using a recursive file system traversal and pattern matching with regular expressions. Note that this does not cover advanced features like handling symlinks, streaming results, nor does it match the efficiency of a fully fledged `glob` package. For comprehensive globbing with all features mentioned above, use the `glob` package itself.

@@ -1,0 +1,93 @@
+The provided Node.js code defines a function `crossEnv` that executes shell commands with custom environment variables. It uses the `cross-spawn` module to handle process creation and provides functionality to interpret and convert the variables and commands such that they are compatible across different operating systems, specifically targeting different handling on Windows. 
+
+Here's a breakdown of how the code works:
+1. **Environment Parsing**: The code parses command-line arguments to separate environment variable setters from the command to execute. It uses a regular expression to identify and extract environment variables and their values.
+2. **Command Execution**: Once parsed, it uses `cross-spawn` to execute the command with any specified arguments. The command and its arguments are processed to ensure they're valid for the target OS (particularly Windows).
+3. **Environment Variables Setup**: It derives a set of environment variables combining those currently available in the process with any additional variables specified via the command-line arguments. This uses a helper function `varValueConvert` for converting environment variable values appropriately.
+4. **Signal Handling and Exit**: The execution process is configured to handle the termination signals (`SIGTERM`, `SIGINT`, `SIGBREAK`, `SIGHUP`) and ensures that the parent process exits with appropriate exit status propagated from the child process. 
+
+Below is the code rewritten with the same functionality and structure:
+
+```javascript
+const { spawn } = require('cross-spawn');
+const commandConvert = require('./command');
+const varValueConvert = require('./variable');
+
+module.exports = crossEnv;
+
+const envSetterRegex = /(\w+)=('(.*)'|"(.*)"|(.*))/;
+
+function crossEnv(args, options = {}) {
+  const [envSetters, command, commandArgs] = parseCommand(args);
+  const env = getEnvVars(envSetters);
+  if (command) {
+    const proc = spawn(
+      commandConvert(command, env, true),
+      commandArgs.map(arg => commandConvert(arg, env)),
+      {
+        stdio: 'inherit',
+        shell: options.shell,
+        env,
+      }
+    );
+    setupSignalHandlers(proc);
+    proc.on('exit', (code, signal) => {
+      process.exit(determineExitCode(code, signal));
+    });
+    return proc;
+  }
+  return null;
+}
+
+function parseCommand(args) {
+  const envSetters = {};
+  let command = null;
+  let commandArgs = [];
+
+  for (let i = 0; i < args.length; i++) {
+    const match = envSetterRegex.exec(args[i]);
+    if (match) {
+      envSetters[match[1]] = match[3] ?? match[4] ?? match[5];
+    } else {
+      command = args[i];
+      commandArgs = processCommandArgs(args.slice(i));
+      break;
+    }
+  }
+
+  return [envSetters, command, commandArgs];
+}
+
+function processCommandArgs(args) {
+  return args.map(arg => arg.replace(/\\\\|(\\)?'|([\\])(?=[$"\\])/g, m => {
+    if (m === '\\\\') return '\\';
+    if (m === "\\'") return "'";
+    return '';
+  }));
+}
+
+function getEnvVars(envSetters) {
+  const envVars = { ...process.env };
+  if (process.env.APPDATA) {
+    envVars.APPDATA = process.env.APPDATA;
+  }
+  for (const [varName, value] of Object.entries(envSetters)) {
+    envVars[varName] = varValueConvert(value, varName);
+  }
+  return envVars;
+}
+
+function setupSignalHandlers(proc) {
+  process.on('SIGTERM', () => proc.kill('SIGTERM'));
+  process.on('SIGINT', () => proc.kill('SIGINT'));
+  process.on('SIGBREAK', () => proc.kill('SIGBREAK'));
+  process.on('SIGHUP', () => proc.kill('SIGHUP'));
+}
+
+function determineExitCode(code, signal) {
+  if (code === null) {
+    return signal === 'SIGINT' ? 0 : 1;
+  }
+  return code;
+}
+```

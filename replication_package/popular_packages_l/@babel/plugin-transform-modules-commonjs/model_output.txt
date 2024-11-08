@@ -1,0 +1,60 @@
+The Node.js package `@babel/plugin-transform-modules-commonjs` is a Babel plugin that transforms ECMAScript 2015 (ES6) module syntax into CommonJS module syntax. This transformation is crucial for compatibility with environments that do not natively support ES6 modules, allowing developers to write modern JavaScript while maintaining support for older environments or specific tools that rely on CommonJS.
+
+### Key Functionalities:
+- **Transform Import Statements**: This plugin converts ES6 `import` statements into CommonJS `require` calls.
+- **Transform Export Statements**: ES6 `export` statements are transformed into `module.exports` in CommonJS syntax.
+- **Compatibility Layer**: Ensures that code written using ES6 modules can run in CommonJS-based environments by adhering to the CommonJS module specifications.
+
+Below is a simplified version of what this plugin might implement in order to perform this transformation:
+
+```javascript
+// index.js
+
+const babel = require('@babel/core');
+const commonJsPlugin = require('./transformESModulesToCommonJS');
+
+// Sample code to be transformed
+const es6Code = `
+import { example } from './exampleModule';
+export const myFunction = () => {
+  return example();
+};
+`;
+
+// Transform the ES6 module code to CommonJS
+const transformedCode = babel.transformSync(es6Code, {
+  plugins: [commonJsPlugin]
+});
+
+console.log(transformedCode.code);
+
+// transformESModulesToCommonJS.js
+
+module.exports = function transformESModulesToCommonJS() {
+  return {
+    visitor: {
+      ImportDeclaration(path) {
+        const source = path.node.source.value;
+        const specifiers = path.node.specifiers.map(specifier => specifier.local.name);
+
+        let requireStatement = `const { ${specifiers.join(', ')} } = require('${source}');`;
+        path.replaceWithSourceString(requireStatement);
+      },
+      ExportNamedDeclaration(path) {
+        const declarations = path.node.declaration.declarations.map(declaration => {
+          const { name } = declaration.id;
+          return `exports.${name} = ${name};`;
+        });
+
+        path.replaceWithSourceString(declarations.join('\n'));
+      }
+    }
+  };
+};
+```
+
+In this implementation:
+- `babel.transformSync()` is used to transform `es6Code` with the custom plugin `transformESModulesToCommonJS`.
+- The plugin modifies the Babel Abstract Syntax Tree (AST):
+  - `ImportDeclaration` visitor replaces ES6 `import` with CommonJS `require`.
+  - `ExportNamedDeclaration` visitor replaces `export` with `exports.` assignments.

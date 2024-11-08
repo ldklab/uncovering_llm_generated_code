@@ -1,0 +1,256 @@
+The given Node.js module appears to be a custom implementation of a logger, similar to the "pino" logging library. The code is designed to create a logging instance with customizable options, supporting log levels, formatting, serializers, hooks, and base properties like process ID and host name. Key parts of this code include:
+
+1. **Imports:** The code imports several modules necessary for its operation, including native modules like `os` as well as custom modules for specific logic like redaction and time management.
+
+2. **Default Options:** It defines default options including the logger level, message keys, serializers for error objects, formatters for log output, and other settings like `prettyPrint`.
+
+3. **Logger Creation Function (`pino`):** The main function allows for the creation of logger instances with custom configuration. It normalizes arguments, combines default options with custom options, and sets up serializers, formatters, and configurations.
+
+4. **Formatters and Serializers:** It provides default formatters and serializers for log messages and allows for customization via function options.
+
+5. **Deprecated Warnings:** It issues warnings for deprecated features to guide users toward modern alternatives.
+
+6. **Exported API:** The module exports the central logging function and related tools like `extreme`, `destination`, and some utilities for external use. It also includes backward compatibility for TypeScript and Babel.
+
+7. **Level Management:** The module supports various log levels and allows custom levels to be defined by the user.
+
+Below is a possible rewrite of the provided Node.js code:
+
+```js
+'use strict';
+const os = require('os');
+const stdSerializers = require('pino-std-serializers');
+const redaction = require('./lib/redaction');
+const time = require('./lib/time');
+const proto = require('./lib/proto');
+const symbols = require('./lib/symbols');
+const { assertDefaultLevelFound, mappings, genLsCache } = require('./lib/levels');
+const {
+  createArgsNormalizer,
+  asChindings,
+  final,
+  stringify,
+  buildSafeSonicBoom,
+  buildFormatters,
+  noop
+} = require('./lib/tools');
+const { version } = require('./lib/meta');
+
+const {
+  chindingsSym,
+  redactFmtSym,
+  serializersSym,
+  timeSym,
+  timeSliceIndexSym,
+  streamSym,
+  stringifySym,
+  stringifiersSym,
+  setLevelSym,
+  endSym,
+  formatOptsSym,
+  messageKeySym,
+  nestedKeySym,
+  mixinSym,
+  useOnlyCustomLevelsSym,
+  formattersSym,
+  hooksSym
+} = symbols;
+
+const { epochTime, nullTime } = time;
+const { pid } = process;
+const hostname = os.hostname();
+const defaultErrorSerializer = stdSerializers.err;
+
+const defaultOptions = {
+  level: 'info',
+  messageKey: 'msg',
+  nestedKey: null,
+  enabled: true,
+  prettyPrint: false,
+  base: { pid, hostname },
+  serializers: {
+    err: defaultErrorSerializer
+  },
+  formatters: {
+    bindings(bindings) { return bindings; },
+    level(label, number) { return { level: number }; }
+  },
+  hooks: {
+    logMethod: undefined
+  },
+  timestamp: epochTime,
+  name: undefined,
+  redact: null,
+  customLevels: null,
+  levelKey: undefined,
+  useOnlyCustomLevels: false
+};
+
+const normalize = createArgsNormalizer(defaultOptions);
+const serializers = { ...stdSerializers };
+
+function pino(...args) {
+  const instance = {};
+  const { opts, stream } = normalize(instance, ...args);
+  const {
+    redact,
+    crlf,
+    serializers,
+    timestamp,
+    messageKey,
+    nestedKey,
+    base,
+    name,
+    level,
+    customLevels,
+    useLevelLabels,
+    changeLevelName,
+    levelKey,
+    mixin,
+    useOnlyCustomLevels,
+    formatters,
+    hooks
+  } = opts;
+
+  const allFormatters = buildFormatters(
+    formatters.level,
+    formatters.bindings,
+    formatters.log
+  );
+
+  const deprecatedWarnings = [
+    {
+      condition: useLevelLabels && !(changeLevelName || levelKey),
+      warning: 'useLevelLabels is deprecated, use the formatters.level option instead',
+      code: 'PINODEP001',
+      action: () => { allFormatters.level = labelsFormatter; }
+    },
+    {
+      condition: (changeLevelName || levelKey) && !useLevelLabels,
+      warning: 'changeLevelName and levelKey are deprecated, use the formatters.level option instead',
+      code: 'PINODEP002',
+      action: () => { allFormatters.level = levelNameFormatter(changeLevelName || levelKey); }
+    },
+    {
+      condition: (changeLevelName || levelKey) && useLevelLabels,
+      warning: 'useLevelLabels is deprecated, use the formatters.level option instead',
+      code: 'PINODEP001',
+      action: () => { allFormatters.level = levelNameLabelFormatter(changeLevelName || levelKey); }
+    },
+    {
+      condition: serializers[Symbol.for('pino.*')],
+      warning: 'The pino.* serializer is deprecated, use the formatters.log options instead',
+      code: 'PINODEP003',
+      action: () => { allFormatters.log = serializers[Symbol.for('pino.*')]; }
+    }
+  ];
+
+  deprecatedWarnings.forEach(({ condition, warning, code, action }) => {
+    if (condition) {
+      process.emitWarning(warning, 'Warning', code);
+      action();
+    }
+  });
+
+  if (!allFormatters.bindings) { allFormatters.bindings = defaultOptions.formatters.bindings; }
+  if (!allFormatters.level) { allFormatters.level = defaultOptions.formatters.level; }
+
+  const stringifiers = redact ? redaction(redact, stringify) : {};
+  const formatOpts = redact ? { stringify: stringifiers[redactFmtSym] } : { stringify };
+  const end = '}' + (crlf ? '\r\n' : '\n');
+  
+  const coreChindings = asChindings.bind(null, {
+    [chindingsSym]: '',
+    [serializersSym]: serializers,
+    [stringifiersSym]: stringifiers,
+    [stringifySym]: stringify,
+    [formattersSym]: allFormatters
+  });
+
+  const chindings = base === null ? '' : (name === undefined)
+    ? coreChindings(base) : coreChindings({ ...base, name });
+
+  const calcTime = (timestamp instanceof Function) ? timestamp : (timestamp ? epochTime : nullTime);
+  const timeSliceIndex = calcTime().indexOf(':') + 1;
+
+  if (useOnlyCustomLevels && !customLevels) throw Error('customLevels is required if useOnlyCustomLevels is set true');
+  if (mixin && typeof mixin !== 'function') throw Error(`Unknown mixin type "${typeof mixin}" - expected "function"`);
+
+  assertDefaultLevelFound(level, customLevels, useOnlyCustomLevels);
+  
+  const levels = mappings(customLevels, useOnlyCustomLevels);
+
+  Object.assign(instance, {
+    levels,
+    [useOnlyCustomLevelsSym]: useOnlyCustomLevels,
+    [streamSym]: stream,
+    [timeSym]: calcTime,
+    [timeSliceIndexSym]: timeSliceIndex,
+    [stringifySym]: stringify,
+    [stringifiersSym]: stringifiers,
+    [endSym]: end,
+    [formatOptsSym]: formatOpts,
+    [messageKeySym]: messageKey,
+    [nestedKeySym]: nestedKey,
+    [serializersSym]: serializers,
+    [mixinSym]: mixin,
+    [chindingsSym]: chindings,
+    [formattersSym]: allFormatters,
+    [hooksSym]: hooks,
+    silent: noop
+  });
+
+  Object.setPrototypeOf(instance, proto());
+
+  genLsCache(instance);
+  instance[setLevelSym](level);
+
+  return instance;
+}
+
+function labelsFormatter(label, number) {
+  return { level: label };
+}
+
+function levelNameFormatter(name) {
+  return function (label, number) {
+    return { [name]: number };
+  };
+}
+
+function levelNameLabelFormatter(name) {
+  return function (label, number) {
+    return { [name]: label };
+  };
+}
+
+module.exports = pino;
+
+module.exports.extreme = (dest = process.stdout.fd) => {
+  process.emitWarning(
+    'The pino.extreme() option is deprecated and will be removed in v7. Use pino.destination({ sync: false }) instead.',
+    { code: 'extreme_deprecation' }
+  );
+  return buildSafeSonicBoom({ dest, minLength: 4096, sync: false });
+};
+
+module.exports.destination = (dest = process.stdout.fd) => {
+  if (typeof dest === 'object') {
+    dest.dest = dest.dest || process.stdout.fd;
+    return buildSafeSonicBoom(dest);
+  } else {
+    return buildSafeSonicBoom({ dest, minLength: 0, sync: true });
+  }
+};
+
+module.exports.final = final;
+module.exports.levels = mappings();
+module.exports.stdSerializers = serializers;
+module.exports.stdTimeFunctions = { ...time };
+module.exports.symbols = symbols;
+module.exports.version = version;
+
+// Enables default and name export with TypeScript and Babel
+module.exports.default = pino;
+module.exports.pino = pino;
+```

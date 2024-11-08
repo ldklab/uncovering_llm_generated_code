@@ -1,0 +1,131 @@
+The given Node.js code defines a `SymbolTree` class for managing a tree structure where objects can have parent-child relationships. It uses a `WeakMap` to store metadata about each object, including its parent and its children. The class provides various methods to manipulate and query the hierarchical structure:
+
+1. **`initialize(object)`**: Sets up an object with null parent and an empty children array if it's not already initialized.
+2. **`insertBefore(referenceObject, newObject)`**: Inserts `newObject` before `referenceObject` at the same level in the tree.
+3. **`insertAfter(referenceObject, newObject)`**: Inserts `newObject` after `referenceObject` at the same level in the tree.
+4. **`prependChild(parent, newObject)`**: Adds `newObject` as the first child of `parent`.
+5. **`appendChild(parent, newObject)`**: Adds `newObject` as the last child of `parent`.
+6. **`remove(object)`**: Removes `object` from its parent's children, effectively detaching it.
+7. **`hasChildren(object)`**: Checks if an object has any children.
+8. **`firstChild(object)`**: Returns the first child of an object, if any.
+9. **`lastChild(object)`**: Returns the last child of an object, if any.
+10. **`previousSibling(object)`**: Returns the previous sibling of an object, if any.
+11. **`nextSibling(object)`**: Returns the next sibling of an object, if any.
+12. **`parent(object)`**: Returns the parent of an object.
+13. **`_checkNotPresent(object)`**: Checks if an object is already part of the tree, throwing an error if it is.
+
+Here's the rewritten code:
+
+```javascript
+'use strict';
+
+const nodeDataMap = new WeakMap();
+
+class SymbolTree {
+    constructor(description = 'SymbolTree data') {
+        this.symbol = Symbol(description);
+    }
+
+    initialize(object) {
+        if (!nodeDataMap.has(object)) {
+            nodeDataMap.set(object, { parent: null, children: [] });
+        }
+        return object;
+    }
+
+    insertBefore(referenceNode, newNode) {
+        this._ensureNotExists(newNode);
+        const refData = nodeDataMap.get(referenceNode);
+        const parentData = nodeDataMap.get(refData.parent);
+        const index = parentData.children.indexOf(referenceNode);
+        parentData.children.splice(index, 0, newNode);
+        nodeDataMap.set(newNode, { parent: refData.parent, children: [] });
+        return newNode;
+    }
+
+    insertAfter(referenceNode, newNode) {
+        this._ensureNotExists(newNode);
+        const refData = nodeDataMap.get(referenceNode);
+        const parentData = nodeDataMap.get(refData.parent);
+        const index = parentData.children.indexOf(referenceNode);
+        parentData.children.splice(index + 1, 0, newNode);
+        nodeDataMap.set(newNode, { parent: refData.parent, children: [] });
+        return newNode;
+    }
+
+    prependChild(parentNode, newNode) {
+        this._ensureNotExists(newNode);
+        const parentData = nodeDataMap.get(parentNode);
+        parentData.children.unshift(newNode);
+        nodeDataMap.set(newNode, { parent: parentNode, children: [] });
+        return newNode;
+    }
+
+    appendChild(parentNode, newNode) {
+        this._ensureNotExists(newNode);
+        const parentData = nodeDataMap.get(parentNode);
+        parentData.children.push(newNode);
+        nodeDataMap.set(newNode, { parent: parentNode, children: [] });
+        return newNode;
+    }
+
+    remove(node) {
+        const nodeData = nodeDataMap.get(node);
+        if (nodeData && nodeData.parent !== null) {
+            const parentData = nodeDataMap.get(nodeData.parent);
+            const index = parentData.children.indexOf(node);
+            parentData.children.splice(index, 1);
+            nodeDataMap.set(node, { parent: null, children: [] });
+        }
+        return node;
+    }
+
+    hasChildren(node) {
+        const nodeData = nodeDataMap.get(node);
+        return nodeData && nodeData.children.length > 0;
+    }
+
+    firstChild(node) {
+        const nodeData = nodeDataMap.get(node);
+        return nodeData && nodeData.children[0];
+    }
+
+    lastChild(node) {
+        const nodeData = nodeDataMap.get(node);
+        return nodeData && nodeData.children[nodeData.children.length - 1];
+    }
+
+    previousSibling(node) {
+        const nodeData = nodeDataMap.get(node);
+        if (nodeData && nodeData.parent !== null) {
+            const parentData = nodeDataMap.get(nodeData.parent);
+            const index = parentData.children.indexOf(node);
+            return parentData.children[index - 1] || null;
+        }
+        return null;
+    }
+
+    nextSibling(node) {
+        const nodeData = nodeDataMap.get(node);
+        if (nodeData && nodeData.parent !== null) {
+            const parentData = nodeDataMap.get(nodeData.parent);
+            const index = parentData.children.indexOf(node);
+            return parentData.children[index + 1] || null;
+        }
+        return null;
+    }
+
+    parent(node) {
+        const nodeData = nodeDataMap.get(node);
+        return nodeData && nodeData.parent;
+    }
+
+    _ensureNotExists(node) {
+        if (nodeDataMap.has(node) && nodeDataMap.get(node).parent !== null) {
+            throw new Error('Node is already a part of another SymbolTree');
+        }
+    }
+}
+
+module.exports = SymbolTree;
+```

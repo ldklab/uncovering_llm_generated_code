@@ -1,0 +1,55 @@
+The Node.js code provided is a module for traversing JSON schemas. It traverses the schema in a depth-first manner, invoking optional pre and post traversal callback functions at each node. The code inspects objects with 'properties' or 'items', applying the pre-traversal callback before visiting children and a post-traversal callback after visiting children. The traversal can cover all schema keys if `allKeys` is set to true in the options.
+
+Here's a possible rewrite of the given code:
+
+```javascript
+// json-schema-traverse.js
+
+function traverse(schema, options) {
+  const { cb, allKeys } = options;
+  const preTraversal = typeof cb === 'function' ? cb : cb.pre;
+  const postTraversal = cb.post;
+
+  function _traverse(currentSchema, currentPointer = '', parentPointer = '', parentKeyword, parentSchema, keyIndex) {
+    const shouldTraverseChildren = 
+      allKeys || 
+      (currentSchema && typeof currentSchema === 'object' && (currentSchema.properties || currentSchema.items));
+
+    if (shouldTraverseChildren) {
+      if (preTraversal) preTraversal(currentSchema, currentPointer, rootSchema, parentPointer, parentKeyword, parentSchema, keyIndex);
+
+      Object.entries(currentSchema).forEach(([key, subschema]) => {
+        if (subschema && typeof subschema === 'object') {
+          const newJsonPointer = `${currentPointer}/${key}`;
+          _traverse(subschema, newJsonPointer, currentPointer, key, currentSchema, key);
+        }
+      });
+      
+      if (postTraversal) postTraversal(currentSchema, currentPointer, rootSchema, parentPointer, parentKeyword, parentSchema, keyIndex);
+    }
+  }
+
+  const rootSchema = schema;
+  _traverse(schema, '', '', null, null, null);
+}
+
+module.exports = traverse;
+
+// Usage example:
+
+const traverse = require('./json-schema-traverse');
+
+const schemaExample = {
+  properties: {
+    foo: { type: 'string' },
+    bar: { type: 'integer' }
+  }
+};
+
+const callbackFunctions = {
+  pre: (schema) => console.log("Pre:", schema),
+  post: (schema) => console.log("Post:", schema)
+};
+
+traverse(schemaExample, { cb: callbackFunctions });
+```

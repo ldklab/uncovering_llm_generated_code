@@ -1,0 +1,95 @@
+The provided Node.js code defines a file system walker utility using the Node.js `fs` module and `EventEmitter`. Here is a detailed explanation of its functionality:
+
+- **`Walker` Class**: This class is derived from `EventEmitter` and is used to traverse directories.
+  - **Constructor**: Initializes the walker with a root directory and an optional directory filter function.
+  - **`filterDir` Method**: Sets a directory filter function that decides if a directory should be entered during the walk.
+  - **`walk` Method**: Begins traversing the directory tree starting from the root directory.
+  - **`_walk` Private Method**: Recursively processes directories and their entries. Emits events for different types of entries like files, directories, symlinks, etc.
+  - **Events**: Various events like `entry`, `file`, `dir`, `symlink`, and more are emitted. An `error` event is emitted if there are issues accessing a file or directory.
+
+- **`WalkerFactory` Function**: A convenience function that creates a new `Walker` instance, starts the walk process immediately, and returns the instance.
+
+This utility allows users to listen for events and respond to different types of file system entries. It also supports pre-filtering directories using a filter function.
+
+Here is a possible rewrite of this Node.js code:
+
+```javascript
+const fs = require('fs');
+const path = require('path');
+const { EventEmitter } = require('events');
+
+class FileSystemWalker extends EventEmitter {
+  constructor(startDir) {
+    super();
+    this.startDir = startDir;
+    this.directoryFilter = null;
+  }
+
+  setDirectoryFilter(filterFunction) {
+    this.directoryFilter = filterFunction;
+    return this;
+  }
+
+  startWalking() {
+    this._recursiveWalk(this.startDir);
+    return this;
+  }
+
+  _recursiveWalk(currentDir) {
+    fs.readdir(currentDir, { withFileTypes: true }, (err, entries) => {
+      if (err) {
+        this.emit('error', err, currentDir);
+        return;
+      }
+
+      for (const entry of entries) {
+        const entryPath = path.join(currentDir, entry.name);
+        fs.stat(entryPath, (err, stats) => {
+          if (err) {
+            this.emit('error', err, entryPath);
+            return;
+          }
+
+          this.emit('entry', entryPath, stats);
+
+          if (stats.isDirectory()) {
+            if (this.directoryFilter && !this.directoryFilter(entryPath, stats)) return;
+            this.emit('directory', entryPath, stats);
+            this._recursiveWalk(entryPath);
+          } else {
+            this.emitByType(entry, entryPath, stats);
+          }
+        });
+      }
+
+      if (currentDir === this.startDir) {
+        process.nextTick(() => this.emit('complete'));
+      }
+    });
+  }
+
+  emitByType(entry, entryPath, stats) {
+    if (stats.isFile()) {
+      this.emit('file', entryPath, stats);
+    } else if (stats.isSymbolicLink()) {
+      this.emit('symlink', entryPath, stats);
+    } else if (stats.isBlockDevice()) {
+      this.emit('blockDevice', entryPath, stats);
+    } else if (stats.isFIFO()) {
+      this.emit('fifo', entryPath, stats);
+    } else if (stats.isSocket()) {
+      this.emit('socket', entryPath, stats);
+    } else if (stats.isCharacterDevice()) {
+      this.emit('characterDevice', entryPath, stats);
+    }
+  }
+}
+
+function createFileSystemWalker(startDir) {
+  const walker = new FileSystemWalker(startDir);
+  process.nextTick(() => walker.startWalking());
+  return walker;
+}
+
+module.exports = createFileSystemWalker;
+```

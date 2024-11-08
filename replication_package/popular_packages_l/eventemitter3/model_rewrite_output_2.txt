@@ -1,0 +1,71 @@
+The provided Node.js code implements a basic version of an `EventEmitter` class, a pattern commonly used for handling events in JavaScript. Here's a breakdown of its functionality:
+
+- **Constructor**: Initializes an `events` object to keep track of event names and their associated listeners.
+- **`on` Method**: Registers an event listener for a specified event. It takes the event name, a callback function, and an optional context. The listener is saved in the `events` object.
+- **`once` Method**: Registers a one-time event listener. It uses an intermediary function that removes itself after execution and then invokes the actual callback.
+- **`emit` Method**: Triggers an event, calling all listeners associated with the event name. It passes any additional arguments to the listeners.
+- **`removeListener` Method**: Removes a specific listener for an event by matching the function and context.
+- **`removeAllListeners` Method**: Clears all listeners for a specific event or all events if no event name is provided.
+
+Below is a possible rewrite of the Node.js code, maintaining the same functionality:
+
+```javascript
+class EventEmitter {
+  constructor() {
+    this.events = {};
+  }
+
+  on(event, fn, context = null) {
+    if (!this.events[event]) this.events[event] = [];
+    this.events[event].push({ fn, context });
+    return this;
+  }
+
+  once(event, fn, context = null) {
+    const handler = (...args) => {
+      this.removeListener(event, handler);
+      fn.apply(context, args);
+    };
+    handler.fn = fn;
+    this.on(event, handler, context);
+    return this;
+  }
+
+  emit(event, ...args) {
+    if (!this.events[event]) return false;
+    this.events[event].forEach(listener => {
+      listener.fn.apply(listener.context, args);
+    });
+    return true;
+  }
+
+  removeListener(event, fn, context = null) {
+    if (!this.events[event]) return this;
+    this.events[event] = this.events[event].filter(listener => listener.fn !== fn || listener.context !== context);
+    return this;
+  }
+
+  removeAllListeners(event) {
+    if (event) {
+      delete this.events[event];
+    } else {
+      this.events = {};
+    }
+    return this;
+  }
+}
+
+module.exports = EventEmitter;
+
+// Usage example
+const EE = new EventEmitter();
+const context = { foo: 'bar' };
+
+function listener() {
+  console.log(this === context); // true
+}
+
+EE.once('my-event', listener, context);
+EE.emit('my-event');  // Logs: true
+EE.emit('my-event');  // Does nothing as it's once
+```

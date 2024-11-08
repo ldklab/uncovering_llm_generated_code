@@ -1,0 +1,125 @@
+The `arg` package is a simple CLI argument parsing library for Node.js, allowing for easy command-line argument processing. Here’s a breakdown of its functionality as described in the README:
+
+1. **Installation**: It can be installed using either NPM or Yarn.
+
+2. **Basic Usage**:
+    - The main function `arg()` takes two parameters:
+      1. A specification object that maps command-line flags to their types (e.g., Boolean, Number, String) or aliases.
+      2. Optional parse options, which include settings like permissive parsing, specifying custom argv to parse, and stopping at the first positional argument.
+
+3. **Specification Object**:
+    - Each key in the specification is a command-line flag, and the value can be:
+      - A type function that transforms the argument's string value. Built-in JavaScript constructors such as `String`, `Number`, and `Boolean` act as type functions.
+      - An array for flags that can be passed multiple times, collecting all values in an array (e.g., `--tag` in the example).
+      - A string indicating an alias for another flag.
+
+4. **Handling Special Cases**:
+    - `Boolean` options are treated as flags, returning `true` when present without consuming a separate value from the command-line arguments.
+
+5. **Custom Flag Handlers**:
+    - Custom handlers can be created using `arg.flag()` to mimic flag behavior.
+
+6. **Helper Functions**:
+    - `arg.COUNT` is used to count the number of times a flag is passed. Useful for verbosity levels (`-vvv`).
+
+7. **Options Object**:
+    - Modifying parsing behavior (`permissive`: ignore unknown flags, `stopAtPositional`: stop parsing at the first positional argument).
+
+8. **Error Handling**:
+    - Specific error codes such as `ARG_UNKNOWN_OPTION` help manage unexpected flags.
+
+Below is the implementation of the described functionality.
+
+```javascript
+const arg = (spec, options = {}) => {
+    const defaults = {
+        permissive: false,
+        argv: process.argv.slice(2),
+        stopAtPositional: false,
+    };
+    options = Object.assign({}, defaults, options);
+    
+    const result = { _: [] };
+    const argv = options.argv;
+    let skipFlag = false;
+
+    for (let i = 0; i < argv.length; i++) {
+        const arg = argv[i];
+
+        if (!skipFlag && !arg.startsWith('-') && options.stopAtPositional) {
+            result._ = result._.concat(argv.slice(i));
+            break;
+        }
+
+        if (arg.startsWith('--')) {
+            const [identifier, value] = arg.split('=');
+            if (!(identifier in spec)) {
+                if (options.permissive) {
+                    result._.push(arg);
+                } else {
+                    throw createUnknownOptionError(arg);
+                }
+                continue;
+            }
+
+            handleArgument(spec, result, identifier, value, argv, i, skipFlag);
+        } else if (arg.startsWith('-') && arg !== '-') {
+            for (let j = 1; j < arg.length; j++) {
+                const flag = '-' + arg[j];
+                if (!(flag in spec)) {
+                    if (options.permissive) {
+                        result._.push('-' + arg[j]);
+                        break;
+                    } else {
+                        throw createUnknownOptionError(arg);
+                    }
+                }
+
+                handleArgument(spec, result, flag, null, argv, i, skipFlag);
+            }
+        } else if (!skipFlag) {
+            result._.push(arg);
+        }
+
+        skipFlag = false;
+    }
+
+    return result;
+};
+
+const handleArgument = (spec, result, flag, value, argv, i, skipRefresh) => {
+    const type = spec[flag];
+	
+    flag = typeof type === 'string' ? type : flag;
+
+    if (type === Boolean || (Array.isArray(type) && type[0] === Boolean)) {
+        result[flag] = type === Boolean ? true : (result[flag] || []).concat(true);
+    } else {
+        if (!value) {
+            if (argv[i + 1] && !argv[i + 1].startsWith('-')) {
+                value = argv[++i];
+                skipRefresh = true;
+            } else if (type !== String) {
+                value = '';
+            } else {
+                throw createUnknownOptionError(flag);
+            }
+        }
+
+        const val = type(value, flag, result[flag]);
+        result[flag] = Array.isArray(type) ? (result[flag] || []).concat(val) : val;
+    }
+};
+
+const createUnknownOptionError = (arg) => {
+    const err = new Error(`Unknown or unexpected option: ${arg}`);
+    err.code = 'ARG_UNKNOWN_OPTION';
+    return err;
+};
+
+arg.flag = (fn) => (value, argName, previousValue) => fn(true, argName, previousValue);
+arg.COUNT = (value, argName, previousValue = 0) => previousValue + 1;
+
+// Export the module
+module.exports = arg;
+```

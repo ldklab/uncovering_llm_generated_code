@@ -1,0 +1,59 @@
+The functionality of the given Node.js code is to expand environment variables within configuration values, effectively performing variable interpolation. This process involves replacing placeholders (e.g., `${VAR_NAME}`) with their corresponding values from either the process environment (`process.env`) or a parsed configuration object. Here's a summary of how it works:
+
+1. **Configuration Setup**: The function takes a `config` object as an argument. This object contains a `parsed` property with key-value pairs representing environment variables, and a flag `ignoreProcessEnv` that indicates whether to ignore `process.env`.
+
+2. **Environment Selection**: It creates an `environment` object. If `ignoreProcessEnv` is true, it uses an empty object; otherwise, it uses `process.env`.
+
+3. **Interpolation**: A helper function `interpolate` is defined to replace placeholders in a string with the corresponding values. It uses a regex to match patterns like `${VAR_NAME}` and checks if these variables exist in `process.env` or in the `config.parsed` object. Values are recursively interpolated to resolve nested placeholders.
+
+4. **Value Substitution**: The function loops over each key-value pair in `config.parsed`, uses the `interpolate` function to process it, and updates `config.parsed` with the interpolated values.
+
+5. **Environment Update**: Finally, it sets the interpolated values back to the `environment` (either `process.env` or the empty object if `ignoreProcessEnv` is true).
+
+6. **Return**: The function returns the updated `config` object.
+
+Here is the possible rewrite for the provided code with the same functionality:
+
+```javascript
+'use strict';
+
+function dotenvExpand(config) {
+  const environment = config.ignoreProcessEnv ? {} : process.env;
+
+  function interpolate(envValue) {
+    const matches = envValue.match(/(.?\${?(?:[a-zA-Z0-9_]+)?}?)/g) || [];
+
+    return matches.reduce((newEnv, match) => {
+      const parts = /(.?)\${?([a-zA-Z0-9_]+)?}?/g.exec(match);
+      const prefix = parts[1];
+      
+      let value, replacePart;
+      
+      if (prefix === '\\') {
+        replacePart = parts[0];
+        value = replacePart.replace('\\$', '$');
+      } else {
+        const key = parts[2];
+        replacePart = parts[0].substring(prefix.length);
+        value = environment.hasOwnProperty(key) ? environment[key] : (config.parsed[key] || '');
+        value = interpolate(value);
+      }
+      
+      return newEnv.replace(replacePart, value);
+    }, envValue);
+  }
+
+  for (const configKey in config.parsed) {
+    const value = environment.hasOwnProperty(configKey) ? environment[configKey] : config.parsed[configKey];
+    config.parsed[configKey] = interpolate(value);
+  }
+
+  for (const processKey in config.parsed) {
+    environment[processKey] = config.parsed[processKey];
+  }
+
+  return config;
+}
+
+module.exports = dotenvExpand;
+```

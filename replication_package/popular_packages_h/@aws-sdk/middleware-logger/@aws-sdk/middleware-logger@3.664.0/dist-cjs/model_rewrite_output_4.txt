@@ -1,0 +1,101 @@
+The given Node.js code is implementing a logger middleware for a client, presumably for use with services like AWS SDK clients. Here's a breakdown of its functionality:
+
+1. **Helper Functions & Setup**: Several utility functions are defined for handling property definitions and copying, typically used for managing module exports and CommonJS compatibility.
+
+2. **Middleware Function (`loggerMiddleware`)**: This function wraps a client request:
+   - It logs the request and response, including any sensitive data, using a logger if provided in the context.
+   - Sensitivity of input/output data can be managed via filter functions in the context or overridden options, and this data is recorded alongside client/command name and metadata in logs.
+   - On errors, it logs the error details with similar contextual information.
+   - This is set up to handle both successful and failed requests using try-catch for logging.
+
+3. **Middleware Options (`loggerMiddlewareOptions`)**: Defines characteristics of the middleware, like its name, tags, step in the middleware process, and whether it overrides other middlewares.
+
+4. **Plugin Function (`getLoggerPlugin`)**: A function that returns an object with `applyToStack` method, designed to add this logging middleware to a client stack with defined options.
+
+5. **Export Handling**: The code exports these functionalities using a CommonJS module system, ensuring compatibility with environments expecting ES Modules.
+
+Here is a possible rewrite of the original code in a cleaner, modern syntax, grouped into a single markdown code block:
+
+```javascript
+"use strict";
+
+const { defineProperty, getOwnPropertyDescriptor, getOwnPropertyNames, prototype: { hasOwnProperty } } = Object;
+
+const setName = (target, value) => defineProperty(target, "name", { value, configurable: true });
+
+const exportModule = (target, all) => {
+  for (const name in all) {
+    defineProperty(target, name, { get: all[name], enumerable: true });
+  }
+};
+
+const copyProperties = (to, from, exclude, desc) => {
+  if (from && (typeof from === "object" || typeof from === "function")) {
+    for (const key of getOwnPropertyNames(from)) {
+      if (!hasOwnProperty.call(to, key) && key !== exclude) {
+        defineProperty(to, key, { 
+          get: () => from[key], 
+          enumerable: !(desc = getOwnPropertyDescriptor(from, key)) || desc.enumerable 
+        });
+      }
+    }
+  }
+  return to;
+};
+
+const toCommonJS = (mod) => copyProperties(defineProperty({}, "__esModule", { value: true }), mod);
+
+const loggerMiddleware = setName(async (next, context) => async (args) => {
+  const { clientName, commandName, logger, dynamoDbDocumentClientOptions = {} } = context;
+  const { overrideInputFilterSensitiveLog, overrideOutputFilterSensitiveLog } = dynamoDbDocumentClientOptions;
+  const inputFilterSensitiveLog = overrideInputFilterSensitiveLog ?? context.inputFilterSensitiveLog;
+  const outputFilterSensitiveLog = overrideOutputFilterSensitiveLog ?? context.outputFilterSensitiveLog;
+
+  try {
+    const response = await next(args);
+    const { $metadata, ...outputWithoutMetadata } = response.output;
+
+    logger?.info?.({
+      clientName,
+      commandName,
+      input: inputFilterSensitiveLog(args.input),
+      output: outputFilterSensitiveLog(outputWithoutMetadata),
+      metadata: $metadata
+    });
+
+    return response;
+  } catch (error) {
+    logger?.error?.({
+      clientName,
+      commandName,
+      input: inputFilterSensitiveLog(args.input),
+      error,
+      metadata: error.$metadata
+    });
+
+    throw error;
+  }
+}, "loggerMiddleware");
+
+const loggerMiddlewareOptions = {
+  name: "loggerMiddleware",
+  tags: ["LOGGER"],
+  step: "initialize",
+  override: true
+};
+
+const getLoggerPlugin = setName(options => ({
+  applyToStack: clientStack => {
+    clientStack.add(loggerMiddleware(), loggerMiddlewareOptions);
+  }
+}), "getLoggerPlugin");
+
+const src_exports = {};
+exportModule(src_exports, {
+  getLoggerPlugin,
+  loggerMiddleware,
+  loggerMiddlewareOptions
+});
+
+module.exports = toCommonJS(src_exports);
+```

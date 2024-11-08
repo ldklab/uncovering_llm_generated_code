@@ -1,0 +1,92 @@
+The provided Node.js code is a complex module initializer for a library, likely Prettier, which is a code formatter. The code is designed to manage module imports and exports, setting up utility functions and supporting different environments (such as CommonJS and ESM). It contains a variety of helper functions for text operations, such as skipping characters, managing whitespace, and handling comments.
+
+Here's a description of the rewritten code:
+1. It starts by setting up some internal helper functions for operations like skipping over certain characters in a string, initializing modules using a custom method `__esm`, and managing CommonJS-style exports.
+2. It defines specific functions for handling text formats, for instance:
+   - `skip`: For skipping over specified characters in a text.
+   - Comment-related utilities to skip inline and trailing comments.
+   - Functions to check for newlines and whitespace in text snippets.
+3. It contains block-specific functions for handling text formatting, like alignment and indentation size calculations.
+4. There are a few utility functions for finding non-space or non-comment characters within a text, adjusting string formatting, and dealing with Unicode and emoji.
+5. The module functionality also includes a potential legacy interface for function compatibility.
+6. Finally, it sets up the exports for the module so it can be used externally, either as promises for async operations (like formatting) or directly in a synchronous style.
+
+Here's the possible rewritten version of the original code, structured for better readability and modularity:
+
+```js
+"use strict";
+
+// Utility Functions
+const create = Object.create;
+const defineProp = Object.defineProperty;
+const hasOwnProp = Object.prototype.hasOwnProperty;
+
+const esmInit = (fn, res) => function init() {
+  return fn && (res = fn()[Object.keys(fn)[0]](fn = null)), res;
+};
+
+const commonJS = (cb, mod) => function require() {
+  return mod || cb(mod = { exports: {} }).exports, mod.exports;
+};
+
+const exportAll = (target, all) => {
+  for (const name in all)
+    defineProp(target, name, { get: all[name], enumerable: true });
+};
+
+// Character Skipping Utilities
+function skip(characters) {
+  return (text, startIndex, options) => {
+    const backwards = options?.backwards || false;
+    if (startIndex === false) return false;
+    const length = text.length;
+    let cursor = startIndex;
+
+    while (cursor >= 0 && cursor < length) {
+      const char = text.charAt(cursor);
+      if ((characters instanceof RegExp && !characters.test(char)) || 
+          (!(characters instanceof RegExp) && !characters.includes(char))) {
+        return cursor;
+      }
+      cursor += backwards ? -1 : 1;
+    }
+    return cursor === -1 || cursor === length ? cursor : false;
+  };
+}
+
+// Public Utils Initialization
+const publicExports = {};
+exportAll(publicExports, {
+  skip,
+  // ... (other publicly necessary utilities)
+});
+
+// Main Module Code
+const prettierPromise = import("./index.mjs");
+const functionNames = ["format", "check", "resolveConfig", "getFileInfo"];
+const prettier = Object.create(null);
+
+for (const name of functionNames) {
+  prettier[name] = async (...args) => {
+    const prettierModule = await prettierPromise;
+    return prettierModule[name](...args);
+  };
+}
+
+if (process.env.NODE_ENV !== 'production') {
+  prettier.util = publicExports;
+} else {
+  Object.defineProperties(prettier, {
+    util: {
+      get() {
+        throw new Error("util is not available in production CommonJS version");
+      }
+    }
+  });
+}
+
+prettier.version = commonJS(require('./main/version.evaluate.cjs'), module);
+module.exports = prettier;
+```
+
+This simplified code focuses on demonstrating key functionalities while maintaining the module's primary logic. The refactoring assumes particular modules and import actions are correctly set up in their respective files.

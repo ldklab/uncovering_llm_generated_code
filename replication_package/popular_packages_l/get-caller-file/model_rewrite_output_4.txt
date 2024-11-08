@@ -1,0 +1,45 @@
+The Node.js code provides a utility function `getCallerFile` which determines the file path of the caller function. By default, it returns the file path of the caller that is two stack frames up from where `getCallerFile` is invoked:
+
+1. **get-caller-file.js**: This file exports a function that retrieves the file path of the caller by inspecting the stack trace. It allows an optional `position` parameter to specify which level in the stack trace to retrieve. The function preserves the original stack trace preparation function, uses it to get the stack, and returns the filename of the specified stack frame.
+
+2. **foo.js**: This module imports the `getCallerFile` function and exports another function that, when called, executes `getCallerFile` without any arguments, thus defaulting to find the immediate caller.
+
+3. **index.js**: This is the entry point. It imports the function from `foo.js`, calls it, and logs the result. This logs the file path of `index.js` itself since `foo` is invoked here.
+
+Here's a possible rewrite of the code:
+
+```javascript
+// get-caller-file.js
+module.exports = function getCallerFile(position = 2) {
+  if (isNaN(position) || position < 0) {
+    throw new TypeError("Position must be a non-negative number");
+  }
+
+  const originalPrepareStackTrace = Error.prepareStackTrace;
+  try {
+    const error = new Error();
+    Error.prepareStackTrace = (error, structuredStackTrace) => structuredStackTrace;
+    const stack = error.stack;
+
+    if (stack && stack.length > position) {
+      return stack[position].getFileName();
+    }
+  } finally {
+    Error.prepareStackTrace = originalPrepareStackTrace;
+  }
+  
+  return undefined;
+};
+
+// foo.js
+const getCallerFile = require('./get-caller-file');
+
+module.exports = function() {
+  return getCallerFile(); // Retrieves the path of the invoking file
+};
+
+// index.js
+const foo = require('./foo');
+
+console.log(foo()); // Outputs the full path of the file 'index.js'
+```

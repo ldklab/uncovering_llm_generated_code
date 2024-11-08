@@ -1,0 +1,66 @@
+The `structuredClone` polyfill package provides a way to clone complex data structures beyond what JSON traditionally supports using a structured serialization and deserialization approach. It is designed to mimic the HTML standard structured clone algorithm, which allows for copying data types that include recursive structures and some more complex types that JSON does not support. Here is a breakdown of its functionality:
+
+1. **Core Functionality**:
+   - `structuredClone`: A function that performs structured cloning of values.
+   - `serialize`: Exports a function to serialize values into a format that can later be deserialized.
+   - `deserialize`: Exports a function to reverse `serialize`, reconstructing the original object.
+
+2. **Supported Data Types**: It supports many common data types but excludes some like Blob, File, and others. Certain array types are partially supported. The `{transfer: []}` option present in some implementations of structured cloning is ignored here.
+
+3. **Global Polyfill**: Users can globally define `structuredClone` in environments lacking native support, though it's advised against overriding existing implementations without checks to prevent infinite loops.
+
+4. **Configuration Options**: 
+   - `lossy`: Allows serialization without error by ignoring unsupported values (like functions, symbols).
+   - `json`: Enforces lossy serialization and also looks for `toJSON` methods to assist in serializing complex objects.
+
+5. **Extra Features**: An additional export provides stringification and parsing of objects while maintaining structured data integrity but in a lossy fashion more akin to JSON serialization.
+
+Here's the implementation code for the Node.js package:
+
+```markdown
+// index.js
+import { serialize, deserialize } from './structuredClone';
+import { stringify, parse } from './json';
+
+function structuredClone(value, options = {}) {
+  const serialized = serialize(value, options);
+  return deserialize(serialized);
+}
+
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = structuredClone;
+  module.exports.serialize = serialize;
+  module.exports.deserialize = deserialize;
+  module.exports.json = { stringify, parse };
+}
+
+// structuredClone.js
+export function serialize(value, options = {}) {
+  const { lossy = false, json = false } = options;
+  return JSON.stringify(value, (key, value) => {
+    if (typeof value === 'function' || typeof value === 'symbol') {
+      if (lossy || json) return null;
+      throw new TypeError('Cannot serialize functions or symbols');
+    }
+    if (json && typeof value.toJSON === 'function') {
+      return value.toJSON();
+    }
+    return value;
+  });
+}
+
+export function deserialize(serialized) {
+  return JSON.parse(serialized);
+}
+
+// json.js
+export function stringify(value) {
+  return serialize(value, { lossy: true, json: true });
+}
+
+export function parse(serialized) {
+  return deserialize(serialized);
+}
+```
+
+The code includes both the main functionality for cloning and supplementary utilities like lossy and JSON serialization handling. Users can import this package to handle data structures in Node.js environments effectively, using structured cloning techniques.

@@ -1,0 +1,71 @@
+The `rfdc` package provides a fast deep clone function for JavaScript objects. Here's a description of its features and functionality:
+
+1. **Function and Options**: The main function exported by the package creates a deep clone function with configurable options:
+   - **proto**: If set to `true`, the clone will copy properties from the prototype chain to the new object. Default is `false`.
+   - **circles**: If set to `true`, the function can handle circular references in objects. This adds performance overhead.
+   - **constructorHandlers**: An array of tuples where each tuple consists of a constructor and a function that defines how to clone instances of that constructor.
+
+2. **Usage**: 
+   - Import the package and create a clone function by calling the default export with optional settings.
+   - Call the clone function on the object to be cloned.
+
+3. **Supported Types**: The package handles common JSON types (Object, Array, Number, String, null) and other types such as Date, undefined, Buffer, TypedArray, Map, Set, and functions (as references).
+
+4. **Performance**: Includes benchmark comparisons showing `rfdc` as a high-performance option compared to other deep clone libraries.
+
+5. **Tests and Coverage**: The package includes comprehensive testing with high coverage ensuring reliable operations.
+
+Here's a basic implementation of the described functionality:
+
+```js
+// index.js
+module.exports = function (opts = { proto: false, circles: false, constructorHandlers: [] }) {
+  const { proto, circles, constructorHandlers } = opts;
+
+  const clone = (input, map = new WeakMap()) => {
+    if (input === null || typeof input !== 'object') return input;
+
+    if (circles) {
+      if (map.has(input)) return map.get(input);
+    }
+
+    let output;
+    const inputIsArray = Array.isArray(input);
+    output = inputIsArray ? [] : Object.create(proto ? Object.getPrototypeOf(input) : null);
+
+    if (circles) map.set(input, output);
+
+    const constructorHandler = constructorHandlers.find(([cons]) => input instanceof cons);
+    if (constructorHandler) return constructorHandler[1](input);
+
+    if (input instanceof Date) return new Date(input);
+    if (Buffer.isBuffer(input)) return Buffer.from(input);
+    if (input instanceof Map) {
+      output = new Map();
+      for (let [key, value] of input) output.set(key, clone(value, map));
+      return output;
+    }
+    if (input instanceof Set) {
+      output = new Set();
+      for (let value of input) output.add(clone(value, map));
+      return output;
+    }
+    if (ArrayBuffer.isView(input) && !(input instanceof DataView)) return new input.constructor(input);
+
+    Reflect.ownKeys(input).forEach((key) => {
+      if (key === '__proto__' && !proto) return;
+      output[key] = clone(input[key], map);
+    });
+
+    return output;
+  };
+
+  return clone;
+};
+
+// default.js
+const rfdc = require('./index');
+module.exports = rfdc({ proto: false, circles: false, constructorHandlers: [] });
+```
+
+This code implements a deep clone function with options for copying prototype properties, handling circular references, and custom clone behavior for specific classes using constructor handlers. It also provides a default export with standard settings.

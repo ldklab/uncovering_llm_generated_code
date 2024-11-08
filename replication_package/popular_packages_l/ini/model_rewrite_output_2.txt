@@ -1,0 +1,97 @@
+The provided Node.js code is a utility for parsing and stringifying INI files. It includes four main functions: `parse`, `stringify`, `safe`, and `unsafe`.
+
+1. `parse(iniText)`: This function converts a string of INI-formatted text into a JavaScript object. It handles sections denoted by square brackets, comments starting with semicolons, and lines of key-value pairs. Keys can be standalone or part of an array (`key[]`). Nested sections are supported through dot notation in section headers.
+
+2. `stringify(obj, options)`: This function converts a JavaScript object back into an INI-formatted string. It supports customization through options such as whitespace handling, aligning values, sorting keys, handling arrays, and specifying section paths.
+
+3. `safe(string)`: This utility function escapes special characters (`"` and `\`) in a string to ensure they are safely represented in the output.
+
+4. `unsafe(string)`: This function reverses the effect of `safe`, unescaping the special characters.
+
+Below is the potential rewrite:
+
+```javascript
+// ini.js
+
+export function parse(iniText) {
+    const result = {};
+    let currentSection = result;
+
+    iniText.split(/\r?\n/).forEach(line => {
+        line = line.trim();
+        if (!line || line.startsWith(';')) return; // Ignore comments and empty lines
+
+        const sectionMatch = line.match(/^\[(.*)\]$/);
+        if (sectionMatch) {
+            const path = sectionMatch[1].split('.');
+            currentSection = path.reduce((acc, part) => acc[part] = acc[part] || {}, result);
+            return;
+        }
+
+        const [key, ...valueParts] = line.split('=');
+        const value = valueParts.join('=').trim();
+        const arrMatch = key.match(/(\w+)\[\]$/);
+
+        if (arrMatch) {
+            const arrKey = arrMatch[1];
+            currentSection[arrKey] = currentSection[arrKey] || [];
+            currentSection[arrKey].push(value);
+        } else {
+            currentSection[key.trim()] = value;
+        }
+    });
+
+    return result;
+}
+
+export function stringify(obj, options = {}) {
+    const opts = {
+        whitespace: false,
+        align: false,
+        sort: false,
+        newline: false,
+        platform: process.platform,
+        bracketedArray: true,
+        section: '',
+        ...options
+    };
+
+    let result = '';
+    const eol = opts.platform === 'win32' ? '\r\n' : '\n';
+    const whitespace = opts.whitespace ? ' ' : '';
+
+    function serializeSection(section, prefix = '') {
+        let keys = Object.keys(section);
+        if (opts.sort) keys.sort();
+
+        keys.forEach(key => {
+            let value = section[key];
+            if (typeof value === 'object' && !Array.isArray(value)) {
+                const newPrefix = prefix ? `${prefix}.${key}` : key;
+                if (opts.newline && newPrefix) result += eol;
+                result += `[${opts.section}${newPrefix}]${eol}`;
+                serializeSection(value, newPrefix);
+            } else {
+                if (Array.isArray(value) && opts.bracketedArray) {
+                    value.forEach(item => result += `${key}[]${whitespace}=${whitespace}${item}${eol}`);
+                } else {
+                    result += `${key}${whitespace}=${whitespace}${value}${eol}`;
+                }
+            }
+        });
+    }
+
+    serializeSection(obj);
+    return result;
+}
+
+export function safe(string) {
+    return string.replace(/["\\]/g, '\\$&');  // Escape " and \
+}
+
+export function unsafe(string) {
+    return string.replace(/\\(["\\])/g, '$1');  // Unescape \" and \\
+}
+
+export { parse as decode, stringify as encode };
+```

@@ -1,0 +1,129 @@
+The provided Node.js code implements a method to determine the location of a command executable within the system's PATH. This is similar to the Unix `which` command or Windows `where` command. The code handles both asynchronous and synchronous lookups, and it is compatible with different operating systems, particularly distinguishing between Windows and other platforms.
+
+### Functionality of the Original Code
+
+1. **Platform Detection**: It checks if the environment is Windows-based by looking at `process.platform` and `process.env.OSTYPE`.
+
+2. **Path Segmentation**: It splits the system PATH based on the platform's path separator to find where executables might reside.
+
+3. **Executable Extensions**: On Windows, it checks against possible executable file extensions.
+
+4. **Executable Detection**: It uses the `isexe` module to determine if a file is executable.
+
+5. **Error Handling**: If a command isn't found, it throws an `ENOENT` error or returns null if specified.
+
+6. **Callback and Promise Support**: Allows both callback-based and promise-based handling of asynchronous operations.
+
+7. **Option Handling**: Allows options such as `all` to return all found executables rather than stopping on the first match.
+
+Below is the simplified and rewritten version of the provided Node.js code:
+
+```js
+const isWindows = process.platform === 'win32' ||
+    process.env.OSTYPE === 'cygwin' ||
+    process.env.OSTYPE === 'msys';
+
+const path = require('path');
+const COLON = isWindows ? ';' : ':';
+const isexe = require('isexe');
+
+const getNotFoundError = (cmd) =>
+  Object.assign(new Error(`not found: ${cmd}`), { code: 'ENOENT' });
+
+const getPathInfo = (cmd, opt) => {
+  const colon = opt.colon || COLON;
+  const pathEnv = cmd.includes('/') || (isWindows && cmd.includes('\\')) ? [''] :
+    (isWindows ? [process.cwd()] : []).concat((opt.path || process.env.PATH || '').split(colon));
+  
+  const pathExtExe = isWindows ? (opt.pathExt || process.env.PATHEXT || '.EXE;.CMD;.BAT;.COM') : '';
+  const pathExt = isWindows ? pathExtExe.split(colon) : [''];
+
+  if (isWindows && cmd.includes('.') && pathExt[0] !== '') {
+    pathExt.unshift('');
+  }
+
+  return { pathEnv, pathExt, pathExtExe };
+}
+
+const which = (cmd, opt, cb) => {
+  if (typeof opt === 'function') {
+    cb = opt;
+    opt = {};
+  } else {
+    opt = opt || {};
+  }
+
+  const { pathEnv, pathExt, pathExtExe } = getPathInfo(cmd, opt);
+  const found = [];
+
+  const searchPath = (index) => new Promise((resolve, reject) => {
+    if (index === pathEnv.length) {
+      return opt.all && found.length ? resolve(found) : reject(getNotFoundError(cmd));
+    }
+
+    const pathPartRaw = pathEnv[index];
+    const pathPart = /^".*"$/.test(pathPartRaw) ? pathPartRaw.slice(1, -1) : pathPartRaw;
+    const commandPath = path.join(pathPart, cmd);
+    const prefixedPath = !pathPart && /^\.[\\\/]/.test(cmd) ? cmd.slice(0, 2) + commandPath : commandPath;
+
+    resolve(searchExtensions(prefixedPath, index, 0));
+  });
+
+  const searchExtensions = (filePath, pathIndex, extIndex) => new Promise((resolve, reject) => {
+    if (extIndex === pathExt.length) {
+      return resolve(searchPath(pathIndex + 1));
+    }
+    const fileWithExt = filePath + pathExt[extIndex];
+    isexe(fileWithExt, { pathExt: pathExtExe }, (error, isExecutable) => {
+      if (!error && isExecutable) {
+        if (opt.all) {
+          found.push(fileWithExt);
+        } else {
+          return resolve(fileWithExt);
+        }
+      }
+      resolve(searchExtensions(filePath, pathIndex, extIndex + 1));
+    });
+  });
+
+  return cb ? searchPath(0).then(result => cb(null, result), cb) : searchPath(0);
+}
+
+const whichSync = (cmd, opt = {}) => {
+  const { pathEnv, pathExt, pathExtExe } = getPathInfo(cmd, opt);
+  const found = [];
+
+  for (let i = 0; i < pathEnv.length; i++) {
+    const pathPartRaw = pathEnv[i];
+    const pathPart = /^".*"$/.test(pathPartRaw) ? pathPartRaw.slice(1, -1) : pathPartRaw;
+    const commandPath = path.join(pathPart, cmd);
+    const prefixedPath = !pathPart && /^\.[\\\/]/.test(cmd) ? cmd.slice(0, 2) + commandPath : commandPath;
+
+    for (let j = 0; j < pathExt.length; j++) {
+      const currentPath = prefixedPath + pathExt[j];
+      try {
+        if (isexe.sync(currentPath, { pathExt: pathExtExe })) {
+          if (opt.all) {
+            found.push(currentPath);
+          } else {
+            return currentPath;
+          }
+        }
+      } catch (ex) { }
+    }
+  }
+
+  if (opt.all && found.length) {
+    return found;
+  }
+
+  if (opt.nothrow) {
+    return null;
+  }
+
+  throw getNotFoundError(cmd);
+}
+
+module.exports = which;
+which.sync = whichSync;
+```

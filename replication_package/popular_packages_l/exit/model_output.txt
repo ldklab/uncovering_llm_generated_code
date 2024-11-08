@@ -1,0 +1,44 @@
+The Node.js package `exit` provides a replacement for the native `process.exit` function. Its primary purpose is to ensure that any output to `stdout` or `stderr` is fully flushed out before the Node.js process exits, particularly addressing problems faced in Windows where output can sometimes be truncated when using `process.exit`. This issue was highlighted in Node.js issue #3584. By pausing until the streams are completely drained, the package ensures that all logged data is output correctly before exiting.
+
+Here's how the package typically works:
+
+1. **Install the Module**: It can be added to your Node.js project using `npm install exit`.
+
+2. **Using the Module**:
+   - Require the module in your code using `var exit = require('exit');`.
+   - Replace `process.exit(code)` with `exit(code);` to handle proper stream drainage before exiting.
+   - The example in the README demonstrates how using `exit` ensures output is not prematurely terminated, contrasted with directly using `process.exit`.
+
+3. **Testing**: A specific test is suggested for Windows systems to showcase the difference between using `exit` and `process.exit`, demonstrating how output can be cut off without proper drainage.
+
+4. **Code Style and Contribution**: Contributors are encouraged to adhere to existing code style, add tests for new functionality, and use Grunt for linting and testing.
+
+Below is an implementation of the `exit` module based on the described functionality:
+
+```javascript
+// File: exit.js
+const exit = (exitCode = 0) => {
+  // Ensure that stdout and stderr are fully drained before exiting.
+  const drainAndExit = () => {
+    if (!process.stdout.write('') || !process.stderr.write('')) {
+      setImmediate(drainAndExit); // Schedule to check again if not fully drained
+    } else {
+      process.exit(exitCode); // Exit when streams are fully drained
+    }
+  };
+
+  drainAndExit();
+};
+
+module.exports = exit;
+
+// Example Usage:
+// var exit = require('./exit');
+// console.log("omg");
+// console.error("yay");
+// exit(5);  // Ensures "omg" and "yay" are fully written before exiting
+// console.log("wtf"); // These lines shouldn't appear
+// console.error("bro");
+```
+
+Include this file in your project and use it as described in the sample usage to replace the default `process.exit` with this drain-aware implementation.

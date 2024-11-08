@@ -1,0 +1,133 @@
+The given Node.js code provides a utility library that mimics a subset of Unix shell commands using Node.js's `child_process`, `fs`, `path`, and `glob` modules. This library offers the following functionalities:
+
+1. **Configuration**: A `config` object allows global settings for output verbosity (`silent`, `fatal`, and `verbose`).
+
+2. **Command Implementations**:
+   - **`echo(...)`**: Prints strings to the console unless silenced.
+   - **`pwd()`**: Returns the current working directory.
+   - **`cd(dir)`**: Changes the current working directory to the specified path or to the root if no path is given.
+   - **`ls(...args)`**: Retrieves a list of directory contents. Supports options for recursive (`-R`), including hidden (`-A`), or directory-as-file (`-d`) listings.
+   - **`cp(source, dest, options)`**: Copies files to a destination, with support for overwriting prevention (`-n`).
+   - **`rm(...args)`**: Removes files or directories, with options for recursive deletion (`-r`) and forced removal (`-f`).
+   - **`touch(files, options)`**: Updates the timestamps of files or creates them if they do not exist, allowing a custom modification date.
+   - **`execShell(cmd, options, callback)`**: Executes shell commands synchronously or asynchronously with customizable options.
+   - **`which(command)`**: Finds the full path of a command within the system `PATH`.
+
+The code essentially acts as a Node.js-based interpreter for these common shell operations.
+
+```javascript
+const { execSync, exec } = require('child_process');
+const fs = require('fs');
+const path = require('path');
+const glob = require('glob');
+
+const config = {
+  silent: false,
+  fatal: false,
+  verbose: false,
+};
+
+function echo(...args) {
+  const str = args.join(' ');
+  if (!config.silent) console.log(str);
+  return str;
+}
+
+function pwd() {
+  return process.cwd();
+}
+
+function cd(dir) {
+  const newDir = dir || '/';
+  process.chdir(newDir);
+  return process.cwd();
+}
+
+function ls(...args) {
+  const hasOption = args[0] && args[0].startsWith('-');
+  const option = hasOption ? args.shift() : '';
+  const directories = args.length > 0 ? args : ['.'];
+  let files = [];
+
+  directories.forEach((dir) => {
+    let pattern = option.includes('-R') ? '**/*' : '*';
+    let options = { dot: option.includes('-A') };
+    let matchedFiles = glob.sync(path.join(dir, pattern), options);
+    files.push(...matchedFiles);
+  });
+
+  return files.filter((file) =>
+    option.includes('-d') || !fs.statSync(file).isDirectory()
+  );
+}
+
+function cp(source, destination, options = '') {
+  const sources = Array.isArray(source) ? source : [source];
+  sources.forEach((src) => {
+    const dest = fs.statSync(destination).isDirectory() 
+      ? path.join(destination, path.basename(src)) 
+      : destination;
+    const flags = options.includes('-n') ? fs.constants.COPYFILE_EXCL : 0;
+    fs.copyFileSync(src, dest, flags);
+  });
+}
+
+function rm(...args) {
+  const hasOption = args[0] && args[0].startsWith('-');
+  const option = hasOption ? args.shift() : '';
+  args.flat().forEach((file) => {
+    if (fs.existsSync(file)) {
+      const isDir = fs.statSync(file).isDirectory();
+      if (isDir && option.includes('-r')) {
+        fs.rmSync(file, { force: option.includes('-f'), recursive: true });
+      } else if (!isDir) {
+        fs.unlinkSync(file);
+      }
+    }
+  });
+}
+
+function touch(files, options = {}) {
+  const filePaths = Array.isArray(files) ? files : [files];
+  filePaths.forEach((file) => {
+    const currentDate = new Date();
+    const fileTime = options.date ? new Date(options.date) : currentDate;
+    if (options.c && !fs.existsSync(file)) return;
+    fs.utimesSync(file, fileTime, fileTime);
+  });
+}
+
+function execShell(command, options = {}, callback) {
+  const execOptions = { shell: true, encoding: 'utf8', ...options };
+  if (options.async) {
+    exec(command, execOptions, callback);
+  } else {
+    const stdout = execSync(command, execOptions).toString();
+    return { stdout, stderr: '', code: 0 };
+  }
+}
+
+function which(cmd) {
+  const envPaths = (process.env.PATH || '').split(path.delimiter);
+  for (const p of envPaths) {
+    const cmdPath = path.join(p, cmd);
+    if (fs.existsSync(cmdPath) && fs.statSync(cmdPath).isFile()) {
+      return cmdPath;
+    }
+  }
+  throw new Error(`Command not found: ${cmd}`);
+}
+
+module.exports = {
+  echo,
+  pwd,
+  cd,
+  ls,
+  cp,
+  rm,
+  touch,
+  exec: execShell,
+  which,
+  config,
+};
+```

@@ -1,0 +1,46 @@
+The given Node.js code is a utility module designed to check if a given value is a boolean or behaves like a boolean object. Here's a breakdown of how it works:
+
+1. **Dependencies**: It uses the `call-bind` module to create bound versions of `Boolean.prototype.toString` and `Object.prototype.toString` methods. This ensures these methods can be called with any value without losing their context.
+
+2. **tryBooleanObject Function**: This helper function tests if the provided `value` can be coerced to a boolean using the `Boolean.prototype.toString` method. It returns `true` if the conversion is successful, otherwise `false`.
+
+3. **Type Checking**: The main `isBoolean` function first checks if the value is a primitive boolean (`true` or `false`). If it is, it returns `true`.
+
+4. **Object Check**: If the `value` is an object, it checks if it has the `Symbol.toStringTag`, which can affect how objects describe themselves. If `Symbol.toStringTag` is available, it uses `tryBooleanObject` to attempt a safe conversion.
+
+5. **Fallback Check**: Without the `Symbol.toStringTag`, it checks if the internal `[[Class]]` of the object matches `[object Boolean]`, the default class string for Boolean objects.
+
+Here's a rewritten version of the code:
+
+```javascript
+'use strict';
+
+var callBound = require('call-bind/callBound');
+var toBooleanString = callBound('Boolean.prototype.toString');
+var toObjectString = callBound('Object.prototype.toString');
+
+function canConvertToBoolean(value) {
+	try {
+		toBooleanString(value);
+		return true;
+	} catch (error) {
+		return false;
+	}
+}
+
+const BOOLEAN_CLASS_STRING = '[object Boolean]';
+const supportsToStringTag = typeof Symbol === 'function' && typeof Symbol.toStringTag === 'symbol';
+
+module.exports = function isBoolean(value) {
+	if (typeof value === 'boolean') {
+		return true; // Primitive booleans
+	}
+	if (value === null || typeof value !== 'object') {
+		return false; // Non-object, non-boolean primitives
+	}
+	if (supportsToStringTag && Symbol.toStringTag in value) {
+		return canConvertToBoolean(value); // Handle exotic objects with toStringTag
+	}
+	return toObjectString(value) === BOOLEAN_CLASS_STRING; // Standard object class check
+};
+```

@@ -1,0 +1,55 @@
+This Node.js code is a script for substituting environment variables in JavaScript source files with their actual values. The core functionality is provided by two functions:
+
+1. `looseEnvify(file, env)`: Reads a JavaScript file, replaces occurrences of `process.env.<VARIABLE>` with the actual values from the provided environment object `env`, and writes the modified content back to the same file.
+
+2. `replaceEnvVars(src, env)`: Takes a JavaScript source code string `src` and replaces any appearances of `process.env.<VARIABLE>` with corresponding values from the `env` object, using the `jsTokens` library to identify tokens in the JavaScript code.
+
+The script also includes a simple command-line interface that allows a user to specify the path of a JavaScript file to be processed. If executed directly, the script will read the environment variables from `process.env` and replace them in the specified file.
+
+Here is a possible rewrite of this code:
+
+```javascript
+// loose-envify.js
+
+const fs = require('fs');
+const jsTokens = require('js-tokens');
+
+function looseEnvify(filePath, environment) {
+  try {
+    const source = fs.readFileSync(filePath, 'utf8');
+    const updatedSource = processSource(source, environment);
+    fs.writeFileSync(filePath, updatedSource, 'utf8');
+  } catch (error) {
+    console.error(`Error processing file ${filePath}:`, error);
+  }
+}
+
+function processSource(sourceCode, environment) {
+  return sourceCode.replace(jsTokens, (token, type) => {
+    if (type === 'IdentifierName' && token.startsWith('process.env')) {
+      const variableKey = token.substring(12);
+      if (environment.hasOwnProperty(variableKey)) {
+        return JSON.stringify(environment[variableKey]);
+      }
+    }
+    return token;
+  });
+}
+
+if (require.main === module) {
+  const [filePath] = process.argv.slice(2);
+  const envVariables = process.env;
+
+  if (!filePath) {
+    console.error('Usage: node loose-envify.js <file>');
+    process.exit(1);
+  }
+
+  looseEnvify(filePath, envVariables);
+}
+
+module.exports = looseEnvify;
+
+// Usage example:
+// node loose-envify.js path/to/your.js
+```

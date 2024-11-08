@@ -1,0 +1,128 @@
+The ShellJS package provides a portable implementation of Unix shell commands within Node.js, allowing developers to use familiar shell commands while ensuring cross-platform compatibility across Windows, Linux, and OS X. It eliminates dependencies on Unix environments, making it possible to write scripts that work consistently across different operating systems.
+
+Key functionalities include:
+- Recreating common Unix shell commands such as `cd`, `chmod`, `cp`, `ls`, `mkdir`, `mv`, `rm`, `sed`, etc., to interact with the file system and manage files/directories.
+- Command execution through `exec()`, which runs system commands either synchronously or asynchronously.
+- Utility commands like `echo` for output, and directory manipulation commands like `pushd`, `popd`, and `dirs`.
+- Compatibility with standard globbing patterns for file operations.
+- Options for controlling command behavior, like recursive copies, symbolic links for `cp`, immediate replacements with `sed`, and command execution through a custom shell.
+- Configuration of behavior through settable options like `silent`, `fatal`, and `verbose` to manage output visibility and error handling.
+- Interaction with and manipulation of environment variables using `env`.
+- An extensible plugin API for custom command extensions.
+- Exporting Unix-like "pipes" capabilities for chaining commands.
+- Provision of utility methods on returned command data, allowing further processing or redirection.
+
+Here is an implementation of a simplified version of the ShellJS package:
+
+```javascript
+const { execSync, exec } = require('child_process');
+const fs = require('fs');
+const path = require('path');
+const glob = require('glob');
+
+const config = {
+  silent: false,
+  fatal: false,
+  verbose: false,
+};
+
+function echo(...args) {
+  const str = args.join(' ');
+  if (!config.silent) process.stdout.write(str + '\n');
+  return str;
+}
+
+function pwd() {
+  return process.cwd();
+}
+
+function cd(dir) {
+  const newDir = dir || path.resolve('/');
+  process.chdir(newDir);
+  return newDir;
+}
+
+function ls(...args) {
+  const options = args[0].startsWith('-') ? args.shift() : '';
+  const dirs = args.length > 0 ? args : ['.'];
+  const files = [];
+
+  dirs.forEach(dir => {
+    const filesInDir = options.includes('-R')
+      ? glob.sync(`${dir}/**/*`, { dot: options.includes('-A') })
+      : glob.sync(`${dir}/*`, { dot: options.includes('-A') });
+    files.push(...filesInDir);
+  });
+
+  return files.filter(file => (options.includes('-d') || !fs.statSync(file).isDirectory()));
+}
+
+function cp(source, dest, options = '') {
+  const sources = Array.isArray(source) ? source : [source];
+  sources.forEach(src => {
+    const target = fs.statSync(dest).isDirectory() ? path.join(dest, path.basename(src)) : dest;
+    fs.copyFileSync(src, target, options.includes('-n') ? fs.constants.COPYFILE_EXCL : 0);
+  });
+}
+
+function rm(...args) {
+  const options = args[0].startsWith('-') ? args.shift() : '';
+  const files = args.flat();
+  
+  files.forEach(file => {
+    if (fs.existsSync(file)) {
+      if (fs.statSync(file).isDirectory() && options.includes('-r')) {
+        fs.rmSync(file, { recursive: true, force: options.includes('-f') });
+      } else {
+        fs.unlinkSync(file);
+      }
+    }
+  });
+}
+
+function touch(files, options = {}) {
+  const paths = Array.isArray(files) ? files : [files];
+  paths.forEach(file => {
+    const time = typeof options.date === 'string' ? new Date(options.date) : new Date();
+    if (options.c && !fs.existsSync(file)) return;
+    fs.utimesSync(file, time, time);
+  });
+}
+
+function execShell(cmd, options = {}, callback) {
+  const execOpts = { shell: true, ...options, encoding: options.encoding || 'utf8' };
+  if (options.async) {
+    return exec(cmd, execOpts, callback);
+  } else {
+    const result = execSync(cmd, execOpts);
+    return { stdout: result.toString(), stderr: '', code: 0 };
+  }
+}
+
+function which(command) {
+  const envPath = process.env.PATH || '';
+  const paths = envPath.split(path.delimiter);
+  for (let p of paths) {
+    const fullPath = path.join(p, command);
+    if (fs.existsSync(fullPath) && fs.statSync(fullPath).isFile()) {
+      return fullPath;
+    }
+  }
+  throw new Error(`Command not found: ${command}`);
+}
+
+module.exports = {
+  echo,
+  pwd,
+  cd,
+  ls,
+  cp,
+  rm,
+  touch,
+  exec: execShell,
+  which,
+  config,
+};
+```
+
+This simple module provides core functionalities akin to ShellJS and can be expanded with additional commands and support for options as needed.

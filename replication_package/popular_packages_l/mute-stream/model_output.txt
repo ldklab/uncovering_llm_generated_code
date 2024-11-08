@@ -1,0 +1,72 @@
+The `mute-stream` Node.js package provides a way to create a stream that can conditionally mute the data flowing through it. When the stream is muted, any data written to it is discarded. When unmuted, data passes through as normal. Additionally, it can replace characters when muted, useful for handling sensitive inputs like passwords.
+
+### Key Features:
+
+1. **Mute/Unmute Functionality**: 
+   - The stream can be muted using the `ms.mute()` method, turning writes into no-ops. Data written during this period is dropped.
+   - `ms.unmute()` re-enables data flow, allowing subsequent writes to function normally.
+
+2. **Data Replacement**:
+   - When muted, the data being written can be replaced with a specified string through the `replace` option.
+
+3. **Prompt Handling**:
+   - If handling a prompt (e.g., a password prompt), use `prompt` to specify it, ensuring backspaces behave correctly.
+
+4. **TTY Awareness**:
+   - `ms.isTTY` lets you check if the source or destination of the stream is a TTY (terminal interface), which is often used to decide formatting in streams.
+
+5. **Stream Compatibility**:
+   - Implements standard stream methods, making it compatible with readable and writable streams, acting as a simple pass-through when not muted.
+
+Here is the implementation:
+
+```javascript
+const { Duplex } = require('stream');
+
+class MuteStream extends Duplex {
+  constructor(options = {}) {
+    super(options);
+    this.muted = false;
+    this.replace = options.replace || null;
+    this.prompt = options.prompt || '';
+    this._isTTY = process.stdout.isTTY;
+  }
+
+  _write(chunk, encoding, callback) {
+    if (!this.muted) {
+      if (this.replace) {
+        let replacedChunk = Buffer.from(String(chunk).replace(/./g, this.replace));
+        this.push(replacedChunk);
+      } else {
+        this.push(chunk);
+      }
+    }
+    callback();
+  }
+
+  _read(size) {}
+
+  mute() {
+    this.muted = true;
+  }
+
+  unmute() {
+    this.muted = false;
+  }
+
+  get isTTY() {
+    return this._isTTY;
+  }
+}
+
+// Usage example
+const ms = new MuteStream({replace: '*'});
+ms.pipe(process.stdout);
+ms.write('foo\n');    // Outputs: foo
+ms.mute();
+ms.write('bar\n');    // Outputs: nothing
+ms.unmute();
+ms.write('baz\n');    // Outputs: baz
+```
+
+This code defines a `MuteStream` class extending the `Duplex` stream from Node.js, implementing the mute functionality and supporting TTY checks and character replacement for muted data.

@@ -1,0 +1,19 @@
+The Node.js code is a module that provides a polyfill for `queueMicrotask`. This is a function used to schedule a microtask at the end of the current operation, but before any next events or rendering updates. If the native `queueMicrotask` function is available (i.e., it is a function in the current environment), it directly exports it bound to the global object. If `queueMicrotask` isn't available, it falls back to an implementation that uses promises to achieve similar behavior by queuing a microtask with the `then` method. If an error is thrown in this fallback method, it is caught and re-thrown asynchronously using `setTimeout`.
+
+```javascript
+/*! queue-microtask. MIT License. Feross Aboukhadijeh <https://feross.org/opensource> */
+let promise;
+
+// Check if the native 'queueMicrotask' is available
+if (typeof queueMicrotask === 'function') {
+  module.exports = queueMicrotask.bind(globalThis);
+} else {
+  // Define a custom microtask queueing mechanism using promises
+  module.exports = (cb) => {
+    // Lazily allocate a resolved promise if not already done
+    return (promise || (promise = Promise.resolve()))
+      .then(cb)
+      .catch(err => setTimeout(() => { throw err; }, 0)); // Catch and asynchronously re-throw any error
+  };
+}
+```

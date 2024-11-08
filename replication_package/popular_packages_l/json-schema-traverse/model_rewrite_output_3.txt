@@ -1,0 +1,63 @@
+The Node.js code provided is a module named `json-schema-traverse.js` which defines a function `traverse`. This function is used to recursively navigate through a JSON schema—an object structure typically used to validate JSON documents. The `traverse` function accepts a schema and options, where the options include a callback (`cb`) that can have `pre` and `post` functions to be executed before and after visiting each node in the schema, respectively.
+
+The traverse function performs the following:
+
+1. It extracts the callbacks and a flag called `allKeys` from the options.
+2. It defines an inner function `_traverse` responsible for the recursive logic.
+3. In `_traverse`, it navigates each node in the schema:
+   - It calls the `pre` callback before traversing child nodes, if present.
+   - It iterates through keys in the schema and recursively calls `_traverse` on each child node.
+   - It calls the `post` callback after traversing child nodes, if present.
+4. The traversal is initiated from the root of the JSON schema with `_traverse`.
+
+Usage of this module involves passing a JSON schema and optional callbacks to handle actions at each schema node.
+
+Here's the rewritten code for this functionality:
+
+```javascript
+// json-schema-traverse.js
+
+function traverse(schema, options) {
+  const { cb, allKeys } = options;
+  const pre = typeof cb === 'function' ? cb : cb.pre;
+  const post = cb.post;
+
+  function _traverse(schema, jsonPtr = '', parentJsonPtr = '', parentKeyword, parentSchema, keyIndex) {
+    if (allKeys || (schema && typeof schema === 'object' && (schema.properties || schema.items))) {
+      if (pre) pre(schema, jsonPtr, rootSchema, parentJsonPtr, parentKeyword, parentSchema, keyIndex);
+
+      Object.keys(schema).forEach(key => {
+        const subschema = schema[key];
+        if (subschema && typeof subschema === 'object') {
+          _traverse(subschema, `${jsonPtr}/${key}`, jsonPtr, key, schema, key);
+        }
+      });
+
+      if (post) post(schema, jsonPtr, rootSchema, parentJsonPtr, parentKeyword, parentSchema, keyIndex);
+    }
+  }
+
+  const rootSchema = schema;
+  _traverse(schema);
+}
+
+module.exports = traverse;
+
+// Usage example:
+
+const traverse = require('./json-schema-traverse');
+
+const schemaExample = {
+  properties: {
+    foo: { type: 'string' },
+    bar: { type: 'integer' }
+  }
+};
+
+const cb = {
+  pre: (schema) => console.log("Pre:", schema),
+  post: (schema) => console.log("Post:", schema)
+};
+
+traverse(schemaExample, { cb });
+```

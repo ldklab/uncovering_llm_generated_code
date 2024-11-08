@@ -1,0 +1,88 @@
+The `@aws-sdk/credential-provider-node` package provides a mechanism to load AWS credentials in a Node.js environment. The main functionality of this package can be summarized as follows:
+
+1. **Credential Sourcing Order**: 
+   - The package offers a factory function called `defaultProvider` that attempts to source AWS credentials from a Node.js environment, following a specific order of precedence:
+     - Environment variables (`AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`).
+     - SSO credentials from a token cache.
+     - Web identity token credentials.
+     - Shared credentials and config `.ini` files.
+     - The EC2/ECS Instance Metadata Service.
+   - It will move to the next source only if no credentials are found in the previous source.
+
+2. **Error Handling**:
+   - If there is any misconfiguration, such as a missing `source_profile`, the process will stop and an error will be returned instead of trying the next provider.
+
+3. **Using IAM Roles for Service Accounts**:
+   - When using IAM Roles for Service Accounts on EKS, a `roleAssumerWithWebIdentity` function must be explicitly provided. There's a helper function available in the `@aws-sdk/client-sts` package to handle this.
+
+4. **Alternative Interface**:
+   - A simplified interface is available via `fromNodeProviderChain` in the `@aws-sdk/credential-providers` package for working with the credential provider without importing separate functions from the STS package.
+
+5. **Configuration Options**:
+   - The `defaultProvider` can be customized with several options, such as specifying the profile, file paths for credentials or config files, providing custom functions for MFA codes or role assuming, and configuring timeout and retry behavior.
+
+Here's a simplified example of a Node.js package that mimics the functionality described:
+
+```javascript
+const fs = require('fs');
+const path = require('path');
+
+// Constants for Default File Paths
+const DEFAULT_CREDENTIALS_FILEPATH = path.join(process.env.HOME || process.env.USERPROFILE, '.aws', 'credentials');
+const DEFAULT_CONFIG_FILEPATH = path.join(process.env.HOME || process.env.USERPROFILE, '.aws', 'config');
+
+// Mock function to simulate loading from environment variables
+function loadFromEnv() {
+    const accessKeyId = process.env.AWS_ACCESS_KEY_ID;
+    const secretAccessKey = process.env.AWS_SECRET_ACCESS_KEY;
+    if (accessKeyId && secretAccessKey) {
+        return { accessKeyId, secretAccessKey };
+    }
+    return null;
+}
+
+// Mock function to simulate loading from shared credentials file
+function loadFromCredentialsFile(filepath) {
+    if (fs.existsSync(filepath)) {
+        // Simplistic parser which assumes valid format for this demonstration
+        const contents = fs.readFileSync(filepath, 'utf-8');
+        const accessKeyId = contents.match(/aws_access_key_id\s*=\s*(.*)/)?.[1];
+        const secretAccessKey = contents.match(/aws_secret_access_key\s*=\s*(.*)/)?.[1];
+        if (accessKeyId && secretAccessKey) {
+            return { accessKeyId, secretAccessKey };
+        }
+    }
+    return null;
+}
+
+// Simplified version of the defaultProvider function
+function defaultProvider({ filepath = DEFAULT_CREDENTIALS_FILEPATH } = {}) {
+    // Try loading from environment variables first
+    let credentials = loadFromEnv();
+    if (credentials) {
+        return Promise.resolve(credentials);
+    }
+    
+    // If not found, try loading from shared credentials file
+    credentials = loadFromCredentialsFile(filepath);
+    if (credentials) {
+        return Promise.resolve(credentials);
+    }
+    
+    // Other methods like SSO, web identity, etc. would go here ...
+    
+    // Mock EC2 metadata service (custom logic would be needed here in reality)
+    return Promise.reject(new Error('No credentials found'));
+}
+
+// Usage example
+defaultProvider()
+    .then(credentials => {
+        console.log('Loaded credentials:', credentials);
+    })
+    .catch(error => {
+        console.error('Failed to load credentials:', error);
+    });
+```
+
+This simplified implementation covers basic functionality of loading credentials from environment variables and an AWS credentials file. To fully implement the library based on AWS SDK standards, this would need to be expanded significantly, including proper handling of IMDS and other sources, as well as robust error handling and async operations.

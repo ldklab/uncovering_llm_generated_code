@@ -1,0 +1,54 @@
+The provided Node.js code defines a module that exports a function designed to either use the native `structuredClone` function (if available) or fall back to custom serialization and deserialization logic using imported `serialize` and `deserialize` functions from separate modules. It also exports these `serialize` and `deserialize` functions for external use.
+
+### Explanation:
+
+1. **Type Definition**:
+   - A `Record` type is defined as an array consisting of a string followed by any type.
+
+2. **Default Export Functionality**:
+   - The main functionality is exported as the default export of the module. It assigns an anonymous function based on the availability of the native `structuredClone` function.
+   - If `structuredClone` is available, the function checks the options object:
+     - If `json` or `lossy` is present in the options, it will serialize the input object, then deserialize it, effectively using the custom methods.
+     - Otherwise, it uses the native `structuredClone`.
+   - If `structuredClone` is not available, it defaults to always using the custom serialization/deserialization.
+
+3. **Exports**:
+   - The `deserialize` and `serialize` functions are also explicitly exported from this module, allowing them to be used outside this module.
+
+Here is the rewritten code:
+
+```javascript
+'use strict';
+const { deserialize } = require('./deserialize.js');
+const { serialize } = require('./serialize.js');
+
+/**
+ * @typedef {Array<string, any>} Record A representation of a record type
+ */
+
+/**
+ * Returns an array of serialized Records.
+ * @param {any} any - A serializable value.
+ * @param {{ transfer?: any[]; json?: boolean; lossy?: boolean }?} options - An object with
+ * a transfer option (ignored when polyfilled) and/or non-standard fields that
+ * fallback to the polyfill if present.
+ * @returns {Record[]}
+ */
+Object.defineProperty(exports, '__esModule', { value: true }).default = (function() {
+  if (typeof structuredClone === 'function') {
+    /* c8 ignore start */
+    return (any, options) => {
+      if (options && ('json' in options || 'lossy' in options)) {
+        return deserialize(serialize(any, options));
+      }
+      return structuredClone(any);
+    };
+    /* c8 ignore stop */
+  } else {
+    return (any, options) => deserialize(serialize(any, options));
+  }
+})();
+
+exports.deserialize = deserialize;
+exports.serialize = serialize;
+```

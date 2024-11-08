@@ -1,0 +1,59 @@
+The given Node.js code is a custom module resolver for ESLint, specifically for resolving Node.js modules. This resolver is part of an `eslint-plugin-import` package, and it uses the `resolve` and `debug` libraries for module resolution and logging respectively. Here's a breakdown of its functionality:
+
+1. **Interface Version**: The resolver exports an `interfaceVersion` set to 2, indicating a specific version of the resolver API supported by ESLint.
+
+2. **Resolve Function**: The main export is a `resolve` function that attempts to resolve a module `source` relative to a `file` with an optional `config`.
+   - It first logs the resolution attempt.
+   - If the module is a core Node.js module, it returns immediately, indicating that the module is found but does not have a specific file path.
+   - If not a core module, it tries to resolve the module synchronously.
+   - If the module is resolved, it logs the resolved path and returns the path.
+   - If there's an error in resolution, it logs the error and returns that the resolution was unsuccessful.
+
+3. **Options Function (`opts`)**: Constructs the options needed for the `resolve.sync` call.
+   - Sets file extensions commonly associated with Node.js modules, including `.mjs`, `.js`, `.json`, and `.node`.
+   - Merges any additional configuration passed to it.
+   - Computes the base directory relative to the current working directory using the provided `file`.
+
+4. **Package Filter**: Adjusts the package's main entry point if the package specifies a `jsnext:main` field, which can prioritize ES module entry points.
+
+```javascript
+const resolve = require('resolve');
+const path = require('path');
+const debug = require('debug')('eslint-plugin-import:resolver:node');
+
+exports.interfaceVersion = 2;
+
+exports.resolve = function(source, file, config) {
+  debug('Resolving:', source, 'from:', file);
+
+  if (resolve.isCore(source)) {
+    debug('resolved to core');
+    return { found: true, path: null };
+  }
+
+  try {
+    const resolvedPath = resolve.sync(source, createOptions(file, config));
+    debug('Resolved to:', resolvedPath);
+    return { found: true, path: resolvedPath };
+  } catch (error) {
+    debug('resolve threw error:', error);
+    return { found: false };
+  }
+};
+
+function createOptions(file, config) {
+  return {
+    extensions: ['.mjs', '.js', '.json', '.node'],
+    basedir: path.dirname(path.resolve(file)),
+    packageFilter,
+    ...config
+  };
+}
+
+function packageFilter(pkg) {
+  if (pkg['jsnext:main']) {
+    pkg['main'] = pkg['jsnext:main'];
+  }
+  return pkg;
+}
+```

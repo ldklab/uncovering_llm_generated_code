@@ -1,0 +1,86 @@
+The provided Node.js code exports two functions, `getChangedFilesForRoots` and `findRepos`, which are used to interact with Git and Mercurial (HG) repositories. The code uses the `throat` library to limit the number of concurrent processes to 5.
+
+1. **`findRepos` Function:** 
+   - This function takes an array of root directory paths called `roots`.
+   - It identifies directories that are Git or HG repositories using `findGitRoot` and `findHgRoot` functions.
+   - The `findGitRoot` and `findHgRoot` use the `throat` library to ensure that no more than 5 processes are run concurrently when looking for repository roots.
+   - The function returns an object with two properties: 
+     - `git`: A set of directory paths that are Git repositories.
+     - `hg`: A set of directory paths that are HG repositories.
+
+2. **`getChangedFilesForRoots` Function:** 
+   - This function receives an array of root directories and an options object.
+   - It calls `findRepos` to get all the Git and HG repositories.
+   - For each Git and HG repository, it calls `findChangedFiles` to find the changed files, passing the roots and any additional options provided.
+   - Uses `Promise.all` to handle asynchronous operations concurrently.
+   - It compiles a list of changed files across all repositories into a `Set`, ensuring uniqueness.
+   - The function returns an object containing:
+     - `changedFiles`: A set of all changed files.
+     - `repos`: The object containing `git` and `hg` repositories returned from `findRepos`.
+
+The code implements helper methods to load the Git and HG modules and uses a utility function `notEmpty` to filter out any null or undefined entries from lists.
+
+```javascript
+'use strict';
+
+Object.defineProperty(exports, '__esModule', {
+  value: true
+});
+exports.findRepos = exports.getChangedFilesForRoots = void 0;
+
+const throat = require('throat');
+const git = require('./git');
+const hg = require('./hg');
+
+function notEmpty(value) {
+  return value != null;
+}
+
+const mutex = throat(5);
+
+const findGitRoot = dir => mutex(() => git.getRoot(dir));
+const findHgRoot = dir => mutex(() => hg.getRoot(dir));
+
+const getChangedFilesForRoots = async (roots, options) => {
+  const repos = await findRepos(roots);
+  const changedFilesOptions = {
+    includePaths: roots,
+    ...options
+  };
+  const gitPromises = Array.from(repos.git).map(repo =>
+    git.findChangedFiles(repo, changedFilesOptions)
+  );
+  const hgPromises = Array.from(repos.hg).map(repo =>
+    hg.findChangedFiles(repo, changedFilesOptions)
+  );
+  const changedFiles = (
+    await Promise.all(gitPromises.concat(hgPromises))
+  ).reduce((allFiles, changedFilesInTheRepo) => {
+    for (const file of changedFilesInTheRepo) {
+      allFiles.add(file);
+    }
+    return allFiles;
+  }, new Set());
+  return {
+    changedFiles,
+    repos
+  };
+};
+
+exports.getChangedFilesForRoots = getChangedFilesForRoots;
+
+const findRepos = async roots => {
+  const gitRepos = await Promise.all(
+    roots.reduce((promises, root) => promises.concat(findGitRoot(root)), [])
+  );
+  const hgRepos = await Promise.all(
+    roots.reduce((promises, root) => promises.concat(findHgRoot(root)), [])
+  );
+  return {
+    git: new Set(gitRepos.filter(notEmpty)),
+    hg: new Set(hgRepos.filter(notEmpty))
+  };
+};
+
+exports.findRepos = findRepos;
+```

@@ -1,0 +1,79 @@
+The provided Node.js code defines an asynchronous function `getChangedFilesForRoots` that retrieves a list of changed files in specified directories, known as "roots", using either Git or Mercurial (Hg) version control systems. The function can be directed to find changes against the last commit, against a specified commit, or with an ancestor in the version history. It categorizes repositories into Git and Hg based on detected changes. The function uses `child_process.exec` to run command-line Git and Hg commands and processes their outputs to determine the changed files.
+
+Additionally, there is another asynchronous function `findRepos` that determines if the specified roots are within a Git or Hg repository by executing commands that identify the presence of these version control systems. The functions are exported as part of a module, allowing them to be imported and used in other Node.js scripts.
+
+Here's a possible rewrite of the original code:
+
+```javascript
+const path = require('path');
+const { exec } = require('child_process');
+const util = require('util');
+
+const execPromise = util.promisify(exec);
+
+async function getChangedFilesForRoots(roots, options = {}) {
+  const changedFiles = new Set();
+  const repos = { git: new Set(), hg: new Set() };
+
+  for (const root of roots) {
+    const gitCommands = {
+      lastCommit: 'git diff --name-only HEAD~1',
+      changedSince: `git diff --name-only ${options.changedSince}`,
+      withAncestor: 'git diff --name-only HEAD^'
+    };
+
+    try {
+      const command = gitCommands[Object.keys(gitCommands).find(key => options[key])];
+      if (command) {
+        const { stdout: gitOutput } = await execPromise(command, { cwd: root });
+        gitOutput.split('\n').filter(Boolean).forEach(file => {
+          changedFiles.add(path.resolve(root, file));
+        });
+        repos.git.add(root);
+      }
+    } catch (error) {
+      // Git command failed or root is not a git repository
+    }
+
+    try {
+      const { stdout: hgOutput } = await execPromise('hg status -mardu', { cwd: root });
+      hgOutput.split('\n').filter(Boolean).forEach(line => {
+        const file = line.split(' ')[1];
+        if (file) changedFiles.add(path.resolve(root, file));
+      });
+      repos.hg.add(root);
+    } catch (error) {
+      // Hg command failed or root is not a hg repository
+    }
+  }
+
+  return { changedFiles, repos };
+}
+
+async function findRepos(roots) {
+  const repos = { git: new Set(), hg: new Set() };
+
+  for (const root of roots) {
+    try {
+      await execPromise('git rev-parse --is-inside-work-tree', { cwd: root });
+      repos.git.add(root);
+    } catch {
+      // Root is not a git repository
+    }
+
+    try {
+      await execPromise('hg root', { cwd: root });
+      repos.hg.add(root);
+    } catch {
+      // Root is not a hg repository
+    }
+  }
+
+  return repos;
+}
+
+module.exports = {
+  getChangedFilesForRoots,
+  findRepos
+};
+```

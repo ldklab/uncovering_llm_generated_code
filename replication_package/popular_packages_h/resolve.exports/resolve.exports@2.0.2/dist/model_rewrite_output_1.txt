@@ -1,0 +1,178 @@
+The Node.js code provided is responsible for resolving module specifiers in a package, handling both imports and exports. Here's a breakdown of the key functions and their purposes:
+
+1. **`e(e, n, r)`**: This function throws an error, either indicating missing or unknown conditions for a given specifier in a package.
+
+2. **`n(n, i, o, f)`**: This function resolves the specifier for a package using specific conditions. It determines and checks conditions such as default or specific environments like `require`, `import`, `browser`, or `node`.
+
+3. **`r(e, n, r)`**: This function generates a relative path from a package name and a specifier. It handles the resolution for current directory references and ensures correct formatting of the relative path.
+
+4. **`t(e, n, r)`**: This function checks if the resolved entry exists for a specific set of conditions. It considers the possibilities of a single string, an array, or an object with keys corresponding to different conditions.
+
+5. **`i(e, n)`**: This function resolves legacy fields within a package by considering specific entry fields like `module`, `main`, and optionally `browser`. It adjusts the paths accordingly if they match required conditions.
+
+6. **`o(e, r, t)` and `f(e, r, t)`**: These functions resolve specifiers using the `exports` and `imports` fields respectively. They call `n()` to resolve entries according to conditions.
+
+7. **`s(e, n, t)`**: This function determines whether to handle a specifier as an import or export and further resolves it using the appropriate functions.
+
+The module exports the keys `exports`, `imports`, `legacy`, and `resolve`, allowing external use of these functionalities.
+
+Here's the rewritten code based on the explanation provided:
+
+```javascript
+function throwError(pkg, specifier, unknown) {
+    const message = unknown 
+        ? `No known conditions for "${specifier}" specifier in "${pkg}" package`
+        : `Missing "${specifier}" specifier in "${pkg}" package`;
+    throw new Error(message);
+}
+
+function resolveSpecifier(pkgName, exportsMap, specifier, conditions) {
+    let matchedPath, resolvedSpecifier = normalizeSpecifier(pkgName, specifier);
+    
+    const conditionSet = getConditionSet(conditions || {});
+    let exportEntry = exportsMap[resolvedSpecifier];
+    
+    if (exportEntry === undefined) {
+        let wildcardBase, longestWildcard, captured, regexMatch;
+        for (let key in exportsMap) {
+            if (wildcardBase && key.length < wildcardBase.length) continue;
+            
+            if (key.endsWith('/') && resolvedSpecifier.startsWith(key)) {
+                captured = resolvedSpecifier.substring(key.length);
+                wildcardBase = key;
+            } else if (key.length > 1 && (regexMatch = key.match(/^\*(.*)\*$/))) {
+                const pattern = new RegExp(`^${regexMatch[1]}(.*)${regexMatch[1]}`).exec(resolvedSpecifier);
+                if (pattern && pattern[1]) {
+                    captured = pattern[1];
+                    wildcardBase = key;
+                }
+            }
+        }
+        exportEntry = exportsMap[wildcardBase];
+        matchedPath = captured;
+    }
+    
+    if (!exportEntry) {
+        throwError(pkgName, resolvedSpecifier);
+    }
+    
+    let resolvedPaths = selectExportPaths(exportEntry, conditionSet);
+    if (!resolvedPaths) {
+        throwError(pkgName, resolvedSpecifier, true);
+    }
+    
+    if (matchedPath) {
+        prependMatchedPath(resolvedPaths, matchedPath);
+    }
+    
+    return resolvedPaths;
+}
+
+function normalizeSpecifier(pkgName, specifier, optional=false) {
+    if (pkgName === specifier || specifier === ".") return ".";
+
+    const pkgPathPrefix = pkgName + "/";
+    const isInsidePackage = specifier.startsWith(pkgPathPrefix);
+    
+    let normalized = isInsidePackage ? specifier.slice(pkgPathPrefix.length) : specifier;
+    
+    return normalized.startsWith("#") ? normalized : 
+           (isInsidePackage || !optional ? 
+           (normalized.startsWith("./") ? normalized : "./" + normalized) : normalized);
+}
+
+function getConditionSet(conditions) {
+    const conditionSet = new Set(["default", ...(conditions.conditions || [])]);
+    
+    if (!conditions.unsafe) {
+        conditionSet.add(conditions.require ? "require" : "import");
+        conditionSet.add(conditions.browser ? "browser" : "node");
+    }
+    
+    return conditionSet;
+}
+
+function selectExportPaths(exportEntry, conditionSet, resultSet = new Set()) {
+    if (typeof exportEntry === 'string') {
+        resultSet.add(exportEntry);
+        return [exportEntry];
+    }
+    
+    if (Array.isArray(exportEntry)) {
+        exportEntry.forEach(entry => selectExportPaths(entry, conditionSet, resultSet));
+        return resultSet.size ? [...resultSet] : undefined;
+    }
+    
+    for (let condition in exportEntry) {
+        if (conditionSet.has(condition)) {
+            return selectExportPaths(exportEntry[condition], conditionSet, resultSet);
+        }
+    }
+}
+
+function prependMatchedPath(paths, match) {
+    for (let i = 0; i < paths.length; i++) {
+        if (paths[i].includes('*')) {
+            paths[i] = paths[i].replace(/\*/, match);
+        } else if (paths[i].endsWith('/')) {
+            paths[i] += match;
+        }
+    }
+}
+
+function resolveLegacyFields(pkg, options = {}) {
+    let entry, browserPath, idx = 0;
+    const fields = options.fields || ["module", "main"];
+    const browserField = options.browser;
+    
+    if (browserField) {
+        fields.unshift("browser");
+        browserPath = normalizeSpecifier(pkg.name, browserField, true);
+    }
+    
+    while (idx < fields.length) {
+        entry = pkg[fields[idx]];
+        
+        if (typeof entry === 'string') return "./" + entry.replace(/^\.\//, "");
+        if (typeof entry === 'object' && fields[idx] === "browser") {
+            if (browserPath && (entry = entry[browserPath], entry == null)) return browserPath;
+            return typeof entry === 'string' ? "./" + entry.replace(/^\.\//, "") :entry;
+        }
+        idx++;
+    }
+}
+
+function resolveExports(pkg, specifier, subpath, conditions) {
+    const exports = pkg.exports;
+    
+    if (!exports) return;
+    
+    if (typeof exports === 'string') {
+        exports = { ".": exports };
+    } else {
+        for (let key in exports) {
+            if (!key.startsWith('.')) {
+                exports = { ".": exports };
+                break;
+            }
+        }
+    }
+    
+    return resolveSpecifier(pkg.name, exports, subpath || ".", conditions);
+}
+
+function resolveImports(pkg, specifier, conditions) {
+    return pkg.imports ? resolveSpecifier(pkg.name, pkg.imports, specifier, conditions) : undefined;
+}
+
+function resolvePackage(pkg, specifier, conditions) {
+    const resolvedSpecifier = normalizeSpecifier(pkg.name, specifier || ".");
+    return resolvedSpecifier.startsWith('#') ? resolveImports(pkg, resolvedSpecifier, conditions) 
+                                             : resolveExports(pkg, specifier, conditions);
+}
+
+exports.exports = resolveExports;
+exports.imports = resolveImports;
+exports.legacy = resolveLegacyFields;
+exports.resolve = resolvePackage;
+```

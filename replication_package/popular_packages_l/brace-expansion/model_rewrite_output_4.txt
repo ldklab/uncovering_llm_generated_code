@@ -1,0 +1,92 @@
+The provided Node.js code defines a function `expand` that processes a given string containing brace expansions similar to shell-style expansions. The functionality of the code is as follows:
+
+1. **Initial Check:** The function `expand` begins by checking if the input string contains '{'. If not, it simply returns the string wrapped in an array.
+   
+2. **Main Expansion Logic:**
+   - The function initializes a stack to keep track of string segments that need processing and a results array for storing the final expanded strings.
+   - While there are items in the stack, it processes each segment:
+     - It looks for the next occurrence of '{' to find the starting point of a brace expression.
+     - It uses `findClosingBrace` to locate the matching '}' for this brace.
+     - It extracts and parses the content within these braces using `parseOptions`, which determines if the content is a series of numbers (numeric range) or simple comma-separated options.
+     - For each option or numeric value, it constructs new string variations and adds them back to the stack for further processing.
+
+3. **Helper Functions:**
+   - `findClosingBrace`: Finds the position of the closing brace that matches a given opening brace, considering nested braces.
+   - `parseOptions`: Determines if the brace content is a numeric range or a list of options. It returns a list of options derived from the content.
+   - `numericExpansion`: Parses and returns a list of numbers expanded from a range specified by two or three numbers (start..end or start..end..step).
+
+4. **Return Value:** The function eventually returns an array of all fully expanded strings generated from the input.
+
+Here's a possible rewrite of the code:
+
+```javascript
+function expand(inputStr) {
+  if (!inputStr.includes('{')) return [inputStr];
+
+  const finalExpansions = [];
+  const processingStack = [[inputStr, 0]];
+
+  while (processingStack.length > 0) {
+    const [currentStr, startIndex] = processingStack.pop();
+    const openBraceIndex = currentStr.indexOf('{', startIndex);
+    if (openBraceIndex === -1) {
+      finalExpansions.push(currentStr);
+      continue;
+    }
+
+    const closeBraceIndex = getClosingBraceIndex(currentStr, openBraceIndex);
+    if (closeBraceIndex === -1) {
+      finalExpansions.push(currentStr);
+      continue;
+    }
+
+    const prefix = currentStr.slice(0, openBraceIndex);
+    const suffix = currentStr.slice(closeBraceIndex + 1);
+    const braceContent = currentStr.slice(openBraceIndex + 1, closeBraceIndex);
+    const expansionOptions = extractOptions(braceContent);
+
+    for (const option of expansionOptions) {
+      processingStack.push([prefix + option + suffix, openBraceIndex + option.length]);
+    }
+  }
+  
+  return finalExpansions;
+}
+
+function getClosingBraceIndex(str, openIndex) {
+  let nestLevel = 1;
+  for (let i = openIndex + 1; i < str.length; i++) {
+    if (str[i] === '{') nestLevel++;
+    if (str[i] === '}') nestLevel--;
+
+    if (nestLevel === 0) return i;
+  }
+  return -1;
+}
+
+function extractOptions(content) {
+  return content.match(/^-?\d+\.\.-?\d+(\.\.-?\d+)?$/)
+    ? generateNumericRange(content)
+    : content.split(',');
+}
+
+function generateNumericRange(rangeStr) {
+  const [start, end, step] = rangeStr.split('..').map(Number);
+  const stepValue = step || 1;
+  const rangeArray = [];
+
+  if (start <= end) {
+    for (let i = start; i <= end; i += stepValue) {
+      rangeArray.push(i.toString());
+    }
+  } else {
+    for (let i = start; i >= end; i -= stepValue) {
+      rangeArray.push(i.toString());
+    }
+  }
+
+  return rangeArray;
+}
+
+module.exports = expand;
+```

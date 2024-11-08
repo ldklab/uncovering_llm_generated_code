@@ -1,0 +1,100 @@
+The given Node.js code defines a module that exports an `EnhancedResolve` class and a `SamplePlugin` class. 
+
+**Explanation:**
+
+1. **EnhancedResolve Class:**
+   - This class is used for resolving module paths with added capabilities such as handling aliases and plugins.
+   - The constructor initializes the options, with defaults for extensions (JavaScript-related), alias mappings, a file system (defaulting to Node's `fs`), and plugins.
+   - The `resolve` method performs an asynchronous resolution. It applies the `before-resolve` plugins, attempts to resolve the module path synchronously using `_resolveSync`, and then applies the `after-resolve` plugins.
+   - The `_resolveSync` method constructs potential paths using the request and possible extensions, checking if the file exists in the provided file system before returning the path.
+   - `_applyPlugins` helps apply plugins for specific lifecycle hooks (`before-resolve` or `after-resolve`), ensuring they run in sequence.
+
+2. **SamplePlugin Class:**
+   - This class represents a plugin template that can be used with the `EnhancedResolve` class.
+   - It defines the hook names it can be applied to and a method for actually applying the plugin logic, which is currently a placeholder.
+
+3. **Module Exports:**
+   - The `EnhancedResolve` and `SamplePlugin` classes are exported for use in other parts of a Node.js application.
+
+**Rewritten Code:**
+
+```javascript
+const fs = require('fs');
+
+class EnhancedResolver {
+  constructor(options = {}) {
+    this.settings = {
+      extensions: options.extensions || ['.js', '.json', '.node'],
+      alias: options.alias || {},
+      fileSystem: options.fileSystem || fs,
+      plugins: options.plugins || [],
+      ...options,
+    };
+  }
+
+  resolve(context, directory, moduleName, callback) {
+    this._runPlugins('before-resolve', { context, directory, moduleName }, err => {
+      if (err) return callback(err);
+
+      let resultPath;
+      try {
+        resultPath = this._synchronizeResolve(directory, moduleName);
+      } catch (error) {
+        return callback(error);
+      }
+
+      this._runPlugins('after-resolve', { context, directory: resultPath, moduleName }, err => {
+        if (err) return callback(err);
+        callback(null, resultPath);
+      });
+    });
+  }
+
+  _synchronizeResolve(directory, moduleName) {
+    for (const ext of this.settings.extensions) {
+      const candidatePath = `${directory}/${moduleName}${ext}`;
+      if (this.settings.fileSystem.existsSync(candidatePath)) {
+        return candidatePath;
+      }
+    }
+    throw new Error(`Cannot resolve ${moduleName} in ${directory}`);
+  }
+
+  static create(options) {
+    return new EnhancedResolver(options);
+  }
+
+  _runPlugins(hook, details, callback) {
+    const applicablePlugins = this.settings.plugins.filter(plugin => plugin.isApplicable(hook));
+    let index = 0;
+
+    const proceed = (error) => {
+      if (error || index === applicablePlugins.length) return callback(error);
+      applicablePlugins[index++].execute(details, proceed);
+    };
+
+    proceed();
+  }
+}
+
+class ResolverPlugin {
+  constructor(sources, target) {
+    this.sources = sources;
+    this.target = target;
+  }
+
+  isApplicable(hook) {
+    return this.sources.includes(hook);
+  }
+
+  execute(details, callback) {
+    // Implement specific plugin behavior here
+    callback();
+  }
+}
+
+module.exports = {
+  EnhancedResolver,
+  ResolverPlugin,
+};
+```

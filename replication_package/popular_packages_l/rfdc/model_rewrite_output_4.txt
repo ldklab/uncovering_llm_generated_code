@@ -1,0 +1,77 @@
+The provided Node.js code is a module that exports a function to deeply clone JavaScript objects. This cloning function supports special configurations through options, allowing customization for handling prototypes, circular references, and custom constructor handling.
+
+### Functionality Explanation:
+1. **Configuration Options**: The main exported function accepts an options object with three properties:
+   - `proto`: If `true`, the clone will preserve the prototype chain of objects.
+   - `circles`: If `true`, the function can handle circular references and prevent infinite loops by keeping track of already cloned objects using a `WeakMap`.
+   - `constructorHandlers`: An array of [constructor, handler-function] pairs; if an object is an instance of a provided constructor, the handler function is invoked for cloning.
+
+2. **Cloning Logic**:  
+   - Primitive values are returned as-is.
+   - For complex objects:
+     - Arrays are cloned by iterating over elements.
+     - Date objects are cloned by creating a new Date instance.
+     - Buffers are cloned using `Buffer.from`.
+     - Maps and Sets are cloned by iterating their entries and values, respectively.
+     - Typed arrays are cloned with their constructors.
+   - If circular references handling is enabled, a `WeakMap` tracks cloned references.
+   - Special handling for `__proto__` allows skipping cloning the prototype if not required.
+
+3. **Usage Example with Defaults**: 
+   - A default instance of the clone function is exported with specific options: `proto` and `circles` are `false`, and no constructor handlers are provided.
+
+Here is a revised version of the code that follows the above explanation:
+
+```javascript
+// index.js
+module.exports = function (opts = { proto: false, circles: false, constructorHandlers: [] }) {
+  const { proto, circles, constructorHandlers } = opts;
+
+  const clone = (input, map = new WeakMap()) => {
+    if (input === null || typeof input !== 'object') return input;
+
+    if (circles) {
+      if (map.has(input)) return map.get(input);
+    }
+
+    let output;
+    if (Array.isArray(input)) {
+      output = [];
+    } else {
+      output = Object.create(proto ? Object.getPrototypeOf(input) : null);
+    }
+
+    if (circles) map.set(input, output);
+
+    const constructorHandler = constructorHandlers.find(([cons]) => input instanceof cons);
+    if (constructorHandler) return constructorHandler[1](input);
+
+    if (input instanceof Date) return new Date(input);
+    if (Buffer.isBuffer(input)) return Buffer.from(input);
+    if (input instanceof Map) {
+      output = new Map();
+      for (let [key, value] of input) output.set(key, clone(value, map));
+      return output;
+    }
+    if (input instanceof Set) {
+      output = new Set();
+      for (let value of input) output.add(clone(value, map));
+      return output;
+    }
+    if (ArrayBuffer.isView(input) && !(input instanceof DataView)) return new input.constructor(input);
+
+    Reflect.ownKeys(input).forEach((key) => {
+      if (key === '__proto__' && !proto) return;
+      output[key] = clone(input[key], map);
+    });
+
+    return output;
+  };
+
+  return clone;
+};
+
+// default.js
+const rfdc = require('./index');
+module.exports = rfdc({ proto: false, circles: false, constructorHandlers: [] });
+```

@@ -1,0 +1,97 @@
+The provided Node.js code is a module that integrates Tailwind CSS with PostCSS, a tool for transforming CSS with JavaScript plugins. Here's a breakdown of its functionality:
+
+1. **Imports**: The code imports various modules and utility functions, including those for handling file paths, file system operations, and Lodash for utility functions. It also imports specific Tailwind CSS utilities.
+
+2. **`resolveConfigPath` Function**: This function determines the path to a Tailwind CSS configuration file based on the input it receives. It handles different scenarios:
+   - If the input is an object without a `config` property and is not empty, it returns `undefined`.
+   - If the input is an object with a `config` property that is a string, it resolves and returns this path.
+   - If the input is an object with a `config` object, it returns `undefined`.
+   - If the input is a string, it resolves and returns this string as a path.
+   - If no path is given, it defaults to a standard configuration path and checks for its existence, returning it if found, or `undefined` otherwise.
+
+3. **`getConfigFunction`**: This is a higher-order function that returns a function for resolving the Tailwind CSS configuration:
+   - If no configuration is provided or if it's undefined, it defaults using the `_resolveConfig` method.
+   - If not running under Jest, it dynamically clears module dependencies from Node's cache.
+   - It then resolves the configuration object either from the path or directly from the config object.
+
+4. **Module Exports**: The main exported function:
+   - Determines configuration path using `resolveConfigPath`.
+   - Registers configuration dependencies if a path is resolved.
+   - Returns an object representing a PostCSS plugin with the name `tailwindcss` and a set of plugins, including configuration handling and formatting functions.
+
+5. **PostCSS Plugin Declaration**: Assigns `true` to `module.exports.postcss` to declare the module as a PostCSS plugin.
+
+Below is a rewritten version of the code:
+
+```javascript
+"use strict";
+
+const path = require("path");
+const fs = require("fs");
+const _ = require("lodash");
+const getModuleDependencies = require("./lib/getModuleDependencies");
+const registerConfigAsDependency = require("./lib/registerConfigAsDependency");
+const processTailwindFeatures = require("./processTailwindFeatures");
+const formatCSS = require("./lib/formatCSS");
+const resolveConfig = require("./util/resolveConfig");
+const getAllConfigs = require("./util/getAllConfigs");
+const { defaultConfigFile } = require("./constants");
+const defaultConfigStub = require("../stubs/defaultConfig.stub.js");
+
+function resolveConfigFile(input) {
+  if (_.isObject(input) && !_.has(input, 'config') && !_.isEmpty(input)) {
+    return undefined;
+  }
+  if (_.isObject(input) && _.has(input, 'config') && _.isString(input.config)) {
+    return path.resolve(input.config);
+  }
+  if (_.isObject(input) && _.has(input, 'config') && _.isObject(input.config)) {
+    return undefined;
+  }
+  if (_.isString(input)) {
+    return path.resolve(input);
+  }
+  try {
+    const configPath = path.resolve(defaultConfigFile);
+    fs.accessSync(configPath);
+    return configPath;
+  } catch {
+    return undefined;
+  }
+}
+
+const createConfigResolver = config => () => {
+  if (_.isUndefined(config)) {
+    return resolveConfig([...getAllConfigs(defaultConfigStub)]);
+  }
+
+  if (process.env.JEST_WORKER_ID === undefined && !_.isObject(config)) {
+    getModuleDependencies(config).forEach(({ file }) => {
+      delete require.cache[require.resolve(file)];
+    });
+  }
+
+  const configObj = _.isObject(config) ? _.get(config, 'config', config) : require(config);
+  return resolveConfig([...getAllConfigs(configObj)]);
+};
+
+module.exports = function (config) {
+  const plugins = [];
+  const configPath = resolveConfigFile(config);
+
+  if (!_.isUndefined(configPath)) {
+    plugins.push(registerConfigAsDependency(configPath));
+  }
+
+  return {
+    postcssPlugin: 'tailwindcss',
+    plugins: [
+      ...plugins,
+      processTailwindFeatures(createConfigResolver(configPath || config)),
+      formatCSS
+    ]
+  };
+};
+
+module.exports.postcss = true;
+```

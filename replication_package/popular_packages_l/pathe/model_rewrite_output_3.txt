@@ -1,0 +1,71 @@
+The Node.js code provided defines a module for handling and manipulating file paths. It leverages Node’s built-in `path` module to provide several utility functions. Here’s a breakdown of its functionality:
+
+1. **Normalization**: The code converts Windows-style backslashes in file paths to forward slashes for consistency across different operating systems.
+
+2. **Path Operations**:
+   - `resolve`: Resolves a sequence of paths into an absolute path and normalizes it.
+   - `join`: Joins multiple path segments together and normalizes the result.
+   - `dirname`: Returns the directory name of a path, normalized.
+   - `basename`: Extracts the last portion of a path, optionally stripping a file extension.
+   - `extname`: Provides the file extension of a path.
+
+3. **Utility Functions** (in `utils.js`):
+   - `filename`: Calculates the filename without the extension by using `basename` and `extname`.
+   - `normalizeAliases`: Normalizes keys and values in an object that map aliases to paths.
+   - `resolveAlias`: Resolves a given path based on a set of alias mappings, replacing the alias in the path with its corresponding mapped value.
+
+4. **Package Configuration** (`package.json`):
+   - Defines the package as a module, specifies the entry points, and declares the package name, version, and exports.
+
+Here is the rewritten version of the code:
+
+```javascript
+// src/index.js
+import { resolve as pathResolve, join as pathJoin, dirname as pathDirname, basename as pathBasename, extname as pathExtname } from 'path';
+
+// Function to normalize paths to use forward slashes for consistency
+const normalize = p => p.replace(/\\/g, '/');
+
+// Exported path functions with normalization
+export const resolve = (...paths) => normalize(pathResolve(...paths));
+export const join = (...paths) => normalize(pathJoin(...paths));
+export const dirname = p => normalize(pathDirname(p));
+export const basename = (p, ext) => pathBasename(normalize(p), ext);
+export const extname = p => pathExtname(normalize(p));
+
+// src/utils.js
+export const filename = (p) => {
+  const base = basename(p);
+  const ext = extname(p);
+  return base.slice(0, base.length - ext.length);
+};
+
+export const normalizeAliases = (aliases) => {
+  return Object.fromEntries(
+    Object.entries(aliases).map(([key, value]) => [normalize(key), normalize(value)])
+  );
+};
+
+export const resolveAlias = (p, aliases) => {
+  const normalizedAliases = normalizeAliases(aliases);
+  return Object.keys(normalizedAliases).reduce((resolvedPath, alias) => {
+    if (resolvedPath.startsWith(alias)) {
+      return resolvedPath.replace(alias, normalizedAliases[alias]);
+    }
+    return resolvedPath;
+  }, p);
+};
+
+// package.json
+{
+  "name": "pathe",
+  "version": "1.0.0",
+  "main": "src/index.js",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.js",
+    "./utils": "./src/utils.js"
+  },
+  "dependencies": {}
+}
+```

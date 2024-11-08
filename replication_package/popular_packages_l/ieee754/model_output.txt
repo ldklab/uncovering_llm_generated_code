@@ -1,0 +1,113 @@
+The functionality described in the README.md is for a Node.js package named `ieee754`, which allows users to read and write IEEE 754 floating-point numbers from and to buffers or array-like objects. IEEE 754 is a standard for floating-point arithmetic used in computing, and this package provides a way to handle these floating-point numbers within JavaScript buffers.
+
+The package exposes two main methods under the `ieee754` object:
+
+1. `ieee754.read(buffer, offset, isLE, mLen, nBytes)`: This function reads a floating-point number from a specified location (offset) in a buffer. 
+    - `buffer`: The array-like object (typically an instance of `Buffer`) containing the binary data.
+    - `offset`: The starting position in the buffer from where to start reading the floating-point number.
+    - `isLE`: A boolean indicating if the data is in little-endian format. `true` for little-endian, `false` for big-endian.
+    - `mLen`: The length of the mantissa part of the floating-point number.
+    - `nBytes`: The total number of bytes used to represent the floating-point number.
+
+2. `ieee754.write(buffer, value, offset, isLE, mLen, nBytes)`: This function writes a floating-point number to a specified location (offset) in a buffer.
+    - `buffer`: The array-like object where the floating-point number will be written.
+    - `value`: The floating-point number to write into the buffer.
+    - `offset`: The starting position in the buffer where the number should be written.
+    - `isLE`: A boolean indicating if the data should be written in little-endian format. `true` for little-endian, `false` for big-endian.
+    - `mLen`: The length of the mantissa part of the floating-point number.
+    - `nBytes`: The total number of bytes used to represent the floating-point number.
+
+Below is the implementation of the ieee754 package:
+
+```javascript
+// ieee754.js
+function read(buffer, offset, isLE, mLen, nBytes) {
+  var e, m
+  var eLen = (nBytes * 8) - mLen - 1
+  var eMax = (1 << eLen) - 1
+  var eBias = eMax >> 1
+  var nBits = -7
+  var i = isLE ? (nBytes - 1) : 0
+  var d = isLE ? -1 : 1
+  var s = buffer[offset + i]
+
+  i += d
+
+  e = s & ((1 << (-nBits)) - 1)
+  s >>= (-nBits)
+  nBits += eLen
+  for (; nBits > 0; e = (e * 256) + buffer[offset + i], i += d, nBits -= 8) {}
+
+  m = e & ((1 << (-nBits)) - 1)
+  e >>= (-nBits)
+  nBits += mLen
+  for (; nBits > 0; m = (m * 256) + buffer[offset + i], i += d, nBits -= 8) {}
+
+  if (e === 0) {
+    e = 1 - eBias
+  } else if (e === eMax) {
+    return m ? NaN : ((s ? -1 : 1) * Infinity)
+  } else {
+    m = m + Math.pow(2, mLen)
+    e = e - eBias
+  }
+  return (s ? -1 : 1) * m * Math.pow(2, e - mLen)
+}
+
+function write(buffer, value, offset, isLE, mLen, nBytes) {
+  var e, m, c
+  var eLen = (nBytes * 8) - mLen - 1
+  var eMax = (1 << eLen) - 1
+  var eBias = eMax >> 1
+  var rt = (mLen === 23 ? Math.pow(2, -24) - Math.pow(2, -77) : 0)
+  var i = isLE ? 0 : (nBytes - 1)
+  var d = isLE ? 1 : -1
+  var s = value < 0 || (value === 0 && 1 / value < 0) ? 1 : 0
+
+  value = Math.abs(value)
+
+  if (isNaN(value) || value === Infinity) {
+    m = isNaN(value) ? 1 : 0
+    e = eMax
+  } else {
+    e = Math.floor(Math.log(value) / Math.LN2)
+    if (value * (c = Math.pow(2, -e)) < 1) {
+      e--
+      c *= 2
+    }
+    if (e + eBias >= 1) {
+      value += rt / c
+    } else {
+      value += rt * Math.pow(2, 1 - eBias)
+    }
+    if (value * c >= 2) {
+      e++
+      c /= 2
+    }
+
+    if (e + eBias >= eMax) {
+      m = 0
+      e = eMax
+    } else if (e + eBias >= 1) {
+      m = (value * c - 1) * Math.pow(2, mLen)
+      e = e + eBias
+    } else {
+      m = value * Math.pow(2, eBias - 1) * Math.pow(2, mLen)
+      e = 0
+    }
+  }
+
+  for (; mLen >= 8; buffer[offset + i] = m & 0xff, i += d, m /= 256, mLen -= 8) {}
+
+  e = (e << mLen) | m
+  eLen += mLen
+  for (; eLen > 0; buffer[offset + i] = e & 0xff, i += d, e /= 256, eLen -= 8) {}
+
+  buffer[offset + i - d] |= s * 128
+}
+
+module.exports = {
+  read: read,
+  write: write
+}
+```

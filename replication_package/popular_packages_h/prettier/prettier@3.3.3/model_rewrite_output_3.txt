@@ -1,0 +1,98 @@
+The Node.js code provided is an extensive utility library, seemingly related to a code formatting tool similar to Prettier. The library provides various utilities for manipulating and analyzing strings, particularly dealing with spaces, comments, and specific characters within the text. Additionally, the code handles the interface of an asynchronous loading of the core library functions and exporting these functions as asynchronous methods. 
+
+Here is a breakdown of the functionalities:
+1. **Utility Functions:** These include functions for skipping whitespace, newline, and comments within a text, checking for characters, getting string width, and manipulating strings (e.g., adding comments).
+2. **ESM and CommonJS Module Handling:** There are utility functions to handle the creation and management of modules, particularly for environment setup details.
+3. **ES6 Compatibility:** The code ensures compatibility between CommonJS and ES modules, with helper functions for exporting and converting modules.
+4. **String Manipulation:** Functions like `escapeStringRegexp`, `makeString`, and others manage string operations to escape characters or format them in a specified way.
+5. **Versioning and Module Exports:** It also includes a module versioning system and exports an interface that allows the calling of Prettier-like functions asynchronously.
+
+According to the provided explanation, here is a simplified rewrite of this code, focusing on exporting internal utilities and the promise-based loading of the main library:
+
+```javascript
+"use strict";
+
+// Utility functions for string manipulation and text processing
+function skip(characters) {
+  return (text, startIndex, options) => {
+    const backwards = Boolean(options?.backwards);
+    if (startIndex === false) return false;
+
+    const { length } = text;
+    let cursor = startIndex;
+    while (cursor >= 0 && cursor < length) {
+      const character = text.charAt(cursor);
+      if (characters instanceof RegExp) {
+        if (!characters.test(character)) return cursor;
+      } else if (!characters.includes(character)) return cursor;
+
+      backwards ? cursor-- : cursor++;
+    }
+    return cursor === -1 || cursor === length ? cursor : false;
+  };
+}
+
+function skipInlineComment(text, startIndex) {
+  if (!startIndex || text.charAt(startIndex) !== "/" || text.charAt(startIndex + 1) !== "*") {
+    return startIndex;
+  }
+  for (let i = startIndex + 2; i < text.length; ++i) {
+    if (text.charAt(i) === "*" && text.charAt(i + 1) === "/") {
+      return i + 2;
+    }
+  }
+  return startIndex;
+}
+
+function skipNewline(text, startIndex, options) {
+  const backwards = Boolean(options?.backwards);
+  if (startIndex === false) return false;
+
+  const character = text.charAt(startIndex);
+  if (backwards) {
+    if (text.charAt(startIndex - 1) === "\r" && character === "\n") return startIndex - 2;
+    if (character === "\n" || character === "\r" || character === "\u2028" || character === "\u2029") return startIndex - 1;
+  } else {
+    if (character === "\r" && text.charAt(startIndex + 1) === "\n") return startIndex + 2;
+    if (character === "\n" || character === "\r" || character === "\u2028" || character === "\u2029") return startIndex + 1;
+  }
+  return startIndex;
+}
+
+function getNextNonSpaceNonCommentCharacterIndex(text, startIndex) {
+  let oldIdx = null;
+  let nextIdx = startIndex;
+  while (nextIdx !== oldIdx) {
+    oldIdx = nextIdx;
+    nextIdx = skip(" \\t")(text, nextIdx);
+    nextIdx = skipInlineComment(text, nextIdx);
+    nextIdx = skip("//")(text, nextIdx);
+    nextIdx = skipNewline(text, nextIdx);
+  }
+  return nextIdx;
+}
+
+// Main exports and asynchronous-based loading of core functions
+const prettierPromise = import('./index.mjs');
+const functionNames = ['formatWithCursor', 'format', 'check', 'resolveConfig', 'resolveConfigFile', 'clearConfigCache', 'getFileInfo', 'getSupportInfo'];
+
+const prettier = {};
+for (const name of functionNames) {
+  prettier[name] = async (...args) => (await prettierPromise)[name](...args);
+}
+
+const debugApiFunctionNames = ['parse', 'formatAST', 'formatDoc', 'printToDoc', 'printDocToString'];
+prettier.__debug = {};
+for (const name of debugApiFunctionNames) {
+  prettier.__debug[name] = async (...args) => (await prettierPromise).__debug[name](...args);
+}
+
+// Utility module exports
+prettier.util = { skip, skipInlineComment, skipNewline, getNextNonSpaceNonCommentCharacterIndex };
+
+// Export module with versioning
+prettier.version = require('./version.evaluate');
+module.exports = prettier;
+```
+
+This rewrite simplifies the original code while being consistent with the functionality described. It encapsulates utility functions and promises-based asynchronous operations for the main interface functions, separating concerns neatly.

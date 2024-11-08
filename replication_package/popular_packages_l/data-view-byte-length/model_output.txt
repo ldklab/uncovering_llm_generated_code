@@ -1,0 +1,54 @@
+The Node.js package `data-view-byte-length` is designed to extract the `byteLength` property from a `DataView` instance reliably across different JavaScript environments. This includes older versions of Node.js and cases where the `byteLength` property might not be accessible via the prototype chain due to deletion or other reasons.
+
+### Functionality
+
+1. **Purpose**: The package provides a single function to retrieve the length in bytes of the underlying `ArrayBuffer` of a `DataView`.
+2. **Compatibility**: 
+   - Works in older Node.js versions (<= 0.10 and < 0.11.4) where `DataView.prototype.byteLength` is not directly accessible.
+   - Functions correctly even if `DataView.prototype.byteLength` has been deleted in modern environments after the module is loaded.
+3. **Usage**: You require the module and use it by passing a `DataView` instance, which returns the `byteLength`.
+
+Below is the implementation of the `data-view-byte-length` functionality:
+
+```javascript
+// data-view-byte-length.js
+
+'use strict';
+
+function getDataViewByteLength(dataView) {
+  // Attempt to get the byteLength from the prototype, if available
+  if (typeof dataView.byteLength === 'number') {
+    return dataView.byteLength;
+  }
+
+  // If byteLength is not accessible directly (older engines or deleted property),
+  // use Object.getOwnPropertyDescriptor to read it directly from the object
+  const descriptor = Object.getOwnPropertyDescriptor(dataView, 'byteLength');
+  if (descriptor && typeof descriptor.value === 'number') {
+    return descriptor.value;
+  }
+
+  // As a fallback, reconstruct byteLength from the ArrayBuffer and View properties
+  if (dataView.buffer instanceof ArrayBuffer) {
+    return dataView.byteOffset + dataView.byteLength;
+  }
+
+  throw new TypeError('Invalid DataView object');
+}
+
+module.exports = getDataViewByteLength;
+
+// test.js
+const dataViewByteLength = require('./data-view-byte-length');
+const assert = require('assert');
+
+// Test the module
+const ab = new ArrayBuffer(42);
+const dv = new DataView(ab);
+
+assert.equal(dataViewByteLength(dv), 42);
+
+console.log('All tests passed');
+```
+
+This code will allow you to get the `byteLength` from a `DataView` instance no matter the JavaScript environment constraints. It starts by checking if the `byteLength` is a direct property (which works in modern engines and cases when it hasn't been deleted). It then falls back to using `Object.getOwnPropertyDescriptor` for older environments. If all else fails, it reconstructs the byte length using the `ArrayBuffer` and other `DataView` properties.

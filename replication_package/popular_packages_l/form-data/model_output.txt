@@ -1,0 +1,122 @@
+The `Form-Data` library in Node.js is used to construct and manipulate forms that need to be submitted as `"multipart/form-data"` requests, commonly used for file uploads and form submissions to web applications. This library is inspired by the XMLHttpRequest-2 FormData Interface and facilitates the creation and manipulation of form data streams.
+
+### Key Features:
+1. **FormData Construction**: You can create form instances and append fields with different types of data like strings, buffers, and readable streams.
+2. **Appending Data**: The `append` method allows adding fields to the form. It supports various input types, including strings, buffers, and streams. Additional metadata can be passed to describe the content, such as filename and content type.
+3. **Get and Set Headers**: Methods like `getHeaders` and `getBoundary` are provided to manage and retrieve necessary HTTP headers for a multipart form submission.
+4. **Submission of Forms**: The library allows submitting forms directly to a target URL using the `submit` method or manually handling the request using Node.js's HTTP modules.
+5. **Integration with Streams**: Supports appending streams from file systems and HTTP responses for efficient file handling.
+6. **Custom Configuration**: Various options can be configured, like setting a `maxDataSize` to limit the size of the form data.
+7. **Alternative Request Libraries**: Demonstrates interoperability with other HTTP request libraries like `request`, `axios`, and `node-fetch` for submitting forms.
+
+### Implementation:
+
+Below is an implementation of the `Form-Data` package:
+
+```javascript
+const fs = require('fs');
+const http = require('http');
+const { Readable } = require('stream');
+
+class FormData {
+  constructor(options = {}) {
+    this.fields = [];
+    this.boundary = '--------------------------' + Math.random().toString().substr(2);
+    this.options = options;
+  }
+
+  append(field, value, options = {}) {
+    let fieldData = {
+      field,
+      value,
+      options: typeof options === 'string' ? { filename: options } : options
+    };
+    this.fields.push(fieldData);
+  }
+
+  getHeaders(userHeaders = {}) {
+    return {
+      ...userHeaders,
+      'Content-Type': `multipart/form-data; boundary=${this.boundary}`
+    };
+  }
+
+  getBoundary() {
+    return this.boundary;
+  }
+
+  setBoundary(boundary) {
+    this.boundary = boundary;
+  }
+
+  getBuffer() {
+    const buffers = [];
+    this.fields.forEach(field => {
+      buffers.push(Buffer.from(`--${this.boundary}\r\n`));
+      if (typeof field.value === 'string' || Buffer.isBuffer(field.value)) {
+        buffers.push(Buffer.from(`Content-Disposition: form-data; name="${field.field}"\r\n\r\n`));
+        buffers.push(Buffer.from(field.value));
+      } else if (field.value instanceof Readable) {
+        buffers.push(Buffer.from(`Content-Disposition: form-data; name="${field.field}"; filename="${field.options.filename || 'unknown'}"\r\n`));
+        buffers.push(Buffer.from(`Content-Type: ${field.options.contentType || 'application/octet-stream'}\r\n\r\n`));
+        field.value.pipe(Buffer.from(field.value.read()));
+      }
+      buffers.push(Buffer.from('\r\n'));
+    });
+    buffers.push(Buffer.from(`--${this.boundary}--\r\n`));
+    return Buffer.concat(buffers);
+  }
+
+  getLength(callback) {
+    let length = 0;
+    this.fields.forEach(field => {
+      if (typeof field.value === 'string' || Buffer.isBuffer(field.value)) {
+        length += Buffer.byteLength(field.value);
+      } else if (field.value instanceof Readable && field.options.knownLength) {
+        length += field.options.knownLength;
+      }
+    });
+    process.nextTick(() => callback(null, length));
+  }
+
+  submit(params, callback) {
+    if (typeof params === 'string') {
+      params = new URL(params);
+    }
+    
+    const req = http.request({
+      method: 'POST',
+      hostname: params.host,
+      path: params.path,
+      headers: this.getHeaders(params.headers || {}),
+    }, res => {
+      callback(null, res);
+    });
+
+    // Handle potential errors
+    req.on('error', e => {
+      callback(e);
+    });
+
+    this.pipe(req);
+    req.end();
+  }
+
+  pipe(destination) {
+    const buffer = this.getBuffer();
+    destination.write(buffer);
+  }
+}
+
+module.exports = FormData;
+
+// Usage:
+// const form = new FormData();
+// form.append('field1', 'value1');
+// form.submit('http://example.com', (err, res) => {
+//   if (err) throw err;
+//   console.log('Response received');
+// });
+```
+
+This code provides the core functionality of the `Form-Data` library, allowing users to construct multipart form data, append various types of fields, and submit the data via HTTP requests. The library handles data aggregation into the appropriate format for `multipart/form-data` and provides utilities for calculating headers and content length.

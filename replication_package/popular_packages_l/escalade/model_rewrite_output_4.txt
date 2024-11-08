@@ -1,0 +1,50 @@
+The Node.js code defines two functions, `escalade` and `escaladeSync`, which traverse directories upwards recursively. Both functions aim to identify and return a path based on a callback's result, starting from a specified directory and moving upwards towards the root. The traversal continues until the root directory is reached or the callback returns a truthy value.
+
+1. **Async Mode (`escalade` function):** 
+   - Accepts a starting directory (`dir`) and a callback function.
+   - Normalizes and resolves the given directory.
+   - Iterates through directories using `fs.readdir` wrapped with `promisify` to handle asynchronous operations.
+   - Invokes the callback with the current directory and its contents. If the callback returns a path (either absolute or relative), it stops traversal and returns this path.
+   - If the callback does not return a path, it moves to the parent directory and repeats the process until reaching the filesystem root.
+
+2. **Sync Mode (`escaladeSync` function):**
+   - Similar to `escalade` but operates synchronously using `fs.readdirSync`.
+   - Follows the same traversal logic, but without asynchronous operations.
+
+Both functions normalize paths to ensure they handle both absolute and relative paths correctly. The module exports both functions, making them available for use in other files.
+
+```javascript
+const { readdir, readdirSync } = require('fs').promises;
+const path = require('path');
+
+async function escalade(dir, callback) {
+  dir = path.resolve(dir);
+  while (true) {
+    const names = await readdir(dir);
+    const result = await callback(dir, names);
+    if (result) {
+      return path.isAbsolute(result) ? result : path.resolve(dir, result);
+    }
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+}
+
+function escaladeSync(dir, callback) {
+  dir = path.resolve(dir);
+  while (true) {
+    const names = readdirSync(dir);
+    const result = callback(dir, names);
+    if (result) {
+      return path.isAbsolute(result) ? result : path.resolve(dir, result);
+    }
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+}
+
+module.exports = escalade;
+module.exports.sync = escaladeSync;
+```

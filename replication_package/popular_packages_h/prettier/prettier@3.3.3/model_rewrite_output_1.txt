@@ -1,0 +1,125 @@
+The Node.js code provided initializes several utility functions, methods, and objects that are used to manipulate and analyze strings, handle comments, measure text characteristics, and more. Here’s a breakdown of the primary functionalities:
+
+1. **Utility Functions for String Manipulation**: Functions like `skip` and `makeString` are employed to process strings, handling character skipping, and assembling strings with specific quotations and escape characters.
+
+2. **Comment Handling**: Functions such as `addCommentHelper`, `addLeadingComment`, `addTrailingComment`, and `addDanglingComment` are used to manipulate comments within code nodes, allowing leading, trailing, and dangling comments to be added and described.
+
+3. **Whitespace and Character Skipping**: Utilities like `skipSpaces`, `skipNewline`, `skipInlineComment`, and `skipTrailingComment` are employed to skip over specific sequences in strings, aiding in parsing and processing text by ignoring irrelevant portions like spaces and comments.
+
+4. **Analysis Utilities**: Functions such as `hasNewline`, `hasSpaces`, `getAlignmentSize`, `getStringWidth`, and `getMaxContinuousCount` gather and calculate information about strings, such as identifying newlines, determining width or size, and checking for sequences or patterns.
+
+5. **Prettier Specific Utilities**: The code manages integrations for the Prettier API, providing asynchronous access to formatting functions and abstract syntax tree (AST) utilities necessary for code styling and formatting.
+
+6. **Modularization**: The code is split into multiple utility modules resided in a certain project structure which can be initialized and accessed as necessary.
+
+Here is a possible rewrite:
+
+```javascript
+"use strict";
+
+// Utility Functions
+const utilities = {
+  createObject: Object.create,
+  defineProperty: Object.defineProperty,
+  getPropertyDescriptor: Object.getOwnPropertyDescriptor,
+  getOwnPropertyNames: Object.getOwnPropertyNames,
+  getPrototypeOf: Object.getPrototypeOf,
+  hasOwnProperty: Object.prototype.hasOwnProperty,
+  
+  esm: (fn, res) => function init() {
+    return fn && (res = (0, fn[utilities.getOwnPropertyNames(fn)[0]])(fn = 0)), res;
+  },
+
+  commonJS: (cb, mod) => function require() {
+    return mod || (0, cb[utilities.getOwnPropertyNames(cb)[0]])((mod = { exports: {} }).exports, mod), mod.exports;
+  },
+
+  export: (target, all) => {
+    for (let name in all)
+      utilities.defineProperty(target, name, { get: all[name], enumerable: true });
+  }
+};
+
+// String Utilities
+function skip(characters) {
+  return (text, startIndex, options) => {
+    const backwards = Boolean(options?.backwards);
+    if (startIndex === false) return false;
+    const length = text.length;
+    let cursor = startIndex;
+    while (cursor >= 0 && cursor < length) {
+      const character = text.charAt(cursor);
+      if (characters instanceof RegExp) {
+        if (!characters.test(character)) return cursor;
+      } else if (!characters.includes(character)) {
+        return cursor;
+      }
+      backwards ? cursor-- : cursor++;
+    }
+    if (cursor === -1 || cursor === length) return cursor;
+    return false;
+  };
+}
+
+const skipSpaces = skip(" \t");
+
+// Init Module
+const init_skip = utilities.esm({
+  "src/utils/skip.js"() {
+    skipWhitespace = skip(/\s/u);
+    skipToLineEnd = skip(",; \t");
+    skipEverythingButNewLine = skip(/[^\n\r]/u);
+  }
+});
+
+// Comment Handling Utilities
+function skipInlineComment(text, startIndex) {
+  if (startIndex === false) return false;
+  if (text.charAt(startIndex) === "/" && text.charAt(startIndex + 1) === "*") {
+    for (let i = startIndex + 2; i < text.length; ++i) {
+      if (text.charAt(i) === "*" && text.charAt(i + 1) === "/") {
+        return i + 2;
+      }
+    }
+  }
+  return startIndex;
+}
+
+const skip_inline_comment_default = skipInlineComment;
+
+const init_skip_inline_comment = utilities.esm({
+  "src/utils/skip-inline-comment.js"() {
+    skip_inline_comment_default = skipInlineComment;
+  }
+});
+
+// Exporting Module
+const public_exports = {};
+utilities.export(public_exports, {
+  skip,
+  skipSpaces,
+});
+
+// Prettier Integration
+const prettierPromise = import("./index.mjs");
+const functionNames = [
+  "formatWithCursor",
+  "format",
+  "check",
+  "resolveConfig",
+  "resolveConfigFile",
+  "clearConfigCache",
+  "getFileInfo",
+  "getSupportInfo"
+];
+
+const prettier = Object.create(null);
+for (const name of functionNames) {
+  prettier[name] = async (...args) => {
+    const prettierInstance = await prettierPromise;
+    return prettierInstance[name](...args);
+  };
+}
+
+module.exports = prettier;
+```

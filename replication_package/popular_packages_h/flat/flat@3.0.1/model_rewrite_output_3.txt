@@ -1,0 +1,88 @@
+The provided Node.js code is a utility module for flattening and unflattening objects. It involves two main functions, `flatten` and `unflatten`, and uses the `is-buffer` module to check if a value is a buffer.
+
+- **Flattening**: This process involves converting a nested object into a single-level object where each key is a path to a value in the original object. The keys of the flattened object are concatenated using a specified delimiter, defaulting to a period (`.`). The function supports options like maximum depth (`maxDepth`) to limit how deeply it flattens the object, and a `safe` option to determine how it handles arrays.
+
+- **Unflattening**: This function reverses the flattening process, reconstructing the nested object structure from a flat object. It considers custom delimiters and an `overwrite` option to handle conflicts in key paths.
+
+The code checks for certain edge cases, like buffers and prototype pollution, and supports custom processing through options.
+
+Below is a refactored version of the same code:
+
+```javascript
+const isBuffer = require('is-buffer');
+
+const flat = module.exports = {
+  flatten,
+  unflatten
+};
+
+function flatten(target, opts = {}) {
+  const delimiter = opts.delimiter || '.';
+  const maxDepth = opts.maxDepth;
+  const output = {};
+
+  (function step(object, prev = '', currentDepth = 1) {
+    for (const [key, value] of Object.entries(object)) {
+      const isArray = opts.safe && Array.isArray(value);
+      const isObject = Object.prototype.toString.call(value) === "[object Object]" || 
+                       Object.prototype.toString.call(value) === "[object Array]";
+      const newKey = prev ? `${prev}${delimiter}${key}` : key;
+
+      if (!isArray && !isBuffer(value) && isObject && 
+          Object.keys(value).length && 
+          (!maxDepth || currentDepth < maxDepth)) {
+        step(value, newKey, currentDepth + 1);
+      } else {
+        output[newKey] = value;
+      }
+    }
+  })(target);
+
+  return output;
+}
+
+function unflatten(target, opts = {}) {
+  const delimiter = opts.delimiter || '.';
+  const overwrite = opts.overwrite || false;
+  const result = {};
+
+  if (isBuffer(target) || Object.prototype.toString.call(target) !== '[object Object]') {
+    return target;
+  }
+
+  function getkey(key) {
+    const parsedKey = Number(key);
+    return (isNaN(parsedKey) || key.includes('.') || opts.object) ? key : parsedKey;
+  }
+
+  for (const [key, value] of Object.entries(target)) {
+    const split = key.split(delimiter);
+    let key1 = getkey(split.shift());
+    let key2 = getkey(split[0]);
+    let recipient = result;
+
+    while (key2 !== undefined) {
+      if (key1 === '__proto__') return;
+
+      const type = Object.prototype.toString.call(recipient[key1]);
+      const isObject = type === "[object Object]" || type === "[object Array]";
+
+      if (!overwrite && typeof recipient[key1] !== 'undefined' && !isObject) return;
+
+      if ((overwrite && !isObject) || (!overwrite && recipient[key1] == null)) {
+        recipient[key1] = (typeof key2 === 'number' && !opts.object) ? [] : {};
+      }
+
+      recipient = recipient[key1];
+      if (split.length > 0) {
+        key1 = getkey(split.shift());
+        key2 = getkey(split[0]);
+      }
+    }
+
+    recipient[key1] = unflatten(value, opts);
+  }
+
+  return result;
+}
+```

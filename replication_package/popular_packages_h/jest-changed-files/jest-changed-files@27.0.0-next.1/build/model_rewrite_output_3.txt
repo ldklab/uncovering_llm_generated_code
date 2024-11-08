@@ -1,0 +1,82 @@
+The provided Node.js code manages and processes source control repositories (specifically Git and Mercurial) for given directory roots. Here’s a breakdown of its functionality:
+
+1. **Imports and Utility Functions:**
+   - The code utilizes the `throat` module to limit concurrency, which helps in managing operations over a potentially large number of repositories. It also imports modules for handling Git and Mercurial operations.
+   - The `notEmpty` function is a utility that filters out null or undefined values.
+
+2. **Concurrency Control:**
+   - A `mutex` is created to limit the number of concurrent processes to 5. This is to prevent overwhelming the system when dealing with many directories.
+
+3. **Repository Handling Functions:**
+   - `findGitRoot` and `findHgRoot` use the `mutex` to ensure that finding the root of Git or Mercurial repositories is processed in a controlled manner.
+   - `findRepos`: Asynchronously determines which of the provided directory roots are version-controlled by Git or Mercurial and returns those directories.
+
+4. **Changed File Detection:**
+   - `getChangedFilesForRoots`: This function gathers repositories from the provided roots and then determines which files have changed. It does so by creating promises that find changed files in both Git and Mercurial repositories and merging the results into a set of unique changed files. It returns an object containing these changed files and the repository metadata.
+
+Here's the refactored code based on the above explanation:
+
+```javascript
+'use strict';
+
+Object.defineProperty(exports, '__esModule', {
+  value: true
+});
+exports.findRepos = exports.getChangedFilesForRoots = void 0;
+
+const throat = require('throat').default;
+const gitModule = require('./git').default;
+const hgModule = require('./hg').default;
+
+function notEmpty(value) {
+  return value !== null && value !== undefined;
+}
+
+const mutex = throat(5);
+
+const findGitRoot = dir => mutex(() => gitModule.getRoot(dir));
+
+const findHgRoot = dir => mutex(() => hgModule.getRoot(dir));
+
+const getChangedFilesForRoots = async (roots, options) => {
+  const repos = await findRepos(roots);
+  const changedFilesOptions = {
+    includePaths: roots,
+    ...options
+  };
+  
+  const gitPromises = Array.from(repos.git).map(repo =>
+    gitModule.findChangedFiles(repo, changedFilesOptions)
+  );
+
+  const hgPromises = Array.from(repos.hg).map(repo =>
+    hgModule.findChangedFiles(repo, changedFilesOptions)
+  );
+
+  const changedFilesResult = await Promise.all([...gitPromises, ...hgPromises]);
+  
+  const changedFiles = changedFilesResult.reduce((files, repoFiles) => {
+    repoFiles.forEach(file => files.add(file));
+    return files;
+  }, new Set());
+
+  return { changedFiles, repos };
+};
+
+exports.getChangedFilesForRoots = getChangedFilesForRoots;
+
+const findRepos = async roots => {
+  const gitReposPromises = roots.map(root => findGitRoot(root));
+  const hgReposPromises = roots.map(root => findHgRoot(root));
+
+  const gitRepos = await Promise.all(gitReposPromises);
+  const hgRepos = await Promise.all(hgReposPromises);
+
+  return {
+    git: new Set(gitRepos.filter(notEmpty)),
+    hg: new Set(hgRepos.filter(notEmpty))
+  };
+};
+
+exports.findRepos = findRepos;
+```

@@ -1,0 +1,84 @@
+The Node.js code provided is a simple module that contains functionality for a WebAssembly-based ES module lexer (though, notably, the actual WebAssembly functionality is mocked here). It provides two primary functions: `init()` and `parse()`.
+
+1. **WebAssembly Loading Simulation**: 
+   - The `wasmLoaded` variable is used to simulate whether the WebAssembly module is initialized.
+   - The `loadWasm` function asynchronously simulates loading a WebAssembly module by setting `wasmLoaded` to `true` after a brief delay (using `setTimeout`).
+
+2. **Initialization (`init()` function)**:
+   - Before any parsing can occur, `init()` must be called and awaited to ensure the faux WebAssembly module is "loaded".
+   - It checks `wasmLoaded`, and if it’s `false`, it calls `loadWasm()`.
+
+3. **Parsing (`parse()` function)**:
+   - Checks if WebAssembly has been initialized (`wasmLoaded`). If not, it throws an error.
+   - It parses a given source string to extract ES module export and import statements.
+   - Uses regular expressions to search for:
+     - Exports: `exportRegex` is used to find different types of export statements.
+     - Imports: `importRegex` is used to identify imports, and extracts module names and other details.
+   - Produces two result arrays, `exports` and `imports`, containing objects representing the parsed details of the source.
+   - Returns these arrays along with two boolean flags indicating parsing outcomes.
+
+Here's a rewritten version of the code:
+
+```javascript
+// es-module-lexer.js
+
+let wasmInitialized = false;
+
+// Simulates loading a WebAssembly module
+async function loadWebAssembly() {
+  return new Promise((resolve) => {
+    setTimeout(() => {
+      wasmInitialized = true;
+      resolve();
+    }, 1);
+  });
+}
+
+// Initializes the lexer environment
+async function initWasm() {
+  if (!wasmInitialized) {
+    await loadWebAssembly();
+  }
+}
+
+// Parses JavaScript/ES module source code
+function parseModuleSource(source, sourceName = '') {
+  if (!wasmInitialized) {
+    throw new Error('WebAssembly is not initialized. Ensure `initWasm()` is called and awaited.');
+  }
+
+  const exportDeclarations = [];
+  const importDeclarations = [];
+  
+  const exportPattern = /export\s+(?:var|let|const|function|class|default)\s+([a-zA-Z_$][0-9a-zA-Z_$]*)/g;
+  let matchResult;
+
+  while ((matchResult = exportPattern.exec(source)) !== null) {
+    exportDeclarations.push({
+      s: matchResult.index,
+      e: matchResult.index + matchResult[1].length,
+      ls: matchResult.index,
+      le: matchResult.index + matchResult[1].length,
+    });
+  }
+
+  const importPattern = /import\s+([^;'"]+)\s+from\s+(['"])(.*?)\2/g;
+
+  while ((matchResult = importPattern.exec(source)) !== null) {
+    importDeclarations.push({
+      s: matchResult.index + matchResult[1].length + 7,
+      e: matchResult.index + matchResult[0].length - (matchResult[2].length + 1),
+      ss: matchResult.index,
+      se: matchResult.index + matchResult[0].length,
+      n: matchResult[3],
+      t: 1,
+      a: -1,
+      d: -1,
+    });
+  }
+
+  return [importDeclarations, exportDeclarations, false, importDeclarations.length > 0 || exportDeclarations.length > 0];
+}
+
+module.exports = { initWasm, parseModuleSource };
+```

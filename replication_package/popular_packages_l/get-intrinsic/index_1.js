@@ -1,0 +1,106 @@
+// get-intrinsic.js
+
+'use strict';
+
+// Importing a helper method for binding functions
+const callBound = require('es-abstract/helpers/callBound');
+
+// Getting the prototype of objects, with a fallback for old environments
+const getProto = Object.getPrototypeOf || (obj => obj.__proto__);
+
+// Cache to store intrinsic objects after first retrieval
+const INTRINSICS_CACHE = {};
+
+// Main function to retrieve an intrinsic based on its identifier
+function GetIntrinsic(name, allowMissing = false) {
+    const nameString = String(name);
+    const parsed = parseIntrinsic(nameString); // Parse the identifier into base and path
+
+    const intrinsicBaseName = `%${parsed.base}%`;
+
+    // If the intrinsic is already in the cache, retrieve it
+    if (INTRINSICS_CACHE[intrinsicBaseName]) {
+        return applyPath(INTRINSICS_CACHE[intrinsicBaseName], parsed.path);
+    }
+
+    // Fetch the intrinsic based on its base name
+    let intrinsic = getBaseIntrinsic(parsed.base);
+
+    // Handle missing intrinsics
+    if (typeof intrinsic === 'undefined') {
+        if (!allowMissing) {
+            throw new Error(`Intrinsic ${nameString} does not exist in this environment`);
+        }
+        return undefined;
+    }
+
+    // Cache the intrinsic for future use
+    INTRINSICS_CACHE[intrinsicBaseName] = intrinsic;
+    return applyPath(intrinsic, parsed.path); // Apply the path to reach the desired intrinsic
+}
+
+// Helper function: Parse an intrinsic identifier into base and path
+function parseIntrinsic(name) {
+    const [_, base, ...path] = name.split(/[%\[\].]+/).filter(Boolean);
+    return { base, path };
+}
+
+// Helper function: Retrieve the base intrinsic from the global scope
+function getBaseIntrinsic(base) {
+    if (!(base in globalThis)) {
+        return undefined;
+    }
+    return globalThis[base];
+}
+
+// Helper function: Traverse the intrinsic using the path to reach the final object
+function applyPath(base, path) {
+    return path.reduce((obj, key) => {
+        return obj ? obj[key] : undefined;
+    }, base);
+}
+
+module.exports = GetIntrinsic;
+
+// Mock implementation of require for demonstration purposes
+function require(moduleName) {
+    if (moduleName === 'get-intrinsic') return GetIntrinsic;
+    throw new Error(`Module ${moduleName} not found`);
+}
+
+// Test setup
+const assert = require('assert');
+
+// Example usage and assertions for testing the functionality
+try {
+    // Static methods
+    assert.equal(GetIntrinsic('%Math.pow%'), Math.pow);
+    assert.equal(Math.pow(2, 3), 8);
+    assert.equal(GetIntrinsic('%Math.pow%')(2, 3), 8);
+
+    delete Math.pow;
+    assert.equal(GetIntrinsic('%Math.pow%')(2, 3), 8);
+
+    // Instance methods
+    const arr = [1];
+    assert.equal(GetIntrinsic('%Array.prototype.push%'), Array.prototype.push);
+    arr.push(2);
+    assert.deepStrictEqual(arr, [1, 2]);
+
+    GetIntrinsic('%Array.prototype.push%').call(arr, 3);
+    assert.deepStrictEqual(arr, [1, 2, 3]);
+
+    delete Array.prototype.push;
+    GetIntrinsic('%Array.prototype.push%').call(arr, 4);
+    assert.deepStrictEqual(arr, [1, 2, 3, 4]);
+
+    // Handling missing features
+    delete JSON.parse;
+    assert.throws(() => GetIntrinsic('%JSON.parse%'));
+    assert.equal(undefined, GetIntrinsic('%JSON.parse%', true));
+
+    console.log('All tests passed!');
+} catch (error) {
+    console.error('Test failed', error);
+}
+```

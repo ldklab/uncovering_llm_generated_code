@@ -1,0 +1,55 @@
+The provided Node.js code is a class named `CoverageInstrumenter` which uses the Node `inspector` module to perform precise coverage analysis of JavaScript code. It is used for collecting execution statistics about JavaScript functions during runtime. Below is an explanation of each part of the code:
+
+1. **Session Setup:** The `Session` from the `inspector` module is used to establish a connection with the V8 Inspector. This connection allows the code to send commands and receive events from the JavaScript engine.
+
+2. **Promisification:** The `util.promisify` is used to convert the callback-based `post` method of the `Session` into a promise-based method named `postSession`. This simplifies the asynchronous operation using `async/await`.
+
+3. **Coverage Collection:**
+   - `startInstrumenting()`: Connects to the Inspector, enables the Profiler, and starts precise code coverage monitoring using `startPreciseCoverage`. It collects details about function execution.
+   - `stopInstrumenting()`: It takes the collected precise coverage and then stops both precise coverage monitoring and the Profiler. It returns the coverage data.
+
+4. **Platform-Specific Adjustment:** There is a fix for a specific issue on Windows platforms where URLs of networked filesystems might be misformatted by V8. These are adjusted to be compatible with Node.js.
+
+Here's the rewritten code:
+
+```javascript
+'use strict';
+
+const { Session } = require('inspector');
+const { promisify } = require('util');
+
+class CoverageInstrumenter {
+  constructor() {
+    this.session = new Session();
+    this.postSession = promisify(this.session.post.bind(this.session));
+  }
+
+  async startInstrumenting() {
+    this.session.connect();
+    await this.postSession('Profiler.enable');
+    await this.postSession('Profiler.startPreciseCoverage', {
+      callCount: true,
+      detailed: true,
+    });
+  }
+
+  async stopInstrumenting() {
+    const { result } = await this.postSession('Profiler.takePreciseCoverage');
+    await this.postSession('Profiler.stopPreciseCoverage');
+    await this.postSession('Profiler.disable');
+
+    if (process.platform === 'win32') {
+      const prefix = 'file:////';
+      result.forEach(res => {
+        if (res.url.startsWith(prefix)) {
+          res.url = 'file://' + res.url.slice(prefix.length);
+        }
+      });
+    }
+
+    return result;
+  }
+}
+
+module.exports.CoverageInstrumenter = CoverageInstrumenter;
+```

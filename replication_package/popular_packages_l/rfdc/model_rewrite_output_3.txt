@@ -1,0 +1,69 @@
+The given Node.js code is a module that exports a cloning function. The functionality of this module can be broken down as follows:
+
+1. **Module Export**: The primary function that this module exports is a factory function for creating a deep copy (clone) of an input object. It accepts options (`opts`) for customization.
+  
+2. **Options**:
+   - `proto`: When `true`, the clone will preserve prototype chains. By default, this is `false`.
+   - `circles`: When `true`, it enables cloning of objects with circular references. By default, this is `false`.
+   - `constructorHandlers`: This is an array of custom handlers to manage cloning of objects created by specific constructors.
+
+3. **Clone Function**:
+   - The cloning logic is implemented in the `clone` function which handles various special cases.
+   - Basic checks are in place to return primitives immediately since they do not require cloning.
+   - Circular references are managed using a `WeakMap` to store already cloned objects and references.
+   - The function can clone common JavaScript data structures like `Date`, `Map`, `Set`, `Buffer`, and Typed Arrays.
+   - A special case for handling prototype using `Object.getPrototypeOf`.
+   - The function also includes custom handlers for specific constructors if provided.
+   - The `Reflect.ownKeys` part ensures that all properties (including symbols) are copied. The `__proto__` key is consciously skipped unless specified by the `proto` option.
+
+4. **Default Export in `default.js`**:
+   - The `default.js` file imports this cloning function and exports it with default options set to not preserve prototypes or handle circular references, and without any custom constructor handlers.
+
+Here’s a possible rewrite for this code:
+
+```javascript
+// cloneFactory.js
+module.exports = function ({ proto = false, circles = false, constructorHandlers = [] } = {}) {
+  const clone = (input, map = new WeakMap()) => {
+    if (input === null || typeof input !== 'object') return input;
+
+    if (circles && map.has(input)) return map.get(input);
+
+    const inputIsArray = Array.isArray(input);
+    const output = inputIsArray ? [] : Object.create(proto ? Object.getPrototypeOf(input) : null);
+
+    if (circles) map.set(input, output);
+
+    const specializedHandler = constructorHandlers.find(([Constructor]) => input instanceof Constructor);
+    if (specializedHandler) return specializedHandler[1](input);
+
+    if (input instanceof Date) return new Date(input);
+    if (Buffer.isBuffer(input)) return Buffer.from(input);
+    if (input instanceof Map) {
+      const clonedMap = new Map();
+      input.forEach((value, key) => clonedMap.set(key, clone(value, map)));
+      return clonedMap;
+    }
+    if (input instanceof Set) {
+      const clonedSet = new Set();
+      input.forEach(value => clonedSet.add(clone(value, map)));
+      return clonedSet;
+    }
+    if (ArrayBuffer.isView(input) && !(input instanceof DataView)) return new input.constructor(input);
+
+    Reflect.ownKeys(input).forEach((key) => {
+      if (key !== '__proto__' || proto) {
+        output[key] = clone(input[key], map);
+      }
+    });
+
+    return output;
+  };
+
+  return clone;
+};
+
+// cloneDefault.js
+const cloneFactory = require('./cloneFactory');
+module.exports = cloneFactory({ proto: false, circles: false, constructorHandlers: [] });
+```

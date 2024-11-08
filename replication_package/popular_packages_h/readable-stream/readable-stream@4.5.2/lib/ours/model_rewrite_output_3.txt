@@ -1,0 +1,88 @@
+The provided Node.js code is designed to export certain stream functionalities based on whether a specific environment variable is set. The environment variable `READABLE_STREAM` determines whether to use the built-in Node.js Stream module or a custom stream implementation located in a relative path `../stream`. Here's a step-by-step breakdown of the functionality:
+
+1. It first imports the native Stream module from Node.js.
+2. It checks the existence of the Stream module and whether the `READABLE_STREAM` environment variable is set to `'disable'`.
+3. If `READABLE_STREAM` is `'disable'`, it exports various utilities and classes from the native Stream module, including Readable, Writable, Duplex, Transform, and others. It also maintains compatibility with promises by managing them via a `defineProperty`.
+4. If `READABLE_STREAM` is not `'disable'`, it imports a custom stream module and its promises implementation. It then exports similar utilities and classes from this custom implementation, ensuring the original destroy method of the custom Readable stream is retained.
+5. The exported functionalities are named explicitly to accommodate ECMAScript Modules (ESM).
+6. It ensures the module can be default-imported by assigning the export object to `module.exports.default`.
+
+Here is a possible rewrite of the code:
+
+```javascript
+'use strict';
+
+const Stream = require('stream');
+let exportedStream = null;
+
+if (Stream && process.env.READABLE_STREAM === 'disable') {
+  // Using native Node.js Stream module
+  exportedStream = {
+    _uint8ArrayToBuffer: Stream._uint8ArrayToBuffer,
+    _isUint8Array: Stream._isUint8Array,
+    isDisturbed: Stream.isDisturbed,
+    isErrored: Stream.isErrored,
+    isReadable: Stream.isReadable,
+    Readable: Stream.Readable,
+    Writable: Stream.Writable,
+    Duplex: Stream.Duplex,
+    Transform: Stream.Transform,
+    PassThrough: Stream.PassThrough,
+    addAbortSignal: Stream.addAbortSignal,
+    finished: Stream.finished,
+    destroy: Stream.destroy,
+    pipeline: Stream.pipeline,
+    compose: Stream.compose,
+    Stream: Stream.Stream,
+    default: null, // Assigned at the end
+  };
+  
+  // Managing promises
+  const promises = Stream.promises;
+  Object.defineProperty(Stream, 'promises', {
+    configurable: true,
+    enumerable: true,
+    get() {
+      return promises;
+    }
+  });
+
+} else {
+  // Using custom stream implementation
+  const CustomStream = require('../stream');
+  const promises = require('../stream/promises');
+  
+  exportedStream = Object.assign(CustomStream.Readable, {
+    _uint8ArrayToBuffer: CustomStream._uint8ArrayToBuffer,
+    _isUint8Array: CustomStream._isUint8Array,
+    isDisturbed: CustomStream.isDisturbed,
+    isErrored: CustomStream.isErrored,
+    isReadable: CustomStream.isReadable,
+    Readable: CustomStream.Readable,
+    Writable: CustomStream.Writable,
+    Duplex: CustomStream.Duplex,
+    Transform: CustomStream.Transform,
+    PassThrough: CustomStream.PassThrough,
+    addAbortSignal: CustomStream.addAbortSignal,
+    finished: CustomStream.finished,
+    destroy: CustomStream.Readable.destroy,
+    pipeline: CustomStream.pipeline,
+    compose: CustomStream.compose,
+    Stream: CustomStream.Stream,
+    default: null, // Assigned at the end
+  });
+  
+  // Managing promises
+  Object.defineProperty(CustomStream, 'promises', {
+    configurable: true,
+    enumerable: true,
+    get() {
+      return promises;
+    }
+  });
+}
+
+// Assign default export to allow default importing
+exportedStream.default = exportedStream;
+module.exports = exportedStream;
+```

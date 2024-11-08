@@ -1,0 +1,86 @@
+The Node.js code provides functionality to determine the size of image files. It can read both buffer inputs and file paths to identify the image type and calculate its dimensions. The code uses a queue to manage asynchronous file operations, preventing the exhaustion of file descriptors. Here's a breakdown of the key parts:
+
+1. **Buffer Size**: It sets a maximum buffer size of 512KB, which can later be adapted based on the image signature for optimization.
+2. **File Type Detection**: It uses a detector to identify the image type based on the buffer content. It does not rely on file extensions.
+3. **Async and Sync File Reads**: Functions `asyncFileToBuffer` and `syncFileToBuffer` read files into buffers asynchronously and synchronously respectively. They handle errors such as empty files.
+4. **Queue Management**: An operation queue with a concurrency limit is used to process file reads without overloading the system.
+5. **Image Size Calculation**: The core function, `imageSize`, processes the buffer or file path input to return size information. It provides both synchronous and asynchronous interfaces.
+6. **Exported Functions and Properties**: The code exports `imageSize` and some related functions and properties, including a way to adjust queue concurrency.
+
+Here's a rewritten version of this Node.js code:
+
+```javascript
+"use strict";
+const fs = require("fs");
+const path = require("path");
+const Queue = require("queue");
+const { detector } = require("./detector");
+const { typeHandlers } = require("./types");
+
+const MaxBufferSize = 512 * 1024;
+const queue = new Queue({ concurrency: 100, autostart: true });
+
+function lookup(buffer, filepath) {
+    const type = detector(buffer);
+    if (type && type in typeHandlers) {
+        const size = typeHandlers[type].calculate(buffer, filepath);
+        if (size !== undefined) {
+            size.type = type;
+            return size;
+        }
+    }
+    throw new TypeError('unsupported file type: ' + type + ' (file: ' + filepath + ')');
+}
+
+async function asyncFileToBuffer(filepath) {
+    const handle = await fs.promises.open(filepath, 'r');
+    const { size } = await handle.stat();
+    if (size <= 0) {
+        await handle.close();
+        throw new Error('Empty file');
+    }
+    const bufferSize = Math.min(size, MaxBufferSize);
+    const buffer = Buffer.alloc(bufferSize);
+    await handle.read(buffer, 0, bufferSize, 0);
+    await handle.close();
+    return buffer;
+}
+
+function syncFileToBuffer(filepath) {
+    const descriptor = fs.openSync(filepath, 'r');
+    const { size } = fs.fstatSync(descriptor);
+    if (size <= 0) {
+        fs.closeSync(descriptor);
+        throw new Error('Empty file');
+    }
+    const bufferSize = Math.min(size, MaxBufferSize);
+    const buffer = Buffer.alloc(bufferSize);
+    fs.readSync(descriptor, buffer, 0, bufferSize, 0);
+    fs.closeSync(descriptor);
+    return buffer;
+}
+
+function imageSize(input, callback) {
+    if (Buffer.isBuffer(input)) {
+        return lookup(input);
+    }
+    if (typeof input !== 'string') {
+        throw new TypeError('invalid invocation');
+    }
+
+    const filepath = path.resolve(input);
+    if (typeof callback === 'function') {
+        queue.push(() => asyncFileToBuffer(filepath)
+            .then((buffer) => process.nextTick(callback, null, lookup(buffer, filepath)))
+            .catch(callback));
+    } else {
+        const buffer = syncFileToBuffer(filepath);
+        return lookup(buffer, filepath);
+    }
+}
+
+exports.default = imageSize;
+exports.imageSize = imageSize;
+exports.setConcurrency = (c) => { queue.concurrency = c; };
+exports.types = Object.keys(typeHandlers);
+```

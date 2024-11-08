@@ -1,0 +1,53 @@
+The Node.js code provided implements a CRC32 checksum computation utility. Here's a detailed explanation of the functionality:
+
+1. **CRC Table Creation**: 
+   - A CRC (Cyclic Redundancy Check) lookup table (`crcTable`) is generated for all possible byte values (0-255) using the polynomial `0xEDB88320`. This table helps expedite the checksum calculation by providing precomputed CRC values.
+
+2. **CRC32 Function**: 
+   - The main function `crc32` computes the CRC32 checksum of a given input buffer or string. If a string is passed, it is first converted to a buffer using UTF-8 encoding.
+   - It initializes a CRC value, optionally based on a `previous` CRC value passed as an argument.
+   - It iterates over each byte in the buffer, updating the CRC value based on the precomputed table and the current byte.
+   - The function returns a buffer containing the 4-byte CRC32 checksum in Big Endian order.
+
+3. **Signed and Unsigned CRC32 Calculation**:
+   - The `signed` method computes the checksum and interprets the result as a signed 32-bit integer.
+   - The `unsigned` method computes the checksum and interprets the result as an unsigned 32-bit integer.
+
+4. **Exports**:
+   - The `crc32` function (along with its `signed` and `unsigned` variants) is exported, making it available for use in other modules.
+
+Rewritten code:
+
+```javascript
+const CRC_TABLE = new Array(256);
+
+function generateCRCTable() {
+  for (let n = 0; n < 256; n++) {
+    let c = n;
+    for (let k = 0; k < 8; k++) {
+      c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+    }
+    CRC_TABLE[n] = c;
+  }
+}
+
+generateCRCTable();
+
+function crc32(input, previous = 0) {
+  let buf = Buffer.isBuffer(input) ? input : Buffer.from(input, 'utf8');
+  let crc = ~previous;
+
+  for (const byte of buf) {
+    crc = CRC_TABLE[(crc ^ byte) & 0xff] ^ (crc >>> 8);
+  }
+
+  crc = ~crc;
+  return Buffer.from([crc >>> 24, crc >>> 16, crc >>> 8, crc].map(b => b & 0xff));
+}
+
+crc32.signed = input => crc32(input).readInt32BE(0);
+
+crc32.unsigned = input => crc32(input).readUInt32BE(0);
+
+module.exports = crc32;
+```

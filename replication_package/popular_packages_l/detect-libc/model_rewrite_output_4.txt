@@ -1,0 +1,85 @@
+The Node.js code is a module that detects the libc implementation and version being used on a Linux system. It specifically checks for two libc variants: `glibc` and `musl`. Here's a breakdown of the functionalities:
+
+1. **Constants**: It defines constants `GLIBC` and `MUSL` to represent the GNU C Library and musl libc, respectively.
+  
+2. **checkLibcContent(content)**: This function takes a string (`content`) and checks if it contains indicators of either `glibc` or `musl`, returning the corresponding symbol or `null` if neither is found.
+
+3. **getLibcFromLdd()**: This function locates the `ldd` executable on the system, reads its content, and uses `checkLibcContent` to determine which libc variant is present.
+
+4. **getLibcVersion(family)**: If a libc family is identified, this function attempts to extract the libc version using `ldd` and returns it.
+
+5. **family and familySync**: These functions return the libc family detected, with `family` being asynchronous and `familySync` synchronous.
+
+6. **version and versionSync**: These functions obtain the version of the detected libc, using either async (`version`) or sync (`versionSync`) methods.
+
+7. **isNonGlibcLinux and isNonGlibcLinuxSync**: These functions check whether the system is using a libc other than `glibc`, again providing both async and sync options.
+
+8. **Exports**: The module exports all necessary functions and constants for detecting and working with libc variants and versions.
+
+Here is a rewritten version with the same functionality:
+
+```javascript
+// detect-libc.js
+
+const { execSync } = require('child_process');
+const fs = require('fs');
+
+const GLIBC = 'glibc';
+const MUSL = 'musl';
+
+const checkLibcContent = (content) => {
+  if (content.includes('GNU')) return GLIBC;
+  if (/musl/.test(content)) return MUSL;
+  return null;
+};
+
+const getLibcFromLdd = () => {
+  try {
+    const lddPath = execSync('which ldd').toString().trim();
+    const lddContent = fs.readFileSync(lddPath, 'utf8');
+    return checkLibcContent(lddContent);
+  } catch {
+    return null;
+  }
+};
+
+const getLibcVersion = (family) => {
+  try {
+    const command = family === GLIBC ? 'ldd' : 'ldd --version';
+    const result = execSync(command).toString();
+    const versionMatch = result.match(/(\d+\.\d+(\.\d+)?)/);
+    return versionMatch ? versionMatch[0] : null;
+  } catch {
+    return null;
+  }
+};
+
+const family = async () => getLibcFromLdd();
+
+const familySync = () => getLibcFromLdd();
+
+const version = async () => {
+  const libcFamily = await family();
+  return libcFamily ? getLibcVersion(libcFamily) : null;
+};
+
+const versionSync = () => {
+  const libcFamily = familySync();
+  return libcFamily ? getLibcVersion(libcFamily) : null;
+};
+
+const isNonGlibcLinux = async () => (await family()) !== GLIBC;
+
+const isNonGlibcLinuxSync = () => familySync() !== GLIBC;
+
+module.exports = {
+  GLIBC,
+  MUSL,
+  family,
+  familySync,
+  version,
+  versionSync,
+  isNonGlibcLinux,
+  isNonGlibcLinuxSync,
+};
+```

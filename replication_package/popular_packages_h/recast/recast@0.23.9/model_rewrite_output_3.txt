@@ -1,0 +1,103 @@
+The provided Node.js code implements a module for working with abstract syntax trees (ASTs). It provides functionality for parsing JavaScript code into an AST, visiting and possibly modifying that AST, and then printing it back into JavaScript code. Here is a breakdown of the main functionalities:
+
+1. **Parsing**: The module exports a `parse` function from a separate `parser` module, which converts JavaScript code into an AST.
+
+2. **AST Traversal**: The `visit` function is exported from the `ast-types` package, which allows users to traverse and modify the AST using a visitor pattern.
+
+3. **Printing**: There are two exported functions for printing ASTs:
+   - `print`: Reprints the syntax tree, reusing original source code where possible.
+   - `prettyPrint`: Reprints the syntax tree without reusing original code, ensuring a consistent and pretty output.
+
+4. **Command-Line Interface**: The `run` function serves as a command-line interface to apply transformations on JavaScript files using the AST transformation function. It depends on command-line arguments (specifically the filename).
+
+5. **File Handling**: The `runFile` function reads a file and applies a transformation to its contents. It uses `fs.readFile` to read the file and handle errors. The `runString` function takes code as a string, parses it into an AST, applies the transformer function, and prints the transformed code to the standard output.
+
+Here is a rewritten version of the Node.js code maintaining the same functionality:
+
+```javascript
+"use strict";
+
+const fs = require("fs");
+const types = require("ast-types");
+const { parse } = require("./lib/parser");
+const { Printer } = require("./lib/printer");
+
+exports.types = types;
+exports.parse = parse;
+exports.visit = types.visit;
+
+/**
+ * Function to print an AST node using original source code where possible.
+ * 
+ * @param {Node} node - AST node to print.
+ * @param {Object} options - Options for printing.
+ * @return {String} - Printed code as string.
+ */
+function print(node, options) {
+    return new Printer(options).print(node);
+}
+exports.print = print;
+
+/**
+ * Function to print an AST node without reusing original source code.
+ * 
+ * @param {Node} node - AST node to print prettily.
+ * @param {Object} options - Options for printing.
+ * @return {String} - Printed code as string.
+ */
+function prettyPrint(node, options) {
+    return new Printer(options).printGenerically(node);
+}
+exports.prettyPrint = prettyPrint;
+
+/**
+ * Runs a transformation process on a JavaScript file provided via command-line.
+ * 
+ * @param {Function} transformer - Function to transform the AST.
+ * @param {Object} options - Options for parsing and printing.
+ */
+function run(transformer, options) {
+    runFile(process.argv[2], transformer, options);
+}
+exports.run = run;
+
+/**
+ * Reads a file, applies an AST transformation, and writes the result.
+ * 
+ * @param {String} path - Path of the file to transform.
+ * @param {Function} transformer - Function to transform the AST.
+ * @param {Object} options - Options for parsing and printing.
+ */
+function runFile(path, transformer, options) {
+    fs.readFile(path, "utf-8", (err, code) => {
+        if (err) {
+            console.error(err);
+            return;
+        }
+        runString(code, transformer, options);
+    });
+}
+
+/**
+ * Transforms code by applying a function to the parsed AST and printing the result.
+ * 
+ * @param {String} code - The code to parse and transform.
+ * @param {Function} transformer - Function to transform the AST.
+ * @param {Object} options - Options for parsing and printing.
+ */
+function runString(code, transformer, options) {
+    const writeback = (options && options.writeback) || defaultWriteback;
+    transformer(parse(code, options), (node) => {
+        writeback(print(node, options).code);
+    });
+}
+
+/**
+ * Default function to output transformed code.
+ * 
+ * @param {String} output - Transformed code.
+ */
+function defaultWriteback(output) {
+    process.stdout.write(output);
+}
+```

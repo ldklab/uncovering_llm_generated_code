@@ -1,0 +1,86 @@
+The provided Node.js code defines a class `Table` that creates a simple command-line interface table. The table supports custom headers, column widths, and character styles for its borders. Here is a breakdown of its functionality:
+
+1. **Constructor**: The `Table` class is initialized with an optional configuration object `options`, which can specify headers (`head`), column widths (`colWidths`), and characters (`chars`) for the table's borders. The constructor also initializes an empty array `rows` to hold the table data.
+
+2. **Push method**: The `push` method allows users to add rows to the `rows` array. It accepts multiple rows as arguments and appends them to the existing `rows`.
+
+3. **ToString method**: The `toString` method generates a string representation of the table, which can be printed to the console. It constructs the table by:
+   - Preparing border characters based on defaults and user-specified overrides.
+   - Creating lines for the top, middle, and bottom borders if headers are defined.
+   - Formatting headers and row data to align with specified column widths and padding styles.
+   - Joining all lines together to produce the final table string.
+
+4. **Export**: The `Table` class is exported using `module.exports`, allowing it to be imported and used in other JavaScript files.
+
+Here's a possible rewrite of the code:
+
+```javascript
+// cli-table3-rewrite.js
+
+class Table {
+  constructor({ head = [], colWidths = [], chars = {}, style = {} } = {}) {
+    this.head = head;
+    this.colWidths = colWidths;
+    this.chars = { 
+      ...{
+        top: '-', 'top-mid': '+', 'top-left': '+', 'top-right': '+',
+        bottom: '-', 'bottom-mid': '+', 'bottom-left': '+', 'bottom-right': '+',
+        left: '|', 'left-mid': '|', mid: '-', 'mid-mid': '+',
+        right: '|', 'right-mid': '|', middle: '|'
+      }, 
+      ...chars 
+    };
+    this.paddingLeft = style['padding-left'] || 1;
+    this.paddingRight = style['padding-right'] || 1;
+    this.rows = [];
+  }
+
+  push(...rows) {
+    this.rows.push(...rows);
+  }
+
+  toString() {
+    const lines = [];
+
+    const createBorderLine = (position) => {
+      if (!this.head.length) return '';
+      return this.chars[position + '-left'] + 
+             this.head.map((_, i) => this.chars[position].repeat(this.colWidths[i])).join(this.chars[position + '-mid']) + 
+             this.chars[position + '-right'];
+    };
+
+    const formatRow = (row, isHeader = false) => {
+      return row.map((text, i) => 
+        text.toString().padEnd(this.colWidths[i] - this.paddingRight).padStart(this.colWidths[i] - this.paddingLeft)
+      ).join(this.chars.middle);
+    };
+
+    if (this.head.length) {
+      lines.push(createBorderLine('top'));
+      lines.push(this.chars.left + formatRow(this.head, true) + this.chars.right);
+      lines.push(createBorderLine('mid'));
+    }
+
+    for (const row of this.rows) {
+      const formattedRow = Array.isArray(row) 
+        ? formatRow(row) 
+        : Object.entries(row).map(([key, value]) => `${key}: ${value}`).join(' ');
+      lines.push(this.chars.left + formattedRow + this.chars.right);
+    }
+
+    if (this.head.length) {
+      lines.push(createBorderLine('bottom'));
+    }
+
+    return lines.join('\n');
+  }
+}
+
+module.exports = Table;
+
+// Example usage
+// const Table = require('./cli-table3-rewrite');
+// let t = new Table({ head: ['Name', 'Age'], colWidths: [20, 10] });
+// t.push(['Alice', 30], ['Bob', 25]);
+// console.log(t.toString());
+```

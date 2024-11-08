@@ -1,0 +1,165 @@
+The given Node.js code defines a module for managing visitor keys for an Abstract Syntax Tree (AST). Here's a breakdown of its functionality:
+
+1. **Visitor Keys Definition**: Defines a `VisitorKeys` type for an object where each key (representing an AST node type) corresponds to a read-only array of strings. These strings indicate child node keys in the AST format.
+   
+2. **Static Key Definitions**: Uses `KEYS` to store visitor keys for various node types, such as `ArrayExpression`, `FunctionDeclaration`, `Literal`, etc. Each property in `KEYS` is associated with the relevant AST node's child properties.
+
+3. **Freezing Keys**: The keys are frozen using `Object.freeze` to ensure immutability once set, preventing further modification.
+
+4. **Key Blacklist**: Maintains a `KEY_BLACKLIST` set representing keys that should be ignored, such as metadata or internal keys (`parent`, `leadingComments`, etc.).
+
+5. **Key Filtering Function**: Defines a function `filterKey` which filters keys based on the blacklist.
+
+6. **Get Visitor Keys Function**: Implements `getKeys`, which retrieves and filters the keys of a given AST node using the `filterKey` function.
+
+7. **Union Functionality**: Provides `unionWith` to merge additional visitor keys into the predefined `KEYS`, ensuring any duplicates are resolved appropriately, maintaining the immutability by freezing the merged result.
+
+8. **Exporting**: Exports `KEYS`, `getKeys`, and `unionWith` for use in other modules.
+
+Below is a possible rewrite according to this explanation:
+
+```javascript
+'use strict';
+
+/**
+ * @typedef {{ readonly [type: string]: ReadonlyArray<string> }} VisitorKeys
+ */
+
+/**
+ * Predefined visitor keys for AST nodes.
+ * @type {VisitorKeys}
+ */
+const KEYS = {
+    ArrayExpression: ["elements"],
+    ArrayPattern: ["elements"],
+    ArrowFunctionExpression: ["params", "body"],
+    AssignmentExpression: ["left", "right"],
+    AssignmentPattern: ["left", "right"],
+    AwaitExpression: ["argument"],
+    BinaryExpression: ["left", "right"],
+    BlockStatement: ["body"],
+    BreakStatement: ["label"],
+    CallExpression: ["callee", "arguments"],
+    CatchClause: ["param", "body"],
+    ChainExpression: ["expression"],
+    ClassBody: ["body"],
+    ClassDeclaration: ["id", "superClass", "body"],
+    ClassExpression: ["id", "superClass", "body"],
+    ConditionalExpression: ["test", "consequent", "alternate"],
+    ContinueStatement: ["label"],
+    DebuggerStatement: [],
+    DoWhileStatement: ["body", "test"],
+    EmptyStatement: [],
+    ExperimentalRestProperty: ["argument"],
+    ExperimentalSpreadProperty: ["argument"],
+    ExportAllDeclaration: ["exported", "source"],
+    ExportDefaultDeclaration: ["declaration"],
+    ExportNamedDeclaration: ["declaration", "specifiers", "source"],
+    ExportSpecifier: ["exported", "local"],
+    ExpressionStatement: ["expression"],
+    ForInStatement: ["left", "right", "body"],
+    ForOfStatement: ["left", "right", "body"],
+    ForStatement: ["init", "test", "update", "body"],
+    FunctionDeclaration: ["id", "params", "body"],
+    FunctionExpression: ["id", "params", "body"],
+    Identifier: [],
+    IfStatement: ["test", "consequent", "alternate"],
+    ImportDeclaration: ["specifiers", "source"],
+    ImportDefaultSpecifier: ["local"],
+    ImportExpression: ["source"],
+    ImportNamespaceSpecifier: ["local"],
+    ImportSpecifier: ["imported", "local"],
+    JSXAttribute: ["name", "value"],
+    JSXClosingElement: ["name"],
+    JSXClosingFragment: [],
+    JSXElement: ["openingElement", "children", "closingElement"],
+    JSXEmptyExpression: [],
+    JSXExpressionContainer: ["expression"],
+    JSXFragment: ["openingFragment", "children", "closingFragment"],
+    JSXIdentifier: [],
+    JSXMemberExpression: ["object", "property"],
+    JSXNamespacedName: ["namespace", "name"],
+    JSXOpeningElement: ["name", "attributes"],
+    JSXOpeningFragment: [],
+    JSXSpreadAttribute: ["argument"],
+    JSXSpreadChild: ["expression"],
+    JSXText: [],
+    LabeledStatement: ["label", "body"],
+    Literal: [],
+    LogicalExpression: ["left", "right"],
+    MemberExpression: ["object", "property"],
+    MetaProperty: ["meta", "property"],
+    MethodDefinition: ["key", "value"],
+    NewExpression: ["callee", "arguments"],
+    ObjectExpression: ["properties"],
+    ObjectPattern: ["properties"],
+    PrivateIdentifier: [],
+    Program: ["body"],
+    Property: ["key", "value"],
+    PropertyDefinition: ["key", "value"],
+    RestElement: ["argument"],
+    ReturnStatement: ["argument"],
+    SequenceExpression: ["expressions"],
+    SpreadElement: ["argument"],
+    StaticBlock: ["body"],
+    Super: [],
+    SwitchCase: ["test", "consequent"],
+    SwitchStatement: ["discriminant", "cases"],
+    TaggedTemplateExpression: ["tag", "quasi"],
+    TemplateElement: [],
+    TemplateLiteral: ["quasis", "expressions"],
+    ThisExpression: [],
+    ThrowStatement: ["argument"],
+    TryStatement: ["block", "handler", "finalizer"],
+    UnaryExpression: ["argument"],
+    UpdateExpression: ["argument"],
+    VariableDeclaration: ["declarations"],
+    VariableDeclarator: ["id", "init"],
+    WhileStatement: ["test", "body"],
+    WithStatement: ["object", "body"],
+    YieldExpression: ["argument"]
+};
+
+const NODE_TYPES = Object.keys(KEYS);
+for (const type of NODE_TYPES) {
+    Object.freeze(KEYS[type]);
+}
+Object.freeze(KEYS);
+
+const KEY_BLACKLIST = new Set([
+    "parent",
+    "leadingComments",
+    "trailingComments"
+]);
+
+function filterKey(key) {
+    return !KEY_BLACKLIST.has(key) && key[0] !== "_";
+}
+
+function getKeys(node) {
+    return Object.keys(node).filter(filterKey);
+}
+
+function unionWith(additionalKeys) {
+    const retv = Object.assign({}, KEYS);
+
+    for (const type of Object.keys(additionalKeys)) {
+        if (Object.hasOwn(retv, type)) {
+            const keys = new Set(additionalKeys[type]);
+
+            for (const key of retv[type]) {
+                keys.add(key);
+            }
+
+            retv[type] = Object.freeze(Array.from(keys));
+        } else {
+            retv[type] = Object.freeze(Array.from(additionalKeys[type]));
+        }
+    }
+    return Object.freeze(retv);
+}
+
+exports.KEYS = KEYS;
+exports.getKeys = getKeys;
+exports.unionWith = unionWith;
+```

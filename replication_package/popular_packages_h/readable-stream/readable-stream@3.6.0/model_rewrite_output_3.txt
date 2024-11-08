@@ -1,0 +1,37 @@
+The Node.js code is designed to conditionally export a custom implementation of streams or the native Node.js `Stream` module based on an environment variable. Here's a breakdown of the functionality:
+
+- It first requires the native `stream` module.
+- It checks if the environment variable `READABLE_STREAM` is set to 'disable'.
+  - If true, it directly exports the `Stream.Readable` class and assigns all properties and classes of the `Stream` module to the `module.exports` object.
+  - If false, it exports custom stream implementations from the local project files such as `_stream_readable.js`, `_stream_writable.js`, etc.
+- Additionally, it attaches other stream-related exports like Stream itself and utility functions such as `finished` and `pipeline`.
+
+Below is a possible rewrite of this Node.js code:
+
+```javascript
+const Stream = require('stream');
+
+function exportNativeStream() {
+  module.exports = Stream.Readable;
+  Object.assign(module.exports, Stream);
+  module.exports.Stream = Stream;
+}
+
+function exportCustomStream() {
+  exports = module.exports = require('./lib/_stream_readable.js');
+  exports.Stream = Stream || exports;
+  exports.Readable = exports;
+  exports.Writable = require('./lib/_stream_writable.js');
+  exports.Duplex = require('./lib/_stream_duplex.js');
+  exports.Transform = require('./lib/_stream_transform.js');
+  exports.PassThrough = require('./lib/_stream_passthrough.js');
+  exports.finished = require('./lib/internal/streams/end-of-stream.js');
+  exports.pipeline = require('./lib/internal/streams/pipeline.js');
+}
+
+if (process.env.READABLE_STREAM === 'disable' && Stream) {
+  exportNativeStream();
+} else {
+  exportCustomStream();
+}
+```

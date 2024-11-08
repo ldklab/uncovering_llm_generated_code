@@ -1,0 +1,93 @@
+The provided Node.js code defines functions for recursively changing the ownership of directories and files, both asynchronously and synchronously, while handling specific error cases. It uses the Node.js `fs` and `path` modules for filesystem manipulations and path resolutions.
+
+1. **lchownSync**: A function that attempts to change the ownership of a symbolic link in a synchronous manner. It catches any errors during the operation, specifically continuing execution if the error is `ENOENT` (indicating the entry does not exist).
+
+2. **chown**: A function that changes the ownership of a file or symbolic link asynchronously. It executes a callback with an error, filtering out `ENOENT`.
+
+3. **chownr**: A function that recursively changes the ownership of a directory and its contents asynchronously. It reads the directory, then applies the `chown` function to each entry. If an entry is a directory, it recursively invokes `chownr`.
+
+4. **chownrSync**: A synchronous version of `chownr`, which recursively changes ownership without using callbacks.
+
+5. **chownrKid** and **chownrKidSync**: Helper functions used by `chownr` and `chownrSync`, respectively, to apply the chown operation to directory children.
+
+These functions deal with specific file operation errors, namely `ENOENT` for non-existent entries and accommodate directories differently by handling directory iteration.
+
+```javascript
+"use strict";
+
+const fs = require("node:fs");
+const path = require("node:path");
+
+function lchownSync(path, uid, gid) {
+    try {
+        fs.lchownSync(path, uid, gid);
+    } catch (er) {
+        if (er?.code !== 'ENOENT') throw er;
+    }
+}
+
+function chown(cpath, uid, gid, cb) {
+    fs.lchown(cpath, uid, gid, er => {
+        cb(er && er?.code !== 'ENOENT' ? er : null);
+    });
+}
+
+function chownrKid(p, child, uid, gid, cb) {
+    const cpath = path.resolve(p, child.name);
+    if (child.isDirectory()) {
+        chownr(cpath, uid, gid, er => {
+            if (er) return cb(er);
+            chown(cpath, uid, gid, cb);
+        });
+    } else {
+        chown(cpath, uid, gid, cb);
+    }
+}
+
+function chownr(p, uid, gid, cb) {
+    fs.readdir(p, { withFileTypes: true }, (er, children) => {
+        if (er) {
+            if (er.code === 'ENOENT') return cb();
+            if (er.code !== 'ENOTDIR' && er.code !== 'ENOTSUP') return cb(er);
+        }
+        if (er || !children.length) return chown(p, uid, gid, cb);
+
+        let len = children.length;
+        let errState = null;
+        
+        const then = (er) => {
+            if (errState) return;
+            if (er) return cb((errState = er));
+            if (--len === 0) return chown(p, uid, gid, cb);
+        };
+
+        for (const child of children) {
+            chownrKid(p, child, uid, gid, then);
+        }
+    });
+}
+
+function chownrKidSync(p, child, uid, gid) {
+    const cpath = path.resolve(p, child.name);
+    if (child.isDirectory()) chownrSync(cpath, uid, gid);
+    lchownSync(cpath, uid, gid);
+}
+
+function chownrSync(p, uid, gid) {
+    let children;
+    try {
+        children = fs.readdirSync(p, { withFileTypes: true });
+    } catch (er) {
+        if (er.code === 'ENOENT') return;
+        if (er.code === 'ENOTDIR' || er.code === 'ENOTSUP') return lchownSync(p, uid, gid);
+        throw er;
+    }
+
+    for (const child of children) {
+        chownrKidSync(p, child, uid, gid);
+    }
+    lchownSync(p, uid, gid);
+}
+
+module.exports = { chownr, chownrSync };
+```

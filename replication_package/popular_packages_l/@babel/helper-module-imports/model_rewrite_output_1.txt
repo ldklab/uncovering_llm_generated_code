@@ -1,0 +1,49 @@
+The presented Node.js code defines a Babel plugin that assists with managing module imports in JavaScript files being transformed. The core functionality is encapsulated within the `ModuleImportsHelper` class, which tracks imported modules using a `Map`. The class includes methods for adding import statements and checking if a module is already imported. The primary method, `addImport`, inserts an import declaration at the top of the file if the module isn't already imported.
+
+The plugin interface exports a function, which returns a Babel visitor object. In the visiting `Program` method, an instance of `ModuleImportsHelper` is created, and it ensures that the `lodash` module is imported unless it already exists in the file being processed.
+
+Below is a possible rewrite of this Node.js code:
+
+```javascript
+const { types: t } = require('@babel/core');
+
+class ModuleManager {
+  constructor() {
+    this.modules = new Map();
+  }
+
+  importModule(containerPath, moduleSource, importName, aliasName) {
+    if (!this.modules.has(moduleSource)) {
+      const newImport = t.importDeclaration(
+        [t.importSpecifier(t.identifier(aliasName), t.identifier(importName))],
+        t.stringLiteral(moduleSource)
+      );
+
+      containerPath.unshiftContainer('body', newImport);
+      this.modules.set(moduleSource, aliasName);
+    }
+
+    return t.identifier(this.modules.get(moduleSource));
+  }
+
+  hasImportedModule(moduleSource) {
+    return this.modules.has(moduleSource);
+  }
+}
+
+module.exports = function () {
+  return {
+    visitor: {
+      Program(programPath) {
+        const manager = new ModuleManager();
+
+        if (!manager.hasImportedModule('lodash')) {
+          manager.importModule(programPath, 'lodash', 'default', '_');
+        }
+
+        // Additional AST transformations can be performed here.
+      }
+    }
+  };
+};
+```

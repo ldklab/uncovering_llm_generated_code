@@ -1,0 +1,134 @@
+The Node.js code defines a utility for handling metadata on objects, similar to JavaScript's Reflect metadata feature, using a combination of classes and a WeakMap for storage. Here is the breakdown of its functionality:
+
+1. **`MetadataMap` Class**: 
+   - This is a helper class for managing metadata. It uses a `Map` where each key-value pair is associated with another `Map` of metadata key-value pairs.
+   - Key operations include setting, getting, checking existence, obtaining the metadata keys for a property, and deleting metadata entries.
+
+2. **`metadataStore`**:
+   - A `WeakMap` for storing `MetadataMap` instances associated with target objects.
+
+3. **`ensureMetadataMap` Function**:
+   - Ensures a `MetadataMap` instance is available for a given target object in the `metadataStore`.
+
+4. **Reflect-like Metadata Functions**:
+   - The code creates several methods under a `Reflect` object for interacting with metadata:
+     - `defineMetadata`: Sets metadata for a target object and optional property key.
+     - `hasMetadata`: Checks if a target or its prototype chain has the specified metadata key.
+     - `hasOwnMetadata`: Checks if a target has the specified metadata key directly.
+     - `getMetadata`: Retrieves metadata from a target or its prototype chain.
+     - `getOwnMetadata`: Retrieves metadata from the target only.
+     - `getMetadataKeys`: Retrieves all the metadata keys from a target and its prototype chain.
+     - `getOwnMetadataKeys`: Retrieves all metadata keys from the target only.
+     - `deleteMetadata`: Deletes metadata from the target.
+
+5. **Integration**:
+   - If the `globalThis.Reflect` does not exist, it assigns the created `Reflect` object to `globalThis.Reflect`.
+
+Here's a potential rewrite of this code:
+
+```javascript
+class MetadataMap {
+  constructor() {
+    this.map = new Map();
+  }
+  
+  set(property, metaKey, metaValue) {
+    if (!this.map.has(property)) {
+      this.map.set(property, new Map());
+    }
+    this.map.get(property).set(metaKey, metaValue);
+  }
+
+  get(property, metaKey) {
+    return this.map.has(property) ? this.map.get(property).get(metaKey) : undefined;
+  }
+
+  has(property, metaKey) {
+    return this.map.has(property) && this.map.get(property).has(metaKey);
+  }
+  
+  keys(property) {
+    return this.map.has(property) ? Array.from(this.map.get(property).keys()) : [];
+  }
+
+  delete(property, metaKey) {
+    if (this.map.has(property)) {
+      return this.map.get(property).delete(metaKey);
+    }
+    return false;
+  }
+}
+
+const metadataStore = new WeakMap();
+
+function ensureMetadataMap(target) {
+  if (!metadataStore.has(target)) {
+    metadataStore.set(target, new MetadataMap());
+  }
+}
+
+const Reflect = globalThis.Reflect || {}; 
+
+Reflect.defineMetadata = function (metadataKey, metadataValue, target, propertyKey = 'default') {
+  ensureMetadataMap(target);
+  metadataStore.get(target).set(propertyKey, metadataKey, metadataValue);
+};
+
+Reflect.hasMetadata = function (metadataKey, target, propertyKey = 'default') {
+  while (target !== null) {
+    if (Reflect.hasOwnMetadata(metadataKey, target, propertyKey)) {
+      return true;
+    }
+    target = Object.getPrototypeOf(target);
+  }
+  return false;
+};
+
+Reflect.hasOwnMetadata = function (metadataKey, target, propertyKey = 'default') {
+  ensureMetadataMap(target);
+  return metadataStore.get(target).has(propertyKey, metadataKey);
+};
+
+Reflect.getMetadata = function (metadataKey, target, propertyKey = 'default') {
+  while (target !== null) {
+    const result = Reflect.getOwnMetadata(metadataKey, target, propertyKey);
+    if (result !== undefined) {
+      return result;
+    }
+    target = Object.getPrototypeOf(target);
+  }
+  return undefined;
+};
+
+Reflect.getOwnMetadata = function (metadataKey, target, propertyKey = 'default') {
+  ensureMetadataMap(target);
+  return metadataStore.get(target).get(propertyKey, metadataKey);
+};
+
+Reflect.getMetadataKeys = function (target, propertyKey = 'default') {
+  const keys = new Set();
+  while (target !== null) {
+    for (const key of Reflect.getOwnMetadataKeys(target, propertyKey)) {
+      keys.add(key);
+    }
+    target = Object.getPrototypeOf(target);
+  }
+  return [...keys];
+};
+
+Reflect.getOwnMetadataKeys = function (target, propertyKey = 'default') {
+  ensureMetadataMap(target);
+  return metadataStore.get(target).keys(propertyKey);
+};
+
+Reflect.deleteMetadata = function (metadataKey, target, propertyKey = 'default') {
+  ensureMetadataMap(target);
+  return metadataStore.get(target).delete(propertyKey, metadataKey);
+};
+
+if (!globalThis.Reflect) {
+  globalThis.Reflect = Reflect;
+}
+
+export default Reflect;
+```

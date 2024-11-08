@@ -1,0 +1,76 @@
+The provided Node.js code includes a module `es-shim-unscopables.js`, a test file `test.js`, and a `package.json` file. 
+
+### Functionality Explanation
+
+1. **`shimUnscopables.js`:**
+   - The `shimUnscopables` function takes a method name as a string input.
+   - It verifies whether this method name exists on the `Array.prototype`.
+   - It ensures that there is a `Symbol.unscopables` object on `Array.prototype`. This is either the existing object or a new one if it doesn't already exist.
+   - It adds the method specified by `methodName` to this `Symbol.unscopables` object, effectively flagging it true to make it unscopable (meaning it will be unavailable in a `with` statement context unless explicitly referenced).
+
+2. **`test.js`:**
+   - This script contains tests that check how adding methods to `Symbol.unscopables` affects variable behavior in a `with` statement.
+   - It first asserts that the `concat` method from `Array.prototype` is directly accessible at first, while `copyWithin` is not present (as `copyWithin` is already unscopable).
+   - After calling `shimUnscopables('concat')`, it asserts that `concat` is no longer directly accessible within a `with` statement, demonstrating that the unscopables functionality works as expected.
+
+3. **`package.json`:**
+   - This file defines basic setup for a Node.js package:
+     - Contains metadata (name, version, description).
+     - Declares the main entry file (`es-shim-unscopables.js`).
+     - Uses `assert` as a development dependency, which is used in `test.js` for assertions.
+     - Includes a script to run tests using Node.js.
+
+### Code Rewrite
+
+```javascript
+// es-shim-unscopables.js
+function shimUnscopables(methodName) {
+    if (typeof methodName !== 'string') {
+        throw new TypeError('Method name must be a string');
+    }
+    if (!Array.prototype.hasOwnProperty(methodName)) {
+        throw new Error(`Array prototype does not have a method named "${methodName}"`);
+    }
+    
+    const unscopables = Array.prototype[Symbol.unscopables] || {};
+    unscopables[methodName] = true;
+    Array.prototype[Symbol.unscopables] = unscopables;
+}
+
+module.exports = shimUnscopables;
+
+// test.js
+const assert = require('assert');
+const shimUnscopables = require('./es-shim-unscopables');
+
+let copyWithin;
+let concat;
+
+with ([]) {
+    assert.equal(concat, Array.prototype.concat);
+    assert.notEqual(copyWithin, Array.prototype.copyWithin);
+}
+
+shimUnscopables('concat');
+
+with ([]) {
+    assert.notEqual(concat, Array.prototype.concat);
+    assert.notEqual(copyWithin, Array.prototype.copyWithin);
+}
+
+// package.json
+{
+  "name": "es-shim-unscopables",
+  "version": "1.0.0",
+  "description": "Helper package to shim a method into Array.prototype[Symbol.unscopables]",
+  "main": "es-shim-unscopables.js",
+  "scripts": {
+    "test": "node test"
+  },
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "assert": "^1.5.0"
+  }
+}
+```

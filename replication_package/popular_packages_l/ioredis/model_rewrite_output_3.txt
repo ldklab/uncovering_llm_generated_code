@@ -1,0 +1,87 @@
+The provided Node.js code defines a `RedisClient` class that wraps around ioredis, a popular Redis client library. The class offers methods to interact with a Redis instance:
+
+- `set(key, value, expire)`: Sets a key-value pair in Redis with an optional expiration time in seconds.
+- `get(key)`: Retrieves the value of a given key.
+- `publish(channel, message)`: Publishes a message to a specific channel.
+- `subscribe(channel, callback)`: Subscribes to a Redis channel and listens for messages, executing a callback whenever a message is received.
+- `runPipeline(commands)`: Executes a series of Redis commands in a pipeline, which is more efficient for batch processes.
+- `close()`: Closes the Redis connection.
+
+The code also includes a usage example where it:
+
+1. Connects to a Redis server running on localhost.
+2. Sets and retrieves a key-value pair using `set` and `get`.
+3. Publishes messages to a channel at regular intervals using `publish` and `setInterval`.
+4. Subscribes to a channel and logs incoming messages using `subscribe`.
+5. Uses a pipeline to execute multiple commands (`set`, `get`, `del`) and logs their results.
+6. Closes the connection after 3 seconds.
+
+Here is the rewritten version of the code:
+
+```javascript
+const Redis = require('ioredis');
+
+class RedisClient {
+  constructor(options) {
+    this.redis = new Redis(options);
+  }
+
+  async set(key, value, expire = null) {
+    const args = [key, value];
+    if (expire) {
+      args.push('EX', expire);
+    }
+    return await this.redis.set(...args);
+  }
+
+  async get(key) {
+    return await this.redis.get(key);
+  }
+
+  async publish(channel, message) {
+    return await this.redis.publish(channel, message);
+  }
+
+  async subscribe(channel, callback) {
+    await this.redis.subscribe(channel);
+    this.redis.on('message', callback);
+  }
+
+  async runPipeline(commands) {
+    const pipeline = this.redis.pipeline();
+    commands.forEach(([command, ...args]) => {
+      pipeline[command](...args);
+    });
+    return await pipeline.exec();
+  }
+
+  close() {
+    this.redis.disconnect();
+  }
+}
+
+// Usage Example
+(async () => {
+  const client = new RedisClient({ host: 'localhost', port: 6379 });
+  
+  await client.set('key', 'value', 10);
+  console.log(await client.get('key'));
+
+  setInterval(async () => {
+    await client.publish('channel', 'message');
+  }, 1000);
+
+  client.subscribe('channel', (channel, message) => {
+    console.log(`Received message: ${message} from channel: ${channel}`);
+  });
+
+  const results = await client.runPipeline([
+    ['set', 'key1', 'value1'],
+    ['get', 'key1'],
+    ['del', 'key1']
+  ]);
+  console.log(results);
+
+  setTimeout(() => client.close(), 3000);
+})();
+```

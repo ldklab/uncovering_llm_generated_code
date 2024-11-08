@@ -1,0 +1,114 @@
+The `iMurmurHash.js` library provides an incremental implementation of the MurmurHash3 (32-bit) hashing algorithm in JavaScript. It is designed to hash multiple small strings efficiently by adding them incrementally, reducing the need for costly string concatenations. It offers better performance when hashing several small strings into a single hash as opposed to the non-incremental version, which requires concatenating strings into one before hashing.
+
+### Features
+
+1. **Initialization**: The module can be initialized with an optional string and seed. The seed is a positive integer that initializes the hashing process. If called without the `new` keyword, it returns a cached state object, which is reset upon each call. For thread-safe operations or multiple simultaneous hashes, use `new` to instantiate separate objects.
+
+2. **Incremental Hashing**: With the `hash` method, new strings can be added incrementally after the initial hash, allowing the internals to process in chunks rather than requiring concatenation of large strings first. This method returns the instance itself for chaining.
+
+3. **Retrieving Results**: The `result` method computes and returns the hash result as a 32-bit positive integer. Importantly, calling `result` does not affect the state allowing more strings to be hashed after a result is obtained.
+
+4. **Reset State**: The `reset` method clears the state for reuse and optionally sets a new seed. This supports recycling of hash objects in memory-sensitive scenarios or for performance.
+
+### Example Usage
+
+- **Single and Multiple String Hashing**:
+  - Hash strings incrementally by calling `hash` method multiple times.
+  - Retrieve the final hash using `result`.
+
+```javascript
+// Create a new hash state
+var hashState = MurmurHash3('initialString');
+
+// Add more strings
+hashState.hash('secondString').hash('thirdString');
+
+// Get the hash result
+var hashOutput = hashState.result();
+```
+
+- **Using Cached vs. New Hash Objects**:
+  - Use the functional call for a cached/resettable object.
+  - Use `new` for a dedicated hash instance.
+
+### Code Implementation:
+
+```javascript
+class MurmurHash3 {
+  constructor(string, seed = 0) {
+    this.reset(seed);
+    if (string) {
+      this.hash(string);
+    }
+  }
+
+  hash(string) {
+    let k, i = 0, len = string.length;
+    this.len += len;
+    for (; len >= 4; ++i, len -= 4) {
+      k = ((string.charCodeAt(i) & 0xff)) |
+          ((string.charCodeAt(++i) & 0xff) << 8) |
+          ((string.charCodeAt(++i) & 0xff) << 16) |
+          ((string.charCodeAt(++i) & 0xff) << 24);
+      k = this._murmurProcess(k);
+    }
+    this._tail(string, len, i);
+    return this;
+  }
+
+  result() {
+    let k = this._murmurFinalize();
+    return k >>> 0;
+  }
+
+  reset(seed = 0) {
+    this.h1 = seed;
+    this.k1 = 0;
+    this.len = 0;
+    this.tail = '';
+    return this;
+  }
+
+  _murmurProcess(k) {
+    k = Math.imul(k, 0xcc9e2d51);
+    k = (k << 15) | (k >>> 17);
+    k = Math.imul(k, 0x1b873593);
+
+    this.h1 ^= k;
+    this.h1 = (this.h1 << 13) | (this.h1 >>> 19);
+    this.h1 = Math.imul(this.h1, 5) + 0xe6546b64;
+    return this.h1;
+  }
+
+  _tail(string, len, i) {
+    while (len--) {
+      this.tail += string.charAt(i++);
+    }
+  }
+
+  _murmurFinalize() {
+    let length = this.tail.length;
+    for (let i = 0; i < length; i++) {
+      this.k1 ^= (this.tail.charCodeAt(i) & 0xff) << (i * 8);
+    }
+    this.h1 ^= this.k1;
+    this.h1 ^= this.len;
+    this.h1 ^= this.h1 >>> 16;
+    this.h1 = Math.imul(this.h1, 0x85ebca6b);
+    this.h1 ^= this.h1 >>> 13;
+    this.h1 = Math.imul(this.h1, 0xc2b2ae35);
+    this.h1 ^= this.h1 >>> 16;
+    this.tail = '';
+    return this.h1;
+  }
+}
+
+module.exports = function(string, seed) {
+  return new MurmurHash3(string, seed);
+};
+
+// Example usage:
+// const MurmurHash3 = require('./imurmurhash');
+// let hashState = MurmurHash3('initial');
+// hashState.hash('string').result();
+```

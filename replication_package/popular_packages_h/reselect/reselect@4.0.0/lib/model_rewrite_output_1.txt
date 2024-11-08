@@ -1,0 +1,112 @@
+The provided Node.js code defines utility functions for memoization and creating selectors, which are commonly used in data flow libraries such as Redux. Here's a breakdown of the functionality:
+
+1. **defaultEqualityCheck**: A simple function to check if two values are strictly equal.
+
+2. **areArgumentsShallowlyEqual**: Compares two sets of arguments (arrays) to determine if they are shallowly equal based on a provided equality check function.
+
+3. **defaultMemoize**: Returns a memoized version of a function. It caches the output of a function call when invoked with the same set of arguments to improve performance.
+
+4. **getDependencies**: Validates and extracts dependencies (functions) from an array. Throws an error if any dependency is not a function.
+
+5. **createSelectorCreator**: A higher-order function that creates a custom selector-creating function. It uses a memoization function, which can be customized with additional options to create selectors that efficiently recompute results based on their input dependencies.
+
+6. **createSelector**: A specific instance of a selector-creating function using `defaultMemoize` to manage recomputations and caching.
+
+7. **createStructuredSelector**: Constructs a structured selector that outputs an object composed of the results of multiple selectors, given as an input object. It ensures that each value in the output object is computed by applying the corresponding selector to the arguments.
+
+Below is the rewritten code based on the above explanation:
+
+```javascript
+'use strict';
+
+exports.__esModule = true;
+exports.defaultMemoize = defaultMemoize;
+exports.createSelectorCreator = createSelectorCreator;
+exports.createStructuredSelector = createStructuredSelector;
+
+function defaultEqualityCheck(a, b) {
+  return a === b;
+}
+
+function areArgumentsShallowlyEqual(equalityCheck, prev, next) {
+  if (prev === null || next === null || prev.length !== next.length) {
+    return false;
+  }
+  for (let i = 0; i < prev.length; i++) {
+    if (!equalityCheck(prev[i], next[i])) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function defaultMemoize(func, equalityCheck = defaultEqualityCheck) {
+  let lastArgs = null;
+  let lastResult = null;
+
+  return function () {
+    if (!areArgumentsShallowlyEqual(equalityCheck, lastArgs, arguments)) {
+      lastResult = func.apply(null, arguments);
+    }
+    lastArgs = arguments;
+    return lastResult;
+  };
+}
+
+function getDependencies(funcs) {
+  const dependencies = Array.isArray(funcs[0]) ? funcs[0] : funcs;
+
+  if (!dependencies.every(dep => typeof dep === 'function')) {
+    const dependencyTypes = dependencies.map(dep => typeof dep).join(', ');
+    throw new Error(`Selector creators expect all input-selectors to be functions, instead received the following types: [${dependencyTypes}]`);
+  }
+
+  return dependencies;
+}
+
+function createSelectorCreator(memoize, ...memoizeOptions) {
+  return function (...funcs) {
+    let recomputations = 0;
+    const resultFunc = funcs.pop();
+    const dependencies = getDependencies(funcs);
+
+    const memoizedResultFunc = memoize(
+      function () {
+        recomputations++;
+        return resultFunc.apply(null, arguments);
+      },
+      ...memoizeOptions
+    );
+
+    const selector = memoize(function () {
+      const params = dependencies.map(dep => dep.apply(null, arguments));
+      return memoizedResultFunc.apply(null, params);
+    });
+
+    selector.resultFunc = resultFunc;
+    selector.dependencies = dependencies;
+    selector.recomputations = () => recomputations;
+    selector.resetRecomputations = () => (recomputations = 0);
+
+    return selector;
+  };
+}
+
+const createSelector = exports.createSelector = createSelectorCreator(defaultMemoize);
+
+function createStructuredSelector(selectors, selectorCreator = createSelector) {
+  if (typeof selectors !== 'object') {
+    throw new Error(`createStructuredSelector expects first argument to be an object where each property is a selector, instead received a ${typeof selectors}`);
+  }
+  
+  const objectKeys = Object.keys(selectors);
+
+  return selectorCreator(
+    objectKeys.map(key => selectors[key]), 
+    (...values) => values.reduce((composition, value, index) => {
+      composition[objectKeys[index]] = value;
+      return composition;
+    }, {})
+  );
+}
+```

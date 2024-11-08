@@ -1,0 +1,83 @@
+The provided code is a Node.js module that allows users to add custom "require" hooks for JavaScript files. These hooks allow the transformation of module code before it's executed. Here's a breakdown of its functionality:
+
+1. **Dependencies**: The code imports Node's `module` constructor and the `path` module to handle file paths.
+
+2. **Utility Functions**:
+   - **`shouldCompile`**: This function checks if a file should be processed by a hook. It verifies:
+     - If the filename is a string.
+     - If the file has an extension matching those that are configured to be hooked.
+     - If the file is not in `node_modules`, unless specified otherwise.
+     - If a matcher function is provided, it checks against that.
+
+3. **Main Functionality**:
+   - **`addHook`**: This function adds a hook to Node's module system. It accepts two parameters:
+     - A hook function that receives the code of the module and the filename, and returns a transformed string of code.
+     - An options object to customize the hook's behavior.
+   - The `addHook` function modifies the Node.js module system's file loaders to include custom behavior for transforming code based on file extensions.
+   - The function provides a `revert` function that restores the original loading behavior.
+
+4. **Error Handling**: If a hook does not return a string, an error is thrown, indicating non-compliance with expected behavior.
+
+Below is a possible rewrite of the given Node.js code:
+
+```javascript
+"use strict";
+
+import Module from "module";
+import path from "path";
+
+const nodeModulesRegex = /^(?:.*[\\/])?node_modules(?:[\\/].*)?$/;
+
+const ModuleConstructor = module.constructor.length > 1 ? module.constructor : Module;
+const HOOK_RETURNED_NOTHING_ERROR_MESSAGE = '[Pirates] A hook returned a non-string, or nothing at all! Violation of intergalactic law!';
+
+export function addHook(hook, { matcher = null, ignoreNodeModules = true, extensions = ['.js'] } = {}) {
+  let reverted = false;
+  const loaders = {};
+  const oldLoaders = {};
+  const originalJSLoader = ModuleConstructor._extensions['.js'];
+
+  extensions.forEach(ext => {
+    if (typeof ext !== 'string') throw new TypeError(`Invalid Extension: ${ext}`);
+
+    const oldLoader = ModuleConstructor._extensions[ext] || originalJSLoader;
+    oldLoaders[ext] = ModuleConstructor._extensions[ext];
+
+    loaders[ext] = ModuleConstructor._extensions[ext] = function newLoader(mod, filename) {
+      if (!reverted && shouldCompile(filename, extensions, matcher, ignoreNodeModules)) {
+        const compile = mod._compile;
+        mod._compile = function _compile(code) {
+          const newCode = hook(code, filename);
+          if (typeof newCode !== 'string') throw new Error(HOOK_RETURNED_NOTHING_ERROR_MESSAGE);
+          mod._compile = compile;
+          return mod._compile(newCode, filename);
+        };
+      }
+      oldLoader(mod, filename);
+    };
+  });
+
+  return function revert() {
+    if (reverted) return;
+    reverted = true;
+    extensions.forEach(ext => {
+      if (ModuleConstructor._extensions[ext] === loaders[ext]) {
+        if (!oldLoaders[ext]) {
+          delete ModuleConstructor._extensions[ext];
+        } else {
+          ModuleConstructor._extensions[ext] = oldLoaders[ext];
+        }
+      }
+    });
+  };
+}
+
+function shouldCompile(filename, exts, matcher, ignoreNodeModules) {
+  if (typeof filename !== 'string') return false;
+  if (!exts.includes(path.extname(filename))) return false;
+  const resolvedFilename = path.resolve(filename);
+  if (ignoreNodeModules && nodeModulesRegex.test(resolvedFilename)) return false;
+  if (matcher && typeof matcher === 'function') return !!matcher(resolvedFilename);
+  return true;
+}
+```

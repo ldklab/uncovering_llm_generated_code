@@ -1,0 +1,80 @@
+The provided Node.js code defines a logging middleware for a middleware stack used in an AWS SDK client. The key functionalities of this code are:
+
+1. **LoggerMiddleware Class**: 
+   - It takes a logger object (defaulting to console) during construction.
+   - It has a method `applyMiddlewareToStack` that adds the `loggerMiddleware` function to a given middleware stack with configuration parameters such as step, tags, name, and priority.
+   - The `loggerMiddleware` function logs the request arguments before passing control to the next middleware, logs the response after receiving it, or logs any error encountered during the execution.
+   - It has helper functions to log requests (`logRequest`), responses (`logResponse`), and errors (`logError`).
+
+2. **getLoggerMiddleware Function**: 
+   - Returns an object with a method `applyToStack` that can be used to add the logging middleware to a middleware stack by binding the `applyMiddlewareToStack` method of a `LoggerMiddleware` instance.
+
+3. **Export and Usage**: 
+   - Exports the `getLoggerMiddleware` function. 
+   - Demonstrates how to use the logging middleware with an AWS SDK client by adding it to the client's middleware stack.
+
+Here is the rewritten version of the code:
+
+```javascript
+// index.js
+
+class LoggerMiddleware {
+  constructor(logger = console) {
+    this.logger = logger;
+  }
+
+  applyMiddlewareToStack(stack) {
+    stack.add(this.createLoggerMiddleware(), {
+      step: 'initialize',
+      tags: ['LOGGER_MIDDLEWARE'],
+      name: 'loggerMiddleware',
+      priority: 'high',
+    });
+  }
+
+  createLoggerMiddleware() {
+    return async (next, context) => async (args) => {
+      this.logRequest(args, context);
+      try {
+        const result = await next(args);
+        this.logResponse(result, context);
+        return result;
+      } catch (err) {
+        this.logError(err, context);
+        throw err;
+      }
+    };
+  }
+
+  logRequest(args, context) {
+    this.logger.info(`Request: ${JSON.stringify(args)}`, { context });
+  }
+
+  logResponse(result, context) {
+    this.logger.info(`Response: ${JSON.stringify(result)}`, { context });
+  }
+
+  logError(error, context) {
+    this.logger.error(`Error: ${error}`, { context });
+  }
+}
+
+function getLoggerMiddleware(logger) {
+  const loggerMiddleware = new LoggerMiddleware(logger);
+  return {
+    applyToStack: (stack) => loggerMiddleware.applyMiddlewareToStack(stack),
+  };
+}
+
+module.exports = { getLoggerMiddleware };
+
+// Usage Example:
+// const { getLoggerMiddleware } = require('./index');
+// const { Client } = require('some-aws-sdk-client');
+
+// const client = new Client({
+//   region: 'us-west-2',
+// });
+
+// client.middlewareStack.use(getLoggerMiddleware(console));
+```

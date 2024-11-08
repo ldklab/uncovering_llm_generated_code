@@ -1,0 +1,43 @@
+The provided Node.js code defines two functions, `getPackageType` and `getPackageTypeSync`, which determine the module type of a Node.js package (either `"module"` or `"commonjs"`) based on a `package.json` file. The functions are exported from the module for use elsewhere. 
+
+1. The `getPackageType` function is asynchronous and uses `fs.promises.readFile` to read the contents of `package.json`. If the file exists, it checks for the presence of the `type` field in the JSON data and returns its value. If the `type` field is absent or if there is no readable `package.json` (file not found or the directory isn't valid), it defaults to returning `'commonjs'`.
+
+2. The `getPackageTypeSync` function is the synchronous counterpart. It uses `fs.readFileSync` for reading `package.json`. It follows the same logic to return the package type or defaults to `'commonjs'` when the package is not found or an error indicates the path isn't valid.
+
+Both functions handle specific errors (`ENOENT` and `ENOTDIR`) by returning `'commonjs'`, and rethrow other unexpected errors.
+
+Below is a possible rewrite of this code:
+
+```javascript
+const fs = require('fs');
+const path = require('path');
+
+async function getPackageType(filePath) {
+  try {
+    const packageJsonPath = path.join(path.dirname(filePath), 'package.json');
+    const data = await fs.promises.readFile(packageJsonPath, 'utf8');
+    return JSON.parse(data).type || 'commonjs';
+  } catch (err) {
+    if (err.code === 'ENOENT' || err.code === 'ENOTDIR') {
+      return 'commonjs';
+    }
+    throw err;
+  }
+}
+
+function getPackageTypeSync(filePath) {
+  try {
+    const packageJsonPath = path.join(path.dirname(filePath), 'package.json');
+    const data = fs.readFileSync(packageJsonPath, 'utf8');
+    return JSON.parse(data).type || 'commonjs';
+  } catch (err) {
+    if (err.code === 'ENOENT' || err.code === 'ENOTDIR') {
+      return 'commonjs';
+    }
+    throw err;
+  }
+}
+
+module.exports = getPackageType;
+module.exports.sync = getPackageTypeSync;
+```

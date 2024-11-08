@@ -1,0 +1,110 @@
+The `rc` package is a configuration loader that simplifies the process of managing configuration settings in Node.js applications. It allows merging of configurations from various sources in a prioritized manner, making it easy for developers to override settings through command-line parameters, environment variables, or configuration files without modifying the application code directly.
+
+### Key Functionality:
+
+1. **Initialization**: When using `rc`, you initialize it by passing it the name of your application and an object containing default settings. The package returns a configuration object with all values appropriately merged.
+
+2. **Configuration Sources**:
+   - **Command-line arguments**: Parsed using the `minimist` module. Supports both simple and nested argument structures.
+   - **Environment variables**: These are prefixed with the application name, with double underscores for nesting.
+   - **Config files**: Files can be explicitly specified through a --config argument or found in standard directories like local, user home, or system directories. They can be JSON or INI formats.
+   - **Defaults**: The object you pass to `rc` initially acts as the final fallback.
+
+3. **Merging**: Configuration from earlier sources in the list (command line, environment variables) can override that from later sources (config files, defaults).
+
+4. **Output Object**: The resulting configuration object contains:
+   - Merged settings.
+   - A `configs` array showing paths of configuration files that were loaded.
+   - A `config` key indicating the last config path.
+
+5. **File Support**: Supports JSON and INI format files without file extensions and can handle comments in these configurations.
+
+6. **Custom Parsing & CLI Arguments**: Users can supply their own argument parsers or config file parsers if desired.
+
+7. **Performance Note**: The package uses synchronous file operations, so its initialization should generally not be placed within performance-critical code paths.
+
+Here's a complete implementation of the described functionality:
+
+```javascript
+const fs = require('fs');
+const path = require('path');
+const minimist = require('minimist');
+const stripJsonComments = require('strip-json-comments');
+
+function parseConfigFile(filePath) {
+  const content = fs.readFileSync(filePath, 'utf8');
+  try {
+    return JSON.parse(stripJsonComments(content));
+  } catch (e) {
+    return require('ini').parse(content);
+  }
+}
+
+function loadConfigs(appname, configPaths) {
+  const configs = [];
+  const result = configPaths.reduce((acc, filePath) => {
+    if (fs.existsSync(filePath)) {
+      const confPart = parseConfigFile(filePath);
+      configs.push(filePath);
+      return { ...acc, ...confPart };
+    }
+    return acc;
+  }, {});
+  return { config: result, configs };
+}
+
+function findConfigFiles(appname) {
+  const home = process.env.HOME || process.env.USERPROFILE;
+  const configPaths = [
+    path.join('/etc', `${appname}rc`),
+    path.join('/etc', `${appname}`, 'config'),
+    path.join(home, `.${appname}rc`),
+    path.join(home, `.${appname}`, 'config'),
+    path.join(home, '.config', `${appname}`),
+    path.join(home, '.config', `${appname}`, 'config'),
+  ];
+
+  let dir = process.cwd();
+  do {
+    configPaths.push(path.join(dir, `.${appname}rc`));
+    dir = path.join(dir, '..');
+  } while (dir !== path.resolve(dir, '..'));
+
+  return configPaths;
+}
+
+function loadEnvVariables(appname) {
+  const prefix = `${appname}_`;
+  return Object.entries(process.env)
+    .filter(([key]) => key.startsWith(prefix))
+    .reduce((acc, [key, value]) => {
+      const path = key.slice(prefix.length).split('__').map(part => part.toLowerCase());
+      let curr = acc;
+      while (path.length > 1) {
+        const segment = path.shift();
+        curr = curr[segment] = curr[segment] || {};
+      }
+      curr[path[0]] = value;
+      return acc;
+    }, {});
+}
+
+module.exports = function rc(appname, defaults = {}, argv = null, customParser = null) {
+  const args = argv || process.argv.slice(2);
+  const parsedArgs = minimist(args);
+  const configsFromFile = parsedArgs.config ? [parsedArgs.config] : findConfigFiles(appname);
+  const { config: configFromFiles, configs } = loadConfigs(appname, configsFromFile);
+  const configFromEnv = loadEnvVariables(appname);
+
+  const mergedConfig = {
+    ...configFromFiles,
+    ...configFromEnv,
+    ...defaults,
+    ...customParser ? customParser(parsedArgs) : parsedArgs,
+  };
+
+  mergedConfig.configs = configs;
+  mergedConfig.config = configs[configs.length - 1];
+  return mergedConfig;
+};
+```

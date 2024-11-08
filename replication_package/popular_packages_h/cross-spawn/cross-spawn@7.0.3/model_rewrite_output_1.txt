@@ -1,0 +1,42 @@
+The Node.js code defines two functions, `spawn` and `spawnSync`, that are used to start child processes. These functions initially use a `parse` function to process the command, arguments, and options provided to them. Then, they proceed to either spawn an asynchronous child process using `cp.spawn` in the case of `spawn` or a synchronous one using `cp.spawnSync` in the case of `spawnSync`. Additionally, there's a check for whether the spawned command exists, utilizing a module named `enoent`. This check is used to handle cases where the command does not exist on the system, which can lead to errors. Finally, both functions are exported along with internal utility modules `_parse` and `_enoent`.
+
+```javascript
+'use strict';
+
+const { spawn, spawnSync } = require('child_process');
+const parse = require('./lib/parse');
+const enoent = require('./lib/enoent');
+
+function spawnCommand(command, args, options) {
+    // Process the command-line arguments
+    const parsed = parse(command, args, options);
+
+    // Start an asynchronous child process
+    const childProcess = spawn(parsed.command, parsed.args, parsed.options);
+
+    // Attach an exit event handler to manage command-not-found errors
+    enoent.hookChildProcess(childProcess, parsed);
+
+    return childProcess;
+}
+
+function spawnCommandSync(command, args, options) {
+    // Process the command-line arguments
+    const parsed = parse(command, args, options);
+
+    // Start a synchronous child process
+    const result = spawnSync(parsed.command, parsed.args, parsed.options);
+
+    // Check for command-not-found errors
+    result.error = result.error || enoent.verifyENOENTSync(result.status, parsed);
+
+    return result;
+}
+
+module.exports = spawnCommand;
+module.exports.spawn = spawnCommand;
+module.exports.sync = spawnCommandSync;
+
+module.exports._parse = parse;
+module.exports._enoent = enoent;
+```

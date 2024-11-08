@@ -1,0 +1,94 @@
+The Node.js package `flat` provides functionality to transform deeply nested objects into flat objects with delimited keys and vice versa. This transformation is useful for certain data storage or manipulation scenarios where flat structures are easier to manage or serialize. Here is an explanation of the functionalities offered by the package:
+
+1. **Flattening Objects:**
+   - The `flatten` function takes a nested object and returns a new object that has no nested objects, reducing the depth to one level only. It uses a delimiter (default is '.') to create keys that represent the original nested structure.
+   - It accepts options such as `delimiter` to customize the separator, `safe` to preserve arrays, and `maxDepth` to limit the depth of flattening.
+
+2. **Unflattening Objects:**
+   - The `unflatten` function reverses the flattening process, reconstructing the original nested structure from the flat object with delimited keys.
+   - It also supports options like using a custom `delimiter`, `safe` to handle arrays, `object` to control array creation, and `overwrite` to allow existing nested keys to be overwritten.
+
+3. **Custom Options:**
+   - `delimiter`: Custom separator for keys.
+   - `safe`: Ensures arrays are not flattened and are kept as arrays.
+   - `object`: Prevents automatic array creation during unflattening.
+   - `overwrite`: Allows existing keys to be overwritten during unflattening.
+   - `maxDepth`: Sets a cap on how deeply to flatten the object structure.
+
+Below is a single-file implementation of this functionality in a Node.js package:
+
+```javascript
+// flat.js
+
+function flatten(target, opts = {}) {
+  const delimiter = opts.delimiter || '.';
+  const maxDepth = opts.maxDepth || Infinity;
+  const safe = opts.safe || false;
+  
+  const output = {};
+
+  function step(object, prev, currentDepth) {
+    Object.keys(object).forEach(function(key) {
+      const value = object[key];
+      const newKey = prev ? prev + delimiter + key : key;
+      const isObject = typeof value === 'object' && value !== null && !(value instanceof Date) && !(value instanceof RegExp);
+
+      if (!safe && Array.isArray(value) || !isObject || currentDepth + 1 >= maxDepth) {
+        output[newKey] = value;
+      } else {
+        step(value, newKey, currentDepth + 1);
+      }
+    });
+  }
+
+  step(target, '', 0);
+
+  return output;
+}
+
+function unflatten(target, opts = {}) {
+  const delimiter = opts.delimiter || '.';
+  const overwrite = opts.overwrite || false;
+  const object = opts.object || false;
+  const safe = opts.safe || false;
+
+  const isBuffer = typeof Buffer === 'function' && Buffer.isBuffer;
+
+  if (Object(target) !== target || Array.isArray(target)) {
+    return target;
+  }
+
+  const result = {};
+
+  function getValue(key) {
+    const keyArray = key.split(delimiter);
+    return keyArray.reduce((res, keyPart) => {
+      if (res === undefined) return undefined;
+      return res[keyPart];
+    }, result);
+  }
+
+  Object.keys(target).forEach(function(key) {
+    const keys = key.split(delimiter);
+    keys.reduce((acc, currentKey, index) => {
+      if (index === keys.length - 1) {
+        if (overwrite || acc[currentKey] === undefined) {
+          acc[currentKey] = target[key];
+        }
+      } else {
+        if (acc[currentKey] === undefined || typeof acc[currentKey] !== 'object') {
+          acc[currentKey] = !object && !safe && !isNaN(keys[index + 1]) ? [] : {};
+        }
+      }
+      return acc[currentKey];
+    }, result);
+  });
+
+  return result;
+}
+
+module.exports = flatten;
+module.exports.unflatten = unflatten;
+```
+
+This code provides a `flatten` function to reduce object depth and an `unflatten` function to reconstruct the original nested structure. Users can specify options like `delimiter` to customize key formatting, and other options to manage depth and array behavior during the transformation processes.

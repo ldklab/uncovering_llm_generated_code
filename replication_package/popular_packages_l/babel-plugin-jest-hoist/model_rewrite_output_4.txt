@@ -1,0 +1,48 @@
+The provided Node.js code is a Babel plugin designed to manipulate the abstract syntax tree (AST) of JavaScript code. Specifically, it targets Jest mock function calls and moves them to the top of the program, ideally above any import declarations. The key functionalities of this plugin are:
+
+1. **Identify Jest Calls**: It traverses through the program's AST to identify calls to certain Jest functions like `disableAutomock`, `enableAutomock`, `unmock`, and `mock`.
+
+2. **Collect and Remove**: The identified Jest function calls are collected and removed from their original locations in the code.
+
+3. **Insert at Beginning**: These collected Jest calls are then inserted before the first import statement in the program. If there are no import statements, they are inserted at the very beginning of the program.
+
+This hoisting is meant to ensure that Jest's mock functions execute before any module is imported, which can be important for controlling module behavior in tests.
+
+Here is a rewritten version of the code:
+
+```javascript
+// babel-plugin-jest-hoist.js
+
+module.exports = function({ types: t }) {
+  return {
+    visitor: {
+      Program(path) {
+        const jestCalls = [];
+
+        path.traverse({
+          ExpressionStatement(exprPath) {
+            const { expression } = exprPath.node;
+            if (t.isCallExpression(expression) && 
+                t.isMemberExpression(expression.callee) && 
+                t.isIdentifier(expression.callee.object, { name: 'jest' })) {
+              const jestMethodName = expression.callee.property.name;
+              if (['disableAutomock', 'enableAutomock', 'unmock', 'mock'].includes(jestMethodName)) {
+                jestCalls.push(exprPath.node);
+                exprPath.remove();
+              }
+            }
+          }
+        });
+
+        const firstImportIndex = path.node.body.findIndex(stm => t.isImportDeclaration(stm));
+
+        if (firstImportIndex !== -1) {
+          path.node.body.splice(firstImportIndex, 0, ...jestCalls);
+        } else {
+          path.node.body.unshift(...jestCalls);
+        }
+      }
+    }
+  };
+};
+```

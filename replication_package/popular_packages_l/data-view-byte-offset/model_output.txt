@@ -1,0 +1,89 @@
+The `data-view-byte-offset` package provides a functionality to get the `byteOffset` value of a `DataView` object robustly, even in environments where the prototype accessor `DataView.prototype.byteOffset` is not available, such as in older Node versions (<= 0.10 and < 0.11.4) or if it has been deleted in modern engines. The package offers a way to reliably extract the `byteOffset` using a method that works irrespective of the availability of prototype accessors or potential modifications to them.
+
+Here's the code implementation of the `data-view-byte-offset` package:
+
+```js
+// index.js
+'use strict';
+
+function getByteOffset(dataView) {
+    if (!(dataView instanceof DataView)) {
+        throw new TypeError('Expected a DataView instance');
+    }
+
+    // Try accessing `byteOffset` directly
+    if (typeof dataView.byteOffset === 'number') {
+        return dataView.byteOffset;
+    }
+
+    // Since direct access to `byteOffset` failed, try using Object.getOwnPropertyDescriptor
+    const descriptor = Object.getOwnPropertyDescriptor(DataView.prototype, 'byteOffset');
+    if (descriptor && typeof descriptor.get === 'function') {
+        return descriptor.get.call(dataView);
+    }
+
+    // For older Node.js versions or cases where the prototype accessor is not available.
+    // Directly access the hidden property on the instance.
+    // Node.js versions <= 0.10 and < 0.11.4 behave differently
+    const privateOffset = Symbol.for('DataView#byteOffset');
+
+    if (dataView.hasOwnProperty(privateOffset)) {
+        return dataView[privateOffset];
+    }
+
+    throw new Error('Unable to get byteOffset from the DataView');
+}
+
+module.exports = getByteOffset;
+
+// package.json
+{
+  "name": "data-view-byte-offset",
+  "version": "1.0.0",
+  "description": "Get the byteOffset out of a DataView, robustly.",
+  "main": "index.js",
+  "scripts": {
+    "test": "mocha"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git://github.com/your-github-username/data-view-byte-offset.git"
+  },
+  "keywords": [
+    "DataView",
+    "byteOffset",
+    "Node.js",
+    "JavaScript"
+  ],
+  "author": "Your Name <your.email@example.com>",
+  "license": "MIT",
+  "dependencies": {},
+  "devDependencies": {
+    "mocha": "^9.0.0",
+    "assert": "^2.0.0"
+  }
+}
+
+// test/index.js
+'use strict';
+
+const assert = require('assert');
+const dataViewByteOffset = require('../index');
+
+describe('data-view-byte-offset', function () {
+    it('should return the correct byteOffset', function () {
+        const ab = new ArrayBuffer(42);
+        const dv = new DataView(ab, 2);
+        assert.strictEqual(dataViewByteOffset(dv), 2);
+    });
+
+    it('should throw when a non-DataView is provided', function () {
+        assert.throws(() => {
+            dataViewByteOffset({});
+        }, /Expected a DataView instance/);
+    });
+
+    // More test cases can be added as necessary
+});
+```
+This code set up retrieves `byteOffset` robustly from a `DataView` instance by first attempting to access it directly, then by using `Object.getOwnPropertyDescriptor` if available, and finally trying to access a hidden internals property for environments that don't expose `byteOffset` on the prototype. It also includes the necessary setup for testing with Mocha.

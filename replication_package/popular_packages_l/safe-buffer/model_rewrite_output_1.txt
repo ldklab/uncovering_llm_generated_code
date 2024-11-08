@@ -1,0 +1,57 @@
+The provided Node.js code defines a module that ensures safe usage of buffer allocation functions, either using native `Buffer` methods or providing a backward-compatible custom implementation. Here's a breakdown of its functionality:
+
+1. **Checking Native Functionality**: The code checks if the native `Buffer` methods like `Buffer.from`, `Buffer.alloc`, `Buffer.allocUnsafe`, and `Buffer.allocUnsafeSlow` are available. This is done to decide whether to use native implementations or fall back to a custom implementation.
+
+2. **Safe Buffer Methods**: 
+   - `safeBuffer`: Allocates a buffer of a given size. If native `Buffer.alloc` is available, it uses it; otherwise, it creates a new Buffer and fills it with zeroes.
+   - `safeBufferFrom`: Converts a given data (array or string) into a buffer. It uses `Buffer.from` if available, otherwise manually constructs a buffer.
+   - `safeBufferAllocUnsafe`: Allocates an uninitialized buffer of a given size, using `Buffer.allocUnsafe` if available, otherwise `new Buffer(size)`.
+   - `safeBufferAllocUnsafeSlow`: Similar to `safeBufferAllocUnsafe`, but uses `Buffer.allocUnsafeSlow` if available for potentially less efficient but needed scenarios.
+
+3. **Module Exports**: The functions are exported as an object that resembles the `Buffer` API, using the custom safe versions of those APIs.
+
+Below is the rewritten code:
+
+```javascript
+// safe-buffer.js
+'use strict';
+
+const { Buffer } = require('buffer');
+
+const useNative = typeof Buffer.alloc === 'function' && typeof Buffer.allocUnsafe === 'function';
+
+function safeBuffer(size) {
+  return useNative ? Buffer.alloc(size) : Buffer.alloc(size).fill(0);
+}
+
+function safeBufferFrom(data, encoding) {
+  if (useNative) {
+    return Buffer.from(data, encoding);
+  } else if (typeof data === 'string') {
+    return Buffer.alloc(data.length, data, encoding);
+  } else {
+    const buf = Buffer.alloc(data.length);
+    for (let i = 0; i < data.length; i++) {
+      buf[i] = data[i];
+    }
+    return buf;
+  }
+}
+
+function safeBufferAllocUnsafe(size) {
+  return useNative ? Buffer.allocUnsafe(size) : Buffer.alloc(size);
+}
+
+function safeBufferAllocUnsafeSlow(size) {
+  return useNative ? Buffer.allocUnsafeSlow(size) : Buffer.alloc(size);
+}
+
+module.exports = {
+  Buffer: {
+    from: safeBufferFrom,
+    alloc: safeBuffer,
+    allocUnsafe: safeBufferAllocUnsafe,
+    allocUnsafeSlow: safeBufferAllocUnsafeSlow
+  }
+};
+```

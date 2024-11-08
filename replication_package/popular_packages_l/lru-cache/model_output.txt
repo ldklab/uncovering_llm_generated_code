@@ -1,0 +1,104 @@
+The `lru-cache` package provides an implementation of a Least Recently Used (LRU) cache in Node.js, which is designed to store and retrieve data efficiently by maintaining only the most recently accessed items up to a specified limit (`max`). As items are added beyond this limit, the least recently accessed items are evicted from the cache. The package also offers multiple configuration options like `ttl` (time-to-live), `maxSize`, size calculations, and disposal methods for when items are evicted.
+
+The main features and functionalities of this LRU cache implementation include:
+
+1. **LRU Mechanism**: The cache evicts the least recently used items as new items are added beyond a defined maximum size (`max`).
+
+2. **TTL Support**: While it's not a TTL-based cache primarily, TTL can be set for the entire cache or individual items, which defines how long an item should live before it's considered stale.
+
+3. **Size Constraints**: You can limit the cache size using `maxSize` and define how the size of an entry is calculated using `sizeCalculation`. It's essential to provide a size for entries when `maxSize` is set.
+
+4. **Eviction Handling**: Custom disposal logic can be specified via a `dispose` callback function which gets executed when a cache item is evicted.
+
+5. **Asynchronous Fetching**: The `fetchMethod` option allows asynchronous operations to fetch data, enabling stale-while-revalidate caching strategies.
+
+6. **Cache Configuration**: Extensive configuration options allow precise control over caching behavior. Some of these include `allowStale`, `updateAgeOnGet`, `updateAgeOnHas`, and others to tweak TTL and age behavior.
+
+7. **Object and String Key Support**: The cache supports non-string keys, as long as they maintain the same object identity.
+
+8. **Performance Optimizations**: Designed to be efficient, especially in 'get' operations typical of LRU caching needs, suitable for various key types and use cases.
+
+9. **Undefined Handling**: Undefined values are not stored; setting a value to undefined effectively deletes the key.
+
+Below is a basic implementation of an LRU Cache in Node.js following the described functionality:
+
+```js
+class LRUCache {
+  constructor(options = {}) {
+    this.max = options.max || Infinity;
+    this.ttl = options.ttl || 0;
+    this.allowStale = options.allowStale || false;
+    this.updateAgeOnGet = options.updateAgeOnGet || false;
+    this.store = new Map();
+    this.timestamps = new Map();
+    this.dispose = options.dispose;
+
+    if (!this.max && !this.ttl) {
+      console.warn('Unbounded cache size with no ttl may lead to unbounded storage.');
+    }
+  }
+
+  _isStale(key) {
+    if (!this.ttl) return false;
+    const entryTime = this.timestamps.get(key);
+    return (entryTime + this.ttl) < Date.now();
+  }
+
+  _dispose(key, value) {
+    if (this.dispose) this.dispose(value, key);
+  }
+
+  set(key, value) {
+    if (key == null || value == undefined) {
+      this.delete(key);
+      return;
+    }
+    if (this.store.has(key)) {
+      this.store.delete(key);
+    }
+    this.store.set(key, value);
+    this.timestamps.set(key, Date.now());
+    if (this.store.size > this.max) {
+      const [oldestKey] = this.store.keys();
+      this.delete(oldestKey);
+    }
+  }
+
+  get(key) {
+    if (!this.store.has(key)) return undefined;
+    if (this._isStale(key)) {
+      this.delete(key);
+      return this.allowStale ? this.store.get(key) : undefined;
+    }
+    if (this.updateAgeOnGet) {
+      this.timestamps.set(key, Date.now());
+    }
+    return this.store.get(key);
+  }
+
+  has(key) {
+    return this.store.has(key) && !this._isStale(key);
+  }
+
+  delete(key) {
+    if (this.store.has(key)) {
+      const value = this.store.get(key);
+      this.store.delete(key);
+      this.timestamps.delete(key);
+      this._dispose(key, value);
+    }
+  }
+
+  clear() {
+    for (let [key, value] of this.store) {
+      this._dispose(key, value);
+    }
+    this.store.clear();
+    this.timestamps.clear();
+  }
+}
+
+module.exports = { LRUCache };
+```
+
+This implementation includes basic functionalities like limiting cache size, checking ttl, updating recent access timestamp, clean-up on item eviction via a dispose method, and handling of stale entries based on configuration.

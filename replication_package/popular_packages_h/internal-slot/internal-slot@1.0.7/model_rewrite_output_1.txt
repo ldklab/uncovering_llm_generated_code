@@ -1,0 +1,64 @@
+```javascript
+'use strict';
+
+const hasOwn = require('hasown');
+const channel = require('side-channel')();
+
+const $TypeError = require('es-errors/type');
+
+const SLOT = {
+  assert: function (O, slot) {
+    validateInput(O, slot);
+    channel.assert(O);
+    
+    if (!this.has(O, slot)) {
+      throw new $TypeError(`'${slot}' is not present on 'O'`);
+    }
+  },
+  get: function (O, slot) {
+    validateInput(O, slot);
+    
+    const slots = channel.get(O);
+    return slots ? slots['$' + slot] : undefined;
+  },
+  has: function (O, slot) {
+    validateInput(O, slot);
+    
+    const slots = channel.get(O);
+    return slots ? hasOwn(slots, '$' + slot) : false;
+  },
+  set: function (O, slot, V) {
+    validateInput(O, slot);
+    
+    let slots = channel.get(O);
+    if (!slots) {
+      slots = {};
+      channel.set(O, slots);
+    }
+    slots['$' + slot] = V;
+  }
+};
+
+function validateInput(O, slot) {
+  if (!O || (typeof O !== 'object' && typeof O !== 'function')) {
+    throw new $TypeError('`O` is not an object');
+  }
+  if (typeof slot !== 'string') {
+    throw new $TypeError('`slot` must be a string');
+  }
+}
+
+if (Object.freeze) {
+  Object.freeze(SLOT);
+}
+
+module.exports = SLOT;
+```
+
+This Node.js code defines an object `SLOT` which acts as a utility for managing data slots on objects using a side-channel technique. The object defines four methods: `assert`, `get`, `has`, and `set`. These methods allow the user to verify the presence of a slot, retrieve and store values in slots, and check if a slot exists, respectively. 
+
+The `validateInput` function ensures that the object `O` is an object or function and that `slot` is a string, throwing a `TypeError` if these conditions are not met.
+
+The use of `side-channel` ensures that slots are attached to objects in a way that is not directly visible or modifiable from outside the module, providing a level of encapsulation.
+
+Finally, the `Object.freeze(SLOT)` ensures the immutability of the `SLOT` object itself if the environment supports `Object.freeze`.

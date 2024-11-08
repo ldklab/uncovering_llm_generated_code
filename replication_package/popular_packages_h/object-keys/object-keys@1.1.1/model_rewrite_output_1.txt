@@ -1,0 +1,44 @@
+The code provided is a module that defines a shim for `Object.keys`, which is a built-in JavaScript function that returns an array of a given object's property names. This shim is designed to address potential compatibility issues with older environments or bugs in specific JavaScript engines, like Safari 5.0, which do not correctly handle objects of the `arguments` type. Here's a step-by-step explanation of its functionality:
+
+1. It defines a `slice` variable, pointing to the `Array.prototype.slice` method, to convert array-like objects into arrays.
+2. It imports a module `isArgs` to check if a given value is of the `arguments` object type.
+3. It checks if `Object.keys` is available (`origKeys`). If it is not available, it uses an alternative implementation imported from './implementation'.
+4. It defines and exports `keysShim`, a function that mimics `Object.keys` functionality.
+5. It attempts to detect and fix a specific issue in Safari 5.0, which incorrectly implements `Object.keys` on the `arguments` object. If an issue is detected (`keysWorksWithArguments` evaluates to false), it overrides `Object.keys` to work around the issue using `slice` and `originalKeys`.
+6. A `shimObjectKeys` method is provided to apply this patch globally when invoked.
+7. The module exports the `keysShim` function, allowing other parts of an application to use it.
+
+Here is a potential rewrite of the code:
+
+```javascript
+'use strict';
+
+const slice = Array.prototype.slice;
+const isArgs = require('./isArguments');
+
+const originalObjectKeys = Object.keys;
+const keysShim = originalObjectKeys ? function keys(obj) { return originalObjectKeys(obj); } : require('./implementation');
+
+keysShim.shim = function shimObjectKeys() {
+    if (Object.keys) {
+        const keysWorksWithArguments = (function () {
+            const args = Object.keys(arguments);
+            return args && args.length === arguments.length;
+        }(1, 2));
+        
+        if (!keysWorksWithArguments) {
+            Object.keys = function keys(object) {
+                if (isArgs(object)) {
+                    return originalObjectKeys(slice.call(object));
+                }
+                return originalObjectKeys(object);
+            };
+        }
+    } else {
+        Object.keys = keysShim;
+    }
+    return Object.keys || keysShim;
+};
+
+module.exports = keysShim;
+```

@@ -1,0 +1,123 @@
+The provided Node.js code is a module for locating the executable file of a given command. It checks the directories listed in the PATH environment variable (and any additional paths provided in options) to find a match. The module accounts for the platform type (Windows or non-Windows) and handles executable file extensions accordingly. The module exports an asynchronous `which` function and a synchronous version `whichSync`.
+
+Here's a breakdown of the code functionality:
+
+1. **Environment and Dependencies**: Determine if the platform is Windows and import required modules such as `path` and `isexe`.
+
+2. **Error Handling**: Define a helper to create a "not found" error.
+
+3. **Path Information Function**: `getPathInfo` determines the directories and executable extensions to search based on the platform and user-provided options.
+
+4. **Asynchronous `which` Function**: This function searches for the command along the constructed path, checking each directory for the command file with permissible extensions.
+
+5. **Synchronous `whichSync` Function**: Provides synchronous behavior similar to the asynchronous `which` function, checking all directories and extensions for the existence of the command.
+
+6. **Module Export**: `which` function is exported, and `which.sync` is set to `whichSync`.
+
+Here's a possible rewrite of the code:
+
+```javascript
+const path = require('path');
+const isexe = require('isexe');
+
+const isWindows = process.platform === 'win32' || process.env.OSTYPE === 'cygwin' || process.env.OSTYPE === 'msys';
+const PATH_SEPARATOR = isWindows ? ';' : ':';
+const DEFAULT_PATH = process.env.PATH || '';
+const DEFAULT_PATHEXT = isWindows ? '.EXE;.CMD;.BAT;.COM' : '';
+
+const createNotFoundError = (cmd) => Object.assign(new Error(`not found: ${cmd}`), { code: 'ENOENT' });
+
+const getPathInfo = (cmd, options) => {
+  const separator = options.colon || PATH_SEPARATOR;
+  const searchPaths = cmd.includes('/') || (isWindows && cmd.includes('\\')) ? [''] : [
+    ...(isWindows ? [process.cwd()] : []),
+    ...((options.path || DEFAULT_PATH).split(separator)),
+  ];
+  const pathExtensions = isWindows ? (options.pathExt || process.env.PATHEXT || DEFAULT_PATHEXT).split(separator) : [''];
+
+  if (isWindows && cmd.includes('.') && pathExtensions[0] !== '') {
+    pathExtensions.unshift('');
+  }
+
+  return { searchPaths, pathExtensions };
+};
+
+const which = (cmd, options, callback) => {
+  if (typeof options === 'function') {
+    callback = options;
+    options = {};
+  }
+  options = options || {};
+
+  const { searchPaths, pathExtensions } = getPathInfo(cmd, options);
+  const foundExecutables = [];
+
+  const findExecutable = (index) =>
+    new Promise((resolve, reject) => {
+      if (index === searchPaths.length) {
+        return options.all && foundExecutables.length ? resolve(foundExecutables) : reject(createNotFoundError(cmd));
+      }
+
+      const currentPath = searchPaths[index].replace(/^"|"$/g, '');
+      const fullPath = path.join(currentPath, cmd);
+
+      const tryNextExtension = (extIndex) =>
+        new Promise((resolve) => {
+          if (extIndex === pathExtensions.length) {
+            return resolve(findExecutable(index + 1));
+          }
+
+          const candidatePath = fullPath + pathExtensions[extIndex];
+          isexe(candidatePath, { pathExt: options.pathExt }, (error, exists) => {
+            if (!error && exists) {
+              if (options.all) {
+                foundExecutables.push(candidatePath);
+              } else {
+                return resolve(candidatePath);
+              }
+            }
+            resolve(tryNextExtension(extIndex + 1));
+          });
+        });
+
+      resolve(tryNextExtension(0));
+    });
+
+  return callback ? findExecutable(0).then((res) => callback(null, res), callback) : findExecutable(0);
+};
+
+const whichSync = (cmd, options = {}) => {
+  const { searchPaths, pathExtensions } = getPathInfo(cmd, options);
+  const foundExecutables = [];
+
+  for (let i = 0; i < searchPaths.length; i++) {
+    const currentPath = searchPaths[i].replace(/^"|"$/g, '');
+    const fullPath = path.join(currentPath, cmd);
+
+    for (let j = 0; j < pathExtensions.length; j++) {
+      const candidatePath = fullPath + pathExtensions[j];
+      
+      try {
+        if (isexe.sync(candidatePath, { pathExt: options.pathExt })) {
+          if (options.all) {
+            foundExecutables.push(candidatePath);
+          } else {
+            return candidatePath;
+          }
+        }
+      } catch (e) {}
+    }
+  }
+
+  if (options.all && foundExecutables.length) {
+    return foundExecutables;
+  }
+  if (options.nothrow) {
+    return null;
+  }
+  throw createNotFoundError(cmd);
+};
+
+module.exports = which;
+which.sync = whichSync;
+```

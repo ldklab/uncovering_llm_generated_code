@@ -1,0 +1,87 @@
+The provided Node.js code defines a module named `walk` for traversing an Abstract Syntax Tree (AST). The `walk` function is used to traverse nodes in an AST with optional callback functions `enter` and `leave` that execute as the algorithm enters and leaves nodes, respectively. The traversal allows manipulation of the AST, such as skipping nodes, replacing them, or removing them based on specific conditions provided in the `enter` or `leave` callbacks.
+
+The `visit` function is a core recursive function defining the traversal logic for visiting each node in the AST. The `context` object provides methods to skip further traversal, remove the current node, or replace the current node with a new one. The `replaceNode` and `removeNode` functions handle the actual modification of the AST structure.
+
+Here's the rewritten code:
+
+```javascript
+// estree-walker/index.js module for traversing ASTs
+
+function traverseAST(ast, { onEnter, onLeave }) {
+
+    function processNode(node, parent, property, idx) {
+        if (!node) return;
+        
+        const context = {
+            skip: () => context.shouldSkip = true,
+            remove: () => context.removed = true,
+            replaceWith: (newNode) => {
+                context.replaced = true;
+                context.newNode = newNode;
+            },
+            shouldSkip: false,
+            removed: false,
+            replaced: false,
+            newNode: null
+        };
+
+        if (onEnter) {
+            onEnter.call(context, node, parent, property, idx);
+            if (context.replaced) {
+                substituteNode(parent, property, idx, context.newNode);
+            }
+            if (context.removed || context.shouldSkip) {
+                return;
+            }
+        }
+
+        const keys = Object.keys(node);
+        for (const key of keys) {
+            const value = node[key];
+            if (Array.isArray(value)) {
+                for (let i = 0; i < value.length; i++) {
+                    if (value[i] && typeof value[i].type === 'string') {
+                        processNode(value[i], node, key, i);
+                    }
+                }
+            } else if (value && typeof value.type === 'string') {
+                processNode(value, node, key, null);
+            }
+        }
+
+        if (onLeave && !context.removed && !context.replaced) {
+            onLeave.call(context, node, parent, property, idx);
+            if (context.replaced) {
+                substituteNode(parent, property, idx, context.newNode);
+            }
+            if (context.removed) {
+                eliminateNode(parent, property, idx);
+            }
+        }
+    }
+
+    function substituteNode(parent, property, idx, newNode) {
+        if (parent) {
+            if (idx !== null) {
+                parent[property][idx] = newNode;
+            } else {
+                parent[property] = newNode;
+            }
+        }
+    }
+
+    function eliminateNode(parent, property, idx) {
+        if (parent) {
+            if (idx !== null) {
+                parent[property].splice(idx, 1);
+            } else {
+                delete parent[property];
+            }
+        }
+    }
+
+    processNode(ast, null, null, null);
+}
+
+module.exports = { traverseAST };
+```

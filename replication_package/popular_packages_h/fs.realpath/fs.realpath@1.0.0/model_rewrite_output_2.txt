@@ -1,0 +1,77 @@
+The given Node.js code defines a module that wraps the native `fs.realpath` and `fs.realpathSync` functions. It provides a mechanism to substitute these functions with custom implementations under certain conditions. Here's a brief explanation of the functionality:
+
+- The module exports `realpath` and also attaches additional properties/functions to it.
+- The code checks the Node.js version to determine if it's an older version (`v0.x` to `v5.x`). Based on this, it decides whether to use the current `fs.realpath` or a fallback implementation from an `old.js` module for handling specific error cases (`ELOOP`, `ENOMEM`, `ENAMETOOLONG`).
+- Functions `realpath` and `realpathSync` are wrappers around the native functions but invoke alternative methods from `old.js` if certain errors occur and if the Node.js version is outdated.
+- The code includes `monkeypatch` and `unmonkeypatch` functions to override (`monkeypatch`) or restore (`unmonkeypatch`) the `fs.realpath` and `fs.realpathSync` functions.
+
+Here is a more organized version of the code:
+
+```javascript
+module.exports = realpath;
+realpath.realpath = realpath;
+realpath.sync = realpathSync;
+realpath.realpathSync = realpathSync;
+realpath.monkeypatch = monkeypatch;
+realpath.unmonkeypatch = unmonkeypatch;
+
+const fs = require('fs');
+const origRealpath = fs.realpath;
+const origRealpathSync = fs.realpathSync;
+
+const version = process.version;
+const ok = /^v[0-5]\./.test(version);
+const old = require('./old.js');
+
+function newError(er) {
+  return er && er.syscall === 'realpath' && (
+    er.code === 'ELOOP' ||
+    er.code === 'ENOMEM' ||
+    er.code === 'ENAMETOOLONG'
+  );
+}
+
+function realpath(p, cache, cb) {
+  if (ok) {
+    return origRealpath(p, cache, cb);
+  }
+
+  if (typeof cache === 'function') {
+    cb = cache;
+    cache = null;
+  }
+  origRealpath(p, cache, function (er, result) {
+    if (newError(er)) {
+      old.realpath(p, cache, cb);
+    } else {
+      cb(er, result);
+    }
+  });
+}
+
+function realpathSync(p, cache) {
+  if (ok) {
+    return origRealpathSync(p, cache);
+  }
+
+  try {
+    return origRealpathSync(p, cache);
+  } catch (er) {
+    if (newError(er)) {
+      return old.realpathSync(p, cache);
+    } else {
+      throw er;
+    }
+  }
+}
+
+function monkeypatch() {
+  fs.realpath = realpath;
+  fs.realpathSync = realpathSync;
+}
+
+function unmonkeypatch() {
+  fs.realpath = origRealpath;
+  fs.realpathSync = origRealpathSync;
+}
+```

@@ -1,0 +1,93 @@
+The given Node.js code defines a `Regenerate` class that manages a set of Unicode code points. Its primary functionality involves manipulating these code points for potential use in regular expressions. Here's a breakdown of its features:
+
+1. **Constructor**: Initializes an instance with a set of Unicode code points.
+
+2. **Methods**:
+   - **`add(...)`**: Adds specified values (or arrays of values) to the internal set of code points.
+   - **`remove(...)`**: Removes specified values (or arrays of values) from the internal set.
+   - **`addRange(start, end)`**: Adds all Unicode code points in the specified range to the set.
+   - **`removeRange(start, end)`**: Removes all Unicode code points in the specified range from the set.
+   - **`intersection(otherSet)`**: Retains only the code points that are also present in another set.
+   - **`contains(value)`**: Checks whether a specified value exists in the set.
+   - **`clone()`**: Creates a clone of the current set.
+   - **`toString(options)`**: Converts the set of code points into a string format suitable for use in regular expressions, optionally using Unicode escape syntax.
+   - **`toRegExp(flags)`**: Creates a regular expression from the set of code points with optional flags.
+   - **`toArray()`**: Returns the set of code points in array form.
+
+3. **Private Method**:
+   - **`_getCodePoint(value)`**: Helper method to get the Unicode code point of a value, whether it's a number or a character.
+
+The class also includes a static version property and is exported as a module.
+
+Here's a rewritten version of the code:
+
+```javascript
+// regenerate.js
+class Regenerate {
+  constructor(...values) {
+    this.codePoints = new Set();
+    this.add(...values);
+  }
+
+  add(...values) {
+    values.flat().forEach(value => this.codePoints.add(this._getCodePoint(value)));
+    return this;
+  }
+
+  remove(...values) {
+    values.flat().forEach(value => this.codePoints.delete(this._getCodePoint(value)));
+    return this;
+  }
+
+  addRange(start, end) {
+    const [startPoint, endPoint] = [this._getCodePoint(start), this._getCodePoint(end)];
+    for (let cp = startPoint; cp <= endPoint; cp++) this.codePoints.add(cp);
+    return this;
+  }
+
+  removeRange(start, end) {
+    const [startPoint, endPoint] = [this._getCodePoint(start), this._getCodePoint(end)];
+    for (let cp = startPoint; cp <= endPoint; cp++) this.codePoints.delete(cp);
+    return this;
+  }
+
+  intersection(otherSet) {
+    const otherPoints = otherSet instanceof Regenerate ? otherSet.toArray() : otherSet;
+    this.codePoints.forEach(cp => {
+      if (!otherPoints.includes(cp)) this.codePoints.delete(cp);
+    });
+    return this;
+  }
+
+  contains(value) {
+    return this.codePoints.has(this._getCodePoint(value));
+  }
+
+  clone() {
+    const clonedSet = new Regenerate();
+    clonedSet.add([...this.codePoints]);
+    return clonedSet;
+  }
+
+  toString(options = {}) {
+    const sortedPoints = [...this.codePoints].sort((a, b) => a - b);
+    return `[${sortedPoints.map(cp => options.hasUnicodeFlag ? `\\u{${cp.toString(16)}}` : `\\u${cp.toString(16).padStart(4, '0')}`).join('')}]`;
+  }
+
+  toRegExp(flags = '') {
+    return new RegExp(this.toString(), flags);
+  }
+
+  toArray() {
+    return [...this.codePoints];
+  }
+
+  _getCodePoint(value) {
+    return typeof value === 'string' ? value.codePointAt(0) : value;
+  }
+}
+
+Regenerate.version = "1.0.0";
+
+module.exports = Regenerate;
+```

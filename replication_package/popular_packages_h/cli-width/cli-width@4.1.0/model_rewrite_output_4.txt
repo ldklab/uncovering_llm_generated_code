@@ -1,0 +1,63 @@
+The original Node.js code is designed to determine the width of the command-line interface (CLI) or terminal window. It exports a function `cliWidth` that calculates the width based on several potential sources:
+
+1. **Defaults and Normalization:**
+   - Defines default options using the `normalizeOpts` function, which includes `defaultWidth`, `output`, and `tty`.
+   - If no options are passed, it returns the default options. If options are provided, missing keys are filled in with defaults.
+
+2. **Determine the CLI Width:**
+   - Attempts to get the width by checking if `opts.output` has a `getWindowSize` method (common in some process output streams), returning the first element of this method's result or the `defaultWidth`.
+   - Checks if `opts.tty` has a `getWindowSize` method, returning the second element or the `defaultWidth`.
+   - Uses `opts.output.columns` if defined.
+   - Checks an environment variable `CLI_WIDTH`; parses it as an integer and uses it if it’s valid and non-zero.
+   - Returns the `defaultWidth` if none of the above methods provides a valid width.
+
+A possible rewrite of this functionality is as follows:
+
+```javascript
+'use strict';
+
+module.exports = determineCliWidth;
+
+function getNormalizedOptions(options) {
+  const standardOptions = {
+    defaultWidth: 0,
+    output: process.stdout,
+    tty: require('tty'),
+  };
+
+  if (!options) return standardOptions;
+
+  for (const key in standardOptions) {
+    if (!options.hasOwnProperty(key)) {
+      options[key] = standardOptions[key];
+    }
+  }
+
+  return options;
+}
+
+function determineCliWidth(options) {
+  const opts = getNormalizedOptions(options);
+
+  if (opts.output.getWindowSize) {
+    return opts.output.getWindowSize()[0] || opts.defaultWidth;
+  }
+
+  if (opts.tty.getWindowSize) {
+    return opts.tty.getWindowSize()[1] || opts.defaultWidth;
+  }
+
+  if (opts.output.columns) {
+    return opts.output.columns;
+  }
+
+  if (process.env.CLI_WIDTH) {
+    const parsedWidth = parseInt(process.env.CLI_WIDTH, 10);
+    if (!isNaN(parsedWidth) && parsedWidth !== 0) {
+      return parsedWidth;
+    }
+  }
+
+  return opts.defaultWidth;
+}
+```

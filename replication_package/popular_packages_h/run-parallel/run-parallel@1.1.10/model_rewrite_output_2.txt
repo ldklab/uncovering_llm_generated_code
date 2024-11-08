@@ -1,0 +1,62 @@
+The provided Node.js code defines a function `runParallel` which allows executing multiple asynchronous tasks in parallel. The tasks can be passed as either an array or an object. When all tasks are completed, or if an error occurs in any task, a callback function is called with any potential error and the results of the tasks.
+
+Here's a breakdown of the functionality:
+
+- The `runParallel` function takes two arguments:
+  - `tasks`: an array or an object of functions that each accept a callback.
+  - `cb`: a callback to be executed once all tasks have been completed.
+  
+- If `tasks` is an array, it initializes an empty array `results` and sets `pending` to the number of tasks.
+
+- If `tasks` is an object, it initializes an empty object `results`, extracts the keys into `keys`, and sets `pending` to the number of keys.
+
+- The `done` function is used to call the callback `cb` with an error (if any) and the `results` once all tasks are completed or an error occurs.
+
+- The `each` function processes the result of each task. It stores the result in the `results` structure and checks if all tasks have completed or an error occurred to call `done`.
+
+- If there are no tasks (`tasks` is empty), `done` is called immediately.
+
+- If `tasks` is an object, the tasks are iterated over using the keys, while for an array, tasks are iterated over using the index. Each task is executed with a callback that processes its result using the `each` function.
+
+Here is the rewritten code:
+
+```javascript
+module.exports = runParallel;
+
+function runParallel(tasks, cb) {
+  let results = Array.isArray(tasks) ? [] : {};
+  let pending = Array.isArray(tasks) ? tasks.length : Object.keys(tasks).length;
+  let isSync = true;
+  let keys = !Array.isArray(tasks) ? Object.keys(tasks) : null;
+
+  function done(err) {
+    const end = () => {
+      if (cb) cb(err, results);
+      cb = null;
+    };
+    if (isSync) process.nextTick(end);
+    else end();
+  }
+
+  function each(key, err, result) {
+    results[key] = result;
+    if (--pending === 0 || err) {
+      done(err);
+    }
+  }
+
+  if (!pending) {
+    done(null);
+  } else if (keys) {
+    keys.forEach(key => {
+      tasks[key]((err, result) => each(key, err, result));
+    });
+  } else {
+    tasks.forEach((task, i) => {
+      task((err, result) => each(i, err, result));
+    });
+  }
+
+  isSync = false;
+}
+```

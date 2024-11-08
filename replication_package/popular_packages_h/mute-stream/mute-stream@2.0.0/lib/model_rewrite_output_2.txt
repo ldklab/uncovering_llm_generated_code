@@ -1,0 +1,125 @@
+The given Node.js code defines a custom stream class `MuteStream` which extends the Node.js core `Stream` class. This class is used to create a stream that can be muted, meaning data can be conditionally suppressed when written to the stream. This can be useful in scenarios such as hiding user input in command-line tools, particularly when reading passwords or sensitive information. Here's a breakdown of the code functionality:
+
+1. **Constructor**: Initializes the `MuteStream` instance with given options. It sets the stream as both writable and readable, initializes the muted state, and sets up an event listener for handling the 'pipe' event.
+
+2. **TTY Properties**: The stream exposes getter and setter methods for `isTTY`, allowing a determination of whether the stream is a TTY (terminal) stream. It also extends the properties to check for `rows` and `columns` dimensions of the terminal.
+
+3. **Mute Controls**: Methods `mute()` and `unmute()` let you switch the mute state on or off. When muted, data written to the stream can be replaced with a specified replacement character or pattern.
+
+4. **Data Handling**: Overwrites the `write()` and `end()` methods to handle muted data correctly. `write()` modifies the data according to the replace option when muted, whereas `end()` handles finalizing the stream with potentially altered data.
+
+5. **Stream Piping**: The `pipe()` method saves the destination stream reference and calls the superclass's `pipe` method. It also manages source and destination streams for operations like pause, resume, and proxying methods like `destroy`.
+
+6. **Event Handling**: Implements `_onpipe` for the 'pipe' event to store the source stream.
+
+Here's a possible rewrite of the given code:
+
+```javascript
+const Stream = require('stream');
+
+class MuteStream extends Stream {
+  #isTTY = null;
+
+  constructor(opts = {}) {
+    super(opts);
+    this.writable = this.readable = true;
+    this.muted = false;
+    this.replace = opts.replace || null;
+    this._prompt = opts.prompt || null;
+    this._hadControl = false;
+
+    this.on('pipe', this._onPipe);
+  }
+
+  #getDestSrcProp(key, def) {
+    return this._dest?.[key] ?? this._src?.[key] ?? def;
+  }
+
+  #proxyMethod(method, ...args) {
+    this._dest?.[method]?.(...args);
+    this._src?.[method]?.(...args);
+  }
+
+  get isTTY() {
+    return this.#isTTY ?? this.#getDestSrcProp('isTTY', false);
+  }
+
+  set isTTY(val) {
+    this.#isTTY = val;
+  }
+
+  get rows() {
+    return this.#getDestSrcProp('rows');
+  }
+
+  get columns() {
+    return this.#getDestSrcProp('columns');
+  }
+
+  mute() {
+    this.muted = true;
+  }
+
+  unmute() {
+    this.muted = false;
+  }
+
+  _onPipe(src) {
+    this._src = src;
+  }
+
+  pipe(dest, options) {
+    this._dest = dest;
+    return super.pipe(dest, options);
+  }
+
+  pause() {
+    this._src?.pause();
+  }
+
+  resume() {
+    this._src?.resume();
+  }
+
+  write(chunk) {
+    if (this.muted) {
+      if (!this.replace) return true;
+
+      if (chunk.match(/^\u001b/)) {
+        if (chunk.startsWith(this._prompt)) {
+          chunk = this._prompt + chunk.slice(this._prompt.length).replace(/./g, this.replace);
+        }
+        this._hadControl = true;
+      } else if (this._prompt && this._hadControl && chunk.startsWith(this._prompt)) {
+        this._hadControl = false;
+        this.emit('data', this._prompt);
+        chunk = chunk.slice(this._prompt.length);
+      }
+      chunk = chunk.toString().replace(/./g, this.replace);
+    }
+    this.emit('data', chunk);
+  }
+
+  end(chunk) {
+    if (this.muted && chunk && this.replace) {
+      chunk = chunk.toString().replace(/./g, this.replace);
+    }
+    if (chunk) this.emit('data', chunk);
+    this.emit('end');
+  }
+
+  destroy(...args) {
+    this.#proxyMethod('destroy', ...args);
+  }
+
+  destroySoon(...args) {
+    this.#proxyMethod('destroySoon', ...args);
+  }
+
+  close(...args) {
+    this.#proxyMethod('close', ...args);
+  }
+}
+
+module.exports = MuteStream;
+```

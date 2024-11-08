@@ -1,0 +1,56 @@
+// Importing necessary modules
+const readline = require('readline');
+
+// Creating a readline interface
+const rl = readline.createInterface({
+  input: process.stdin,
+  output: process.stdout
+});
+
+// Utility function to display a prompt and capture user input
+function promptUser(question, callback) {
+  rl.question(`${question}\n> `, (response) => {
+    callback(response);
+  });
+}
+
+// Function to handle a series of questions
+function handleQuestions(questions) {
+  let currentIndex = 0;
+  const collectedAnswers = {};
+
+  const askNextQuestion = () => {
+    if (currentIndex < questions.length) {
+      const currentQuestion = questions[currentIndex];
+      promptUser(currentQuestion.message, (response) => {
+        collectedAnswers[currentQuestion.name] = response || currentQuestion.default;
+        currentIndex++;
+        askNextQuestion();
+      });
+    } else {
+      rl.close();
+      console.log("Collected Answers:", collectedAnswers);
+    }
+  };
+
+  askNextQuestion();
+}
+
+// Array containing questions to be asked
+const questionsArray = [
+  {
+    type: 'input',
+    name: 'name',
+    message: 'What is your name?',
+    default: 'User'
+  },
+  {
+    type: 'confirm',
+    name: 'continue',
+    message: 'Do you want to continue?',
+    default: 'yes'
+  }
+];
+
+// Start the process of asking questions
+handleQuestions(questionsArray);

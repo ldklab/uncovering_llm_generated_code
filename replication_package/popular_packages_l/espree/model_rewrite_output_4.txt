@@ -1,0 +1,73 @@
+The given Node.js code defines a class `EspreeParser` that interfaces with the Acorn JavaScript parser to provide parsing and tokenization functionalities. It sets default options for parsing, including specifying ECMA script standards and other parsing configuration options. The class offers three main features:
+
+1. `parse`: This method takes JavaScript code and optional parsing options to return an Abstract Syntax Tree (AST) using Acorn's parsing capabilities.
+
+2. `tokenize`: This method returns tokens from the provided JavaScript code, which are instrumental for syntax analysis without generating a full AST.
+
+3. `VisitorKeys`: A placeholder method that returns an empty object, which presumably supports future extensions for visitor key compatibility with linting or traversal tools.
+
+Moreover, the class keeps a set of supported ECMAScript versions and binds its methods to the instance to ensure correct context usage when called from elsewhere. The `espree` instance of `EspreeParser` is then exported for external usage.
+
+Here is a possible rewrite of this functionality:
+
+```javascript
+import { Parser as AcornParser } from 'acorn';
+
+class EspreeParser {
+  constructor() {
+    this.version = '1.0.0';
+    this.supportedEcmaVersions = Array.from({ length: 14 }, (_, i) => i + 3);
+    this.latestEcmaVersion = String(Math.max(...this.supportedEcmaVersions));
+  }
+
+  parse(code, options = {}) {
+    const defaultOptions = {
+      ecmaVersion: 5,
+      sourceType: 'script',
+      ranges: false,
+      locations: false,
+      onComment: undefined,
+      onToken: undefined,
+    };
+    
+    const finalOptions = {
+      ...defaultOptions,
+      ...options,
+      ecmaVersion: options.ecmaVersion ?? defaultOptions.ecmaVersion,
+      sourceType: options.sourceType ?? defaultOptions.sourceType,
+      ranges: options.range ?? defaultOptions.ranges,
+      locations: options.loc ?? defaultOptions.locations,
+      onComment: options.comment ? [] : defaultOptions.onComment,
+      onToken: options.tokens ? [] : defaultOptions.onToken,
+    };
+
+    return AcornParser.parse(code, finalOptions);
+  }
+
+  tokenize(code, options = {}) {
+    const defaultOptions = {
+      ecmaVersion: 5,
+      onToken: undefined,
+    };
+    
+    const finalOptions = {
+      ...defaultOptions,
+      ...options,
+      ecmaVersion: options.ecmaVersion ?? defaultOptions.ecmaVersion,
+      onToken: options.tokens ? [] : defaultOptions.onToken,
+    };
+
+    return AcornParser.tokenize(code, finalOptions).tokens;
+  }
+
+  VisitorKeys() {
+    return {};
+  }
+}
+
+export const espree = new EspreeParser();
+espree.parse = espree.parse.bind(espree);
+espree.tokenize = espree.tokenize.bind(espree);
+
+export default espree;
+```

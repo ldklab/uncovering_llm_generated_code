@@ -1,0 +1,94 @@
+The `@smithy/util-retry` package provides utilities for implementing retry strategies in AWS SDK clients. The package allows users to flexibly configure retry behavior when making requests to AWS services. Here's a breakdown of the functionalities:
+
+1. **Default Retry Strategy:**  
+   By default, AWS SDK clients such as `S3Client` have a built-in retry strategy with a maximum of 3 retry attempts for retryable errors. Users don't need to do anything extra to use this default behavior.
+
+2. **Custom Max Attempts:**  
+   Users can configure the maximum number of retry attempts by providing a `maxAttempts` parameter when creating a client. This changes the default number of retry attempts.
+
+3. **Custom Backoff Logic with `ConfiguredRetryStrategy`:**  
+   For further customization, users can define both the maximum number of retry attempts and customized backoff computation logic by using `ConfiguredRetryStrategy`. A custom backoff function is passed to this strategy, which calculates the delay between retry attempts based on the attempt number.
+
+4. **Priority of Retry Configurations:**  
+   If both `maxAttempts` and a custom `retryStrategy` are provided when configuring a client, the `retryStrategy` takes precedence as it is considered more detailed and specific.
+
+5. **Further Customization using `RetryStrategyV2`:**  
+   Users have the option to implement their own retry strategies by adhering to the `RetryStrategyV2` interface, allowing complete control over retry behavior.
+
+Here's the implementation of the described functionality in a single Node.js package:
+
+```javascript
+// @smithy/util-retry/index.js
+export class StandardRetryStrategy {
+  constructor(maxAttempts = 3) {
+    this.maxAttempts = maxAttempts;
+  }
+
+  shouldRetry(error, attempt) {
+    // Placeholder for logic to determine if an error is retryable
+    return attempt < this.maxAttempts && error.retryable;
+  }
+
+  retryBackoff(attempt) {
+    // Default backoff strategy
+    return 100 + attempt * 1000; // Example backoff
+  }
+}
+
+export class ConfiguredRetryStrategy extends StandardRetryStrategy {
+  constructor(maxAttempts, backoffFunction) {
+    super(maxAttempts);
+    this.backoffFunction = backoffFunction;
+  }
+
+  retryBackoff(attempt) {
+    return this.backoffFunction(attempt);
+  }
+}
+
+export class S3Client {
+  constructor(config = {}) {
+    const { maxAttempts, retryStrategy } = config;
+    this.retryStrategy = retryStrategy
+      ? retryStrategy
+      : new StandardRetryStrategy(maxAttempts);
+  }
+
+  async sendRequest(request, attempt = 1) {
+    try {
+      // Indeed, perform the request operation
+      return await this.performRequest(request);
+    } catch (error) {
+      if (this.retryStrategy.shouldRetry(error, attempt)) {
+        const backoff = this.retryStrategy.retryBackoff(attempt);
+        await this.wait(backoff);
+        return this.sendRequest(request, attempt + 1);
+      } else {
+        throw error;
+      }
+    }
+  }
+
+  async performRequest(request) {
+    // Simulates performing the S3 request
+    // This would actually involve network operations.
+    return Promise.resolve("Request successful");
+  }
+
+  async wait(duration) {
+    return new Promise((resolve) => setTimeout(resolve, duration));
+  }
+}
+
+// Usage example
+const defaultClient = new S3Client();  // Uses StandardRetryStrategy with 3 max attempts
+const configuredClient = new S3Client({
+  retryStrategy: new ConfiguredRetryStrategy(4, (attempt) => 100 + attempt * 1000),
+});
+
+export default {
+  S3Client,
+  StandardRetryStrategy,
+  ConfiguredRetryStrategy
+};
+```

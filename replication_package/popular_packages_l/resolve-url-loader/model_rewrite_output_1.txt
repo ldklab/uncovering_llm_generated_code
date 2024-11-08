@@ -1,0 +1,101 @@
+The Node.js code provided is a module for a Webpack loader named `resolve-url-loader`. It processes CSS files to resolve relative URLs within `url()` declarations to absolute paths, taking into account the file system and project context to make paths correct and consistent. Here's a breakdown of what the code does:
+
+1. **Imports and Schema Definition:**
+   - The code imports necessary modules like `path`, `loader-utils`, and `schema-utils`.
+   - A schema is defined to validate loader options, including settings such as `sourceMap`, `removeCR`, `debug`, `silent`, `root`, and `join`.
+
+2. **Loader Function:**
+   - The function returned by `module.exports` is the main loader function that Webpack calls.
+   - It retrieves options passed to the loader, validates them against the schema, and sets up an asynchronous callback.
+   - The loader processes the source file by replacing relative URLs inside `url()` with paths resolved based on the file's directory and context. It ensures resolved paths exist using the file system.
+   - If debugging is enabled, it logs information about the transformations.
+   - Optionally handles source maps if provided, creating a new source map that maps to the transformed CSS.
+   - Emits warnings for unresolved URLs unless `silent` mode is enabled.
+
+3. **Webpack Configuration Example:**
+   - Provides an example Webpack configuration showing how to use the `resolve-url-loader` alongside `css-loader` and `sass-loader` to handle `.scss` files with source maps enabled.
+
+Here is a possible rewrite of the given code:
+
+```javascript
+const path = require('path');
+const loaderUtils = require('loader-utils');
+const validateOptions = require('schema-utils');
+const SourceMapConsumer = require('source-map').SourceMapConsumer;
+const SourceMapGenerator = require('source-map').SourceMapGenerator;
+
+// Schema for validating options
+const optionsSchema = {
+    type: 'object',
+    properties: {
+        sourceMap: { type: 'boolean' },
+        removeCR: { type: 'boolean' },
+        debug: { type: 'boolean' },
+        silent: { type: 'boolean' },
+        root: { type: 'string' },
+        join: { instanceof: 'Function' }
+    },
+    additionalProperties: false
+};
+
+// Main loader function
+module.exports = function(source, inputSourceMap) {
+    // Retrieve and validate loader options
+    const options = loaderUtils.getOptions(this) || {};
+    validateOptions(optionsSchema, options, { name: 'Resolve URL Loader' });
+
+    // Asynchronous loader for Webpack
+    const callback = this.async();
+    const sourceMapConsumer = inputSourceMap ? new SourceMapConsumer(inputSourceMap) : null;
+
+    if (options.debug) {
+        console.log('Debug: Starting resolve-url-loader with options:', options);
+    }
+
+    // Process source to resolve URLs
+    const resolvedContent = source.replace(/url\(\s*['"]?([^'"\)]+)['"]?\s*\)/g, (match, url) => {
+        if (/^(http|data):/.test(url)) return match;
+
+        const directoryPath = path.dirname(this.resourcePath);
+        const fullPath = path.resolve(directoryPath, url);
+
+        if (this.fs.existsSync(fullPath)) {
+            const relativePath = path.relative(this.context, fullPath).replace(/\\/g, '/');
+            if (options.debug) {
+                console.log(`Debug: Resolved URL '${url}' to '${relativePath}'`);
+            }
+            return `url(${relativePath})`;
+        } else {
+            const errorMsg = `Warning: Could not resolve URL '${url}' in file '${this.resourcePath}'`;
+            if (!options.silent) {
+                this.emitWarning(new Error(errorMsg));
+            }
+            return match;
+        }
+    });
+
+    // Handle source map if enabled
+    if (options.sourceMap && sourceMapConsumer) {
+        const mapGenerator = SourceMapGenerator.fromSourceMap(sourceMapConsumer);
+        callback(null, resolvedContent, mapGenerator.toJSON());
+    } else {
+        callback(null, resolvedContent);
+    }
+};
+
+// Webpack Configuration Example
+module.exports = {
+    module: {
+        rules: [
+            {
+                test: /\.scss$/,
+                use: [
+                    { loader: 'css-loader', options: { sourceMap: true } },
+                    { loader: 'resolve-url-loader', options: { sourceMap: true, debug: true } },
+                    { loader: 'sass-loader', options: { sourceMap: true } }
+                ]
+            }
+        ]
+    }
+};
+```

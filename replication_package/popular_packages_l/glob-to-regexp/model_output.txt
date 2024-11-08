@@ -1,0 +1,138 @@
+The "Glob To Regular Expression" package converts wildcard-style path patterns used in file system operations (known as globs) into regular expressions. This package enables users to match strings based on pattern expressions similar to those used in bash.
+
+### Key Features:
+
+1. **Basic Glob Patterns**: Converts simple wildcard patterns like `*` (which matches any sequence of characters) into equivalent regular expressions. For instance, `"*.min.js"` becomes the regular expression `/^.*\.min\.js$/`.
+
+2. **Extended Globs**: When called with the option `{ extended: true }`, it allows using more complex glob patterns such as:
+   - `?` which matches any single character.
+   - `[a-z]` which allows character ranges.
+   - `{*.html,*.js}` for multiple alternatives.
+
+3. **Globstar `**` Support**: By setting `{ globstar: true }`, the conversion adheres to the rules of globstars (double asterisks `**`) which match zero or more directories. When `globstar` is enabled:
+   - Patterns like `/foo/**` match any path beginning with `/foo/`.
+   - Single asterisk `*` followed by `/` will match paths that do not contain subdirectories.
+
+4. **Regular Expression Flags**: You can add flags to the resulting RegExp object, such as setting the case-insensitive flag `i` with `{ flags: "i" }`.
+
+### Usage:
+
+The package offers a simple interface where you pass your glob pattern as the first argument and an options object as the second. The `globToRegExp` function returns a regular expression that can be used to test strings for matches against the glob pattern.
+
+```js
+const globToRegExp = require('glob-to-regexp');
+
+const re1 = globToRegExp("p*uck");
+console.log(re1.test("pot luck")); // true
+console.log(re1.test("pluck")); // true
+console.log(re1.test("puck")); // true
+
+const re2 = globToRegExp("*.min.js");
+console.log(re2.test("http://example.com/jquery.min.js")); // true
+console.log(re2.test("http://example.com/jquery.min.js.map")); // false
+
+const re3 = globToRegExp("*/www/*.js");
+console.log(re3.test("http://example.com/www/app.js")); // true
+console.log(re3.test("http://example.com/www/lib/factory-proxy-model-observer.js")); // true
+
+// Extended glob pattern example
+const re4 = globToRegExp("*/www/{*.js,*.html}", { extended: true });
+console.log(re4.test("http://example.com/www/app.js")); // true
+console.log(re4.test("http://example.com/www/index.html")); // true
+```
+
+### Code Implementation:
+
+```javascript
+function globToRegExp(glob, options = {}) {
+  const extended = options.extended || false;
+  const globstar = options.globstar || false;
+  const flags = options.flags || '';
+
+  let regExpString = '^';
+  let inGroup = false;
+  let charSet = false;
+  
+  for (let i = 0; i < glob.length; i++) {
+    const char = glob[i];
+
+    switch (char) {
+      case '/':
+        regExpString += '/';
+        break;
+      case '*':
+        const nextChar = glob[i + 1];
+        if (nextChar === '*' && globstar) {
+          regExpString += '.*';
+          i++;
+        } else {
+          regExpString += '[^/]*';
+        }
+        break;
+      case '?':
+        if (extended) {
+          regExpString += '.';
+        } else {
+          regExpString += '\\?';
+        }
+        break;
+      case '[':
+        if (extended) {
+          charSet = true;
+          regExpString += char;
+        } else {
+          regExpString += '\\[';
+        }
+        break;
+      case ']':
+        if (extended && charSet) {
+          charSet = false;
+          regExpString += char;
+        } else {
+          regExpString += '\\]';
+        }
+        break;
+      case '{':
+        if (extended) {
+          inGroup = true;
+          regExpString += '(';
+        } else {
+          regExpString += '\\{';
+        }
+        break;
+      case '}':
+        if (extended && inGroup) {
+          inGroup = false;
+          regExpString += ')';
+        } else {
+          regExpString += '\\}';
+        }
+        break;
+      case ',':
+        if (extended && inGroup) {
+          regExpString += '|';
+        } else {
+          regExpString += '\\,';
+        }
+        break;
+      case '.':
+      case '+':
+      case '^':
+      case '$':
+      case '(':
+      case ')':
+      case '|':
+      case '\\':
+        regExpString += '\\' + char;
+        break;
+      default:
+        regExpString += char;
+    }
+  }
+
+  regExpString += '$';
+  return new RegExp(regExpString, flags);
+}
+
+module.exports = globToRegExp;
+```

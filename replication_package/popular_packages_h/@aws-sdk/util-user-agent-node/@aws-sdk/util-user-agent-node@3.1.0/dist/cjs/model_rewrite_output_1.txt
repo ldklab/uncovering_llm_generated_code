@@ -1,0 +1,70 @@
+The original Node.js code defines a module that exports constants and an asynchronous function for generating a user agent string. This function collects various runtime metadata, such as the SDK version, operating system details, and environment variables, to build a detailed user agent.
+
+1. **Constants**: 
+   - `UA_APP_ID_ENV_NAME`: Represents the environment variable name for the app id.
+   - `UA_APP_ID_INI_NAME`: Represents the ini file name key for the app id.
+
+2. **defaultUserAgent Function**: 
+   - Takes an object with `serviceId` and `clientVersion` properties.
+   - Returns an asynchronous function generating a user agent string.
+   - Collects different metadata sections including SDK, OS, language, node version, and service metadata.
+   - Utilizes `process.env` to append execution environment metadata if available.
+   - Uses `loadConfig` from `@aws-sdk/node-config-provider` to load a potential app ID from either environment variables or config files.
+
+Here is a possible rewrite of the described functionality:
+
+```javascript
+"use strict";
+
+// Import necessary packages for configuration and process information
+const { loadConfig } = require("@aws-sdk/node-config-provider");
+const { platform, release } = require("os");
+const { env, versions } = require("process");
+
+// Export constant names for environment and ini configuration
+const UA_APP_ID_ENV_NAME = "AWS_SDK_UA_APP_ID";
+const UA_APP_ID_INI_NAME = "sdk-ua-app-id";
+
+// Define the defaultUserAgent function to generate a user agent metadata
+const defaultUserAgent = ({ serviceId, clientVersion }) => {
+    return async () => {
+        // Initialize metadata sections for user agent
+        const sections = [
+            ["aws-sdk-js", clientVersion],     // SDK metadata
+            [`os/${platform()}`, release()],   // OS metadata
+            ["lang/js"],                       // Language metadata
+            ["md/nodejs", versions.node]       // Node.js version
+        ];
+
+        // Add API metadata if serviceId is provided
+        if (serviceId) {
+            sections.push([`api/${serviceId}`, clientVersion]);
+        }
+
+        // Add execution environment metadata if available
+        if (env.AWS_EXECUTION_ENV) {
+            sections.push([`exec-env/${env.AWS_EXECUTION_ENV}`]);
+        }
+
+        // Load additional app ID config and append to metadata
+        const appId = await loadConfig({
+            environmentVariableSelector: (env) => env[UA_APP_ID_ENV_NAME],
+            configFileSelector: (profile) => profile[UA_APP_ID_INI_NAME],
+            default: undefined,
+        })();
+
+        if (appId) {
+            sections.push([`app/${appId}`]);
+        }
+
+        return sections;
+    };
+};
+
+// Export the constants and the function
+module.exports = {
+    UA_APP_ID_ENV_NAME,
+    UA_APP_ID_INI_NAME,
+    defaultUserAgent
+};
+```

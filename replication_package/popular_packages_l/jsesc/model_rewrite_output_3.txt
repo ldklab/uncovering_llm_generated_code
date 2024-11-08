@@ -1,0 +1,95 @@
+The provided Node.js code is a JavaScript utility function `jsesc`, which is used to escape JavaScript values (strings, numbers, arrays, or objects) into a safe and consistent format for inclusion in JavaScript code. Here is a breakdown of its functionality:
+
+1. **Options Handling**: The function accepts a `value` and an `options` object. It merges the provided options with a set of `defaultOptions`.
+
+2. **Character Escaping**: It contains a helper function `escapeChar` that converts characters into their Unicode escape sequences. If `es6` option is set and the character is a high surrogate, it uses ES6-style Unicode escapes. The `lowercaseHex` option determines if hex digits are lower case.
+
+3. **String Escaping**: Another helper function `escapeString` applies `escapeChar` to every character in the string, or, if `escapeEverything` is false, only to non-ASCII characters.
+
+4. **String Wrapping**: The `wrapString` function encloses strings in single quotes, double quotes, or backticks based on the `quotes` option.
+
+5. **Value Stringification**: The core logic of the function is in the `stringify` helper, which serializes numbers according to the `numbers` option and recursively stringifies strings, arrays, and objects. For objects and arrays, it can output either a compact or pretty-printed format depending on the `compact` option.
+
+6. **Exports**: The function is exported so it can be used by other modules in Node.js.
+
+Below is a rewritten version of the `jsesc` function maintaining the same functionality:
+
+```javascript
+const jsesc = (value, options = {}) => {
+    const defaultOptions = {
+        quotes: 'single',
+        numbers: 'decimal',
+        wrap: false,
+        es6: false,
+        escapeEverything: false,
+        minimal: false,
+        isScriptContext: false,
+        compact: true,
+        indent: '\t',
+        indentLevel: 0,
+        json: false,
+        lowercaseHex: false
+    };
+
+    options = { ...defaultOptions, ...options };
+
+    const escapeChar = (char) => {
+        const codePoint = char.codePointAt(0);
+        let hexDigits = codePoint.toString(16);
+        if (options.lowercaseHex) {
+            hexDigits = hexDigits.toLowerCase();
+        }
+
+        if (options.es6 && codePoint > 0xFFFF) {
+            return '\\u{' + hexDigits + '}';
+        }
+        return '\\u' + ('0000' + hexDigits).slice(-4);
+    };
+
+    const escapeString = (string) => {
+        if (options.escapeEverything) {
+            return string.split('').map(char => escapeChar(char)).join('');
+        }
+        return string.replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]|[^\0-\x7F]/g, escapeChar);
+    };
+
+    const wrapString = (string) => {
+        if (!options.wrap) return string;
+        const quote = options.quotes === 'double' ? '"' : options.quotes === 'backtick' ? '`' : "'";
+        return quote + string + quote;
+    };
+
+    const stringify = (value) => {
+        if (typeof value === 'number') {
+            switch (options.numbers) {
+                case 'binary': return '0b' + value.toString(2);
+                case 'octal': return '0o' + value.toString(8);
+                case 'hexadecimal': return '0x' + value.toString(16);
+                default: return value.toString();
+            }
+        }
+
+        if (typeof value === 'string') {
+            return wrapString(escapeString(value));
+        }
+
+        if (Array.isArray(value)) {
+            const elements = value.map(v => stringify(v));
+            return options.compact ? '[' + elements.join(',') + ']' : '[\n' + options.indent + elements.join(',\n' + options.indent) + '\n]';
+        }
+
+        if (value && typeof value === 'object') {
+            const entries = Object.entries(value).map(([k, v]) => {
+                return options.indent + wrapString(escapeString(k)) + ':' + stringify(v);
+            });
+            return options.compact ? '{' + entries.join(',') + '}' : '{\n' + entries.join(',\n') + '\n}';
+        }
+
+        return JSON.stringify(value);
+    };
+
+    return stringify(value);
+};
+
+module.exports = jsesc;
+```

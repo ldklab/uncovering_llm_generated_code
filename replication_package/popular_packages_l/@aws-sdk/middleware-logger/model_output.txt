@@ -1,0 +1,76 @@
+The `@aws-sdk/middleware-logger` package is a middleware used in AWS SDK for JavaScript. It facilitates logging for AWS SDK client requests and responses. This middleware can be incorporated into an AWS SDK client configuration to emit logs regarding the requests made and responses received from AWS services. Such middleware can be useful for debugging purposes, by providing insights into the interaction between the application and AWS services, or for auditing purposes, by maintaining a detailed log of all requests and responses. The details logged can help developers track down issues, monitor API usage, and analyze service performance.
+
+Now, I'll generate the code for this package implementation:
+
+```javascript
+// index.js
+
+class LoggerMiddleware {
+  constructor(logger = console) {
+    this.logger = logger;
+  }
+
+  applyMiddlewareToStack(stack) {
+    stack.add(this.loggerMiddleware.bind(this), {
+      step: 'initialize',
+      tags: ['LOGGER_MIDDLEWARE'],
+      name: 'loggerMiddleware',
+      priority: 'high',
+    });
+  }
+
+  async loggerMiddleware(next, context) {
+    return async (args) => {
+      this.logRequest(args, context);
+      try {
+        const result = await next(args);
+        this.logResponse(result, context);
+        return result;
+      } catch (err) {
+        this.logError(err, context);
+        throw err;
+      }
+    };
+  }
+
+  logRequest(args, context) {
+    this.logger.info(`Request: ${JSON.stringify(args)}`, { context });
+  }
+
+  logResponse(result, context) {
+    this.logger.info(`Response: ${JSON.stringify(result)}`, { context });
+  }
+
+  logError(error, context) {
+    this.logger.error(`Error: ${error}`, { context });
+  }
+}
+
+function getLoggerMiddleware(logger) {
+  const loggerMiddleware = new LoggerMiddleware(logger);
+  return {
+    applyToStack: loggerMiddleware.applyMiddlewareToStack.bind(loggerMiddleware),
+  };
+}
+
+module.exports = { getLoggerMiddleware };
+
+// Usage:
+// const { getLoggerMiddleware } = require('@aws-sdk/middleware-logger');
+// const { Client } = require('some-aws-sdk-client');
+
+// const client = new Client({
+//   region: 'us-west-2',
+// });
+
+// client.middlewareStack.use(getLoggerMiddleware(console));
+```
+
+In this implementation, we have defined a `LoggerMiddleware` class with `applyMiddlewareToStack` function to apply our custom middleware to the client's middleware stack. The middleware logs information before and after calling the next handler in the chain and captures errors if they occur.
+
+To use it:
+- Import `getLoggerMiddleware` from this module.
+- Obtain an AWS SDK client instance.
+- Add the logger middleware to the client's middleware stack.
+
+The middleware logs request details, the response received from AWS services, and any errors that may occur during these operations, using a provided or default logger (here, the console).

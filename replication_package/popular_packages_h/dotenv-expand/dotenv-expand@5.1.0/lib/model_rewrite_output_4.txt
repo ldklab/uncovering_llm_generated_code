@@ -1,0 +1,58 @@
+The given Node.js code defines a function `dotenvExpand` that processes environment variables and supports variable interpolation. Here's a breakdown of its functionality:
+
+1. **Environment Setup**: It initializes an environment object, which will either be a new object (if `config.ignoreProcessEnv` is `true`) or the existing `process.env`.
+   
+2. **Interpolate Function**: This function is responsible for resolving `${VAR}` style variable references within values. It:
+   - Searches for patterns like `${VAR}` in input values.
+   - Distinguishes if a match is a literal `$` (preceded by `\`).
+   - Replaces references with actual values from either `process.env` or `config.parsed`.
+   - Recursively interpolates in case referenced values contain further references.
+
+3. **Variable Expansion**:
+   - Iterates over `config.parsed` to resolve all interpolations for each configuration key.
+   - Updates `config.parsed` with these resolved values.
+
+4. **Update Process Environment**: Updates the environment object with resolved values ensuring any resolved variable in `config.parsed` is also set in the environment object.
+
+5. **Return**: Finally, it returns the `config` object containing all expanded environment variables.
+
+Here's a possible rewritten version of the code:
+
+```javascript
+'use strict';
+
+const dotenvExpand = (config) => {
+  const environment = config.ignoreProcessEnv ? {} : process.env;
+
+  const interpolate = (envValue) => {
+    const interpolationRegex = /(.?\${?(?:[a-zA-Z0-9_]+)?}?)/g;
+    const matches = envValue.match(interpolationRegex) || [];
+
+    return matches.reduce((resolvedValue, match) => {
+      const [fullMatch, prefix = '', key] = interpolationRegex.exec(match);
+      let value;
+
+      if (prefix === '\\') {
+        value = fullMatch.replace('\\$', '$');
+      } else {
+        const replacePart = fullMatch.slice(prefix.length);
+        const envKey = environment.hasOwnProperty(key) ? environment[key] : (config.parsed[key] || '');
+        value = interpolate(envKey);
+      }
+
+      return resolvedValue.replace(fullMatch, value);
+    }, envValue);
+  };
+
+  Object.keys(config.parsed).forEach((configKey) => {
+    const initialValue = environment.hasOwnProperty(configKey) ? environment[configKey] : config.parsed[configKey];
+    config.parsed[configKey] = interpolate(initialValue);
+  });
+
+  Object.assign(environment, config.parsed);
+
+  return config;
+};
+
+module.exports = dotenvExpand;
+```

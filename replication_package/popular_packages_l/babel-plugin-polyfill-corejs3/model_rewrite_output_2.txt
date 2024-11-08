@@ -1,0 +1,61 @@
+The given Node.js code is a Babel plugin that dynamically inserts polyfill imports based on configuration options. The plugin uses the `@babel/helper-plugin-utils` to create a Babel plugin with specific functionality that manages polyfills from `core-js`. Here's a breakdown of its functionality:
+
+- **Plugin Declaration**: It declares a Babel plugin using `declare` from `@babel/helper-plugin-utils`, ensuring compatibility with Babel version 7.
+
+- **Options Setup**: It enables configuration through `options`, with default values set for `method` (`'usage-global'`), `version` (`'3.0'`), and `proposals` (`false`).
+
+- **Visitor Pattern**: It defines a visitor for the `Program` node in the AST (Abstract Syntax Tree) to manipulate the import statements:
+  - **`entry-global` Method**: If the method is set to `'entry-global'`, it traverses the AST to find `ImportDeclaration` nodes where the source value starts with `'core-js'`. It then modifies these import source values to append the specified `version`.
+  - **`usage-global` or `usage-pure` Method**: Regardless of whether it is `'usage-global'` or `'usage-pure'`, it adds a global import statement for `core-js/full` at the top of the file.
+  - **`proposals` Option**: If the `proposals` option is true, it adds an import for `core-js/proposals`, whether for additional polyfills needed for language proposals.
+
+Below is a possible rewrite of the given code:
+
+```javascript
+// babel-plugin-polyfill-corejs3/index.js
+const { declare } = require('@babel/helper-plugin-utils');
+
+module.exports = declare((api, options) => {
+  api.assertVersion(7);
+
+  const {
+    method = 'usage-global',
+    version = '3.0',
+    proposals = false,
+  } = options;
+
+  return {
+    name: 'babel-plugin-polyfill-corejs3',
+
+    visitor: {
+      Program(path) {
+        const importStatement = api.types.importDeclaration(
+          [],
+          api.types.stringLiteral(`core-js@${version}/full`)
+        );
+        const proposalStatement = api.types.importDeclaration(
+          [],
+          api.types.stringLiteral(`core-js@${version}/proposals`)
+        );
+
+        if (method === 'entry-global') {
+          path.traverse({
+            ImportDeclaration(importPath) {
+              const source = importPath.node.source.value;
+              if (source.startsWith('core-js')) {
+                importPath.node.source.value = `core-js@${version}`;
+              }
+            },
+          });
+        } else if (method === 'usage-global' || method === 'usage-pure') {
+          path.node.body.unshift(importStatement);
+        }
+
+        if (proposals) {
+          path.node.body.unshift(proposalStatement);
+        }
+      },
+    },
+  };
+});
+```

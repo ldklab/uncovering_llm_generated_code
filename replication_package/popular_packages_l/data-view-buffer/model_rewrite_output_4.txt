@@ -1,0 +1,101 @@
+The Node.js code provided consists of three main parts: a module that extracts the `ArrayBuffer` from a `DataView`, a set of tests for this functionality, and a package configuration file (`package.json`).
+
+1. **Module Explanation (`index.js`):** 
+   - This module exports a function `dataViewBuffer` which takes an instance of `DataView` as an argument.
+   - It first checks if the argument is indeed a `DataView`. If not, it throws a `TypeError`.
+   - If the environment supports accessing the buffer through `DataView.prototype.buffer`, it returns this property directly.
+   - In environments where `DataView.prototype.buffer` might be non-standard or deleted, it attempts to get the buffer using a `getter` obtained via `Object.getOwnPropertyDescriptor`. If this fails, it throws an error indicating an inability to retrieve the buffer.
+
+2. **Test Explanation (`test/index.js`):**
+   - The tests validate the module's behavior using the `mocha` test framework and Node’s `assert` module.
+   - The first test checks if the function correctly returns the `ArrayBuffer` from a valid `DataView`.
+   - The second test ensures it throws a `TypeError` when the argument is not a `DataView`.
+   - The third test simulates the removal of the standard `buffer` getter from `DataView.prototype` and checks that the function throws an error when it cannot retrieve the buffer, and then it restores the original getter.
+
+3. **Package Configuration (`package.json`):**
+   - This file describes the package details like name, version, dependencies, scripts, etc.
+   - It specifies `mocha` as a development dependency for running tests.
+   - The script `"test": "mocha"` indicates how to execute the tests.
+
+Here is a possible rewrite of the provided code:
+
+```javascript
+// data-view-buffer/index.js
+module.exports = function dataViewBuffer(dv) {
+  if (!(dv instanceof DataView)) {
+    throw new TypeError('Argument must be a DataView');
+  }
+
+  if (typeof DataView.prototype.buffer !== 'undefined') {
+    return dv.buffer;
+  }
+
+  try {
+    const bufferGetter = Object.getOwnPropertyDescriptor(DataView.prototype, 'buffer').get;
+    return bufferGetter.call(dv);
+  } catch (e) {
+    throw new Error('Unable to retrieve buffer from DataView');
+  }
+};
+
+// test/index.js
+const assert = require('assert');
+const dataViewBuffer = require('../index');
+
+describe('data-view-buffer', function () {
+  it('should return the correct ArrayBuffer from a DataView', function () {
+    const ab = new ArrayBuffer(8);
+    const dv = new DataView(ab);
+    assert.strictEqual(dataViewBuffer(dv), ab);
+  });
+
+  it('should throw if the argument is not a DataView', function () {
+    assert.throws(() => dataViewBuffer({}), TypeError);
+    assert.throws(() => dataViewBuffer(null), TypeError);
+    assert.throws(() => dataViewBuffer(), TypeError);
+  });
+
+  it('should throw an error if the buffer cannot be retrieved', function () {
+    const originalGetter = Object.getOwnPropertyDescriptor(DataView.prototype, 'buffer');
+    Object.defineProperty(DataView.prototype, 'buffer', { get: undefined });
+
+    try {
+      const ab = new ArrayBuffer(8);
+      const dv = new DataView(ab);
+      assert.throws(() => dataViewBuffer(dv), Error);
+    } finally {
+      Object.defineProperty(DataView.prototype, 'buffer', originalGetter);
+    }
+  });
+});
+
+// package.json
+{
+  "name": "data-view-buffer",
+  "version": "1.0.0",
+  "description": "Get the ArrayBuffer out of a DataView, robustly.",
+  "main": "index.js",
+  "scripts": {
+    "test": "mocha"
+  },
+  "devDependencies": {
+    "mocha": "^10.0.0", 
+    "assert": "^1.5.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ljharb/data-view-buffer.git"
+  },
+  "keywords": [
+    "dataview",
+    "arraybuffer",
+    "buffer"
+  ],
+  "author": "ljharb",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/ljharb/data-view-buffer/issues"
+  },
+  "homepage": "https://github.com/ljharb/data-view-buffer#readme"
+}
+```

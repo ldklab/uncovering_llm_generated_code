@@ -1,0 +1,97 @@
+The Node.js code consists of a class `Mime` for handling MIME type and extension mappings, alongside a CLI (Command Line Interface) utility to retrieve either MIME types from file extensions or extensions from MIME types.
+
+### Functionality:
+
+1. **`Mime` Class:**
+   - **Constructor:** Initializes two mappings; `types` for MIME types to their default extensions, and `extensions` for extensions to their MIME types. Accepts multiple type maps for defining these mappings.
+   - **`define`:** Defines a MIME-to-extension mapping. Throws errors if an extension is already defined unless forced.
+   - **`getType`:** Returns the MIME type for a given file extension or path.
+   - **`getExtension`:** Returns the default extension for a specified MIME type.
+   - **`getAllExtensions`:** Retrieves all extensions associated with a MIME type.
+
+2. **Type Maps Configuration:**
+   - `standardTypes`: Built using entries from a `mime-db` (a database of MIME types and extensions).
+   - `otherTypes`: For user-defined or additional MIME types.
+
+3. **CLI Function:**
+   - Parses command-line arguments to either look up extensions for a MIME type (using `-r`) or determine the MIME type for a given file extension or path.
+
+### Rewritten Code:
+
+```javascript
+// mime.js
+import mimeDb from 'mime-db';
+
+class Mime {
+  constructor(...typeMaps) {
+    this.types = {};
+    this.extensions = {};
+
+    typeMaps.forEach(typeMap => this.define(typeMap));
+  }
+
+  define(typeMap, force = false) {
+    for (const type in typeMap) {
+      const exts = typeMap[type];
+      if (!Array.isArray(exts)) throw new TypeError('Expected array of extensions');
+      
+      this.types[type] = exts[0];
+      exts.forEach(ext => {
+        if (!this.extensions[ext] || force) {
+          this.extensions[ext] = type;
+        } else {
+          throw new Error(`Extension ${ext} is already defined`);
+        }
+      });
+    }
+  }
+
+  getType(pathOrExtension) {
+    const extension = pathOrExtension.split('.').pop().toLowerCase();
+    return this.extensions[extension] || null;
+  }
+
+  getExtension(type) {
+    return this.types[type.split(';')[0]] || null;
+  }
+
+  getAllExtensions(type) {
+    const cleanType = type.split(';')[0];
+    return new Set(Object.entries(this.extensions)
+      .filter(([_, mimeType]) => mimeType === cleanType)
+      .map(([ext, _]) => ext));
+  }
+}
+
+const standardTypes = {};
+const otherTypes = {};
+
+for (const type in mimeDb) {
+  const entry = mimeDb[type];
+  if (entry.extensions) {
+    standardTypes[type] = entry.extensions;
+  }
+}
+
+const defaultMime = new Mime(standardTypes, otherTypes);
+
+function cli(args) {
+  const indexOfR = args.indexOf('-r');
+  if (indexOfR !== -1) {
+    const type = args[indexOfR + 1];
+    console.log(defaultMime.getExtension(type));
+  } else {
+    const extensionOrPath = args[0];
+    console.log(defaultMime.getType(extensionOrPath));
+  }
+}
+
+export default defaultMime;
+
+if (require.main === module) {
+  cli(process.argv.slice(2));
+}
+
+// mime/lite.js
+export const liteMime = new Mime(standardTypes);
+```

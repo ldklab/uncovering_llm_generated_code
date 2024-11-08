@@ -1,0 +1,86 @@
+The Node.js code defines a `LeakDetector` class used to monitor if a non-primitive object is leaking memory in Node.js environments. Here is the breakdown of its functionality:
+
+- **Dynamic Module Imports:** The code uses functions like `_util()`, `_v()`, `_vm()`, `_jestGetType()`, and `_prettyFormat()` to import Node.js and external libraries only when they are accessed, which can help reduce initial load times.
+
+- **Class: `LeakDetector`:** 
+  - **Properties:**
+    - `_isReferenceBeingHeld`: a boolean to track if the object reference is still held.
+    - `_finalizationRegistry`: an instance of `FinalizationRegistry` to detect when an object is garbage collected.
+
+  - **Constructor:** Takes a `value`:
+    - Throws an error if the `value` is primitive because primitives cannot leak memory.
+    - Registers the `value` with a `FinalizationRegistry` to set `_isReferenceBeingHeld` to `false` when the value is garbage collected.
+    - Sets the `value` to `null` to avoid closure leaks.
+
+  - **Method: `isLeaking`:** 
+    - Triggers garbage collection and waits for it to complete by allowing several "ticks".
+    - Returns the status of `_isReferenceBeingHeld` to determine if the memory is leaking.
+
+  - **Method: `_runGarbageCollector`:** 
+    - Forces garbage collection if it has not been exposed by setting the appropriate flags in V8.
+
+Here is the possible rewrite of the given Node.js code:
+
+```javascript
+'use strict';
+
+Object.defineProperty(exports, '__esModule', {
+  value: true
+});
+exports.default = void 0;
+
+const util = require('util');
+const v8 = require('v8');
+const vm = require('vm');
+const jestGetType = require('jest-get-type');
+const prettyFormat = require('pretty-format');
+
+/**
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ *
+ * This source code is licensed under the MIT license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+/// <reference lib="es2021.WeakRef" />
+
+const tick = util.promisify(setImmediate);
+
+class LeakDetector {
+  constructor(value) {
+    if (jestGetType.isPrimitive(value)) {
+      throw new TypeError(
+        `Primitives cannot leak memory. You passed a ${typeof value}: <${prettyFormat.format(value)}>`
+      );
+    }
+
+    this._finalizationRegistry = new FinalizationRegistry(() => {
+      this._isReferenceBeingHeld = false;
+    });
+    this._finalizationRegistry.register(value, undefined);
+    this._isReferenceBeingHeld = true;
+    value = null;
+  }
+
+  async isLeaking() {
+    this._runGarbageCollector();
+
+    for (let i = 0; i < 10; i++) {
+      await tick();
+    }
+    return this._isReferenceBeingHeld;
+  }
+
+  _runGarbageCollector() {
+    const isGarbageCollectorHidden = globalThis.gc == null;
+
+    v8.setFlagsFromString('--expose-gc');
+    vm.runInNewContext('gc')();
+
+    if (isGarbageCollectorHidden) {
+      v8.setFlagsFromString('--no-expose-gc');
+    }
+  }
+}
+
+exports.default = LeakDetector;
+```

@@ -1,0 +1,140 @@
+The provided Node.js code is a library for managing and handling process exit signals. It allows developers to register callback functions that will be executed when the Node.js process exits, either due to an explicit `process.exit()` call, termination signals (like SIGINT), or normal process completion.
+
+Here's a breakdown of the functionality:
+
+1. **Event Emitter Setup**: 
+   - Utilizes Node.js's `events` module to create a global event emitter for handling custom 'exit' events.
+   - Ensures this emitter has an infinite number of listeners, since it's meant for global, potentially repeated usage.
+
+2. **Signal Management**: 
+   - Listens for OS-level signals such as SIGINT, SIGHUP, etc., and triggers exit events based on those signals.
+   - Each signal has an associated listener function stored in `sigListeners`.
+
+3. **Callback Registration**:
+   - Provides a function to register an exit handler, called with a callback that will be executed on process exit.
+   - Supports an `alwaysLast` option to handle events after all other exit events.
+
+4. **Loading and Unloading**:
+   - Manages the setup (loading) and teardown (unloading) of signal and exit event handling.
+   - Uses modular functions `load` and `unload` to manage when listeners are attached or removed.
+
+5. **Process Exit Handling**:
+   - Overrides default `process.exit()` and `process.emit()` functions to inject custom behavior that ensures callbacks are executed before the process exits.
+
+Here's a rewritten version of the above Node.js code:
+
+```javascript
+const assert = require('assert');
+const signals = require('./signals.js');
+const isWin = /^win/i.test(process.platform);
+const EventEmitter = require('events');
+
+let emitter;
+if (!process.__signal_exit_emitter__) {
+  emitter = new EventEmitter();
+  process.__signal_exit_emitter__ = emitter;
+  emitter.setMaxListeners(Infinity);
+  emitter.count = 0;
+  emitter.emitted = {};
+} else {
+  emitter = process.__signal_exit_emitter__;
+}
+
+module.exports = function registerCallback(cb, opts) {
+  assert.equal(typeof cb, 'function', 'a callback must be provided for exit handler');
+
+  if (!loaded) {
+    load();
+  }
+
+  const ev = opts && opts.alwaysLast ? 'afterexit' : 'exit';
+  const remove = () => {
+    emitter.removeListener(ev, cb);
+    if (!emitter.listeners('exit').length && !emitter.listeners('afterexit').length) {
+      unload();
+    }
+  };
+  emitter.on(ev, cb);
+
+  return remove;
+};
+
+module.exports.unload = unload;
+function unload() {
+  if (!loaded) return;
+  loaded = false;
+
+  signals.forEach(sig => {
+    try {
+      process.removeListener(sig, sigListeners[sig]);
+    } catch (err) {}
+  });
+  process.emit = originalProcessEmit;
+  process.reallyExit = originalProcessReallyExit;
+  emitter.count -= 1;
+}
+
+function emit(event, code, signal) {
+  if (emitter.emitted[event]) return;
+  emitter.emitted[event] = true;
+  emitter.emit(event, code, signal);
+}
+
+const sigListeners = {};
+signals.forEach(sig => {
+  sigListeners[sig] = function listener() {
+    const listeners = process.listeners(sig);
+    if (listeners.length === emitter.count) {
+      unload();
+      emit('exit', null, sig);
+      emit('afterexit', null, sig);
+      if (isWin && sig === 'SIGHUP') sig = 'SIGINT';
+      process.kill(process.pid, sig);
+    }
+  };
+});
+
+module.exports.signals = () => signals;
+
+module.exports.load = load;
+let loaded = false;
+
+function load() {
+  if (loaded) return;
+  loaded = true;
+
+  emitter.count += 1;
+  signals = signals.filter(sig => {
+    try {
+      process.on(sig, sigListeners[sig]);
+      return true;
+    } catch (err) {
+      return false;
+    }
+  });
+
+  process.emit = processEmit;
+  process.reallyExit = processReallyExit;
+}
+
+const originalProcessReallyExit = process.reallyExit;
+function processReallyExit(code) {
+  process.exitCode = code || 0;
+  emit('exit', process.exitCode, null);
+  emit('afterexit', process.exitCode, null);
+  originalProcessReallyExit.call(process, process.exitCode);
+}
+
+const originalProcessEmit = process.emit;
+function processEmit(ev, arg) {
+  if (ev === 'exit') {
+    if (arg !== undefined) process.exitCode = arg;
+    const ret = originalProcessEmit.apply(this, arguments);
+    emit('exit', process.exitCode, null);
+    emit('afterexit', process.exitCode, null);
+    return ret;
+  } else {
+    return originalProcessEmit.apply(this, arguments);
+  }
+}
+```

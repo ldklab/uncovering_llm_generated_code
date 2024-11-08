@@ -1,0 +1,92 @@
+The provided Node.js code defines a function named `eos` (end-of-stream), which is designed to monitor a given Node.js stream and execute a callback function when the stream ends, either by closing, finishing, or encountering an error. 
+
+### Explanation of the Functionality:
+1. **Parameters**:
+   - `stream`: The stream to monitor.
+   - `opts`: An optional object to specify behavior:
+     - `readable`: Set to `false` to not listen for the 'end' event.
+     - `writable`: Set to `false` to not listen for the 'finish' event.
+     - `error`: Set to `false` to not listen for the 'error' event.
+   - `callback`: A function executed when the stream ends or encounters an error.
+
+2. **Options Initialization**:
+   - If no options are provided, default values are used, ensuring the stream listens for all typical stream events unless specified otherwise.
+
+3. **Event Listeners**:
+   - The function sets up listeners for `close`, `finish`, `end`, and `error` events with corresponding handlers (`onClose`, `onFinish`, `onEnd`, `onError`).
+
+4. **Callback Invocation**:
+   - The callback function is called when the stream encounters an error, closes, or ends, ensuring cleanup by removing event listeners to prevent memory leaks.
+
+5. **Return**:
+   - The function returns the original stream to allow for chaining.
+
+### Rewritten Code:
+```javascript
+const { Stream } = require('stream');
+
+function eos(stream, opts, callback) {
+  if (typeof opts === 'function') {
+    callback = opts;
+    opts = {};
+  }
+  
+  opts = opts || {};
+  callback = callback || function() {};
+
+  const shouldMonitorReadable = opts.readable !== false;
+  const shouldMonitorWritable = opts.writable !== false;
+  const shouldMonitorError = opts.error !== false;
+  
+  let closed = false;
+  let ended = false;
+
+  function cleanupListeners() {
+    stream.removeListener('close', handleClose);
+    stream.removeListener('finish', handleFinish);
+    stream.removeListener('end', handleEnd);
+    stream.removeListener('error', handleError);
+  }
+
+  function handleError(err) {
+    if (!shouldMonitorError) return;
+    cleanupListeners();
+    callback.call(stream, err);
+  }
+
+  function handleEnd() {
+    ended = true;
+    if (shouldMonitorWritable && closed) return;
+    if (!shouldMonitorReadable) return callback.call(stream);
+    if (shouldMonitorWritable && stream.writable && !closed) return;
+    cleanupListeners();
+    callback.call(stream);
+  }
+
+  function handleClose() {
+    closed = true;
+    if (shouldMonitorReadable && ended) return;
+    if (shouldMonitorWritable && stream.writable && !ended) return;
+    cleanupListeners();
+    callback.call(stream);
+  }
+
+  function handleFinish() {
+    handleEnd();
+  }
+
+  const onClose = handleClose.bind(stream);
+  const onFinish = handleFinish.bind(stream);
+  const onEnd = handleEnd.bind(stream);
+  const onError = handleError.bind(stream);
+
+  if (shouldMonitorReadable) stream.on('end', onEnd);
+  if (shouldMonitorWritable) stream.on('finish', onFinish);
+  if (shouldMonitorError) stream.on('error', onError);
+  stream.on('close', onClose);
+
+  return stream;
+}
+
+module.exports = eos;
+```

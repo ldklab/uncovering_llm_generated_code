@@ -1,0 +1,89 @@
+The provided Node.js code is an implementation of an import resolver tailored for TypeScript. It utilizes the `enhanced-resolve` package to improve module resolution flexibility for TypeScript files, which is essential when integrating with tooling like ESLint. 
+
+**Functionality Explanation:**
+
+1. **Configuration Defaults**:
+   - `defaultConditionNames`, `defaultExtensions`, `defaultExtensionAlias`, and `defaultMainFields` are arrays and an object that define various default conditions, extensions, main fields, and aliases used during the resolution process.
+
+2. **`resolve` Function**:
+   - This function creates a resolver using `enhancedResolve.create()` with given configurations or defaults.
+   - It returns a promise that attempts to resolve a module path based on its `source` and relative to the provided `file`.
+   - If the resolution is successful, the resolved path is returned; if not, an error is rejected.
+
+3. **`interfaceVersion` Function**:
+   - Simply returns the number `2`, indicating the version of the interface the resolver adheres to.
+
+4. **`resolveModuleDependency` Function**:
+   - Acts as the main exported resolver, utilizing the `resolve` function.
+   - Returns a promise that resolves to an object with properties `found` and `path`. If the resolution is successful, `found` is `true` with the path included, otherwise `found` is `false`.
+
+5. **Exported Module**:
+   - The resolver module exports the `interfaceVersion`, `resolve`, and default configuration arrays and objects.
+
+Here's a possible rewrite of the code:
+
+```javascript
+const path = require('path');
+const enhancedResolve = require('enhanced-resolve');
+
+const resolveDefaults = {
+  conditionNames: [
+    "types", "import", "esm2020", "es2020", 
+    "es2015", "require", "node", "node-addons", 
+    "browser", "default"
+  ],
+  extensions: [
+    ".ts", ".tsx", ".d.ts", ".js", ".jsx", ".json", ".node"
+  ],
+  extensionAlias: {
+    ".js": [".ts", ".tsx", ".d.ts", ".js"],
+    ".jsx": [".tsx", ".d.ts", ".jsx"],
+    ".cjs": [".cts", ".d.cts", ".cjs"],
+    ".mjs": [".mts", ".d.mts", ".mjs"]
+  },
+  mainFields: [
+    "types", "typings", "fesm2020", "fesm2015", 
+    "esm2020", "es2020", "module", "jsnext:main", "main"
+  ]
+};
+
+function createResolver(config = {}) {
+  return enhancedResolve.create({
+    ...resolveDefaults,
+    ...config
+  });
+}
+
+async function resolve(source, file, config) {
+  const resolver = createResolver(config);
+  try {
+    return await new Promise((resolve, reject) => {
+      resolver(path.dirname(file), source, (err, result) => {
+        if (err) reject(err);
+        else resolve(result);
+      });
+    });
+  } catch (error) {
+    throw error;
+  }
+}
+
+function interfaceVersion() {
+  return 2;
+}
+
+async function resolveModuleDependency(source, file, config) {
+  try {
+    const resolvedPath = await resolve(source, file, config);
+    return { found: true, path: resolvedPath };
+  } catch {
+    return { found: false };
+  }
+}
+
+module.exports = {
+  interfaceVersion,
+  resolve: resolveModuleDependency,
+  ...resolveDefaults
+};
+```

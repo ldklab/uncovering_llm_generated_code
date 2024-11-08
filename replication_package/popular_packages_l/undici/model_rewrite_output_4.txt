@@ -1,0 +1,64 @@
+The given Node.js code is a custom implementation of an HTTP request function similar to the `undici` library's request function. This implementation uses Node.js's built-in `http` module to perform HTTP requests. 
+
+Here's a breakdown of its functionality:
+- The function `request` is asynchronous and returns a Promise.
+- It accepts a URL and an options object as arguments. The options can specify the HTTP method, headers, and body of the request.
+- The URL is parsed using the URL API to extract components such as hostname, port, and path.
+- Default values for the request options include a `GET` method, no headers, and a null body.
+- An HTTP request is then initiated using the `http.request` method with the configured options.
+- The function listens for data chunks and end events to accumulate the response data in a `chunks` array.
+- Upon completion, it resolves the promise with an object containing the response's `statusCode`, `headers`, `trailers`, and the body as a Buffer.
+- If there is an error in the request, the promise is rejected.
+- The function handles different types of request bodies including `URLSearchParams`, strings, and JSON objects, automatically setting the appropriate `Content-Type` header.
+- The `request` function is exported for use in other parts of the application.
+
+Below is a rewritten version of this code:
+
+```javascript
+import http from 'node:http';
+import { URL } from 'node:url';
+
+async function request(url, options = {}) {
+  const { method = 'GET', headers = {}, body = null } = options;
+  const urlObj = new URL(url);
+
+  const requestOptions = {
+    hostname: urlObj.hostname,
+    port: urlObj.port || (urlObj.protocol === 'https:' ? 443 : 80),
+    path: urlObj.pathname + urlObj.search,
+    method,
+    headers
+  };
+
+  return new Promise((resolve, reject) => {
+    const req = http.request(requestOptions, (res) => {
+      const chunks = [];
+      res.on('data', (chunk) => chunks.push(chunk));
+      res.on('end', () => {
+        resolve({
+          statusCode: res.statusCode,
+          headers: res.headers,
+          trailers: res.trailers,
+          body: Buffer.concat(chunks)
+        });
+      });
+    });
+
+    req.on('error', reject);
+
+    if (body) {
+      if (body instanceof URLSearchParams || body instanceof String || typeof body === 'string') {
+        req.setHeader('Content-Type', 'application/x-www-form-urlencoded');
+        req.write(body.toString());
+      } else if (typeof body === 'object') {
+        req.setHeader('Content-Type', 'application/json');
+        req.write(JSON.stringify(body));
+      }
+    }
+
+    req.end();
+  });
+}
+
+export { request };
+```

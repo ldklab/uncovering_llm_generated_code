@@ -1,0 +1,57 @@
+```javascript
+'use strict';
+
+const callBind = require('call-bind');
+const callBound = require('call-bind/callBound');
+const GetIntrinsic = require('get-intrinsic');
+
+const $ArrayBuffer = GetIntrinsic('%ArrayBuffer%', true);
+const $byteLength = callBound('ArrayBuffer.prototype.byteLength', true);
+const $toString = callBound('Object.prototype.toString');
+
+const abSliceAvailability = !!$ArrayBuffer && !$byteLength && new $ArrayBuffer(0).slice;
+const $abSlice = !!abSliceAvailability && callBind(abSliceAvailability);
+
+module.exports = $byteLength || $abSlice
+    ? function isArrayBuffer(obj) {
+        if (!obj || typeof obj !== 'object') {
+            return false;
+        }
+        try {
+            if ($byteLength) {
+                $byteLength(obj);
+            } else {
+                $abSlice(obj, 0);
+            }
+            return true;
+        } catch (e) {
+            return false;
+        }
+    }
+    : $ArrayBuffer
+        ? function isArrayBuffer(obj) {
+            return $toString(obj) === '[object ArrayBuffer]';
+        }
+        : function isArrayBuffer(obj) {
+            return false;
+        };
+```
+
+**Explanation:**
+
+1. **Module Requirements:** The code starts by requiring necessary modules: `call-bind`, `call-bind/callBound`, and `get-intrinsic`. These help in safeguarding calls to methods and accessing language built-ins.
+
+2. **Intrinsic Check:** It fetches the intrinsic `%ArrayBuffer%` if available. This checks for the existence of the `ArrayBuffer` built-in.
+
+3. **Method Binding:** The code attempts to bind to `ArrayBuffer.prototype.byteLength` and `Object.prototype.toString`, using the call-bound mechanism for reliability.
+
+4. **Node.js Compatibility Handling:** It checks and sets up for various Node.js versions:
+   - **Node.js 0.10 Case:** If `ArrayBuffer` but not its `byteLength`, it checks for a non-standard `slice` method.
+   - The presence of this slice is checked and conditionally bound.
+
+5. **Module Export:** The function `isArrayBuffer` is exported based on available functionality:
+   - If `byteLength` or `slice` methods exist, the function attempts to use these to determine if an object is an `ArrayBuffer`.
+   - If neither intrinsic works but an `ArrayBuffer` exists (like in Node 0.8), it uses the `Object.prototype.toString` check.
+   - Otherwise, it defaults to always returning false for safety and predictability. 
+
+This setup is essentially a polyfill or compatibility layer across different Node.js versions to reliably detect `ArrayBuffer` instances.

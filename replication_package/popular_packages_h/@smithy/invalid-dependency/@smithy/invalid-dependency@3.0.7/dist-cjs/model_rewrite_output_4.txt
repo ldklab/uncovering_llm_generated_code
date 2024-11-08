@@ -1,0 +1,81 @@
+The given Node.js code is focused on creating an exportable module, encapsulating two main functionalities: `invalidFunction` and `invalidProvider`. Here's a breakdown of the code:
+
+1. **Utility Functions for Module Definition and Property Handling:**
+   - The code snippet begins with utility functions to handle object property definitions and module exports. These are prefixed with `__` to indicate they are internal helpers.
+   - `__defProp` is a shortcut for `Object.defineProperty`, allowing configuration of properties on objects.
+   - `__getOwnPropDesc` and `__getOwnPropNames` are short for `Object.getOwnPropertyDescriptor` and `Object.getOwnPropertyNames`, respectively.
+   - `__hasOwnProp` checks if an object has a specific property.
+   - `__name` sets the name of a function for easier debugging and identification.
+   - `__export` iterates through keys of an object and defines them as properties on a target object, making them enumerable and accessible.
+   - `__copyProps` copies properties from one object (`from`) to another (`to`), except for properties that are explicitly excluded.
+   - `__toCommonJS` prepares an object for export by establishing it as a CommonJS module with appropriate properties.
+
+2. **Exporting Functions:**
+   - Two core functions, `invalidFunction` and `invalidProvider`, are defined and exported from the module.
+   - `invalidFunction` takes a `message` and returns a function that throws an error with that message.
+   - `invalidProvider` also takes a `message` but returns a promise that is immediately rejected with the given message.
+   - These functions are exported using a structured approach to allow compatibility between CommonJS and ES Module systems.
+
+3. **Annotation for ESM:**
+   - A comment (that is not executed due to the leading `0 &&`) highlights that these exports are intended for potential use within an ES Module system.
+
+The code below is a refactor of the given functionality, maintaining the same behavior and intent:
+
+```javascript
+// Utilities for property and module manipulation
+const defineProperty = Object.defineProperty;
+const getOwnPropertyDescriptor = Object.getOwnPropertyDescriptor;
+const getOwnPropertyNames = Object.getOwnPropertyNames;
+const hasOwnProperty = Object.prototype.hasOwnProperty;
+
+const setFunctionName = (fn, name) => {
+  return defineProperty(fn, 'name', { value: name, configurable: true });
+};
+
+const exportFunctions = (target, functions) => {
+  for (const name in functions) {
+    defineProperty(target, name, { 
+      get: functions[name], 
+      enumerable: true 
+    });
+  }
+};
+
+const copyProperties = (target, source, exclude) => {
+  if (source && (typeof source === 'object' || typeof source === 'function')) {
+    for (const key of getOwnPropertyNames(source)) {
+      if (!hasOwnProperty.call(target, key) && key !== exclude) {
+        defineProperty(target, key, { 
+          get: () => source[key], 
+          enumerable: !(getOwnPropertyDescriptor(source, key) || {}).enumerable 
+        });
+      }
+    }
+  }
+  return target;
+};
+
+const toCommonJSModule = (mod) => {
+  return copyProperties(defineProperty({}, '__esModule', { value: true }), mod);
+};
+
+// Exported module structure
+const exportsModule = {};
+exportFunctions(exportsModule, {
+  invalidFunction: () => invalidFunction,
+  invalidProvider: () => invalidProvider,
+});
+
+module.exports = toCommonJSModule(exportsModule);
+
+// Function definitions
+const invalidFunction = setFunctionName((message) => {
+  return () => {
+    throw new Error(message);
+  };
+}, 'invalidFunction');
+
+const invalidProvider = setFunctionName((message) => {
+  return () => Promise.reject(message);
+}, 'invalidProvider');
+```

@@ -1,0 +1,113 @@
+The provided Node.js code defines functions to locate the command binaries in the system's PATH, similar to how Unix 'which' command works. It checks if a given command or executable can be found in the directories listed in the PATH environment variable and returns the full path to the executable.
+
+The functionality includes:
+
+1. **Platform Detection**: It checks whether the operating system is Windows using `process.platform`.
+
+2. **Command Path Parsing**: Uses regular expressions to determine if a command contains directory slashes and thus should be checked directly rather than searching through PATH directories.
+
+3. **Path Environment Handling**: On Windows, it first checks the current directory due to typical Windows behavior of considering the current directory for executable search. 
+
+4. **Executing Environment Setup**: On Windows, the PATHEXT environment variable is used to append file extensions to commands being searched for. This is crucial for Windows, where executables have extensions like `.exe`, `.cmd`, etc.
+
+5. **Executable Checks**: The `isexe` library is used to check if a file is executable. Both asynchronous (`which`) and synchronous (`whichSync`) methods are provided.
+
+6. **Options**: 
+   - The option `all` will return all matches found instead of stopping at the first one.
+   - The option `nothrow` prevents an exception from being thrown if no command is found, returning `null` instead.
+
+7. **Error Handling**: When a command is not found and `nothrow` is not set, it throws an error with code `ENOENT`.
+
+Here's the rewritten code:
+
+```javascript
+const { isexe, sync: isexeSync } = require('isexe');
+const { join, delimiter, sep, posix } = require('path');
+
+const isWindows = process.platform === 'win32';
+
+/* istanbul ignore next */
+const rSlash = new RegExp(`[${posix.sep}${sep === posix.sep ? '' : sep}]`.replace(/(\\)/g, '\\$1'));
+const rRel = new RegExp(`^\\.${rSlash.source}`);
+
+const getNotFoundError = (cmd) => Object.assign(new Error(`not found: ${cmd}`), { code: 'ENOENT' });
+
+function getPathInfo(cmd, { path: optPath = process.env.PATH, pathExt: optPathExt = process.env.PATHEXT, delimiter: optDelimiter = delimiter }) {
+  const pathEnv = cmd.match(rSlash) ? [''] : [
+    ...(isWindows ? [process.cwd()] : []),
+    ...(optPath || '').split(optDelimiter),
+  ];
+
+  if (isWindows) {
+    const pathExtExe = optPathExt || ['.EXE', '.CMD', '.BAT', '.COM'].join(optDelimiter);
+    const pathExt = pathExtExe.split(optDelimiter).flatMap((item) => [item, item.toLowerCase()]);
+    if (cmd.includes('.') && pathExt[0] !== '') {
+      pathExt.unshift('');
+    }
+    return { pathEnv, pathExt, pathExtExe };
+  }
+
+  return { pathEnv, pathExt: [''] };
+}
+
+function getPathPart(raw, cmd) {
+  const pathPart = /^".*"$/.test(raw) ? raw.slice(1, -1) : raw;
+  const prefix = !pathPart && rRel.test(cmd) ? cmd.slice(0, 2) : '';
+  return prefix + join(pathPart, cmd);
+}
+
+async function which(cmd, opt = {}) {
+  const { pathEnv, pathExt, pathExtExe } = getPathInfo(cmd, opt);
+  const found = [];
+
+  for (const envPart of pathEnv) {
+    const p = getPathPart(envPart, cmd);
+
+    for (const ext of pathExt) {
+      const withExt = p + ext;
+      const is = await isexe(withExt, { pathExt: pathExtExe, ignoreErrors: true });
+      if (is) {
+        if (!opt.all) {
+          return withExt;
+        }
+        found.push(withExt);
+      }
+    }
+  }
+
+  if (opt.all && found.length) return found;
+
+  if (opt.nothrow) return null;
+
+  throw getNotFoundError(cmd);
+}
+
+function whichSync(cmd, opt = {}) {
+  const { pathEnv, pathExt, pathExtExe } = getPathInfo(cmd, opt);
+  const found = [];
+
+  for (const pathEnvPart of pathEnv) {
+    const p = getPathPart(pathEnvPart, cmd);
+
+    for (const ext of pathExt) {
+      const withExt = p + ext;
+      const is = isexeSync(withExt, { pathExt: pathExtExe, ignoreErrors: true });
+      if (is) {
+        if (!opt.all) {
+          return withExt;
+        }
+        found.push(withExt);
+      }
+    }
+  }
+
+  if (opt.all && found.length) return found;
+
+  if (opt.nothrow) return null;
+
+  throw getNotFoundError(cmd);
+}
+
+module.exports = which;
+which.sync = whichSync;
+```

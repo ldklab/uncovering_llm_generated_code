@@ -1,0 +1,111 @@
+The provided Node.js code defines a module that offers functions to serialize and deserialize JavaScript objects and values in a way that retains the object's structure, even with circular references. This module exports four main functions: `parse`, `stringify`, `toJSON`, and `fromJSON`.
+
+1. **parse**: This function takes a JSON-like string, optionally a reviver function, and returns a JavaScript value. It handles circular references by maintaining an index map and reconstructs the value's original structure.
+
+2. **stringify**: This function takes a JavaScript value, optionally a replacer and space, and converts it into a string format that can handle circular references by using an auxiliary map to track already serialized objects.
+
+3. **toJSON**: This function converts any given JavaScript value into a JSON-serializable format using the custom `stringify` method.
+
+4. **fromJSON**: This function converts a previously JSON-serialized object back into its original form, considering circular references, by using the custom `parse` method.
+
+The module provides a way to work with JavaScript objects' recursive structures by using a custom serialization format that can later be deserialized to restore the original form.
+
+```javascript
+'use strict';
+
+const { parse: nativeParse, stringify: nativeStringify } = JSON;
+const { keys } = Object;
+
+const Primitive = String;
+const primitiveType = 'string';
+
+const ignored = {};
+const objectType = 'object';
+const noop = (_, value) => value;
+
+const handlePrimitives = value => (
+  value instanceof Primitive ? Primitive(value) : value
+);
+
+const identifyPrimitives = (_, value) => (
+  typeof value === primitiveType ? new Primitive(value) : value
+);
+
+const reviveStructure = (input, parsed, output, reviver) => {
+  const deferred = [];
+  for (const key of keys(output)) {
+    const value = output[key];
+    if (value instanceof Primitive) {
+      const temp = input[value];
+      if (typeof temp === objectType && !parsed.has(temp)) {
+        parsed.add(temp);
+        output[key] = ignored;
+        deferred.push({ key, args: [input, parsed, temp, reviver] });
+      } else {
+        output[key] = reviver.call(output, key, temp);
+      }
+    } else if (output[key] !== ignored) {
+      output[key] = reviver.call(output, key, value);
+    }
+  }
+  for (const { key, args } of deferred) {
+    output[key] = reviver.call(output, key, reviveStructure(...args));
+  }
+  return output;
+};
+
+const setIndex = (known, input, value) => {
+  const index = Primitive(input.push(value) - 1);
+  known.set(value, index);
+  return index;
+};
+
+const parse = (text, reviver) => {
+  const parsedInput = nativeParse(text, identifyPrimitives).map(handlePrimitives);
+  const initialValue = parsedInput[0];
+  const reviverFunction = reviver || noop;
+  const resultValue = (typeof initialValue === objectType && initialValue) ?
+    reviveStructure(parsedInput, new Set(), initialValue, reviverFunction) :
+    initialValue;
+  return reviverFunction.call({ '': resultValue }, '', resultValue);
+};
+exports.parse = parse;
+
+const stringify = (value, replacer, space) => {
+  const reviverFunction = replacer && typeof replacer === objectType ?
+    (key, val) => (key === '' || replacer.includes(key) ? val : undefined) :
+    (replacer || noop);
+  
+  const known = new Map();
+  const input = [];
+  const output = [];
+  let index = +setIndex(known, input, reviverFunction.call({ '': value }, '', value));
+  let isFirstRun = !index;
+
+  while (index < input.length) {
+    isFirstRun = true;
+    output[index] = nativeStringify(input[index++], replace, space);
+  }
+  
+  return '[' + output.join(',') + ']';
+
+  function replace(key, value) {
+    if (isFirstRun) {
+      isFirstRun = false;
+      return value;
+    }
+    const processedValue = reviverFunction.call(this, key, value);
+    if (typeof processedValue === objectType && processedValue !== null) {
+      return known.get(processedValue) || setIndex(known, input, processedValue);
+    }
+    return processedValue;
+  }
+};
+exports.stringify = stringify;
+
+const toJSON = value => nativeParse(stringify(value));
+exports.toJSON = toJSON;
+
+const fromJSON = value => parse(nativeStringify(value));
+exports.fromJSON = fromJSON;
+```

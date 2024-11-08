@@ -1,0 +1,400 @@
+The provided Node.js code is a comprehensive and modular library for parsing and working with IPv4 and IPv6 addresses. Here's a breakdown of what the code does:
+
+1. **Regular Expressions for IP Matching**: It defines regex patterns for parsing different formats of IPv4 and IPv6 addresses. IPv4 supports notations like `127.0.0.1`, hexadecimal, and other notations. IPv6 addresses support simplifications like `::` for continuous zeros.
+
+2. **IPv6 Expansion**: A utility function to expand IPv6 `::` notation into full form.
+
+3. **CIDR Matching**: It provides functionality to perform Classless Inter-Domain Routing (CIDR) comparisons to check network ranges based on CIDR notation.
+
+4. **IPv4 and IPv6 Classes**: There are two main classes: `IPv4` and `IPv6`, each with methods to parse, validate, and manipulate the IP addresses. 
+
+5. **Special Address Ranges**: The code includes predefined special address ranges (like `multicast`, `broadcast`, `link local`, etc.) and methods to identify if an address belongs to one of these ranges.
+
+6. **Address Conversion**: IPv4-mapped IPv6 addresses can be converted from one format to another, such as normalized string format or byte arrays.
+
+7. **Error Handling**: The library incorporates error handling to ensure invalid addresses are not processed incorrectly and provides informative error messages.
+
+8. **Exporting**: The library is designed to work both in Node.js environments and browser-like environments, with conditional exporting of the module.
+
+Here’s a possible rewrite of the code in a more organized and concise structure:
+
+```javascript
+(function(root) {
+    'use strict';
+
+    const ipv4Part = '(0?\\d+|0x[a-f0-9]+)';
+    const octalRegex = /^0[0-7]+$/i;
+    const hexRegex = /^0x[a-f0-9]+$/i;
+    const zoneIndex = '%[0-9a-z]{1,}';
+    
+    const ipv4Regexes = {
+        fourOctet: new RegExp(`^${ipv4Part}\\.${ipv4Part}\\.${ipv4Part}\\.${ipv4Part}$`, 'i'),
+        threeOctet: new RegExp(`^${ipv4Part}\\.${ipv4Part}\\.${ipv4Part}$`, 'i'),
+        twoOctet: new RegExp(`^${ipv4Part}\\.${ipv4Part}$`, 'i'),
+        longValue: new RegExp(`^${ipv4Part}$`, 'i')
+    };
+
+    const ipv6Part = '(?:[0-9a-f]+::?)+';
+    const ipv6Regexes = {
+        zoneIndex: new RegExp(zoneIndex, 'i'),
+        native: new RegExp(`^(::)?(${ipv6Part})?([0-9a-f]+)?(::)?(${zoneIndex})?$`, 'i'),
+        deprecatedTransitional: new RegExp(`^(?:::)((?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9](?:\\.)){3,3}(0?[0-9]{1,3}))${zoneIndex}?$`, 'i'),
+        transitional: new RegExp(`^((?:${ipv6Part})|(?:::)(?:${ipv6Part})?)25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9](?:\\.)){3,3}(0?[0-9]{1,3})${zoneIndex}?$`, 'i')
+    };
+
+    function expandIPv6(string, parts) {
+        if (string.indexOf('::') !== string.lastIndexOf('::')) return null;
+
+        let replacedStr = string.replace(/:.+/g, '') || '';
+        if (colonCount(replacedStr) > parts) return null;
+
+        replacedStr = replacedStr.replace('::', ':0'.repeat(parts - colonCount(replacedStr) + 1));
+
+        if (replacedStr[0] === ':') replacedStr = replacedStr.slice(1);
+        if (replacedStr[replacedStr.length - 1] === ':') replacedStr = replacedStr.slice(0, -1);
+
+        const zoneId = (string.match(ipv6Regexes.zoneIndex) || [])[0]?.substring(1);
+        return {
+            parts: replacedStr.split(':').map(p => parseInt(p, 16)),
+            zoneId
+        };
+    }
+
+    function matchCIDR(first, second, partSize, cidrBits) {
+        for (let part = 0; cidrBits > 0; cidrBits -= partSize, part++) {
+            const shift = Math.max(0, partSize - cidrBits);
+            if (first[part] >> shift !== second[part] >> shift) return false;
+        }
+        return true;
+    }
+
+    function parseIntAuto(string) {
+        if (hexRegex.test(string)) return parseInt(string, 16);
+        if (octalRegex.test(string)) return parseInt(string, 8);
+        return parseInt(string, 10);
+    }
+
+    function padPart(part, length) {
+        return part.padStart(length, '0');
+    }
+
+    const ipaddr = {};
+
+    ipaddr.IPv4 = (function() {
+        const SpecialRanges = {
+            unspecified: [[new IPv4([0, 0, 0, 0]), 8]],
+            broadcast: [[new IPv4([255, 255, 255, 255]), 32]],
+            multicast: [[new IPv4([224, 0, 0, 0]), 4]],
+            linkLocal: [[new IPv4([169, 254, 0, 0]), 16]],
+            loopback: [[new IPv4([127, 0, 0, 0]), 8]],
+            carrierGradeNat: [[new IPv4([100, 64, 0, 0]), 10]],
+            private: [
+                [new IPv4([10, 0, 0, 0]), 8],
+                [new IPv4([172, 16, 0, 0]), 12],
+                [new IPv4([192, 168, 0, 0]), 16]
+            ],
+            reserved: [
+                [new IPv4([192, 0, 0, 0]), 24],
+                [new IPv4([192, 0, 2, 0]), 24],
+                [new IPv4([192, 88, 99, 0]), 24],
+                [new IPv4([198, 51, 100, 0]), 24],
+                [new IPv4([203, 0, 113, 0]), 24],
+                [new IPv4([240, 0, 0, 0]), 4]
+            ]
+        };
+
+        function IPv4(octets) {
+            if (octets.length !== 4 || octets.some(octet => octet < 0 || octet > 255)) {
+                throw new Error('Invalid IPv4 octets');
+            }
+            this.octets = octets;
+        }
+
+        IPv4.prototype.kind = () => 'ipv4';
+        IPv4.prototype.match = (other, range) => matchCIDR(this.octets, other.octets, 8, range);
+        IPv4.prototype.prefixLengthFromSubnetMask = function() {
+            let cidr = 0, stop = false;
+            const zerotable = { 0: 8, 128: 7, 192: 6, 224: 5, 240: 4, 248: 3, 252: 2, 254: 1, 255: 0 };
+            for (const octet of this.octets.reverse()) {
+                if (octet in zerotable) {
+                    if (stop && zerotable[octet] !== 0) return null;
+                    stop = zerotable[octet] !== 8;
+                    cidr += zerotable[octet];
+                } else {
+                    return null;
+                }
+            }
+            return 32 - cidr;
+        };
+
+        IPv4.prototype.range = () => ipaddr.subnetMatch(this, SpecialRanges);
+        IPv4.prototype.toByteArray = () => this.octets.slice();
+        IPv4.prototype.toIPv4MappedAddress = function() { return ipaddr.IPv6.parse(`::ffff:${this.toString()}`); };
+        IPv4.prototype.toNormalizedString = function() { return this.toString(); };
+        IPv4.prototype.toString = function() { return this.octets.join('.'); };
+
+        IPv4.broadcastAddressFromCIDR = function(cidrString) {
+            const [addr, maskLen] = this.parseCIDR(cidrString);
+            const interfaceOctets = addr.toByteArray();
+            const maskOctets = this.subnetMaskFromPrefixLength(maskLen).toByteArray();
+            const broadcastOctets = interfaceOctets.map((octet, i) => octet | (maskOctets[i] ^ 255));
+            return new this(broadcastOctets);
+        };
+
+        IPv4.isIPv4 = function(string) {
+            return this.parser(string) !== null;
+        };
+
+        IPv4.isValid = function(string) {
+            try {
+                new this(this.parser(string));
+                return true;
+            } catch {
+                return false;
+            }
+        };
+
+        IPv4.isValidFourPartDecimal = function(string) {
+            return this.isValid(string) && /^[0-9]+(\.[0-9]+){3}$/.test(string);
+        };
+
+        IPv4.networkAddressFromCIDR = function(cidrString) {
+            const [addr, maskLen] = this.parseCIDR(cidrString);
+            const interfaceOctets = addr.toByteArray();
+            const maskOctets = this.subnetMaskFromPrefixLength(maskLen).toByteArray();
+            const networkOctets = interfaceOctets.map((octet, i) => octet & maskOctets[i]);
+            return new this(networkOctets);
+        };
+
+        IPv4.parse = function(string) {
+            const parts = this.parser(string);
+            if (parts) return new this(parts);
+            throw new Error('Invalid IPv4 address');
+        };
+
+        IPv4.parseCIDR = function(string) {
+            const match = /^(.+)\/(\d+)$/.exec(string);
+            if (match) {
+                const address = this.parse(match[1]);
+                const maskLength = parseInt(match[2], 10);
+                return [address, maskLength];
+            }
+            throw new Error('Invalid IPv4 CIDR');
+        };
+
+        IPv4.parser = function(string) {
+            const match = string.match(ipv4Regexes.fourOctet) || 
+                          string.match(ipv4Regexes.longValue) || 
+                          string.match(ipv4Regexes.twoOctet) ||
+                          string.match(ipv4Regexes.threeOctet);
+            if (!match) return null;
+            return match.slice(1).map(parseIntAuto);
+        };
+
+        IPv4.subnetMaskFromPrefixLength = function(prefix) {
+            if (prefix < 0 || prefix > 32) throw new Error('Invalid prefix');
+            const octets = new Array(4).fill(0);
+            octets.fill(255, 0, Math.floor(prefix / 8));
+            if (prefix % 8 !== 0) octets[Math.floor(prefix / 8)] = (1 << (8 - (prefix % 8))) - 1 << (prefix % 8);
+            return new this(octets);
+        };
+
+        return IPv4;
+    })();
+
+    ipaddr.IPv6 = (function(){
+        const SpecialRanges = {
+            unspecified: [new IPv6([0,0,0,0,0,0,0,0]), 128],
+            linkLocal: [new IPv6([0xfe80,0,0,0,0,0,0,0]), 10],
+            multicast: [new IPv6([0xff00,0,0,0,0,0,0,0]), 8],
+            loopback: [new IPv6([0,0,0,0,0,0,0,1]), 128],
+            uniqueLocal: [new IPv6([0xfc00,0,0,0,0,0,0,0]),7],
+            ipv4Mapped: [new IPv6([0,0,0,0,0,0xffff,0,0]),96],
+            rfc6145: [new IPv6([0,0,0,0,0xffff,0,0,0]),96],
+            rfc6052: [new IPv6([0x64,0xff9b,0,0,0,0,0,0]),96],
+            '6to4': [new IPv6([0x2002,0,0,0,0,0,0,0]),16],
+            teredo: [new IPv6([0x2001,0,0,0,0,0,0,0]),32],
+            reserved: [new IPv6([0x2001,0xdb8,0,0,0,0,0,0]),32]
+        };
+
+        function IPv6(parts, zoneId) {
+            if (parts.length !== 8 && parts.length !== 16) throw new Error('Invalid length');
+            const partArray = parts.length === 16 ? [] : parts;
+            for (let i = 0; i <= 14; i += 2) partArray.push((parts[i] << 8) | parts[i + 1]);
+            if (partArray.some(part => part < 0 || part > 0xffff)) throw new Error('Part out of range');
+            this.parts = partArray;
+            this.zoneId = zoneId;
+        }
+
+        IPv6.prototype.isIPv4MappedAddress = function() {
+            return this.range() === 'ipv4Mapped';
+        };
+
+        IPv6.prototype.kind = () => 'ipv6';
+
+        IPv6.prototype.match = (other, range) => matchCIDR(this.parts, other.parts, 16, range);
+
+        IPv6.prototype.prefixLengthFromSubnetMask = function() {
+            const zerotable = { 
+                0: 16, 32768: 15, 49152: 14, 57344: 13, 61440: 12,
+                63488: 11, 64512: 10, 65024: 9, 65280: 8, 65408: 7, 
+                65472: 6, 65504: 5, 65520: 4, 65528: 3, 65532: 2,
+                65534: 1, 65535: 0 
+            };
+            let cidr = 0, stop = false;
+            for (const part of this.parts.reverse()) {
+                if (!(part in zerotable)) return null;
+                if (stop && zerotable[part] !== 0) return null;
+                cidr += zerotable[part];
+                stop = zerotable[part] !== 16;
+            }
+            return 128 - cidr;
+        };
+
+        IPv6.prototype.range = function() {
+            return ipaddr.subnetMatch(this, SpecialRanges);
+        };
+
+        IPv6.prototype.toByteArray = function() {
+            return this.parts.reduce((arr, part) => arr.concat([(part >> 8) & 0xff, part & 0xff]), []);
+        };
+
+        IPv6.prototype.toFixedLengthString = function() {
+            const addr = this.parts.map(part => padPart(part.toString(16), 4)).join(':');
+            return addr + (this.zoneId ? `%${this.zoneId}` : '');
+        };
+
+        IPv6.prototype.toIPv4Address = function() {
+            if (!this.isIPv4MappedAddress()) throw new Error('Not a mapped IPv4 address');
+            const high = this.parts[6], low = this.parts[7];
+            return new ipaddr.IPv4([high >> 8, high & 0xff, low >> 8, low & 0xff]);
+        };
+
+        IPv6.prototype.toNormalizedString = function() {
+            const string = this.parts.map(part => part.toString(16)).join(':');
+            return string + (this.zoneId ? `%${this.zoneId}` : '');
+        };
+
+        IPv6.prototype.toRFC5952String = function() {
+            const longestZero = getBestMatch(this.toNormalizedString());
+            return this.toNormalizedString().replace(longestZero, '::');
+        };
+
+        IPv6.prototype.toString = function() {
+            return this.toNormalizedString().replace(/((^|:)(0(:|$))+)/, '::');
+        };
+
+        function getBestMatch(string) {
+            const match = /((^|:)(0(:|$)){2,})/.exec(string);
+            return match ? match[0] : '';
+        }
+
+        return IPv6;
+    })();
+
+    ipaddr.IPv6.isIPv6 = function(string) {
+        return this.parser(string) !== null;
+    };
+
+    ipaddr.IPv6.isValid = function(string) {
+        if (typeof string !== 'string' || !string.includes(':')) return false;
+        try {
+            const addr = this.parser(string);
+            new this(addr.parts, addr.zoneId);
+            return true;
+        } catch {
+            return false;
+        }
+    };
+
+    ipaddr.IPv6.parse = function(string) {
+        const addr = this.parser(string);
+        if (addr.parts) return new this(addr.parts, addr.zoneId);
+        throw new Error('Invalid IPv6');
+    };
+
+    ipaddr.IPv6.parseCIDR = function(string) {
+        const match = /^(.+)\/(\d+)$/.exec(string);
+        if (match) {
+            const maskLength = parseInt(match[2], 10);
+            if (maskLength >= 0 && maskLength <= 128) {
+                const addr = this.parse(match[1]);
+                return [addr, maskLength];
+            }
+        }
+        throw new Error('Invalid IPv6 CIDR');
+    };
+
+    ipaddr.IPv6.parser = function(string) {
+        const deprecated = ipv6Regexes.deprecatedTransitional.exec(string);
+        if (deprecated) return this.parser(`::ffff:${deprecated[1]}`);
+        const native = ipv6Regexes.native.exec(string);
+        if (native) return expandIPv6(string, 8);
+        const transitional = ipv6Regexes.transitional.exec(string);
+        if (transitional) {
+            const zoneId = transitional[6] || '';
+            const addr = expandIPv6(transitional[1].slice(0, -1) + zoneId, 6);
+            const octets = [2, 3, 4, 5].map(i => parseInt(transitional[i]));
+            if (octets.every(o => o >= 0 && o <= 255)) {
+                addr.parts.push((octets[0] << 8) | octets[1]);
+                addr.parts.push((octets[2] << 8) | octets[3]);
+                return {
+                    parts: addr.parts,
+                    zoneId: addr.zoneId
+                };
+            }
+        }
+        return null;
+    };
+
+    ipaddr.fromByteArray = function(bytes) {
+        if (bytes.length === 4) return new ipaddr.IPv4(bytes);
+        if (bytes.length === 16) return new ipaddr.IPv6(bytes);
+        throw new Error('Invalid byte length');
+    };
+
+    ipaddr.isValid = function(string) {
+        return ipaddr.IPv4.isValid(string) || ipaddr.IPv6.isValid(string);
+    };
+
+    ipaddr.parse = function(string) {
+        if (ipaddr.IPv6.isValid(string)) return ipaddr.IPv6.parse(string);
+        if (ipaddr.IPv4.isValid(string)) return ipaddr.IPv4.parse(string);
+        throw new Error('Invalid IP address');
+    };
+
+    ipaddr.parseCIDR = function(string) {
+        try {
+            return ipaddr.IPv6.parseCIDR(string);
+        } catch {
+            try {
+                return ipaddr.IPv4.parseCIDR(string);
+            } catch {
+                throw new Error('Invalid CIDR');
+            }
+        }
+    };
+
+    ipaddr.process = function(string) {
+        const addr = this.parse(string);
+        if (addr.kind() === 'ipv6' && addr.isIPv4MappedAddress()) return addr.toIPv4Address();
+        return addr;
+    };
+
+    ipaddr.subnetMatch = function(address, rangeList, defaultName = 'unicast') {
+        for (const [rangeName, subnets] of Object.entries(rangeList)) {
+            const expandedSubnets = Array.isArray(subnets[0]) ? subnets : [subnets];
+            for (const subnet of expandedSubnets) {
+                if (address.kind() === subnet[0].kind() && address.match(...subnet)) return rangeName;
+            }
+        }
+        return defaultName;
+    };
+
+    if (typeof module !== 'undefined' && module.exports) {
+        module.exports = ipaddr;
+    } else {
+        root.ipaddr = ipaddr;
+    }
+})(this);
+```

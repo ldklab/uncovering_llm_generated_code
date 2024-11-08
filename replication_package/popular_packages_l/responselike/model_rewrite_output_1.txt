@@ -1,0 +1,59 @@
+The provided Node.js code defines a custom `Response` class that extends the `PassThrough` stream, which is part of the Node.js stream API. This custom class is used to create a response-like object with the following properties and behavior:
+
+1. **Constructor Parameters**:
+   - `statusCode`: A numeric HTTP status code.
+   - `headers`: An object representing HTTP headers. The keys are converted to lowercase to maintain uniformity.
+   - `body`: The response body, which is expected to be a buffer.
+   - `url`: A string representing the URL associated with the response.
+
+2. **Properties**:
+   - `statusCode`: Stores the status code for the response.
+   - `headers`: Stores the normalized headers with lowercase keys.
+   - `body`: Stores the body of the response, typically a Buffer object.
+   - `url`: Stores the URL associated with the response.
+
+3. **Stream Behavior**:
+   - The class inherits from `PassThrough`, which means it can act as a readable and writable stream.
+   - After construction, the body content is written to the stream using `this.end(body)` in the next tick of the event loop. This allows the body to be available for streaming immediately after creation.
+
+4. **Usage Example**:
+   - An instance of the `Response` class is created with specific properties.
+   - Properties such as `statusCode`, `headers`, `body`, and `url` are logged to the console.
+   - The instance is piped to `process.stdout` to demonstrate the streaming of the body content.
+
+Below is a rewritten version of the code:
+
+```javascript
+const { PassThrough } = require('stream');
+
+class Response extends PassThrough {
+  constructor(statusCode, headers, body, url) {
+    super();
+
+    this.statusCode = statusCode;
+    this.headers = this._normalizeHeaders(headers);
+    this.body = body;
+    this.url = url;
+
+    process.nextTick(() => this.end(body));
+  }
+  
+  _normalizeHeaders(headers) {
+    return Object.fromEntries(
+      Object.entries(headers).map(([key, value]) => [key.toLowerCase(), value])
+    );
+  }
+}
+
+module.exports = Response;
+
+// Usage example
+const responseExample = new Response(200, { foo: 'bar' }, Buffer.from('Hi!'), 'https://example.com');
+
+console.log(responseExample.statusCode); // 200
+console.log(responseExample.headers); // { foo: 'bar' }
+console.log(responseExample.body); // <Buffer 48 69 21>
+console.log(responseExample.url); // 'https://example.com'
+
+responseExample.pipe(process.stdout); // Hi!
+```

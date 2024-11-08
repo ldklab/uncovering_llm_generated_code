@@ -1,0 +1,85 @@
+The provided Node.js code is a utility module that exports a function `isCallable`, which determines if a given value can be called as a function. The module considers various scenarios to make an accurate determination:
+
+1. It checks if the environment supports `Reflect.apply` for function calls and uses it to improve the reliability of its checks.
+2. The code attempts to differentiate between callable functions and ES6 class constructors. This is important because ES6 classes, while technically a type of function, cannot be invoked as regular functions.
+3. If `Reflect.apply` is available, it utilizes a "bad array-like" object to safely test function calls.
+4. The function returns `true` for both standard functions and function objects that do not have their own prototype, like arrow functions and bound functions.
+5. It accounts for environments that might have the `Symbol.toStringTag`, which can affect how objects are described internally by `Object.prototype.toString`.
+
+This code aims to provide a precise determination of 'callableness' across different JavaScript runtime environments by carefully handling various edge cases.
+
+Here is a restructured version of the code:
+
+```javascript
+'use strict';
+
+const fnToStr = Function.prototype.toString;
+let reflectApply = typeof Reflect === 'object' && Reflect !== null && Reflect.apply;
+let badArrayLike;
+let isCallableMarker;
+
+if (typeof reflectApply === 'function' && typeof Object.defineProperty === 'function') {
+    try {
+        badArrayLike = Object.defineProperty({}, 'length', {
+            get: function () {
+                throw isCallableMarker;
+            }
+        });
+        isCallableMarker = {};
+        reflectApply(() => { throw 42; }, null, badArrayLike);
+    } catch (err) {
+        if (err !== isCallableMarker) {
+            reflectApply = null;
+        }
+    }
+} else {
+    reflectApply = null;
+}
+
+const constructorRegex = /^\s*class\b/;
+const isES6ClassFn = (value) => {
+    try {
+        const fnStr = fnToStr.call(value);
+        return constructorRegex.test(fnStr);
+    } catch (err) {
+        return false; // not a function
+    }
+};
+
+const tryFunctionObject = (value) => {
+    try {
+        if (isES6ClassFn(value)) { return false; }
+        fnToStr.call(value);
+        return true;
+    } catch (err) {
+        return false;
+    }
+};
+
+const toStr = Object.prototype.toString;
+const fnClass = '[object Function]';
+const genClass = '[object GeneratorFunction]';
+const hasToStringTag = typeof Symbol === 'function' && typeof Symbol.toStringTag === 'symbol';
+
+module.exports = reflectApply
+    ? function isCallable(value) {
+        if (!value) return false;
+        if (typeof value !== 'function' && typeof value !== 'object') return false;
+        if (typeof value === 'function' && !value.prototype) return true;
+        try {
+            reflectApply(value, null, badArrayLike);
+        } catch (err) {
+            if (err !== isCallableMarker) return false;
+        }
+        return !isES6ClassFn(value);
+    }
+    : function isCallable(value) {
+        if (!value) return false;
+        if (typeof value !== 'function' && typeof value !== 'object') return false;
+        if (typeof value === 'function' && !value.prototype) return true;
+        if (hasToStringTag) return tryFunctionObject(value);
+        if (isES6ClassFn(value)) return false;
+        const strClass = toStr.call(value);
+        return strClass === fnClass || strClass === genClass;
+    };
+```

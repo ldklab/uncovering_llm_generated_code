@@ -1,0 +1,98 @@
+The `dom-serializer` package is a utility designed to convert a DOM structure into an HTML string representation, similar to the `outerHTML` property in the browser environment. It primarily works with nodes created via the `domhandler` package.
+
+### Core Functionality:
+- **Rendering Nodes:** The core function `render` takes a single DOM node or an array of DOM nodes and converts them to a string format. This allows a structured representation of HTML nodes to be transformed into HTML text.
+
+- **Options for Customization:** The rendering process can be customized using the following options:
+  - `encodeEntities`: Determines whether special characters should be encoded in HTML format. The encoding can either be general, UTF-8 specific, or disabled entirely.
+  - `decodeEntities`: Inherited from the parsing process, this dictates whether entities should be decoded by default.
+  - `emptyAttrs`: Controls how empty attributes are rendered. If `true`, attributes are given an empty string value (e.g., `checked=""`), otherwise they are portrayed without a value.
+  - `selfClosingTags`: Influences how tags without inner content are rendered. When `true`, void elements are rendered in a self-closing manner (e.g., `<foo />`).
+  - `xmlMode`: Activates an XML-like treatment of the document, which also affects options like `emptyAttrs` and `selfClosingTags`. If set to `"foreign"`, it adjusts attribute naming.
+
+### Code Implementation:
+Below is the code for a Node.js package that implements the `dom-serializer` functionality:
+
+```js
+// dom-serializer.js
+
+class DomSerializer {
+    constructor(options = {}) {
+        this.options = {
+            encodeEntities: 'utf8',
+            decodeEntities: true,
+            emptyAttrs: false,
+            selfClosingTags: false,
+            xmlMode: false,
+            ...options
+        };
+    }
+
+    render(node) {
+        if (Array.isArray(node)) {
+            return node.map(n => this.renderNode(n)).join('');
+        }
+        return this.renderNode(node);
+    }
+
+    renderNode(node) {
+        switch (node.type) {
+            case 'tag':
+            case 'script':
+            case 'style':
+                return this.renderTag(node);
+            case 'text':
+                return this.options.decodeEntities ? this.decodeEntities(node.data) : node.data;
+            case 'comment':
+                return `<!--${node.data}-->`;
+            case 'directive':
+            case '!doctype':
+                return `<!${node.data}>`;
+            default:
+                return '';
+        }
+    }
+
+    renderTag(node) {
+        const tagName = this.options.xmlMode === 'foreign' ? node.name.toLowerCase() : node.name;
+        let attrs = this.renderAttributes(node.attribs);
+        const hasChildren = node.children && node.children.length > 0;
+        const isSelfClosing = this.isSelfClosing(node);
+
+        if (isSelfClosing && !hasChildren) {
+            return `<${tagName}${attrs}${this.options.selfClosingTags ? ' /' : ''}>`;
+        }
+
+        return `<${tagName}${attrs}>${this.render(node.children)}</${tagName}>`;
+    }
+
+    renderAttributes(attribs = {}) {
+        return Object.entries(attribs)
+            .map(([key, value]) => {
+                if (value === "" && !this.options.emptyAttrs) {
+                    return ` ${key}`;
+                }
+                return ` ${key}="${value.replace(/\"/g, '&quot;')}"`;
+            })
+            .join('');
+    }
+
+    isSelfClosing(node) {
+        return node.name && (!node.children || node.children.length === 0);
+    }
+
+    decodeEntities(data) {
+        // Simple placeholder - assume entities are decoded correctly
+        return data.replace(/&quot;/g, '"').replace(/&amp;/g, '&').replace(/&gt;/g, '>').replace(/&lt;/g, '<');
+    }
+}
+
+module.exports = {
+    default: function(node, options) {
+        const serializer = new DomSerializer(options);
+        return serializer.render(node);
+    }
+};
+```
+
+This code defines a class `DomSerializer` that handles the serialization of DOM nodes into a string format that represents HTML. It processes various node types like tags, text, comments, and directives, and applies options to customize the output.

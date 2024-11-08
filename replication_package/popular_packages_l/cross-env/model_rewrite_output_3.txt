@@ -1,0 +1,50 @@
+The given Node.js code defines a utility script that simulates cross-platform setting of environment variables before executing a specified command. It is invoked with environment variable assignments and a command line to execute. The script parses the environment variable assignments, combines them with the current process environment, and spawns a new child process with this merged environment to execute the specified command.
+
+Here's a breakdown of the process:
+1. Parsing: Environment variables and commands are separated. Each environment variable is expected to have the format `key=value`.
+2. Environment Variables: Parsed environment variables are merged with the current environment variables from `process.env`.
+3. Execution: The specified command is executed with the merged environment using `child_process.spawn`, utilizing the system shell to ensure cross-platform compatibility.
+
+Here’s a rewritten version of the code:
+
+```javascript
+// cross-env.js
+const { spawn } = require('child_process');
+
+function parseEnvVar(envVar) {
+  const [key, ...valueParts] = envVar.split('=');
+  return [key, valueParts.join('=')];
+}
+
+function mergeEnvVariables(envAssignments) {
+  return envAssignments.reduce((env, envVar) => {
+    const [key, value] = parseEnvVar(envVar);
+    if (key) env[key] = value;
+    return env;
+  }, { ...process.env });
+}
+
+function crossEnv(commandLineArgs) {
+  const envAssignments = [];
+  const cmdAndArgs = [];
+
+  commandLineArgs.forEach(arg => 
+    arg.includes('=') ? envAssignments.push(arg) : cmdAndArgs.push(arg)
+  );
+
+  const [command, ...cmdArgs] = cmdAndArgs;
+  const env = mergeEnvVariables(envAssignments);
+
+  return spawn(command, cmdArgs, {
+    stdio: 'inherit',
+    shell: true,
+    env
+  }).on('exit', process.exit);
+}
+
+module.exports = { crossEnv };
+
+if (require.main === module) {
+  crossEnv(process.argv.slice(2));
+}
+```

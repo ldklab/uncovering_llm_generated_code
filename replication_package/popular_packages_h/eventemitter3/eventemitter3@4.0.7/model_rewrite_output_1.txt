@@ -1,0 +1,188 @@
+The Node.js code defines a custom implementation of an `EventEmitter`, similar to Node.js's built-in EventEmitter but with some optimizations and distinctions. The key components of this implementation are:
+
+1. **Events Constructor**: Creates an object to store events without inheriting from `Object.prototype`. This avoids potential conflicts with built-in object properties.
+
+2. **EE (Event Emitter) Constructor**: Represents a single event listener with properties for the listener function, context, and an `once` flag indicating if it's a one-time listener.
+
+3. **addListener Function**: Adds an event listener for a specified event on a given `EventEmitter` instance.
+
+4. **clearEvent Function**: Removes an event listener by name, resetting the event storage if no listeners remain.
+
+5. **EventEmitter Constructor**: Initializes the event storage and count for an instance of `EventEmitter`.
+
+6. **eventNames Method**: Returns a list of all event names for which the emitter has registered listeners.
+
+7. **listeners Method**: Retrieves all listener functions for a specific event.
+
+8. **listenerCount Method**: Returns the number of listeners for a specific event.
+
+9. **emit Method**: Invokes each listener registered for a specific event.
+
+10. **on Method**: Adds a listener function for a specific event.
+
+11. **once Method**: Adds a one-time listener for a specific event.
+
+12. **removeListener Method**: Removes specific or all listeners for a given event, depending on the provided function and context parameters.
+
+13. **removeAllListeners Method**: Removes all listeners or those for a specified event.
+
+14. **Aliases**: Provides alternative method names like `off` for `removeListener` and `addListener` for `on`.
+
+15. **Prefixing**: Implements a system to prefix event names, preventing conflicts with object properties in environments without `Object.create(null)` support.
+
+16. **Module Export**: Allows the `EventEmitter` to be used as a Node.js module.
+
+Here's the rewritten code following the explanation:
+
+```javascript
+'use strict';
+
+const has = Object.prototype.hasOwnProperty;
+let prefix = '~';
+
+class Events {}
+
+if (Object.create) {
+  Events.prototype = Object.create(null);
+  if (!new Events().__proto__) prefix = false;
+}
+
+class EE {
+  constructor(fn, context, once) {
+    this.fn = fn;
+    this.context = context;
+    this.once = once || false;
+  }
+}
+
+function addListener(emitter, event, fn, context, once) {
+  if (typeof fn !== 'function') throw new TypeError('The listener must be a function');
+  const listener = new EE(fn, context || emitter, once);
+  const evt = prefix ? prefix + event : event;
+
+  if (!emitter._events[evt]) {
+    emitter._events[evt] = listener;
+    emitter._eventsCount++;
+  } else if (!emitter._events[evt].fn) {
+    emitter._events[evt].push(listener);
+  } else {
+    emitter._events[evt] = [emitter._events[evt], listener];
+  }
+  return emitter;
+}
+
+function clearEvent(emitter, evt) {
+  if (--emitter._eventsCount === 0) emitter._events = new Events();
+  else delete emitter._events[evt];
+}
+
+class EventEmitter {
+  constructor() {
+    this._events = new Events();
+    this._eventsCount = 0;
+  }
+
+  eventNames() {
+    const names = [];
+    if (this._eventsCount === 0) return names;
+
+    for (const name in this._events) {
+      if (has.call(this._events, name)) names.push(prefix ? name.slice(1) : name);
+    }
+    if (Object.getOwnPropertySymbols) {
+      return names.concat(Object.getOwnPropertySymbols(this._events));
+    }
+    return names;
+  }
+
+  listeners(event) {
+    const evt = prefix ? prefix + event : event;
+    const handlers = this._events[evt];
+    if (!handlers) return [];
+    if (handlers.fn) return [handlers.fn];
+    return handlers.map(handler => handler.fn);
+  }
+
+  listenerCount(event) {
+    const evt = prefix ? prefix + event : event;
+    const listeners = this._events[evt];
+    if (!listeners) return 0;
+    if (listeners.fn) return 1;
+    return listeners.length;
+  }
+
+  emit(event, ...args) {
+    const evt = prefix ? prefix + event : event;
+    if (!this._events[evt]) return false;
+
+    const listeners = this._events[evt];
+    if (listeners.fn) {
+      if (listeners.once) this.removeListener(event, listeners.fn, undefined, true);
+      listeners.fn.call(listeners.context, ...args);
+    } else {
+      for (const listener of listeners) {
+        if (listener.once) this.removeListener(event, listener.fn, undefined, true);
+        listener.fn.call(listener.context, ...args);
+      }
+    }
+    return true;
+  }
+
+  on(event, fn, context) {
+    return addListener(this, event, fn, context, false);
+  }
+
+  once(event, fn, context) {
+    return addListener(this, event, fn, context, true);
+  }
+
+  removeListener(event, fn, context, once) {
+    const evt = prefix ? prefix + event : event;
+    if (!this._events[evt]) return this;
+    if (!fn) {
+      clearEvent(this, evt);
+      return this;
+    }
+
+    const listeners = this._events[evt];
+    if (listeners.fn) {
+      if (
+        listeners.fn === fn &&
+        (!once || listeners.once) &&
+        (!context || listeners.context === context)
+      ) {
+        clearEvent(this, evt);
+      }
+    } else {
+      this._events[evt] = listeners.filter(listener => (
+        listener.fn !== fn ||
+        (once && !listener.once) ||
+        (context && listener.context !== context)
+      ));
+      if (!this._events[evt].length) clearEvent(this, evt);
+    }
+    return this;
+  }
+
+  removeAllListeners(event) {
+    if (event) {
+      const evt = prefix ? prefix + event : event;
+      if (this._events[evt]) clearEvent(this, evt);
+    } else {
+      this._events = new Events();
+      this._eventsCount = 0;
+    }
+    return this;
+  }
+}
+
+EventEmitter.prototype.off = EventEmitter.prototype.removeListener;
+EventEmitter.prototype.addListener = EventEmitter.prototype.on;
+
+EventEmitter.prefixed = prefix;
+EventEmitter.EventEmitter = EventEmitter;
+
+if (typeof module !== 'undefined') {
+  module.exports = EventEmitter;
+}
+```

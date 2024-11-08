@@ -1,0 +1,69 @@
+The `babel-plugin-polyfill-corejs3` is a Babel plugin designed to add polyfills from `core-js@3`, which implements modern JavaScript features for environments that do not support them natively. Here's a breakdown of its functionality:
+
+1. **Installation**: 
+   - You can install the package using either npm or yarn, as it's a development dependency.
+
+2. **Babel Configuration**:
+   - Add the plugin in your Babel configuration file with a variety of methods, namely `usage-pure`, `usage-global`, and `entry-global`.
+   - These methods determine how polyfills are applied:
+     - `usage-global`: Automatically adds imports for polyfills where unused features are detected.
+     - `entry-global`: Replaces `core-js` imports. 
+     - `usage-pure`: Similar to `usage-global` but for a specific scope involving pure modules.
+
+3. **Options**:
+   - **`version`**: Specifies which version of `core-js` to use for polyfills. It's crucial to define this to ensure you include the necessary polyfills for your code's requirements.
+   - **`proposals`**: A boolean option that when set to `true` includes polyfills for ES proposals not yet officially in the language.
+
+Here's the code for a simple Babel plugin package named `babel-plugin-polyfill-corejs3`:
+
+```javascript
+// babel-plugin-polyfill-corejs3/index.js
+const { declare } = require('@babel/helper-plugin-utils');
+
+module.exports = declare((api, options) => {
+  api.assertVersion(7);
+
+  const { method = 'usage-global', version = '3.0', proposals = false } = options;
+
+  return {
+    name: 'babel-plugin-polyfill-corejs3',
+
+    visitor: {
+      Program(path) {
+        if (method === 'entry-global') {
+          // Replace imports of core-js
+          path.traverse({
+            ImportDeclaration(importPath) {
+              const source = importPath.node.source.value;
+              if (source.startsWith('core-js')) {
+                importPath.node.source.value = `core-js@${version}`;
+              }
+            }
+          });
+        } else if (method === 'usage-global' || method === 'usage-pure') {
+          // Add polyfills globally or within scope for pure methods
+          // Simulate detection of unsupported features for demonstration
+          path.node.body.unshift(
+            api.types.importDeclaration(
+              [],
+              api.types.stringLiteral(`core-js@${version}/full`)
+            )
+          );
+        }
+
+        if (proposals) {
+          // Add polyfills for proposals if the option is enabled
+          path.node.body.unshift(
+            api.types.importDeclaration(
+              [],
+              api.types.stringLiteral(`core-js@${version}/proposals`)
+            )
+          );
+        }
+      }
+    }
+  };
+});
+```
+
+Ensure you define necessary dependencies such as `@babel/core` and `@babel/helper-plugin-utils` in your project's `package.json` in order for this code to function correctly within a Babel environment. This plugin detects needs for polyfills and inserts them according to the chosen method, and respects versioning and proposal inclusion as per configuration.

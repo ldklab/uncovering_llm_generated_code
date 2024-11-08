@@ -1,0 +1,133 @@
+The `diff-sequences` package provides functionality to compare two sequences and identify their longest common subsequence, as well as determine the shortest edit script to transform one sequence into the other. This involves identifying the items in the sequences that need to be deleted or inserted.
+
+### Functionality Overview
+
+1. **Callback-Driven Comparison:**
+   - **`isCommon(aIndex, bIndex)`:** This input function is designed by the user to compare elements at given indices in the two sequences and return a truthy or falsey value indicating if they are common. This allows customization of the comparison logic (e.g., using the strict equality `===`, `Object.is()`, or any custom logic relevant to the user's requirements).
+
+2. **Finding Common Subsequences:**
+   - **`foundSubsequence(nCommon, aCommon, bCommon)`:** This output function is called by the package whenever it identifies a common subsequence between the two sequences. It provides the number of adjacent common elements found (`nCommon`) and the starting indices of this subsequence in both sequences (`aCommon` and `bCommon`).
+
+3. **Performance:**
+   - The algorithm is implemented based on Eugene W. Myers' O(ND) difference algorithm, optimized for linear space usage, making it efficient even when the sequences have many differences.
+
+4. **Usage:**
+   - Import the package and use the `diff` function by providing sequence lengths and the user-defined callbacks for comparison and result handling.
+
+### Example Implementations
+
+- **Count Common Items:** Determine the number of items in the longest common subsequence.
+- **Find Common Items:** Retrieve the specific items in the longest common subsequence.
+- **Diff Index Intervals:** Identify differences using index intervals, which is more memory-efficient.
+- **Emulate Diff Command:** Simulate the behavior of the Unix `diff` command to produce a shortest edit script.
+- **Format Diff Lines:** Adapt the results for pretty-printing in testing outputs such as Jest.
+- **Find Diff Items:** Generate a series of edits that could diagnose differences on a character level.
+
+### Node.js Package Code
+
+```javascript
+class DiffSequences {
+  static diff(aLength, bLength, isCommon, foundSubsequence) {
+    // Myers' O(ND) linear space algorithm implementation
+    const N = aLength;
+    const M = bLength;
+    
+    const delta = N - M;
+    const size = N + M + 3;
+    const fp = new Array(size).fill(-1);
+    const path = new Array(size);
+    const offset = M + 1;
+
+    const V = {'0': 0};
+    const trace = [{'0': 0}];
+    
+    let D = 0;
+    const threshold = Math.max(N, M);
+
+    for (D = 0; D <= threshold; D++) {
+      for (let k = -D; k <= D; k += 2) {
+        // Choose the path to follow
+        let x, y;
+        if (k === -D || (k !== D && V[k - 1] < V[k + 1])) {
+          x = V[k + 1];
+        } else {
+          x = V[k - 1] + 1;
+        }
+        
+        y = x - k;
+        
+        // Extend the path while matching
+        while (x < N && y < M && isCommon(x, y)) {
+          x++;
+          y++;
+        }
+        
+        V[k] = x;
+        path[k] = { x, y, D };
+        
+        // Check for solution
+        if (x >= N && y >= M) {
+          this.traceBack(path, offset, D, foundSubsequence, aLength, bLength);
+          return;
+        }
+      }
+      trace[D] = Object.assign({}, V);
+    }
+  }
+
+  static traceBack(path, offset, D, foundSubsequence, aLength, bLength) {
+    // Traceback to reconstruct the path and call foundSubsequence callback
+    let k = aLength - bLength;
+    const subsequences = [];
+
+    for (let d = D; d > 0; d--) {
+      const p = path[k];
+      const { x, y } = p;
+
+      let prevX = (k > -(d - 1) && path[k - 1]) ? path[k - 1].x : -1;
+      let prevY = prevX - (k - 1);
+
+      let prevX2 = (k < (d - 1) && path[k + 1]) ? path[k + 1].x : -1;
+      let prevY2 = prevX2 - (k + 1);
+
+      // Determine which path we took
+      if (prevX2 !== -1 && (prevX === -1 || prevX < prevX2)) {
+        prevX = prevX2;
+        prevY = prevY2;
+      }
+
+      const nCommon = x - prevX - 1;
+      if (nCommon > 0) {
+        subsequences.unshift({
+          nCommon: x - prevX - 1,
+          aCommon: prevX + 1,
+          bCommon: prevY + 1
+        });
+      }
+      k -= (x - prevX > y - prevY) ? 1 : -1;
+    }
+    
+    subsequences.forEach(e => {
+      foundSubsequence(e.nCommon, e.aCommon, e.bCommon);
+    });
+  }
+}
+
+export default DiffSequences.diff;
+
+// Usage example
+const a = ['a', 'b', 'c', 'a', 'b', 'b', 'a'];
+const b = ['c', 'b', 'a', 'b', 'a', 'c'];
+
+function isCommon(aIndex, bIndex) {
+  return a[aIndex] === b[bIndex];
+}
+
+function foundSubsequence(nCommon, aCommon, bCommon) {
+  console.log(`foundSubsequence(${nCommon}, ${aCommon}, ${bCommon})`);
+}
+
+DiffSequences.diff(a.length, b.length, isCommon, foundSubsequence);
+```
+
+This code provides a simple implementation of the `diff-sequences` logic by using a version of the Myers' algorithm to calculate differences in two sequences.

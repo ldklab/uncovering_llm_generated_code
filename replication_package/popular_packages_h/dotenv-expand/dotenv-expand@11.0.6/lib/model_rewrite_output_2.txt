@@ -1,0 +1,83 @@
+The Node.js code is designed to interpolate environment variables found within strings, handling both explicit definitions and nested variables with defaults. It uses a regular expression (`DOTENV_SUBSTITUTION_REGEX`) to identify variable patterns within a string, and provides logic to resolve each variable using data from a given environment (`processEnv`) or a parsed object (`parsed`). Escaped dollar signs are preserved. The main functionality is encapsulated in the `interpolate` function which recursively processes each variable and substitution pattern. The `expand` function takes options that include a `parsed` object and optionally a `processEnv`. It updates these with interpolated values, resolving any potential nested references or default fallbacks. The module exports the `expand` function for external use.
+
+```javascript
+'use strict';
+
+// Define regex pattern for detecting and handling variable substitutions.
+const DOTENV_SUBSTITUTION_REGEX = /(\\)?(\$)(?!\()(\{?)([\w.]+)(?::?-((?:\$\{(?:\$\{(?:\$\{[^}]*\}|[^}])*}|[^}])*}|[^}])+))?(\}?)/gi;
+
+// Helper function to resolve escape sequences, here it resolves escaped dollar signs.
+function _resolveEscapeSequences(value) {
+  return value.replace(/\\\$/g, '$');
+}
+
+// Main interpolation function to replace variables with their respective values.
+function interpolate(value, processEnv, parsed) {
+  return value.replace(DOTENV_SUBSTITUTION_REGEX, (match, escaped, dollarSign, openBrace, key, defaultValue, closeBrace) => {
+    if (escaped === '\\') {
+      return match.slice(1);
+    } else {
+      if (processEnv[key]) {
+        if (processEnv[key] === parsed[key]) {
+          return processEnv[key];
+        } else {
+          return interpolate(processEnv[key], processEnv, parsed);
+        }
+      }
+
+      if (parsed[key]) {
+        if (parsed[key] === value) {
+          return parsed[key];
+        } else {
+          return interpolate(parsed[key], processEnv, parsed);
+        }
+      }
+
+      if (defaultValue) {
+        if (defaultValue.startsWith('$')) {
+          return interpolate(defaultValue, processEnv, parsed);
+        } else {
+          return defaultValue;
+        }
+      }
+
+      return '';
+    }
+  });
+}
+
+// Function to expand variables in the provided options and resolve them against processEnv.
+function expand(options) {
+  let processEnv = process.env;
+  
+  if (options && options.processEnv != null) {
+    processEnv = options.processEnv;
+  }
+
+  for (const key in options.parsed) {
+    let value = options.parsed[key];
+    const inProcessEnv = Object.prototype.hasOwnProperty.call(processEnv, key);
+
+    if (inProcessEnv) {
+      if (processEnv[key] === options.parsed[key]) {
+        value = interpolate(value, processEnv, options.parsed);
+      } else {
+        value = processEnv[key];
+      }
+    } else {
+      value = interpolate(value, processEnv, options.parsed);
+    }
+
+    options.parsed[key] = _resolveEscapeSequences(value);
+  }
+
+  for (const processKey in options.parsed) {
+    processEnv[processKey] = options.parsed[processKey];
+  }
+
+  return options;
+}
+
+// Export the expand function for external use.
+module.exports.expand = expand;
+```

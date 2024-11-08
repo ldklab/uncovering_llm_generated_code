@@ -1,0 +1,194 @@
+The provided Node.js code defines a module for editing text using an external editor. It includes synchronous and asynchronous functions to handle this task. Here's a breakdown of the functionality:
+
+1. **Importing Required Modules:**
+   - Various Node.js modules like `chardet`, `child_process`, `fs`, `iconv-lite`, and `tmp` are imported.
+   - Errors related to file operations (create, launch, read, remove) are imported from local files.
+
+2. **Functions:**
+   - `edit`: A synchronous function that uses an instance of `ExternalEditor` to open, edit, and clean up a temporary file.
+   - `editAsync`: An asynchronous version of the `edit` function with a callback to handle the completion of the text editing.
+
+3. **Class Definition - `ExternalEditor`:**
+   - **Constructor:** Initializes an instance with the text to edit and options for the temporary file. Determines which external editor to use and creates a temporary file for editing.
+   - **Utility Methods:**
+     - `splitStringBySpace`: Splits a command string by spaces, considering escaped spaces.
+   - **Properties:**
+     - `temp_file` and `last_exit_status`: Deprecated properties with logs; `tempFile` and `lastExitStatus` should be used instead.
+   - **Primary Methods:**
+     - `run`: Synchronously launches the editor, reads the file, and returns the text.
+     - `runAsync`: Asynchronously launches the editor, reads the file, and invokes a callback with the result.
+     - `cleanup`: Removes the temporary file.
+     - `determineEditor`: Determines the editor to use based on environment variables or defaults (like Notepad on Windows or Vim otherwise).
+     - `createTemporaryFile`: Creates the temporary file and writes the initial text.
+     - `readTemporaryFile`: Reads the contents of the temporary file, encoding it based on detected encoding.
+     - `removeTemporaryFile`: Deletes the temporary file after editing.
+     - `launchEditor` and `launchEditorAsync`: Launches the editor synchronously or asynchronously using Node's child process capabilities.
+
+4. **Exports:**
+   - `edit`, `editAsync`, and `ExternalEditor` are exported for external usage.
+
+Here's a potential rewrite of the given code:
+
+```javascript
+"use strict";
+
+/**
+ * Node External Editor
+ *
+ * Kevin Gravier <kevin@mrkmg.com>
+ * MIT 2019
+ */
+const { detect } = require("chardet");
+const { spawn, spawnSync } = require("child_process");
+const { writeFileSync, readFileSync, unlinkSync } = require("fs");
+const { decode, encodingExists } = require("iconv-lite");
+const { tmpNameSync } = require("tmp");
+const { CreateFileError } = require("./errors/CreateFileError");
+const { LaunchEditorError } = require("./errors/LaunchEditorError");
+const { ReadFileError } = require("./errors/ReadFileError");
+const { RemoveFileError } = require("./errors/RemoveFileError");
+
+function edit(text = "", fileOptions) {
+    const editor = new ExternalEditor(text, fileOptions);
+    editor.run();
+    editor.cleanup();
+    return editor.text;
+}
+exports.edit = edit;
+
+function editAsync(text = "", callback, fileOptions) {
+    const editor = new ExternalEditor(text, fileOptions);
+    editor.runAsync((err, result) => {
+        if (err) {
+            setImmediate(callback, err, null);
+        } else {
+            try {
+                editor.cleanup();
+                setImmediate(callback, null, result);
+            } catch (cleanupError) {
+                setImmediate(callback, cleanupError, null);
+            }
+        }
+    });
+}
+exports.editAsync = editAsync;
+
+class ExternalEditor {
+    constructor(text = "", fileOptions) {
+        this.text = text;
+        this.fileOptions = fileOptions || {};
+        this.determineEditor();
+        this.createTemporaryFile();
+    }
+
+    static splitStringBySpace(str) {
+        const pieces = [];
+        let currentString = "";
+        for (let strIndex = 0; strIndex < str.length; strIndex++) {
+            const currentLetter = str[strIndex];
+            if (strIndex > 0 && currentLetter === " " && str[strIndex - 1] !== "\\" && currentString.length > 0) {
+                pieces.push(currentString);
+                currentString = "";
+            } else {
+                currentString += currentLetter;
+            }
+        }
+        if (currentString.length > 0) {
+            pieces.push(currentString);
+        }
+        return pieces;
+    }
+
+    get temp_file() {
+        console.log("DEPRECATED: temp_file. Use tempFile moving forward.");
+        return this.tempFile;
+    }
+
+    get last_exit_status() {
+        console.log("DEPRECATED: last_exit_status. Use lastExitStatus moving forward.");
+        return this.lastExitStatus;
+    }
+
+    run() {
+        this.launchEditor();
+        this.readTemporaryFile();
+        return this.text;
+    }
+
+    runAsync(callback) {
+        try {
+            this.launchEditorAsync(() => {
+                try {
+                    this.readTemporaryFile();
+                    setImmediate(callback, null, this.text);
+                } catch (readError) {
+                    setImmediate(callback, readError, null);
+                }
+            });
+        } catch (launchError) {
+            setImmediate(callback, launchError, null);
+        }
+    }
+
+    cleanup() {
+        this.removeTemporaryFile();
+    }
+
+    determineEditor() {
+        const editor = process.env.VISUAL || process.env.EDITOR || (/^win/.test(process.platform) ? "notepad" : "vim");
+        const editorOpts = ExternalEditor.splitStringBySpace(editor).map(piece => piece.replace("\\ ", " "));
+        this.editor = { bin: editorOpts.shift(), args: editorOpts };
+    }
+
+    createTemporaryFile() {
+        try {
+            this.tempFile = tmpNameSync(this.fileOptions);
+            const opt = { encoding: "utf8", mode: this.fileOptions.mode };
+            writeFileSync(this.tempFile, this.text, opt);
+        } catch (error) {
+            throw new CreateFileError(error);
+        }
+    }
+
+    readTemporaryFile() {
+        try {
+            const tempFileBuffer = readFileSync(this.tempFile);
+            const encoding = detect(tempFileBuffer).toString();
+            const validEncoding = encodingExists(encoding) ? encoding : "utf8";
+            this.text = decode(tempFileBuffer, validEncoding);
+        } catch (error) {
+            throw new ReadFileError(error);
+        }
+    }
+
+    removeTemporaryFile() {
+        try {
+            unlinkSync(this.tempFile);
+        } catch (error) {
+            throw new RemoveFileError(error);
+        }
+    }
+
+    launchEditor() {
+        try {
+            const editorProcess = spawnSync(this.editor.bin, [...this.editor.args, this.tempFile], { stdio: "inherit" });
+            this.lastExitStatus = editorProcess.status;
+        } catch (error) {
+            throw new LaunchEditorError(error);
+        }
+    }
+
+    launchEditorAsync(callback) {
+        try {
+            const editorProcess = spawn(this.editor.bin, [...this.editor.args, this.tempFile], { stdio: "inherit" });
+            editorProcess.on("exit", code => {
+                this.lastExitStatus = code;
+                setImmediate(callback);
+            });
+        } catch (error) {
+            throw new LaunchEditorError(error);
+        }
+    }
+}
+exports.ExternalEditor = ExternalEditor;
+```

@@ -1,0 +1,77 @@
+The provided Node.js code is a middleware function for enabling Cross-Origin Resource Sharing (CORS) in an Express.js application. CORS is a security feature that allows or restricts requested resources on a web server depending on where the HTTP request was initiated. 
+
+Key functionalities of the code include:
+1. **Default Options**: It establishes default CORS settings such as allowing all origins (`origin: '*'`), enabling common HTTP methods (GET, HEAD, PUT, PATCH, POST, DELETE), and setting a default response status for successful OPTIONS requests.
+2. **Custom Options**: It merges custom CORS options provided by the user with the default settings.
+3. **Origin Handling**: It checks the origin of incoming requests. If a custom function is provided in options to determine the origin, it invokes the function; otherwise, it uses the specified origin.
+4. **Setting Headers**: The function `setCorsHeaders` is used to wire CORS headers into the response based on the resolved options.
+5. **Preflight Requests**: It checks if the request is an OPTIONS request (commonly a CORS preflight request) and handles it according to the custom or default options.
+6. **Error Handling**: It also can handle errors related to origin checks, returning a 403 status when required if the origin is not allowed.
+
+Here’s a possible rewrite of the original code, maintaining the described functionality:
+
+```javascript
+// cors.js
+
+'use strict';
+
+module.exports = function cors(options = {}) {
+  return function(req, res, next) {
+    const defaultOptions = {
+      origin: '*',
+      methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
+      preflightContinue: false,
+      optionsSuccessStatus: 204,
+    };
+
+    const corsOptions = { ...defaultOptions, ...options };
+
+    const determineOrigin = (originCallback) => (
+      typeof corsOptions.origin === 'function' ?
+        corsOptions.origin(req.header('Origin'), originCallback) :
+        corsOptions.origin
+    );
+
+    const handleOriginCheck = (err, allow) => {
+      if (err) return next(err);
+      if (allow) setCorsHeaders(res, {}, corsOptions);
+      if (!allow) return res.sendStatus(403);
+      next();
+    };
+
+    const origin = determineOrigin(handleOriginCheck);
+
+    if (corsOptions.origin === true || origin === req.header('Origin')) {
+      setCorsHeaders(res, req, corsOptions);
+    }
+
+    if (req.method === 'OPTIONS') {
+      corsOptions.preflightContinue ? next() : res.sendStatus(corsOptions.optionsSuccessStatus);
+    } else {
+      next();
+    }
+  };
+};
+
+function setCorsHeaders(res, req, options) {
+  res.header('Access-Control-Allow-Origin', options.origin || '*');
+  res.header('Access-Control-Allow-Methods', options.methods);
+
+  if (options.credentials) {
+    res.header('Access-Control-Allow-Credentials', 'true');
+  }
+
+  const allowHeaders = options.allowedHeaders || req.header('Access-Control-Request-Headers');
+  if (allowHeaders) {
+    res.header('Access-Control-Allow-Headers', Array.isArray(allowHeaders) ? allowHeaders.join(',') : allowHeaders);
+  }
+
+  if (options.exposedHeaders) {
+    res.header('Access-Control-Expose-Headers', Array.isArray(options.exposedHeaders) ? options.exposedHeaders.join(',') : options.exposedHeaders);
+  }
+
+  if (options.maxAge) {
+    res.header('Access-Control-Max-Age', options.maxAge.toString());
+  }
+}
+```

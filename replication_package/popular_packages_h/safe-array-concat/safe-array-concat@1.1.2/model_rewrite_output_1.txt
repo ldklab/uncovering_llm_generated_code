@@ -1,0 +1,61 @@
+The provided Node.js script is designed to create a safe version of the array-concatenation method (`Array.prototype.concat`), implemented conditionally based on the environment's support for the `Symbol.isConcatSpreadable` feature which affects array-like objects' concatenation behavior.
+
+### Explanation:
+
+1. **Module Imports**:
+   - `GetIntrinsic`: Used to access built-in ECMAScript features, specifically `Array.prototype.concat` here.
+   - `callBind` and `callBound`: Utility functions for binding context and ensuring certain method accessibility.
+   - `hasSymbols`: Checks if the environment supports ES6 symbols.
+   - `isarray`: Used to check if a value is an array; utilized when spreadability is supported.
+
+2. **Variables**:
+   - `$concat`: Reference to the native `Array.prototype.concat`.
+   - `$slice`: Reference to the `Array.prototype.slice`.
+   - `empty`: An empty array initialized to use for method applications later.
+   - `isConcatSpreadable`: Boolean indicating support for `Symbol.isConcatSpreadable`.
+   - `$concatApply`: A bound version of `concat`, applied with an empty context if `Symbol.isConcatSpreadable` is supported.
+
+3. **Exported Functionality**:
+   - If `Symbol.isConcatSpreadable` is supported, a custom `safeArrayConcat` function is implemented:
+     - Iterates over all arguments to check if they are objects with `isConcatSpreadable`.
+     - Creates a copy of array-like arguments setting `isConcatSpreadable` to ensure spreadability.
+     - Applies `concat` using `$concatApply`.
+   - If `Symbol.isConcatSpreadable` is not supported, it exports a bound version of `Array.prototype.concat` using an empty array context.
+
+### Rewritten Code:
+
+```javascript
+'use strict';
+
+const GetIntrinsic = require('get-intrinsic');
+const $concat = GetIntrinsic('%Array.prototype.concat%');
+
+const callBind = require('call-bind');
+const callBound = require('call-bind/callBound');
+const $slice = callBound('Array.prototype.slice');
+
+const hasSymbols = require('has-symbols/shams')();
+const isConcatSpreadable = hasSymbols && Symbol.isConcatSpreadable;
+
+const empty = [];
+const $concatApply = isConcatSpreadable ? callBind.apply($concat, empty) : null;
+
+const isArray = isConcatSpreadable ? require('isarray') : null;
+
+module.exports = isConcatSpreadable
+  ? function safeArrayConcat(...args) {
+      for (let i = 0; i < args.length; i++) {
+        const arg = args[i];
+        if (arg && typeof arg === 'object' && typeof arg[isConcatSpreadable] === 'boolean') {
+          if (!empty[isConcatSpreadable]) {
+            empty[isConcatSpreadable] = true;
+          }
+          const arr = isArray(arg) ? $slice(arg) : [arg];
+          arr[isConcatSpreadable] = true;
+          args[i] = arr;
+        }
+      }
+      return $concatApply(args);
+    }
+  : callBind($concat, empty);
+```

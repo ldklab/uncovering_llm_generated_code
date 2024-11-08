@@ -1,0 +1,66 @@
+The provided Node.js code defines a module to decode JSON Web Tokens (JWT). It includes a custom error class `InvalidTokenError` and a function `jwtDecode` to perform the decoding of the JWT.
+
+1. **InvalidTokenError**: This is a custom error class extending the built-in JavaScript `Error` class. It is used to throw errors specifically related to invalid tokens in the code. The class has its `name` property set to "InvalidTokenError".
+
+2. **b64DecodeUnicode**: This function decodes a base64 encoded string that may contain Unicode characters. The function processes the string to convert percent-encoded UTF-8 characters back to their original form.
+
+3. **base64UrlDecode**: This function decodes a base64 URL-friendly string. JWT parts are base64 URL-encoded, meaning they replace characters `+` and `/` with `-` and `_`, respectively, and might omit trailing `=` characters used for padding. It converts these back to standard base64 encoding and decodes them.
+
+4. **jwtDecode**: This function accepts a JWT as a string, along with optional options to return the header instead of the payload part of the JWT. It throws errors if the token is not a string or is malformed. The function extracts either the header or payload, decodes it, and returns the JSON-parsed result. Errors are caught and re-thrown using `InvalidTokenError`.
+
+Here is a rewritten version of the code:
+
+```javascript
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.jwtDecode = exports.InvalidTokenError = void 0;
+
+class InvalidTokenError extends Error {}
+InvalidTokenError.prototype.name = "InvalidTokenError";
+exports.InvalidTokenError = InvalidTokenError;
+
+function decodeBase64Unicode(str) {
+    return decodeURIComponent(
+        atob(str).split("").map(char => {
+            let hex = char.charCodeAt(0).toString(16).toUpperCase();
+            return "%" + (hex.length < 2 ? "0" + hex : hex);
+        }).join("")
+    );
+}
+
+function base64UrlDecode(str) {
+    let output = str.replace(/-/g, "+").replace(/_/g, "/");
+    switch (output.length % 4) {
+        case 0: break;
+        case 2: output += "=="; break;
+        case 3: output += "="; break;
+        default: throw new Error("Invalid base64 length");
+    }
+    try {
+        return decodeBase64Unicode(output);
+    } catch {
+        return atob(output);
+    }
+}
+
+function jwtDecode(token, options = {}) {
+    if (typeof token !== "string") {
+        throw new InvalidTokenError("Token must be a string");
+    }
+    const partIndex = options.header ? 0 : 1;
+    const jwtParts = token.split(".");
+    
+    if (typeof jwtParts[partIndex] !== "string") {
+        throw new InvalidTokenError(`Missing JWT part #${partIndex + 1}`);
+    }
+    
+    try {
+        const decoded = base64UrlDecode(jwtParts[partIndex]);
+        return JSON.parse(decoded);
+    } catch (error) {
+        throw new InvalidTokenError(`Invalid JWT part #${partIndex + 1}: ${error.message}`);
+    }
+}
+
+exports.jwtDecode = jwtDecode;
+```

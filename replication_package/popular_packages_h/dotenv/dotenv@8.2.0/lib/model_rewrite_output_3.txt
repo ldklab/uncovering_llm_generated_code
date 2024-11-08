@@ -1,0 +1,78 @@
+The Node.js code provided is a utility for loading environment variables from a `.env` file into `process.env`. It uses the file system and path modules to read the file located at a specified path (defaulting to the current working directory if not specified) and parse its contents. The `.env` file is expected to contain key-value pairs in the format `KEY=VALUE`, optionally enclosed in single or double quotes.
+
+The main functionalities provided by the code are:
+
+1. **Parsing of .env file:** The `parse` function reads the contents of a `.env` file, splits it into lines, and processes each line to extract key-value pairs. Values can be optionally quoted, and if double-quoted, newline characters are expanded. The extracted values are returned as an object.
+
+2. **Loading environment variables:** The `config` function reads the .env file, parses it with the `parse` function, and merges the resulting configuration into `process.env`, ensuring that already defined environment variables are not overwritten unless specified. This function takes an options object to specify the path, encoding, and debugging configuration.
+
+The module exports two functions:
+- `config`, which attempts to read, parse, and load a `.env` file into `process.env`.
+- `parse`, which parses the contents of a `.env` file and returns an object with the key-value pairs.
+
+Here's a possible rewrite of the code, preserving its functionality:
+
+```javascript
+const fs = require('fs');
+const path = require('path');
+
+function log(message) {
+  console.log(`[dotenv][DEBUG] ${message}`);
+}
+
+const NEWLINE = '\n';
+const RE_INI_KEY_VAL = /^\s*([\w.-]+)\s*=\s*(.*)?\s*$/;
+const RE_NEWLINES = /\\n/g;
+const NEWLINES_MATCH = /\n|\r|\r\n/;
+
+function parse(src, options) {
+  const debug = options && options.debug;
+  const result = {};
+
+  src.toString().split(NEWLINES_MATCH).forEach((line, index) => {
+    const matched = line.match(RE_INI_KEY_VAL);
+    if (matched) {
+      const key = matched[1];
+      let value = matched[2] || '';
+
+      if (value.startsWith('"') && value.endsWith('"')) {
+        value = value.slice(1, -1).replace(RE_NEWLINES, NEWLINE);
+      } else if (value.startsWith("'") && value.endsWith("'")) {
+        value = value.slice(1, -1);
+      } else {
+        value = value.trim();
+      }
+
+      result[key] = value;
+    } else if (debug) {
+      log(`Line ${index + 1} did not match the key-value format: ${line}`);
+    }
+  });
+
+  return result;
+}
+
+function config(options = {}) {
+  const dotenvPath = options.path || path.resolve(process.cwd(), '.env');
+  const encoding = options.encoding || 'utf8';
+  const debug = options.debug || false;
+
+  try {
+    const parsed = parse(fs.readFileSync(dotenvPath, { encoding }), { debug });
+
+    Object.keys(parsed).forEach((key) => {
+      if (!(key in process.env)) {
+        process.env[key] = parsed[key];
+      } else if (debug) {
+        log(`"${key}" is already defined in \`process.env\` and will not be overwritten`);
+      }
+    });
+
+    return { parsed };
+  } catch (error) {
+    return { error };
+  }
+}
+
+module.exports = { config, parse };
+```

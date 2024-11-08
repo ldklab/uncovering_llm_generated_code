@@ -1,0 +1,202 @@
+The provided Node.js code is a module designed to manage and load environment variables from `.env` files or encrypted environment variable vaults. It also allows configuration and parsing of these files, with functionality to decrypt vault files when necessary.
+
+Here's a breakdown of its functionalities:
+1. **Environment Variable Parsing**: The `parse` function parses a given string or buffer containing environment variables, returning an object representation of key-value pairs.
+2. **Vault Support**: Uses encrypted vault files to manage environment variables securely, allowing key rotation and trying multiple decryption keys.
+3. **Logging**: Includes utility functions `_log`, `_warn`, and `_debug` to output messages with different verbosity.
+4. **Key Management**: Functions such as `_dotenvKey` manage how decryption keys are obtained, either from options, environment variables, or defaults.
+5. **Configurations**: The `config` and `configDotenv` functions facilitate loading and populating environment variables into the `process.env` from `.env` files or encrypted vaults.
+6. **Decryption**: The `decrypt` function deciphers encrypted environment variables using provided keys, ensuring data integrity and correct decryption key length.
+7. **Module Export**: Exports a `DotenvModule` with main methods like configuration, parsing, decryption, and vault management functions for use in other parts of a Node.js application.
+
+```javascript
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
+const crypto = require('crypto');
+const packageJson = require('../package.json');
+
+const version = packageJson.version;
+const LINE = /(?:^|^)\s*(?:export\s+)?([\w.-]+)(?:\s*=\s*?|:\s+?)(\s*'(?:\\'|[^'])*'|\s*"(?:\\"|[^"])*"|\s*`(?:\\`|[^`])*`|[^#\r\n]+)?\s*(?:#.*)?(?:$|$)/mg;
+
+function parse(src) {
+  const obj = {};
+  let lines = src.toString().replace(/\r\n?/mg, '\n');
+  let match;
+  while ((match = LINE.exec(lines)) != null) {
+    const key = match[1];
+    let value = (match[2] || '').trim();
+    const maybeQuote = value[0];
+    value = value.replace(/^(['"`])([\s\S]*)\1$/mg, '$2');
+    if (maybeQuote === '"') {
+      value = value.replace(/\\n/g, '\n').replace(/\\r/g, '\r');
+    }
+    obj[key] = value;
+  }
+  return obj;
+}
+
+function _parseVault(options) {
+  const vaultPath = _vaultPath(options);
+  const result = DotenvModule.configDotenv({ path: vaultPath });
+  if (!result.parsed) {
+    throw new Error(`MISSING_DATA: Cannot parse ${vaultPath} for an unknown reason`);
+  }
+
+  const keys = _dotenvKey(options).split(',');
+  for (const key of keys) {
+    try {
+      const attrs = _instructions(result, key.trim());
+      return DotenvModule.parse(DotenvModule.decrypt(attrs.ciphertext, attrs.key));
+    } catch (error) {
+      continue;
+    }
+  }
+  throw new Error('Decryption failed with all keys');
+}
+
+function _log(message) {
+  console.log(`[dotenv@${version}][INFO] ${message}`);
+}
+
+function _warn(message) {
+  console.log(`[dotenv@${version}][WARN] ${message}`);
+}
+
+function _debug(message) {
+  console.log(`[dotenv@${version}][DEBUG] ${message}`);
+}
+
+function _dotenvKey(options) {
+  return (options?.DOTENV_KEY || process.env.DOTENV_KEY || '').trim();
+}
+
+function _instructions(result, dotenvKey) {
+  try {
+    const { password: key } = new URL(dotenvKey);
+    const environment = new URL(dotenvKey).searchParams.get('environment');
+    if (!key || !environment) {
+      throw new Error('INVALID_DOTENV_KEY: Missing key or environment part');
+    }
+    const environmentKey = `DOTENV_VAULT_${environment.toUpperCase()}`;
+    const ciphertext = result.parsed[environmentKey];
+    if (!ciphertext) {
+      throw new Error(`NOT_FOUND_DOTENV_ENVIRONMENT: Cannot locate environment ${environmentKey}`);
+    }
+    return { ciphertext, key };
+  } catch (error) {
+    throw new Error('INVALID_DOTENV_KEY: Invalid format or missing parts');
+  }
+}
+
+function _vaultPath(options) {
+  let possibleVaultPath = null;
+  if (options?.path) {
+    if (Array.isArray(options.path)) {
+      possibleVaultPath = options.path.find(filepath => fs.existsSync(filepath)) || null;
+    } else if (typeof options.path === 'string') {
+      possibleVaultPath = options.path;
+    }
+    if (possibleVaultPath && !possibleVaultPath.endsWith('.vault')) {
+      possibleVaultPath = `${possibleVaultPath}.vault`;
+    }
+  }
+  possibleVaultPath = possibleVaultPath || path.resolve(process.cwd(), '.env.vault');
+  return fs.existsSync(possibleVaultPath) ? possibleVaultPath : null;
+}
+
+function _resolveHome(envPath) {
+  return envPath.startsWith('~') ? path.join(os.homedir(), envPath.slice(1)) : envPath;
+}
+
+function _configVault(options) {
+  _log('Loading env from encrypted .env.vault');
+  const parsed = DotenvModule._parseVault(options);
+  DotenvModule.populate(options?.processEnv || process.env, parsed, options);
+  return { parsed };
+}
+
+function configDotenv(options = {}) {
+  const dotenvPath = path.resolve(process.cwd(), '.env');
+  const encoding = options.encoding || 'utf8';
+  const debug = options.debug === true;
+  if (debug) _debug(options.encoding ? '' : 'No encoding specified, default to UTF-8');
+
+  let optionPaths = options.path ? (Array.isArray(options.path) ? options.path.map(_resolveHome) : [_resolveHome(options.path)]) : [dotenvPath];
+  const parsedAll = {};
+  let lastError;
+
+  for (const path of optionPaths) {
+    try {
+      const parsed = DotenvModule.parse(fs.readFileSync(path, { encoding }));
+      DotenvModule.populate(parsedAll, parsed, options);
+    } catch (error) {
+      if (debug) _debug(`Failed to load ${path} ${error.message}`);
+      lastError = error;
+    }
+  }
+
+  DotenvModule.populate(options?.processEnv || process.env, parsedAll, options);
+  return { parsed: parsedAll, ...(lastError && { error: lastError }) };
+}
+
+function config(options) {
+  if (!_dotenvKey(options)) return DotenvModule.configDotenv(options);
+  const vaultPath = _vaultPath(options);
+  if (!vaultPath) {
+    _warn(`You set DOTENV_KEY but are missing a .env.vault file. Did you forget to build it?`);
+    return DotenvModule.configDotenv(options);
+  }
+  return DotenvModule._configVault(options);
+}
+
+function decrypt(encrypted, keyStr) {
+  const key = Buffer.from(keyStr.slice(-64), 'hex');
+  let ciphertext = Buffer.from(encrypted, 'base64');
+  const nonce = ciphertext.subarray(0, 12);
+  const authTag = ciphertext.subarray(-16);
+  ciphertext = ciphertext.subarray(12, -16);
+
+  const aesgcm = crypto.createDecipheriv('aes-256-gcm', key, nonce);
+  aesgcm.setAuthTag(authTag);
+  try {
+    return aesgcm.update(ciphertext) + aesgcm.final().toString();
+  } catch (error) {
+    const { message } = error;
+    if (message === 'Invalid key length') {
+      throw new Error('INVALID_DOTENV_KEY: It must be 64 characters long (or more)');
+    } else if (message === 'Unsupported state or unable to authenticate data') {
+      throw new Error('DECRYPTION_FAILED: Please check your DOTENV_KEY');
+    }
+    throw error;
+  }
+}
+
+function populate(processEnv, parsed, options = {}) {
+  const debug = options.debug === true;
+  const override = options.override === true;
+
+  if (typeof parsed !== 'object') throw new Error('OBJECT_REQUIRED: Please ensure parsed is an object');
+
+  Object.keys(parsed).forEach(key => {
+    if (!override && processEnv[key] !== undefined) {
+      if (debug) _debug(`"${key}" already defined - NOT overwritten`);
+    } else {
+      if (debug && processEnv[key] !== undefined) _debug(`"${key}" already defined - WAS overwritten`);
+      processEnv[key] = parsed[key];
+    }
+  });
+}
+
+const DotenvModule = {
+  configDotenv,
+  _configVault,
+  _parseVault,
+  config,
+  decrypt,
+  parse,
+  populate
+};
+
+module.exports = DotenvModule;
+```

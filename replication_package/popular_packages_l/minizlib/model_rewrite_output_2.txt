@@ -1,0 +1,73 @@
+The given Node.js code defines a simple stream pipeline for decompressing data using the Brotli compression algorithm. It utilizes a custom class `MinizlibBase` that extends a `Minipass` to manage streaming data through a decompressing engine. Several key components are involved:
+
+1. **MinizlibBase Class**: Inherits from `Minipass` and handles setting up a streaming engine (`_engine`). It forwards incoming chunks to the engine and manages the flow of data from the engine to the `Minipass` pipeline.
+
+2. **BrotliDecompress Class**: Subclass of `MinizlibBase` specifically initialized with Brotli decompression. It sets up the transformation engine to decompress Brotli-encoded data by using `zlib.createBrotliDecompress`.
+
+3. **Data Sources**:
+   - `sourceOfCompressedData`: A function returning an input stream that simulates providing compressed data. It uses a `Transform` stream to push fake data asynchronously to emulate incoming compressed data.
+   - `whereToWriteTheDecodedData`: A function providing an output stream that logs decompressed data to the console. It uses a `Transform` stream to handle the decompressed data chunks by logging them and marking completion on the 'finish' event.
+
+4. **Pipeline Setup**: The pipeline is assembled by connecting the source, decode, and output streams together. The `input` stream provides the compressed data, the `decode` stream handles decompression, and the `output` stream processes and displays the resultant decompressed data.
+
+Here is a possible rewrite of the given code:
+
+```javascript
+const { Transform } = require('stream');
+const zlib = require('zlib');
+const Minipass = require('minipass');
+
+class MinizlibBase extends Minipass {
+  constructor(options, engine) {
+    super(options);
+    this._engine = engine;
+    this._engine.on('data', chunk => this.write(chunk));
+    this._engine.on('end', () => this.end());
+  }
+
+  write(chunk, encoding, callback) {
+    return super.write(chunk, encoding, callback);
+  }
+
+  end(chunk, encoding, callback) {
+    if (chunk) this.write(chunk, encoding, callback);
+    this._engine.end();
+  }
+}
+
+class BrotliDecompress extends MinizlibBase {
+  constructor(options) {
+    super(options, zlib.createBrotliDecompress(options));
+  }
+}
+
+function sourceOfCompressedData() {
+  const inputStream = new Transform();
+  setImmediate(() => {
+    inputStream.push(Buffer.from('compressed data here', 'binary'));
+    inputStream.push(null);
+  });
+  return inputStream;
+}
+
+function whereToWriteTheDecodedData() {
+  const outputStream = new Transform({
+    transform(chunk, encoding, callback) {
+      console.log('Decoded:', chunk.toString());
+      callback(null, chunk);
+    }
+  });
+
+  outputStream.on('finish', () => {
+    console.log('Decompression complete.');
+  });
+
+  return outputStream;
+}
+
+const inputStream = sourceOfCompressedData();
+const decoder = new BrotliDecompress();
+const outputStream = whereToWriteTheDecodedData();
+
+inputStream.pipe(decoder).pipe(outputStream);
+```

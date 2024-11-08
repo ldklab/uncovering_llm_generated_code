@@ -1,0 +1,92 @@
+The provided Node.js code is a module for determining the dimensions of an image file. It is designed to support both synchronous and asynchronous operations. Here's a brief explanation of its functionality:
+
+1. **Promises and Async Functionality**: The code defines a custom implementation of a function to assist with asynchronous operations using JavaScript's Promise feature (`__awaiter` function). This allows handling asynchronous image reading operations via both callbacks and promises.
+
+2. **Queue Handling**: A queue from the `queue` module is utilized for managing asynchronous file system operations to avoid exceeding file-descriptor limits, with a default concurrency of 100.
+
+3. **Buffer Management**: It defines a maximum buffer size of 512 kilobytes for reading files into buffers, with the possibility of making this size adaptive based on the image's initial signature.
+
+4. **Type Handling and Image Detection**: The module relies on `detector` and `types` modules to determine the image type and size. It uses the file buffer rather than the file extension to correctly identify and handle different types of image files.
+
+5. **File Reading**: It provides functions for reading files both asynchronously (`asyncFileToBuffer`) and synchronously (`syncFileToBuffer`), reading up to a specified buffer size.
+
+6. **Main Functionality (`imageSize`)**: The core function `imageSize` can accept either a buffer or a file path. If a file path is provided, it reads the image into a buffer and determines its dimensions. It supports both synchronous operations (returning a result) and asynchronous operations (using a callback).
+
+7. **Exports and Concurrency Settings**: The module exports the `imageSize` function for use elsewhere, supports default exports for compatibility, and allows setting concurrency levels.
+
+Here is a possible rewrite of the code:
+
+```javascript
+"use strict";
+const fs = require("fs");
+const path = require("path");
+const Queue = require("queue");
+const { typeHandlers } = require("./types");
+const { detector } = require("./detector");
+
+const MaxBufferSize = 512 * 1024;
+const queue = new Queue({ concurrency: 100, autostart: true });
+
+function lookup(buffer, filepath) {
+    const type = detector(buffer);
+    if (type in typeHandlers) {
+        const size = typeHandlers[type].calculate(buffer, filepath);
+        if (size) {
+            size.type = type;
+            return size;
+        }
+    }
+    throw new TypeError(`unsupported file type: ${type} (file: ${filepath})`);
+}
+
+async function asyncFileToBuffer(filepath) {
+    const handle = await fs.promises.open(filepath, 'r');
+    const { size } = await handle.stat();
+    if (size <= 0) {
+        await handle.close();
+        throw new Error('Empty file');
+    }
+    const bufferSize = Math.min(size, MaxBufferSize);
+    const buffer = Buffer.alloc(bufferSize);
+    await handle.read(buffer, 0, bufferSize, 0);
+    await handle.close();
+    return buffer;
+}
+
+function syncFileToBuffer(filepath) {
+    const descriptor = fs.openSync(filepath, 'r');
+    const { size } = fs.fstatSync(descriptor);
+    if (size <= 0) {
+        fs.closeSync(descriptor);
+        throw new Error('Empty file');
+    }
+    const bufferSize = Math.min(size, MaxBufferSize);
+    const buffer = Buffer.alloc(bufferSize);
+    fs.readSync(descriptor, buffer, 0, bufferSize, 0);
+    fs.closeSync(descriptor);
+    return buffer;
+}
+
+function imageSize(input, callback) {
+    if (Buffer.isBuffer(input)) {
+        return lookup(input);
+    }
+    if (typeof input !== 'string') {
+        throw new TypeError('invalid invocation');
+    }
+    const filepath = path.resolve(input);
+    if (typeof callback === 'function') {
+        queue.push(() => asyncFileToBuffer(filepath)
+            .then(buffer => process.nextTick(callback, null, lookup(buffer, filepath)))
+            .catch(callback));
+    } else {
+        const buffer = syncFileToBuffer(filepath);
+        return lookup(buffer, filepath);
+    }
+}
+
+module.exports = imageSize;
+exports.default = imageSize;
+exports.setConcurrency = (c) => { queue.concurrency = c; };
+exports.types = Object.keys(typeHandlers);
+```

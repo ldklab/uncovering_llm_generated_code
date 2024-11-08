@@ -1,0 +1,94 @@
+The Node.js code defines a `Zone` class which implements a mechanism similar to zones in other programming models. The `Zone` class tracks asynchronous execution contexts, allowing wrapped methods to maintain awareness of which logical zone they are executing within.
+
+Here is the functionality of the code:
+
+1. **Zone Class**: 
+   - `constructor`: Creates a zone with a given parent, name, and properties.
+   - `currentZone`: A static method that returns the current zone or the root zone if no zone is currently active.
+   - `fork`: Creates a new child zone from the current zone.
+   - `wrap`: Wraps a callback function to execute within the context of the current zone.
+   - `run`: Executes a callback within the zone, switching to this zone during execution, and reverts to the previous zone afterward.
+
+2. **Global API Patching**:
+   - `patchGlobalAPI`: Overrides global `setTimeout` and `setInterval` methods to wrap their callbacks, ensuring that they execute within the context of the current zone.
+
+3. **Initialization**:
+   - `Zone.root`: Defines the root zone.
+   - `Zone._currentZone`: Tracks the current executing zone, initialized to the root zone.
+   - `patchGlobalAPI`: Applies the defined patches to the global context.
+
+4. **Exports**: The `Zone` class is exported for use in other modules.
+
+Here is a rewrite of the provided Node.js code adhering to the explained functionality:
+
+```javascript
+// zone.js
+
+class Zone {
+  constructor(parentZone, name, properties) {
+    this.name = name || '<root>';
+    this.parent = parentZone || null;
+    this.properties = properties || Object.create(null);
+  }
+
+  static getCurrentZone() {
+    return Zone._currentZone || Zone.rootZone;
+  }
+
+  createFork(zoneConfig) {
+    return new Zone(this, zoneConfig.name, zoneConfig.properties);
+  }
+
+  wrapCallback(callback, source) {
+    const currentZone = this;
+    const wrappedFunction = function() {
+      return currentZone.execute(callback, this, arguments, source);
+    };
+    return wrappedFunction;
+  }
+
+  execute(callback, thisArg, argsArray, source) {
+    const lastZone = Zone.getCurrentZone();
+    Zone._currentZone = this;
+    try {
+      return callback.apply(thisArg, argsArray);
+    } finally {
+      Zone._currentZone = lastZone;
+    }
+  }
+}
+
+function patchGlobalTimers(global) {
+  const nativeSetTimeout = global.setTimeout;
+  global.setTimeout = function(callback, delay, ...args) {
+    const activeZone = Zone.getCurrentZone();
+    return nativeSetTimeout(activeZone.wrapCallback(callback, 'setTimeout'), delay, ...args);
+  };
+
+  const nativeSetInterval = global.setInterval;
+  global.setInterval = function(callback, delay, ...args) {
+    const activeZone = Zone.getCurrentZone();
+    return nativeSetInterval(activeZone.wrapCallback(callback, 'setInterval'), delay, ...args);
+  };
+}
+
+Zone.rootZone = new Zone(null, '<root>');
+Zone._currentZone = Zone.rootZone;
+
+patchGlobalTimers(globalThis);
+
+module.exports = { Zone };
+
+// Example usage
+/*
+const { Zone } = require('./zone.js');
+const customZone = Zone.getCurrentZone().createFork({ name: 'customZone' });
+
+customZone.execute(() => {
+  setTimeout(() => {
+    console.log('Testing inside customZone');
+    console.log(Zone.getCurrentZone().name); // Output: "customZone"
+  }, 1000);
+});
+*/
+```

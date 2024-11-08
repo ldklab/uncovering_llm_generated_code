@@ -1,0 +1,84 @@
+The `babel-plugin-polyfill-corejs2` is a Babel plugin designed to automatically include polyfills from `core-js@2` based on your code's usage. This allows developers to add necessary JavaScript polyfills to ensure their code runs in environments that do not support newer ECMAScript features.
+
+### Installation
+
+You can install the package using either npm or yarn as a development dependency.
+
+### Usage
+
+You should add `babel-plugin-polyfill-corejs2` in your Babel configuration file, typically a `.babelrc` or `babel.config.json` file. The configuration allows you to specify a `method` option that determines how polyfills are added to your code:
+
+- `usage-pure`: Adds polyfills based on your code's usage without modifying global objects.
+- `usage-global`: Adds polyfills based on your code's usage and affects global objects.
+- `entry-global`: Polyfills are added based on the environment (e.g., browsers) specified in the entry file.
+
+When using the `entry-global` method, the plugin will replace imports to `core-js`, ensuring that the required polyfills are prepended based on the environment configuration.
+
+Here's a basic implementation of what this plugin might look like:
+
+```javascript
+// babel-plugin-polyfill-corejs2/index.js
+module.exports = function(babel) {
+  const { types: t } = babel;
+
+  return {
+    name: "babel-plugin-polyfill-corejs2",
+    visitor: {
+      Program(path, state) {
+        const method = state.opts.method || 'usage-global';
+        switch (method) {
+          case 'usage-pure':
+            // Analyze the code and only add necessary polyfills, avoiding global pollution.
+            path.traverse({
+              // Example: Adding polyfills to handle `Array.from`
+              CallExpression(path) {
+                if (t.isMemberExpression(path.node.callee) &&
+                    path.node.callee.object.name === 'Array' &&
+                    path.node.callee.property.name === 'from') {
+                  path.unshiftContainer('body', t.importDeclaration(
+                    [],
+                    t.stringLiteral('core-js/modules/es6.array.from')
+                  ));
+                }
+              },
+            });
+            break;
+
+          case 'usage-global':
+            // Analyze the code and add necessary polyfills, with global modification
+            path.traverse({
+              CallExpression(path) {
+                if (t.isMemberExpression(path.node.callee) &&
+                    path.node.callee.object.name === 'Array' &&
+                    path.node.callee.property.name === 'from') {
+                  path.unshiftContainer('body', t.importDeclaration(
+                    [],
+                    t.stringLiteral('core-js/library/fn/array/from')
+                  ));
+                }
+              },
+            });
+            break;
+
+          case 'entry-global':
+            // Replace core-js imports with necessary polyfills
+            path.node.body.forEach((node, index) => {
+              if (t.isImportDeclaration(node) && node.source.value.startsWith('core-js')) {
+                path.get('body')[index].replaceWith(t.importDeclaration(
+                  [],
+                  t.stringLiteral('core-js/modules/index')
+                ));
+              }
+            });
+            break;
+
+          default:
+            throw new Error(`Unknown method "${method}"`);
+        }
+      },
+    },
+  };
+};
+```
+
+This hypothetical implementation showcases how you might write a Babel plugin to conditionally add different types of polyfills to your code based on the specified `method`. Different strategies are used to insert imports from `core-js` depending on user configuration.

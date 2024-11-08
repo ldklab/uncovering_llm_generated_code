@@ -1,0 +1,50 @@
+The provided Node.js code is a Babel plugin, specifically designed for handling Jest calls within a JavaScript codebase. The plugin's primary functionality is to "hoist" certain Jest calls to the top of the file, ideally right before any import statements. This hoisting is essential because Jest setup functions (like `disableAutomock`, `enableAutomock`, `unmock`, and `mock`) need to be executed before module imports to ensure the desired Jest behavior is applied before the modules are imported.
+
+### Functionality Explanation:
+1. **Initialization**: The plugin exports a function that receives the Babel types utility and returns a visitor object with a `Program` method that defines the core operation within the code.
+
+2. **Traverse and Collect Jest Calls**: As the visitor traverses the program’s body, it identifies any Jest function calls like `jest.disableAutomock()`, `jest.enableAutomock()`, `jest.unmock()`, and `jest.mock()`. These calls are targeted because they can affect module mocking behavior in tests.
+
+3. **Store and Remove**: The identified Jest calls are stored in an array and removed from their original location within the program.
+
+4. **Determine Insertion Point**: The plugin identifies the first import statement’s index to know where to insert the collected Jest calls. The goal is to place these setup calls before imports to ensure they are executed first.
+
+5. **Insert Jest Calls**: The Jest calls are then inserted at the determined position: either before the first import statement or at the very start of the program if there are no import declarations.
+
+### Rewritten Code:
+```javascript
+module.exports = function({ types: t }) {
+  return {
+    visitor: {
+      Program(path) {
+        const jestCalls = [];
+
+        path.traverse({
+          ExpressionStatement(exprPath) {
+            const { expression } = exprPath.node;
+            if (
+              t.isCallExpression(expression) &&
+              t.isMemberExpression(expression.callee) &&
+              t.isIdentifier(expression.callee.object, { name: 'jest' })
+            ) {
+              const methodName = expression.callee.property.name;
+              if (['disableAutomock', 'enableAutomock', 'unmock', 'mock'].includes(methodName)) {
+                jestCalls.push(exprPath.node);
+                exprPath.remove();
+              }
+            }
+          }
+        });
+
+        const firstImportIndex = path.node.body.findIndex(stm => t.isImportDeclaration(stm));
+
+        if (firstImportIndex !== -1) {
+          path.node.body.splice(firstImportIndex, 0, ...jestCalls);
+        } else {
+          path.node.body.unshift(...jestCalls);
+        }
+      }
+    }
+  };
+};
+```

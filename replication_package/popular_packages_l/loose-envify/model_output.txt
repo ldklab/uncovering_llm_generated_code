@@ -1,0 +1,68 @@
+The functionality described in the `loose-envify` package is a fast Node.js library for replacing `process.env` variables in JavaScript code. This package is similar to `envify` but optimized for performance using a token-based approach rather than an Abstract Syntax Tree (AST). The key idea is to selectively replace instances of `process.env` with actual environment variable values during the build process, which is common in development workflows to ensure that code is optimized based on environment configurations, such as `NODE_ENV`.
+
+**Features:**
+
+- **Selective Replacement:** Replaces occurrences of `process.env` with actual environment values in the code.
+- **Performance-Oriented:** Implements a faster method using `js-tokens` to tokenize the JavaScript code instead of parsing it as an AST.
+  
+**Limitations:**
+
+- It doesn't handle broken JavaScript syntax.
+- It does not replace environment variables embedded in template strings.
+- It does not handle expressions with unusual spacing or comments.
+
+**Usage:**
+
+- The package can be used as a library or via a command-line interface (CLI), with an interface identical to `envify`.
+
+**Benchmark:**
+
+- The benchmark results suggest that `loose-envify` is significantly faster than `envify`.
+
+Now, let's create the code for a Node.js package that implements the functionality as described.
+
+```markdown
+```javascript
+// loose-envify.js
+
+const fs = require('fs');
+const jsTokens = require('js-tokens');
+
+function looseEnvify(file, env) {
+  const src = fs.readFileSync(file, 'utf8');
+  const replaced = replaceEnvVars(src, env);
+  fs.writeFileSync(file, replaced, 'utf8');
+}
+
+function replaceEnvVars(src, env) {
+  return src.replace(jsTokens, function(match, type) {
+    if (type === 'IdentifierName' && match.startsWith('process.env')) {
+      const key = match.slice(12); // extract the environment variable key
+      if (env.hasOwnProperty(key)) {
+        return JSON.stringify(env[key]);
+      }
+    }
+    return match;
+  });
+}
+
+// CLI interface
+if (require.main === module) {
+  const args = process.argv.slice(2);
+  const file = args[0];
+  const env = process.env;
+
+  if (!file) {
+    console.error('Usage: loose-envify <file>');
+    process.exit(1);
+  }
+
+  looseEnvify(file, env);
+}
+
+module.exports = looseEnvify;
+
+// Usage example:
+// node loose-envify.js path/to/your.js
+```
+```

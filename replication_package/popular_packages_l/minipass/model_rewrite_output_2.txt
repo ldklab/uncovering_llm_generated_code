@@ -1,0 +1,95 @@
+The provided Node.js code defines a class `Minipass` that extends `EventEmitter`. This class implements a basic streaming mechanism similar to Node.js streams. Here is an explanation of its functionality:
+
+1. **Constructor**: Initializes a new `Minipass` object with options for encoding, object mode, and asynchronous behavior. It sets up internal properties such as `writable`, `readable`, `flowing`, and a `buffer` to store written data chunks.
+
+2. **write Method**: Accepts a chunk of data to write into the stream. Validates the chunk type, applies encoding if needed, and stores it in the buffer. It triggers the data emission process if the stream is flowing. An optional callback can be executed post-write.
+
+3. **end Method**: Marks the stream as non-writable and optionally writes a final chunk before ending. Calls a callback if provided and emits the `end` event when the buffer is empty.
+
+4. **emitData Method**: Emits the buffered data chunks if the stream is flowing, using the 'data' event. Once all data is emitted and conditions are met, it calls `emitEnd`.
+
+5. **emitEnd Method**: Emits the `end` event once and marks the stream as non-readable.
+
+6. **pipe Method**: Pipes the output of this stream into a writable destination stream, handling 'data' and 'end' events to forward chunks and end the dest stream properly.
+
+7. **resume Method**: Sets the stream to a flowing mode and triggers data emission.
+
+8. **pause Method**: Stops the stream from flowing.
+
+Here is a possible rewrite of this code:
+
+```javascript
+const { EventEmitter } = require('events');
+
+class MiniStream extends EventEmitter {
+  constructor(options = {}) {
+    super();
+    this.encoding = options.encoding || null;
+    this.objectMode = Boolean(options.objectMode);
+    this.async = Boolean(options.async);
+    this.buffer = [];
+    this.writable = true;
+    this.readable = true;
+    this.flowing = null;
+    this.emittedEnd = false;
+  }
+
+  write(chunk, encoding, callback) {
+    if (!this.writable) throw new Error('Stream is not writable');
+    if (!this.objectMode && !(typeof chunk === 'string' || Buffer.isBuffer(chunk))) {
+      throw new Error('Invalid chunk type');
+    }
+    if (this.encoding && typeof chunk === 'string') {
+      chunk = Buffer.from(chunk, this.encoding);
+    }
+    this.buffer.push(chunk);
+    if (this.flowing === null) this.flowing = true;
+    if (this.flowing) this.processData();
+    if (callback) callback();
+    return this.flowing;
+  }
+
+  end(chunk, encoding, callback) {
+    if (!this.writable) throw new Error('Stream is not writable');
+    if (chunk) this.write(chunk, encoding);
+    this.writable = false;
+    if (callback) callback();
+    if (this.buffer.length === 0) this.finalizeStream();
+  }
+
+  processData() {
+    while (this.flowing && this.buffer.length > 0) {
+      const piece = this.buffer.shift();
+      this.emit('data', piece);
+    }
+    if (!this.emittedEnd && (this.buffer.length === 0 || !this.flowing)) this.finalizeStream();
+  }
+
+  finalizeStream() {
+    if (this.emittedEnd) return;
+    this.emittedEnd = true;
+    this.readable = false;
+    this.emit('end');
+  }
+
+  pipe(destination) {
+    this.flowing = true;
+    this.on('data', (chunk) => destination.write(chunk));
+    this.on('end', () => destination.end());
+    return destination;
+  }
+
+  resume() {
+    if (!this.flowing) {
+      this.flowing = true;
+      this.processData();
+    }
+  }
+
+  pause() {
+    this.flowing = false;
+  }
+}
+
+module.exports = { MiniStream };
+```

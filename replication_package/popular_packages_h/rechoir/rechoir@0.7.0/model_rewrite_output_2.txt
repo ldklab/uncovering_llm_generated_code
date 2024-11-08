@@ -1,0 +1,71 @@
+The Node.js code defines a function `prepare` that attempts to configure and register module loaders for a given file path with specified extensions. It uses three helper modules, `extension`, `normalize`, and `register`, to facilitate its functionality:
+
+1. **Determine the correct file extension**: Uses `require('./lib/extension')` to get a list of possible extensions for a given file path.
+
+2. **Normalize the configuration**: Converts the configuration associated with an extension using `require('./lib/normalize')`.
+
+3. **Register module loaders**: Tries to load and register module loaders using `require('./lib/register')`.
+
+Key steps:
+- It checks if the file's extension already has a module loader registered.
+- Attempts to resolve and normalize configuration settings for the file extension.
+- Iterates through the array of configuration options, using each option to register a module via the `register` function.
+- Collects and records any errors encountered during registration attempts.
+- If a loader is successfully registered, it returns the attempts. If none are successful and `nothrow` is not specified, it throws an error; otherwise, it returns the error object with details of all failed attempts.
+
+```javascript
+const path = require('path');
+const extension = require('./lib/extension');
+const normalize = require('./lib/normalize');
+const register = require('./lib/register');
+
+exports.prepare = (extensions, filepath, cwd = null, nothrow = false) => {
+  let config = null, usedExtension = null;
+  const attempts = [];
+  let onlyErrors = true;
+
+  const exts = extension(filepath);
+  if (exts) {
+    for (const ext of exts) {
+      usedExtension = ext;
+      config = normalize(extensions[ext]);
+      if (config) break;
+    }
+  }
+
+  if (Object.keys(require.extensions).includes(usedExtension)) {
+    return true;
+  }
+
+  if (!config) {
+    const errorMessage = `No module loader found for "${usedExtension}".`;
+    if (nothrow) return;
+    throw new Error(errorMessage);
+  }
+
+  cwd = cwd || path.dirname(path.resolve(filepath));
+  config = Array.isArray(config) ? config : [config];
+
+  for (const option of config) {
+    const attempt = register(cwd, option.module, option.register);
+    const error = attempt instanceof Error ? attempt : null;
+    attempts.push({ 
+      moduleName: option.module, 
+      module: error ? null : attempt, 
+      error 
+    });
+    if (!error) {
+      onlyErrors = false;
+      break;
+    }
+  }
+
+  if (onlyErrors) {
+    const err = new Error(`Unable to use specified module loaders for "${usedExtension}".`);
+    err.failures = attempts;
+    if (nothrow) return err;
+    throw err;
+  }
+  return attempts;
+};
+```

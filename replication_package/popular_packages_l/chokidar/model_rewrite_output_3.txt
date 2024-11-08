@@ -1,0 +1,129 @@
+The given Node.js code is an implementation of a file system watcher, similar to `chokidar`, using the native `fs` module. It allows you to monitor directories or files, and react to changes like file creation, modification, or deletion. Here's a breakdown of its main components and functionality:
+
+1. **FSWatcher Class**:
+   - It initializes with optional configuration options.
+   - Maintains a map of watched paths and their corresponding file system watchers.
+   - Holds event listeners for custom event handling.
+
+2. **watchPath()**:
+   - A method to start watching a given path and register event handlers for file changes.
+
+3. **handleEvent()**:
+   - Asynchronously handles file system events triggered by changes in the watched paths, like 'rename' and 'change', and emits custom 'unlink' and 'change' events.
+
+4. **add()**:
+   - Adds one or more paths to the watch list.
+
+5. **on() and emit()**:
+   - Methods to register event listeners and to trigger those listeners with any relevant data.
+
+6. **unwatch() and close()**:
+   - Methods to remove paths from the watch list and to stop all watching activities, respectively.
+
+7. **getWatched()**:
+   - Returns an object representing the current paths being watched.
+
+8. **chokidarWatch Function**:
+   - A factory function to create an instance of `FSWatcher` and start watching paths immediately.
+
+9. **Example Usage**:
+   - Shows how to create a FSWatcher instance and register callback functions for file system events such as 'add', 'change', and 'unlink'.
+
+Here's the rewritten version of the code:
+
+```javascript
+import { watch } from 'fs';
+import { promises as fsPromises } from 'fs';
+
+class FileSystemWatcher {
+  constructor(config = {}) {
+    this.config = config;
+    this.activeWatches = new Map();
+    this.eventCallbacks = new Map();
+  }
+
+  startWatching(path) {
+    if (!this.activeWatches.has(path)) {
+      const fsWatcher = watch(path, { recursive: true }, (eventType, filename) => {
+        this.processEvent(eventType, filename);
+      });
+      this.activeWatches.set(path, fsWatcher);
+    }
+  }
+
+  async processEvent(eventType, filename) {
+    const fullPath = `${process.cwd()}/${filename}`;
+    try {
+      const stats = await fsPromises.stat(fullPath);
+      if (eventType === 'rename' && !stats.isFile()) {
+        this.triggerEvent('unlink', fullPath);
+      } else if (eventType === 'change') {
+        this.triggerEvent('change', fullPath, stats);
+      }
+    } catch {
+      this.triggerEvent('unlink', fullPath);
+    }
+  }
+
+  addPaths(paths) {
+    const pathList = Array.isArray(paths) ? paths : [paths];
+    pathList.forEach(p => this.startWatching(p));
+  }
+
+  on(eventName, callback) {
+    if (!this.eventCallbacks.has(eventName)) {
+      this.eventCallbacks.set(eventName, []);
+    }
+    this.eventCallbacks.get(eventName).push(callback);
+  }
+
+  triggerEvent(eventName, ...args) {
+    if (this.eventCallbacks.has(eventName)) {
+      this.eventCallbacks.get(eventName).forEach(callback => callback(...args));
+    }
+  }
+
+  stopWatching(path) {
+    const pathList = Array.isArray(path) ? path : [path];
+    pathList.forEach(p => {
+      if (this.activeWatches.has(p)) {
+        this.activeWatches.get(p).close();
+        this.activeWatches.delete(p);
+      }
+    });
+  }
+
+  stopAll() {
+    for (const watcher of this.activeWatches.values()) {
+      watcher.close();
+    }
+    this.activeWatches.clear();
+  }
+
+  getCurrentWatches() {
+    const watches = {};
+    this.activeWatches.forEach((watcher, path) => {
+      watches[path] = [path];
+    });
+    return watches;
+  }
+}
+
+function createWatcher(paths, config) {
+  const fileWatcher = new FileSystemWatcher(config);
+  fileWatcher.addPaths(paths);
+  return fileWatcher;
+}
+
+export default createWatcher;
+
+// Usage Example:
+const fileWatcher = createWatcher('.', {
+  ignored: (path, stats) => stats?.isFile() && !path.endsWith('.js'),
+  persistent: true
+});
+
+fileWatcher.on('add', path => console.log(`File added: ${path}`));
+fileWatcher.on('change', (path, stats) => console.log(`File changed: ${path}, size: ${stats.size}`));
+fileWatcher.on('unlink', path => console.log(`File removed: ${path}`));
+```

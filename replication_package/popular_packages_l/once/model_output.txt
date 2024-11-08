@@ -1,0 +1,75 @@
+The `once` module provides a utility function that ensures a given function can be called only once. Here is a summary of its features and usage:
+
+1. **Basic Usage**: 
+   - You pass in a callback to `once`, which returns a new function wrapping the original callback. This ensures the original callback is only executed the first time the wrapper is called. Subsequent calls to the wrapper will have no effect.
+   - You can use this in situations like event handling where you may only want to handle an event once.
+
+2. **Prototype Extension**:
+   - The module also provides an optional prototype extension so that any function can be converted into a "once" function using `cb.once()` instead of `once(cb)`.
+   - This needs to be initialized once with `require('once').proto()`.
+
+3. **Function Call Status**:
+   - You can check if a function was called using `fn.called`. 
+   - The first return value from calling the original function is stored in `fn.value` and is returned on subsequent calls.
+
+4. **Strict Mode**:
+   - The module also offers a `once.strict` function, which will throw an error if the wrapped function is called more than once. This helps to catch logical errors where functions should not be called more than once under your program's logic.
+
+Below is the code implementation for this functionality:
+
+```javascript
+// once.js
+
+function once(func) {
+  if (typeof func !== 'function') {
+    throw new TypeError('Expected a function');
+  }
+
+  let called = false;
+  let value;
+
+  function wrapper() {
+    if (!called) {
+      called = true;
+      value = func.apply(this, arguments);
+    }
+    return value;
+  }
+  
+  wrapper.called = false;
+
+  return wrapper;
+}
+
+once.proto = function() {
+  Object.defineProperty(Function.prototype, 'once', {
+    value: function() {
+      return once(this);
+    },
+    configurable: true,
+    writable: true,
+  });
+};
+
+once.strict = function(func) {
+  if (typeof func !== 'function') {
+    throw new TypeError('Expected a function');
+  }
+
+  let called = false;
+
+  function wrapper() {
+    if (called) {
+      throw new Error('Function called more than once');
+    }
+    called = true;
+    return func.apply(this, arguments);
+  }
+  
+  return wrapper;
+};
+
+module.exports = once;
+```
+
+You can use this module as described in the README. It allows you to manage function calls in a controlled manner, particularly useful in environments where duplicated calls can lead to errors or unintended side effects.

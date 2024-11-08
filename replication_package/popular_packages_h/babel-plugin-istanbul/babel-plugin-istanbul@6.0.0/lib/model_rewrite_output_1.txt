@@ -1,0 +1,150 @@
+The Node.js code provided is a Babel plugin that integrates Istanbul code coverage instrumentation. Here’s a breakdown of its functionality:
+
+1. **Imports and Setup**: The code begins with imports of various necessary modules like `path`, `fs`, `child_process`, some Babel utility helpers, an instrumentation library from Istanbul, and configuration loaders.
+
+2. **Helper Functions**:
+   - `getRealpath`: Retrieves the real path of a given file path, using `fs.realpathSync`. It falls back to the original path in case of an error.
+   - `memoize`: A Map used to cache previous configurations to avoid redundant executions of expensive operations.
+   - `loadNycConfig`: Loads the NYC configuration, either directly or using cached values from `memoize`.
+   - `findConfig`: Determines the configuration to apply based on provided options or environment variables.
+   - `makeShouldSkip`: Creates a function to decide if a file should be skipped for instrumentation based on NYC configuration rules.
+
+3. **Plugin Definition**:
+   - Uses `@babel/helper-plugin-utils` to declare a Babel plugin.
+   - Ensures the correct version of Babel is used (version 7 in this case).
+   - Implements a visitor pattern to traverse the code AST:
+     - **Program.enter**: Initializes coverage collection, determines if a file should be instrumented, and sets up source maps if necessary.
+     - **Program.exit**: Completes coverage data collection and optionally calls a coverage callback function if specified in the options.
+
+4. **Export**: The plugin is exported as the default export for use with Babel.
+
+Here's the rewritten code structured like the original:
+
+```javascript
+"use strict";
+
+import path from "path";
+import { realpathSync } from "fs";
+import { execFileSync } from "child_process";
+import { declare } from "@babel/helper-plugin-utils";
+import { programVisitor } from "istanbul-lib-instrument";
+import TestExclude from "test-exclude";
+import schema from "@istanbuljs/schema";
+
+function getRealpath(n) {
+  try {
+    return realpathSync(n) || n;
+  } catch (e) {
+    return n;
+  }
+}
+
+const memoize = new Map();
+const memosep = path.sep === '/' ? ':' : ';';
+
+function loadNycConfig(cwd, opts) {
+  let memokey = cwd;
+  const args = [path.resolve(__dirname, 'load-nyc-config-sync.js'), cwd];
+
+  if ('nycrcPath' in opts) {
+    args.push(opts.nycrcPath);
+    memokey += memosep + opts.nycrcPath;
+  }
+
+  if (memoize.has(memokey)) {
+    return memoize.get(memokey);
+  }
+
+  const result = JSON.parse(execFileSync(process.execPath, args));
+  const error = result['load-nyc-config-sync-error'];
+
+  if (error) {
+    throw new Error(error);
+  }
+
+  const config = { ...schema.defaults.babelPluginIstanbul, cwd, ...result };
+  memoize.set(memokey, config);
+  return config;
+}
+
+function findConfig(opts) {
+  const cwd = getRealpath(opts.cwd || process.env.NYC_CWD || process.cwd());
+  const keys = Object.keys(opts);
+  const ignored = keys.filter(s => s === 'nycrcPath' || s === 'cwd');
+
+  if (keys.length > ignored.length) {
+    return { ...schema.defaults.babelPluginIstanbul, cwd, ...opts };
+  }
+
+  if (ignored.length === 0 && process.env.NYC_CONFIG) {
+    return JSON.parse(process.env.NYC_CONFIG);
+  }
+
+  return loadNycConfig(cwd, opts);
+}
+
+function makeShouldSkip() {
+  let exclude;
+  return function shouldSkip(file, nycConfig) {
+    if (!exclude || exclude.cwd !== nycConfig.cwd) {
+      exclude = new TestExclude({
+        cwd: nycConfig.cwd,
+        include: nycConfig.include,
+        exclude: nycConfig.exclude,
+        extension: nycConfig.extension,
+        excludeNodeModules: nycConfig.excludeNodeModules !== false
+      });
+    }
+
+    return !exclude.shouldInstrument(file);
+  };
+}
+
+export default declare(api => {
+  api.assertVersion(7);
+  const shouldSkip = makeShouldSkip();
+  const t = api.types;
+  return {
+    visitor: {
+      Program: {
+        enter(path) {
+          this.__dv__ = null;
+          this.nycConfig = findConfig(this.opts);
+          const realPath = getRealpath(this.file.opts.filename);
+
+          if (shouldSkip(realPath, this.nycConfig)) {
+            return;
+          }
+
+          let { inputSourceMap } = this.opts;
+
+          if (this.opts.useInlineSourceMaps !== false) {
+            if (!inputSourceMap && this.file.inputMap) {
+              inputSourceMap = this.file.inputMap.sourcemap;
+            }
+          }
+
+          const visitorOptions = {};
+          Object.entries(schema.defaults.instrumentVisitor).forEach(([name, defaultValue]) => {
+            visitorOptions[name] = name in this.nycConfig ? this.nycConfig[name] : defaultValue;
+          });
+          this.__dv__ = programVisitor(t, realPath, { ...visitorOptions, inputSourceMap });
+          this.__dv__.enter(path);
+        },
+
+        exit(path) {
+          if (!this.__dv__) {
+            return;
+          }
+
+          const result = this.__dv__.exit(path);
+
+          if (this.opts.onCover) {
+            this.opts.onCover(getRealpath(this.file.opts.filename), result.fileCoverage);
+          }
+        }
+      }
+    }
+  };
+});
+```

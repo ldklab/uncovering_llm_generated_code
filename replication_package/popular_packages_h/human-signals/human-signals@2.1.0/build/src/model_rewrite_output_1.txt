@@ -1,0 +1,62 @@
+The provided Node.js code defines two main functions: `getSignalsByName` and `getSignalsByNumber`. These functions retrieve signal descriptions for signals available in the operating system and structure them by name and by number, respectively. The signals' data includes details such as name, number, description, and attributes like supported, action, forced, and standard.
+
+1. **getSignalsByName**:
+   - Fetches all available signals using `_signals.getSignals`.
+   - Reduces this list into an object where the signal name is the key, and its details form the value.
+
+2. **getSignalsByNumber**:
+   - Fetches all available signals in a manner similar to `getSignalsByName`.
+   - Builds an array mapping signal numbers to their details.
+   - Uses `_realtime.SIGRTMAX` to determine the range of signal numbers.
+   - Converts this array into an object with signal numbers as keys.
+
+Both functions rely on auxiliary functions: `getSignalByName`, `getSignalByNumber`, and `findSignalByNumber` that help look up signals and format the result appropriately.
+
+Here's a possible rewrite of the original Node.js code:
+
+```javascript
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.signalsByNumber = exports.signalsByName = void 0;
+
+const { constants: { signals: osSignals } } = require("os");
+const { getSignals } = require("./signals.js");
+const { SIGRTMAX } = require("./realtime.js");
+
+const getSignalsByName = () => {
+  const signals = getSignals();
+  return signals.reduce((acc, { name, number, description, supported, action, forced, standard }) => ({
+    ...acc,
+    [name]: { name, number, description, supported, action, forced, standard }
+  }), {});
+};
+
+const getSignalByNumber = (number, signals) => {
+  const signal = findSignalByNumber(number, signals);
+  if (signal === undefined) return {};
+  const { name, description, supported, action, forced, standard } = signal;
+  return {
+    [number]: { name, number, description, supported, action, forced, standard }
+  };
+};
+
+const findSignalByNumber = (number, signals) => {
+  const signal = signals.find(({ name }) => osSignals[name] === number);
+  if (signal !== undefined) return signal;
+  return signals.find(signal => signal.number === number);
+};
+
+const getSignalsByNumber = () => {
+  const signals = getSignals();
+  const signalsArray = Array.from({ length: SIGRTMAX + 1 }, (_, number) =>
+    getSignalByNumber(number, signals)
+  );
+  return Object.assign({}, ...signalsArray);
+};
+
+const signalsByName = getSignalsByName();
+const signalsByNumber = getSignalsByNumber();
+
+exports.signalsByName = signalsByName;
+exports.signalsByNumber = signalsByNumber;
+```

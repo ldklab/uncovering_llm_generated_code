@@ -1,0 +1,64 @@
+The Node.js code provided is a module that defines an HTML encoding sniffer function. This function is responsible for determining the text encoding of an HTML document by examining its byte representation. The function implements several strategies to detect the correct encoding:
+
+1. **Detect Byte Order Mark (BOM):** The function first checks if the byte array starts with BOM sequences specific to "UTF-8", "UTF-16BE", or "UTF-16LE".
+
+2. **Search for `<meta charset>`:** If no BOM is detected, the function searches the first 1024 bytes for a `<meta charset>` tag, which indicates the document's encoding.
+
+3. **Use Transport Layer Encoding Label:** If neither BOM nor `<meta charset>` tag provides an encoding, the function tries to use encoding information provided via HTTP or other transport layers.
+
+4. **Default Encoding:** Finally, if none of the above methods provide an encoding, the function defaults to "windows-1252".
+
+The function utilizes the `whatwg-encoding` module to map encoding labels to encoding names. It returns the encoding name or defaults to "windows-1252" if no encoding is determined. The `htmlEncodingSniffer` function is exported as a module.
+
+Here is the rewritten code:
+
+```javascript
+// html-encoding-sniffer.js
+const supportedEncodings = require("whatwg-encoding");
+
+// Function to detect Byte Order Mark (BOM)
+function detectBOM(bytes) {
+  if (bytes.length >= 3 && bytes[0] === 0xEF && bytes[1] === 0xBB && bytes[2] === 0xBF) {
+    return "UTF-8";
+  }
+  if (bytes.length >= 2 && bytes[0] === 0xFE && bytes[1] === 0xFF) {
+    return "UTF-16BE";
+  }
+  if (bytes.length >= 2 && bytes[0] === 0xFF && bytes[1] === 0xFE) {
+    return "UTF-16LE";
+  }
+  return null;
+}
+
+// Function to search for <meta charset>
+function searchMetaCharset(bytes) {
+  const content = bytes.toString('binary', 0, 1024).toLowerCase();
+  const metaCharsetRegex = /<meta\s+[^>]*charset\s*=\s*["']?([^"';\s]*)/i;
+  const found = content.match(metaCharsetRegex);
+  return found && found[1] ? found[1] : null;
+}
+
+// Function to determine HTML document encoding
+function htmlEncodingSniffer(htmlBytes, options = {}) {
+  const { transportLayerEncodingLabel = null, defaultEncoding = "windows-1252" } = options;
+
+  // Check BOM
+  let encoding = detectBOM(htmlBytes);
+  if (encoding) return supportedEncodings.labelToName(encoding);
+
+  // Check <meta charset>
+  encoding = searchMetaCharset(htmlBytes);
+  if (encoding) return supportedEncodings.labelToName(encoding);
+
+  // Use encoding provided by the transport layer
+  if (transportLayerEncodingLabel) {
+    encoding = supportedEncodings.labelToName(transportLayerEncodingLabel);
+    if (encoding) return encoding;
+  }
+
+  // Return default encoding
+  return supportedEncodings.labelToName(defaultEncoding);
+}
+
+module.exports = htmlEncodingSniffer;
+```

@@ -1,0 +1,84 @@
+The given Node.js code defines a class that checks for memory leaks by using weak references in Node.js. The code imports various necessary modules, including utility functions and types, and defines a class called `_default`. Here's a step-by-step explanation:
+
+1. **Imports and Dependencies:**
+   - It requires various Node.js modules like `util`, `v8`, `vm`, and `jest-get-type`.
+   - It attempts to require `pretty-format` and ensure it is imported correctly.
+   - Tries to import `weak-napi`, which is essential for creating weak references.
+
+2. **Class Definition:**
+   - The `_default` class is constructed with a `value` parameter.
+   - Checks if `value` is a primitive using `jest-get-type` and throws an error if so, as primitives cannot have memory leaks.
+   - Attempts to require `weak-napi`, throwing an error if the module is not found.
+   - Uses `weak-napi` to create a weak reference to the provided value and sets a callback to change `_isReferenceBeingHeld` to false once the object is garbage collected.
+   - The property `_isReferenceBeingHeld` is initially set to true.
+
+3. **Memory Leak Check:**
+   - The method `isLeaking` runs a garbage collector and awaits ticks to ensure garbage collection can process.
+   - Returns whether a reference is still being held, indicating a possible memory leak.
+
+4. **Garbage Collection:**
+   - The private method `_runGarbageCollector` manages the garbage collector, exposing and hiding it using `v8` flags to run and then possibly hide it again.
+
+Here's a possible rewrite of this code:
+
+```javascript
+'use strict';
+
+const util = require('util');
+const v8 = require('v8');
+const vm = require('vm');
+const jestGetType = require('jest-get-type');
+const prettyFormat = require('pretty-format');
+
+const tick = util.promisify(setImmediate);
+
+class MemoryLeakDetector {
+  constructor(value) {
+    this._isReferenceBeingHeld = undefined;
+
+    if (jestGetType.isPrimitive(value)) {
+      throw new TypeError(
+        `Primitives cannot leak memory. You passed a ${typeof value}: <${prettyFormat(value)}>`
+      );
+    }
+
+    let weak;
+
+    try {
+      weak = require('weak-napi');
+    } catch (err) {
+      if (!err || err.code !== 'MODULE_NOT_FOUND') {
+        throw err;
+      }
+      throw new Error(
+        'The leaking detection mechanism requires the "weak-napi" package to be installed. Please install it as a dependency on your main project.'
+      );
+    }
+
+    weak(value, () => (this._isReferenceBeingHeld = false));
+    this._isReferenceBeingHeld = true;
+    value = null;
+  }
+
+  async isLeaking() {
+    this._runGarbageCollector();
+    for (let i = 0; i < 10; i++) {
+      await tick();
+    }
+    return this._isReferenceBeingHeld;
+  }
+
+  _runGarbageCollector() {
+    const isGcHidden = !global.gc;
+
+    v8.setFlagsFromString('--expose-gc');
+    vm.runInNewContext('gc')();
+
+    if (isGcHidden) {
+      v8.setFlagsFromString('--no-expose-gc');
+    }
+  }
+}
+
+module.exports = MemoryLeakDetector;
+```

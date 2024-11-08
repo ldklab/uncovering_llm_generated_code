@@ -1,0 +1,97 @@
+The given Node.js code defines a `Keyv` class that extends `EventEmitter` and provides a simple key-value storage interface. Here's a breakdown of its functionality:
+
+1. **Constructor**: Accepts an options object (`{ uri, store, ttl, namespace, serialize, deserialize }`). It initializes instance variables like `store`, `ttl`, `namespace`, and functions for serialization/deserialization of values. It optionally uses a URI to setup the underlying storage adapter.
+
+2. **useUri(uri)**: If a URI is provided, it dynamically requires and initializes a storage adapter based on the URI scheme, replacing the current store.
+
+3. **set(key, value, ttl)**: Stores a serialized value with an optional time-to-live (TTL). The value is stored under a key that combines a namespace with the provided key.
+
+4. **get(key, { raw })**: Retrieves a stored value. If the `raw` option is not true and the value is expired, it deletes the key and returns `undefined`. Otherwise, it deserializes the stored value unless accessed as `raw`.
+
+5. **delete(key)**: Removes the key-value pair identified by the namespace-prefixed key from the store.
+
+6. **clear()**: Deletes all the key-value pairs in the store that belong to the specified namespace.
+
+7. **Symbol.asyncIterator**: An async iterator that yields all key-value pairs in the namespace, with values deserialized.
+
+8. **Usage Example**: Illustrates using Keyv with a Redis backend, setting, getting, and deleting a key.
+
+Below is a possible rewrite of the code with the same functionality:
+
+```javascript
+const { EventEmitter } = require('events');
+
+class Keyv extends EventEmitter {
+    constructor(options = {}) {
+        super();
+        this.store = options.store || new Map();
+        this.ttl = options.ttl;
+        this.namespace = options.namespace || 'keyv';
+        this.serialize = options.serialize || JSON.stringify;
+        this.deserialize = options.deserialize || JSON.parse;
+        if (options.uri) this.useUri(options.uri);
+    }
+
+    useUri(uri) {
+        const scheme = uri.split(':')[0];
+        const Adapter = require(`@keyv/${scheme}`);
+        this.store = new Adapter(uri);
+    }
+
+    async set(key, value, ttl) {
+        const fullKey = this._fullKey(key);
+        const item = { value: this.serialize(value), expires: ttl ? Date.now() + ttl : null };
+        await this.store.set(fullKey, item);
+        return true;
+    }
+
+    async get(key, { raw = false } = {}) {
+        const fullKey = this._fullKey(key);
+        const item = await this.store.get(fullKey);
+        if (!item) return undefined;
+        if (!raw && item.expires && Date.now() > item.expires) {
+            await this.delete(key);
+            return undefined;
+        }
+        return raw ? item : this.deserialize(item.value);
+    }
+
+    async delete(key) {
+        return this.store.delete(this._fullKey(key));
+    }
+
+    async clear() {
+        for (const key of this.store.keys()) {
+            if (key.startsWith(`${this.namespace}:`)) {
+                await this.delete(key.substring(this.namespace.length + 1));
+            }
+        }
+    }
+
+    async *[Symbol.asyncIterator]() {
+        for (const [key, item] of this.store.entries()) {
+            if (key.startsWith(`${this.namespace}:`)) {
+                yield [key.substring(this.namespace.length + 1), this.deserialize(item.value)];
+            }
+        }
+    }
+
+    _fullKey(key) {
+        return `${this.namespace}:${key}`;
+    }
+}
+
+module.exports = Keyv;
+
+// Usage Example
+const keyv = new Keyv({ uri: 'redis://localhost:6379' });
+keyv.on('error', err => console.error('Connection Error', err));
+
+// Example setting, getting, and deleting a key-value pair
+(async () => {
+    await keyv.set('foo', 'bar', 1000);
+    console.log(await keyv.get('foo')); // 'bar'
+    await keyv.delete('foo');
+    console.log(await keyv.get('foo')); // undefined
+})();
+```

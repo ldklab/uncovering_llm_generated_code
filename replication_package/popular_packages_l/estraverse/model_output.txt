@@ -1,0 +1,115 @@
+The Estraverse library in Node.js is designed to traverse and manipulate ECMAScript syntax trees. Here's a breakdown of its functionality:
+
+1. **Traversal Methods**: 
+    - `estraverse.traverse`: This method traverses an abstract syntax tree (AST). Users can provide `enter` and `leave` functions to manipulate or inspect nodes in specific contexts.
+    - `estraverse.replace`: Similar to `traverse`, but allows replacing nodes during traversal. When a node is returned from `enter` or `leave`, it replaces the current node.
+
+2. **Visitor Options**:
+    - **Visitor Functions**: In `traverse`, the `enter` function is called when entering a node and the `leave` function upon leaving a node. You can skip nodes using `VisitorOption.Skip` and break traversal using `VisitorOption.Break`.
+    - **Traversing Enhancements**: Additional properties like `visitor.keys` allow specifying which properties contain nodes and should be traversed.
+    - **Fallback Strategies**: The `visitor.fallback` option lets you define behavior for unknown nodes, either by iteration or using a custom function to decide which keys to visit.
+
+3. **Examples Demonstrated**:
+    - Skip certain nodes types like `FunctionExpression` and `FunctionDeclaration`.
+    - Replace nodes, such as replacing literals.
+    - Extend traversal rules for custom node structures, like `TestExpression`.
+    - Fallback options permit flexibility in handling unknown node structures and selective key traversal.
+
+Below is a Node.js code implementation of basic traversal functionalities outlined:
+
+```javascript
+const estraverse = {
+    VisitorOption: {
+        Skip: 'skip',
+        Break: 'break',
+        Remove: 'remove'
+    },
+
+    traverse: function (tree, visitor) {
+        function visit(node, parent) {
+            let result;
+            if (visitor.enter) {
+                result = visitor.enter.call(visitor, node, parent);
+                if (result === estraverse.VisitorOption.Break) {
+                    return result;
+                }
+            }
+
+            const keys = visitor.keys && visitor.keys[node.type] || Object.keys(node);
+            for (let key of keys) {
+                let child = node[key];
+                if (Array.isArray(child)) {
+                    for (let i = 0; i < child.length; i++) {
+                        if (typeof child[i] === 'object' && child[i] !== null) {
+                            const result = visit(child[i], node);
+                            if (result === estraverse.VisitorOption.Break) {
+                                return result;
+                            }
+                        }
+                    }
+                } else if (typeof child === 'object' && child !== null) {
+                    const result = visit(child, node);
+                    if (result === estraverse.VisitorOption.Break) {
+                        return result;
+                    }
+                }
+            }
+
+            if (visitor.leave) {
+                return visitor.leave.call(visitor, node, parent);
+            }
+        }
+        
+        visit(tree, null);
+    },
+
+    replace: function (tree, visitor) {
+        function visit(node, parent, key) {
+            let result;
+            if (visitor.enter) {
+                result = visitor.enter.call(visitor, node, parent);
+                if (result === estraverse.VisitorOption.Break) {
+                    return result;
+                } else if (result !== undefined) {
+                    if (parent) parent[key] = result;
+                    node = result;
+                }
+            }
+
+            const keys = visitor.keys && visitor.keys[node.type] || Object.keys(node);
+            for (let key of keys) {
+                let child = node[key];
+                if (Array.isArray(child)) {
+                    for (let i = 0; i < child.length; i++) {
+                        if (typeof child[i] === 'object' && child[i] !== null) {
+                            const result = visit(child[i], node, i);
+                            if (result === estraverse.VisitorOption.Break) {
+                                return result;
+                            }
+                        }
+                    }
+                } else if (typeof child === 'object' && child !== null) {
+                    const result = visit(child, node, key);
+                    if (result === estraverse.VisitorOption.Break) {
+                        return result;
+                    }
+                }
+            }
+
+            if (visitor.leave) {
+                result = visitor.leave.call(visitor, node, parent);
+                if (result !== undefined && parent) {
+                    parent[key] = result;
+                }
+            }
+        }
+        
+        visit(tree, null, null);
+        return tree;
+    }
+};
+
+module.exports = estraverse;
+```
+
+This code implements basic AST traversal and replacement, allowing users to manipulate node structures with `enter` and `leave` functions. It handles custom traversal keys and fallback functionality for unknown node structures.

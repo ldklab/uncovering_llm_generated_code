@@ -1,0 +1,61 @@
+The provided Node.js code defines and exports a function `jsonStringifySafe`, which safely stringifies a JavaScript object into a JSON string. The main functionality of this function is to prevent errors caused by circular references within the object being stringified, by replacing circular references with a placeholder string `[Circular]`. If provided, it can also use a custom `serializer` for additional transformation of object values during stringification and a custom `decycler` function to replace circular references differently. The `jsonStringifySafe.getSerialize` method is also defined to return a serializer function that handles circular references in a similar way.
+
+Here's a possible rewrite of the Node.js code that maintains the same functionality:
+
+```javascript
+'use strict';
+
+function jsonStringifySafe(obj, serializer = null, indent, decycler = () => '[Circular]') {
+    const stack = [];
+    const keys = [];
+
+    function serializerWrapper(key, value) {
+        if (stack.length > 0) {
+            const thisPos = stack.indexOf(this);
+            if (~thisPos) {
+                stack.splice(thisPos + 1);
+                keys.splice(thisPos, Infinity, key);
+            } else {
+                stack.push(this);
+                keys.push(key);
+            }
+            if (~stack.indexOf(value)) {
+                value = decycler.call(this, key, value);
+            }
+        } else {
+            stack.push(value);
+        }
+
+        return serializer ? serializer.call(this, key, value) : value;
+    }
+
+    return JSON.stringify(obj, serializerWrapper, indent);
+}
+
+jsonStringifySafe.getSerialize = function(serializer = null, decycler = () => '[Circular]') {
+    const stack = [];
+    const keys = [];
+
+    return function(key, value) {
+        if (stack.length > 0) {
+            const thisPos = stack.indexOf(this);
+            if (~thisPos) {
+                stack.splice(thisPos + 1);
+                keys.splice(thisPos, Infinity, key);
+            } else {
+                stack.push(this);
+                keys.push(key);
+            }
+            if (~stack.indexOf(value)) {
+                value = decycler.call(this, key, value);
+            }
+        } else {
+            stack.push(value);
+        }
+
+        return serializer ? serializer.call(this, key, value) : value;
+    };
+};
+
+module.exports = jsonStringifySafe;
+```

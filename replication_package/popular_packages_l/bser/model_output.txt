@@ -1,0 +1,78 @@
+The `bser` Node.js package provides functionality for binary serialization using the BSER format, which serves as an efficient alternative to JSON for local Inter-Process Communication (IPC). Here's a detailed explanation of the key components and their functionalities:
+
+1. **bser.loadFromBuffer**: This is a synchronous decoder function. It takes an input buffer (or string), decodes it as a single BSER encoded value, and returns it. If the input is invalid, it throws an error.
+
+2. **bser.dumpToBuffer**: This function synchronously encodes a given value into BSER format and returns the resulting buffer.
+
+3. **BunserBuf**: This is an asynchronous decoder class. This allows you to append data incrementally which it keeps processing. It emits decoded values via the `value` event, making it suitable for streaming data scenarios, such as reading data from a socket.
+
+The package is particularly useful for scenarios where lightweight and efficient serialization/deserialization is needed for data transmission between local processes.
+
+Below is an implementation of the described functionality in a single markdown code block:
+
+```js
+const EventEmitter = require('events');
+
+class Bser {
+  static loadFromBuffer(buffer) {
+    if (!Buffer.isBuffer(buffer)) {
+      throw new Error('Invalid input: expected Buffer');
+    }
+    // Simple BSER-like decoding logic (for demonstration)
+    try {
+      const length = buffer.readUIntBE(0, 4); // Read length prefix
+      const content = buffer.slice(4, 4 + length).toString(); // Read actual content
+      return JSON.parse(content);
+    } catch (e) {
+      throw new Error('Failed to parse buffer');
+    }
+  }
+
+  static dumpToBuffer(value) {
+    // Simple BSER-like encoding logic (for demonstration)
+    const json = JSON.stringify(value);
+    const buffer = Buffer.alloc(4 + Buffer.byteLength(json)); // Prefix with length
+    buffer.writeUIntBE(Buffer.byteLength(json), 0, 4);
+    buffer.write(json, 4);
+    return buffer;
+  }
+}
+
+class BunserBuf extends EventEmitter {
+  constructor() {
+    super();
+    this.buffer = Buffer.alloc(0);
+  }
+
+  append(chunk) {
+    this.buffer = Buffer.concat([this.buffer, chunk]);
+    this._process();
+  }
+
+  _process() {
+    try {
+      while (this.buffer.length > 4) {
+        const length = this.buffer.readUIntBE(0, 4);
+        if (this.buffer.length >= 4 + length) {
+          const valueBuffer = this.buffer.slice(4, 4 + length);
+          const value = Bser.loadFromBuffer(Buffer.concat([Buffer.alloc(4), valueBuffer]));
+          this.emit('value', value);
+          this.buffer = this.buffer.slice(4 + length);
+        } else {
+          break;
+        }
+      }
+    } catch (e) {
+      this.emit('error', e);
+    }
+  }
+}
+
+module.exports = {
+  loadFromBuffer: Bser.loadFromBuffer,
+  dumpToBuffer: Bser.dumpToBuffer,
+  BunserBuf: BunserBuf,
+};
+```
+
+This code provides a simple implementation of a BSER-like serialization and deserialization system with both synchronous and asynchronous handling capabilities.

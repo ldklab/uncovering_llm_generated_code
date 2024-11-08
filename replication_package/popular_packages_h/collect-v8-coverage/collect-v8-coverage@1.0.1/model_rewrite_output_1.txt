@@ -1,0 +1,47 @@
+The given Node.js code defines a class `CoverageInstrumenter` that uses Node's `inspector` module to enable and perform precise code coverage analysis of a running application. Here's a breakdown of the functionality:
+
+1. **Initialization (`constructor`)**: 
+   - A new `inspector.Session` is created, which manages the communication with the V8 inspector.
+   - The `session.post()` method is wrapped with `promisify` to allow the use of `async/await` for asynchronous operations.
+
+2. **Start Instrumentation (`startInstrumenting`)**:
+   - Connects the session to start inspecting.
+   - Enables the Profiler and starts precise coverage recording with details on function call counts and execution.
+
+3. **Stop Instrumentation (`stopInstrumenting`)**:
+   - Takes a snapshot of the precise coverage data collected since `startInstrumenting` was called.
+   - Stops coverage recording and disables the Profiler.
+   - Returns the coverage data collected.
+
+```javascript
+'use strict';
+
+const { Session } = require('inspector');
+const { promisify } = require('util');
+
+class CoverageInstrumenter {
+  constructor() {
+    this.session = new Session();
+    this.postSession = promisify(this.session.post.bind(this.session));
+  }
+
+  async startInstrumenting() {
+    this.session.connect();  // Establish connection to start inspecting
+    await this.postSession('Profiler.enable');  // Enable the Profiler
+    await this.postSession('Profiler.startPreciseCoverage', {  // Start detailed coverage
+      callCount: true,
+      detailed: true,
+    });
+  }
+
+  async stopInstrumenting() {
+    // Capture the coverage data collected during instrumentation
+    const { result } = await this.postSession('Profiler.takePreciseCoverage');
+    await this.postSession('Profiler.stopPreciseCoverage');  // Stop coverage collection
+    await this.postSession('Profiler.disable');  // Disable the Profiler
+    return result;  // Return the collected coverage data
+  }
+}
+
+module.exports.CoverageInstrumenter = CoverageInstrumenter;  // Export the class
+```

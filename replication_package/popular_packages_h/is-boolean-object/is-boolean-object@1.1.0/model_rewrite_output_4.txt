@@ -1,0 +1,46 @@
+The provided Node.js code defines and exports a function `isBoolean` that checks whether a given value is a boolean value, either primitive or an object. Here's a breakdown of its functionality:
+
+1. **Primitive Boolean Check**: It first checks if the type of the value is `boolean` using `typeof` and returns `true` if it is.
+   
+2. **Non-object or Null Check**: If the value is `null` or not an object (`typeof` not returning 'object'), it immediately returns `false`.
+
+3. **Symbol.toStringTag Handling**: For objects that might be custom boolean objects and potentially have a `Symbol.toStringTag`, it verifies if a value can behave as a `Boolean` object using `tryBooleanObject`, which attempts to call `Boolean.prototype.toString` on the value safely by catching any errors.
+
+4. **Object Prototype Check**: Without `Symbol.toStringTag`, it falls back on checking if the object's `Object.prototype.toString` result equals `"[object Boolean]"`.
+
+With this understanding, here is a possible rewrite of the Node.js code:
+
+```javascript
+'use strict';
+
+const callBound = require('call-bind/callBound');
+const $boolToStr = callBound('Boolean.prototype.toString');
+const $toString = callBound('Object.prototype.toString');
+
+function tryBooleanObject(value) {
+    try {
+        $boolToStr(value);
+        return true;
+    } catch (e) {
+        return false;
+    }
+}
+
+const boolClassStr = '[object Boolean]';
+const supportsToStringTag = typeof Symbol === 'function' && typeof Symbol.toStringTag === 'symbol';
+
+function isBoolean(value) {
+    if (typeof value === 'boolean') {
+        return true;
+    }
+    if (value === null || typeof value !== 'object') {
+        return false;
+    }
+    if (supportsToStringTag && Symbol.toStringTag in value) {
+        return tryBooleanObject(value);
+    }
+    return $toString(value) === boolClassStr;
+}
+
+module.exports = isBoolean;
+```

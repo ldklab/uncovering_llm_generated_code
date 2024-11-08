@@ -1,0 +1,102 @@
+The given Node.js code defines a simple internationalization (i18n) library named `Y18n` that helps with translating and pluralizing strings in different locales. Here's a breakdown of its functionalities:
+
+1. **Configuration and Initialization**: You can configure the library by passing an optional `config` object that specifies the directory for localization files, a default locale, whether to update files with missing translations, and if it should fallback to language code if a specific locale isn't found.
+
+2. **Translation Method `__`**: This method is for translating a single string. It takes a string and optional arguments for formatting, looks up the translation in the specified locale file, and formats it with the provided arguments.
+
+3. **Pluralization Method `__n`**: This handles plural forms of strings. It decides which translation string to use (singular or plural) based on a count and performs the translation and formatting similarly to `__`.
+
+4. **Locale Management**: Functions to set (`setLocale`) and get (`getLocale`) the current locale.
+
+5. **Updating Locale Files**: If enabled, missing translations are automatically added to the locale file by the `_translate` method, writing both the source string as the key and value. The `updateLocale` method allows updating locale files with new translations.
+
+6. **File Handling**: Locale files are JSON files named after the locale and stored in a specified directory. The module reads these files to get the translations and writes to them if updates are allowed.
+
+7. **Fallback Mechanism**: If no specific translation file exists for a `locale`, the library tries to use a file for the broader language code.
+
+8. **String Formatting**: Using the `_formatString` method, placeholders (`%s` and `%d`) within the translation strings are replaced with passed arguments.
+
+9. **Module Export**: The module exports a function that creates and returns a new `Y18n` instance with the given configuration.
+
+Here is the rewritten version of the original code:
+
+```javascript
+// y18n.js
+
+const fs = require('fs');
+const path = require('path');
+
+class Y18n {
+  constructor(config = {}) {
+    this.directory = config.directory || './locales';
+    this.locale = config.locale || 'en';
+    this.updateFiles = config.updateFiles !== undefined ? config.updateFiles : true;
+    this.fallbackToLanguage = config.fallbackToLanguage !== undefined ? config.fallbackToLanguage : true;
+  }
+
+  __(str, ...args) {
+    let translation = this._translate(str, this.locale);
+    return this._formatString(translation, args);
+  }
+
+  __n(singular, plural, count, ...args) {
+    const str = count === 1 ? singular : plural;
+    let translation = this._translate(str, this.locale);
+    return this._formatString(translation.replace('%d', count), args);
+  }
+
+  setLocale(locale) {
+    this.locale = locale;
+  }
+
+  getLocale() {
+    return this.locale;
+  }
+
+  updateLocale(obj) {
+    const localeFile = path.resolve(this.directory, `${this.locale}.json`);
+    let localeData = {};
+
+    if (fs.existsSync(localeFile)) {
+      localeData = JSON.parse(fs.readFileSync(localeFile, 'utf-8'));
+    }
+
+    Object.assign(localeData, obj);
+
+    fs.writeFileSync(localeFile, JSON.stringify(localeData, null, 2));
+  }
+
+  _translate(str, locale) {
+    const langFile = path.resolve(this.directory, `${locale}.json`);
+    const fallbackFile = path.resolve(this.directory, `${locale.split('_')[0]}.json`);
+
+    let translations = {};
+    if (fs.existsSync(langFile)) {
+      translations = JSON.parse(fs.readFileSync(langFile, 'utf-8'));
+    } else if (this.fallbackToLanguage && fs.existsSync(fallbackFile)) {
+      translations = JSON.parse(fs.readFileSync(fallbackFile, 'utf-8'));
+    }
+
+    if (!(str in translations)) {
+      if (this.updateFiles) {
+        translations[str] = str;
+        fs.writeFileSync(langFile, JSON.stringify(translations, null, 2));
+      }
+      return str;
+    }
+
+    return translations[str];
+  }
+
+  _formatString(str, args) {
+    return str.replace(/%s/g, () => args.shift());
+  }
+}
+
+module.exports = (config) => new Y18n(config);
+
+// Example usage
+const y18nInstance = require('./y18n')({ locale: 'en' });
+console.log(y18nInstance.__('my awesome string %s', 'foo'));
+console.log(y18nInstance.__n('one fish %s', '%d fishes %s', 2, 'foo'));
+```

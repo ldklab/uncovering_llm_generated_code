@@ -1,0 +1,70 @@
+The given Node.js code is a module bundling script that performs the following functionalities:
+
+1. **Property Definition and Descriptor Management**: 
+   - Initializes utility functions to define properties (`__defProp`), get property descriptors (`__getOwnPropDesc`), get property names (`__getOwnPropNames`), and check property ownership (`__hasOwnProp`).
+
+2. **Copy Properties**: 
+   - Defines a utility function `__copyProps` that copies properties from one object (`from`) to another (`to`), allowing for excluding specific properties and maintaining property descriptors, especially the `enumerable` attribute.
+
+3. **Re-export Modules**: 
+   - Defines a utility function `__reExport` to copy all properties from a module (`mod`) to a target (`target`) and optionally to a second target (`secondTarget`), excluding the `default` export.
+   
+4. **Convert to CommonJS Module**:
+   - Converts an object `mod` into a format that is compatible with CommonJS by defining an `__esModule` property.
+
+5. **Module Exports**:
+   - Creates an empty object `src_exports` for exports.
+   - Uses `__toCommonJS` to flag `src_exports` as an ES module.
+   - Imports and re-exports functionality from `fromBase64` and `toBase64` modules into `src_exports` and by extension to `module.exports`.
+
+This script is likely part of a build toolchain that generates a CommonJS module from source TypeScript files, exporting the modules for working with Base64 encoding and decoding.
+
+Here's a possible rewrite of this code:
+
+```javascript
+// Utility functions for property management
+const defineProperty = Object.defineProperty;
+const getOwnPropDescriptor = Object.getOwnPropertyDescriptor;
+const getOwnPropertyNames = Object.getOwnPropertyNames;
+const hasOwnProp = Object.prototype.hasOwnProperty;
+
+// Utility to copy properties from one object to another
+function copyProperties(target, source, excludeKey, descriptor) {
+  if (source && (typeof source === "object" || typeof source === "function")) {
+    for (const key of getOwnPropertyNames(source)) {
+      if (!hasOwnProp.call(target, key) && key !== excludeKey) {
+        const desc = getOwnPropDescriptor(source, key);
+        defineProperty(target, key, { get: () => source[key], enumerable: !descriptor || desc.enumerable });
+      }
+    }
+  }
+  return target;
+}
+
+// Re-export modules by copying properties
+function reExport(target, module, additionalTarget) {
+  copyProperties(target, module, "default");
+  if (additionalTarget) {
+    copyProperties(additionalTarget, module, "default");
+  }
+}
+
+// Function to convert to CommonJS module
+function toCommonJSModule(module) {
+  return copyProperties(defineProperty({}, "__esModule", { value: true }), module);
+}
+
+// Main module exports
+const exports = {};
+module.exports = toCommonJSModule(exports);
+
+// Re-export from external modules
+reExport(exports, require("././fromBase64"), module.exports);
+reExport(exports, require("././toBase64"), module.exports);
+
+// Prepare CommonJS exports with annotated names
+0 && (module.exports = {
+  fromBase64,
+  toBase64
+});
+```

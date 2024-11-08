@@ -1,0 +1,98 @@
+The provided Node.js code is designed to handle some utility functions related to properties and module exports, and it deals with parsing URLs. Here's a breakdown of its functionality:
+
+1. **Utility functions for property manipulation**: 
+   - `__defProp`: A wrapper around `Object.defineProperty` for defining properties on objects.
+   - `__getOwnPropDesc`, `__getOwnPropNames`, `__hasOwnProp`: Shortcuts for retrieving property descriptors, obtaining all property names, and checking if an object has a certain property respectively.
+
+2. **`__name` function**: It sets the `name` property of a function, making the function's name configurable.
+
+3. **`__export` function**: It exports all specified properties of an object by defining them with getters and ensuring they are enumerable.
+
+4. **`__copyProps` function**: Copies properties from one object to another, excluding specified properties and taking care of property descriptors, ensuring properties are not redefined on the target object.
+
+5. **`__toCommonJS` function**: It sets up a CommonJS module by copying properties from one object to another, marking it as an ES Module.
+
+6. **Exports**: The code defines a `src_exports` object and exports the `parseUrl` function. It uses `__toCommonJS` to prepare `src_exports` for export as a CommonJS module.
+
+7. **`parseUrl` function**: 
+   - It imports a query string parser.
+   - Accepts either a string or a URL object.
+   - If a string is passed, it converts it to a URL object.
+   - Extracts properties like `hostname`, `pathname`, `port`, `protocol`, and `search`.
+   - Parses query string if present.
+   - Returns an object with the host, path, and query information.
+
+```javascript
+const { parseQueryString } = require('@smithy/querystring-parser');
+
+function defineProperty(target, name, descriptor) {
+  Object.defineProperty(target, name, descriptor);
+}
+
+function getOwnPropertyDescriptor(object, propertyName) {
+  return Object.getOwnPropertyDescriptor(object, propertyName);
+}
+
+function getOwnPropertyNames(object) {
+  return Object.getOwnPropertyNames(object);
+}
+
+function hasOwnProperty(object, property) {
+  return Object.prototype.hasOwnProperty.call(object, property);
+}
+
+function nameFunction(target, value) {
+  defineProperty(target, 'name', { value, configurable: true });
+}
+
+function exportProperties(targetObject, properties) {
+  for (const name in properties) {
+    defineProperty(targetObject, name, { get: properties[name], enumerable: true });
+  }
+}
+
+function copyProperties(to, from, except, descriptor) {
+  if (from && (typeof from === 'object' || typeof from === 'function')) {
+    for (const key of getOwnPropertyNames(from)) {
+      if (!hasOwnProperty(to, key) && key !== except) {
+        defineProperty(to, key, {
+          get: () => from[key],
+          enumerable: !(descriptor = getOwnPropertyDescriptor(from, key)) || descriptor.enumerable,
+        });
+      }
+    }
+  }
+  return to;
+}
+
+function toCommonJS(module) {
+  return copyProperties(defineProperty({}, '__esModule', { value: true }), module);
+}
+
+// src/index.ts
+const srcExports = {};
+exportProperties(srcExports, {
+  parseUrl: () => parseUrl,
+});
+module.exports = toCommonJS(srcExports);
+
+function parseUrl(url) {
+  if (typeof url === 'string') {
+    return parseUrl(new URL(url));
+  }
+  
+  const { hostname, pathname, port, protocol, search } = url;
+  let query;
+  if (search) {
+    query = parseQueryString(search);
+  }
+  return {
+    hostname,
+    port: port ? parseInt(port) : undefined,
+    protocol,
+    path: pathname,
+    query,
+  };
+}
+nameFunction(parseUrl, 'parseUrl');
+```

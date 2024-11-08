@@ -1,0 +1,61 @@
+The functionality of the original Node.js code is as follows:
+
+1. **Imports and Exports**: The code imports different modules including `fs` for file system operations and `ast-types` for operations on abstract syntax trees (AST). It exports several functions, including `parse` for parsing code, `visit` for traversing and modifying ASTs, `print` and `prettyPrint` for printing the AST back to code, and `run` for executing transformations.
+
+2. **Traverse and Modify AST**: The `visit` function allows traversal and possible modification of an AST using visitor patterns, which are objects that define operations to perform on elements of the AST.
+
+3. **Reprinting and Pretty-Printing**: The `print` function generates code from a modified AST while reusing as much of the original source as possible. The `prettyPrint` function does the same but without attempting to reuse the original code.
+
+4. **Command-Line Interface**: The `run` function serves as a command-line interface, allowing the execution of a transformer function on a specified file or code string input. It reads the file, transforms its contents, and prints the result.
+
+5. **Helper Functions**: Helper functions `runFile` and `runString` read from a file or directly from a code string, apply a transformation through the provided `transformer`, and output the result either to standard output or elsewhere as specified.
+
+Here's a possible rewrite of the original code:
+
+```javascript
+"use strict";
+const fs = require("fs");
+const { parse } = require("./lib/parser");
+const { Printer } = require("./lib/printer");
+const astTypes = require("ast-types");
+
+exports.types = astTypes;
+exports.parse = parse;
+exports.visit = astTypes.visit;
+
+function print(node, options) {
+    return new Printer(options).print(node);
+}
+exports.print = print;
+
+function prettyPrint(node, options) {
+    return new Printer(options).printGenerically(node);
+}
+exports.prettyPrint = prettyPrint;
+
+function run(transformer, options) {
+    return runFile(process.argv[2], transformer, options);
+}
+exports.run = run;
+
+function runFile(path, transformer, options) {
+    fs.readFile(path, "utf-8", (err, code) => {
+        if (err) {
+            console.error(err);
+            return;
+        }
+        runString(code, transformer, options);
+    });
+}
+
+function defaultWriteback(output) {
+    process.stdout.write(output);
+}
+
+function runString(code, transformer, options) {
+    const writeback = (options && options.writeback) || defaultWriteback;
+    transformer(parse(code, options), (node) => {
+        writeback(print(node, options).code);
+    });
+}
+```

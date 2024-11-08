@@ -1,0 +1,135 @@
+The provided Node.js code is a module for detecting file encoding. It defines several functions and utilities to analyze a byte array or a file to determine its encoding from a list of potential encoding recognisers. Here's a breakdown of its main functionalities:
+
+1. **Detect Encoding from Buffer (`detect`)**: Takes a byte buffer as input and uses a set of recognisers to predict the encoding. It first analyzes the buffer using `analyse` to get potential matches and then returns the most confident match.
+
+2. **Analyze Buffer (`analyse`)**: Checks if a given input is a valid byte array and then calculates byte frequencies. It subsequently invokes each recogniser to assess the likelihood of the observed data corresponding to a specific encoding, sorting by confidence level.
+
+3. **Detect Encoding from File (`detectFile`)**: Reads the content of a given file asynchronously and determines its encoding using `detect`. If a sample size is specified in options, it only analyzes a portion of the file.
+
+4. **Synchronous File Encoding Detection (`detectFileSync`)**: Similar to `detectFile`, but it operates synchronously. It reads the file content or a specified sample size and determines the encoding.
+
+5. **Setup and Dependencies**: The code set-ups for module import mechanics for handling bindings, imports various encoding modules, and utilities for file system operations.
+
+The code imports encoding handlers for different character encodings—like UTF-8, UTF-16, ASCII, SBCS (Single Byte Character Set), MBCS (Multi-Byte Character Set), and ISO-2022—and provides a utility for checking if an input is a byte array.
+
+Below is a possible rewrite of the original Node.js code:
+
+```javascript
+"use strict";
+
+const fsModule = require("./fs/node").default;
+const AsciiEncoding = require("./encoding/ascii").default;
+const Utf8Encoding = require("./encoding/utf8").default;
+const unicode = require("./encoding/unicode");
+const mbcs = require("./encoding/mbcs");
+const sbcs = require("./encoding/sbcs");
+const iso2022 = require("./encoding/iso2022");
+const { isByteArray } = require("./utils");
+
+const recognisers = [
+    new Utf8Encoding(),
+    new unicode.UTF_16BE(),
+    new unicode.UTF_16LE(),
+    new unicode.UTF_32BE(),
+    new unicode.UTF_32LE(),
+    new mbcs.sjis(),
+    new mbcs.big5(),
+    new mbcs.euc_jp(),
+    new mbcs.euc_kr(),
+    new mbcs.gb_18030(),
+    new iso2022.ISO_2022_JP(),
+    new iso2022.ISO_2022_KR(),
+    new iso2022.ISO_2022_CN(),
+    new sbcs.ISO_8859_1(),
+    new sbcs.ISO_8859_2(),
+    new sbcs.ISO_8859_5(),
+    new sbcs.ISO_8859_6(),
+    new sbcs.ISO_8859_7(),
+    new sbcs.ISO_8859_8(),
+    new sbcs.ISO_8859_9(),
+    new sbcs.windows_1251(),
+    new sbcs.windows_1256(),
+    new sbcs.KOI8_R(),
+    new AsciiEncoding(),
+];
+
+function detect(buffer) {
+    const matches = analyse(buffer);
+    return matches.length > 0 ? matches[0].name : null;
+}
+
+function analyse(buffer) {
+    if (!isByteArray(buffer)) {
+        throw new Error('Input must be a byte array, e.g. Buffer or Uint8Array');
+    }
+
+    const byteStats = new Array(256).fill(0);
+
+    for (let i = 0; i < buffer.length; i++) {
+        byteStats[buffer[i] & 0xFF]++;
+    }
+
+    const c1Bytes = byteStats.slice(0x80, 0xA0).some(count => count > 0);
+
+    const context = {
+        byteStats,
+        c1Bytes,
+        rawInput: buffer,
+        rawLen: buffer.length,
+        inputBytes: buffer,
+        inputLen: buffer.length,
+    };
+
+    return recognisers
+        .map(rec => rec.match(context))
+        .filter(match => match)
+        .sort((a, b) => b.confidence - a.confidence);
+}
+
+function detectFile(filepath, opts = {}) {
+    return new Promise((resolve, reject) => {
+        const fs = fsModule();
+        let fd;
+
+        const onReadComplete = (err, buffer) => {
+            if (fd) {
+                fs.closeSync(fd);
+            }
+            if (err) {
+                reject(err);
+            } else {
+                resolve(detect(buffer));
+            }
+        };
+
+        if (opts.sampleSize) {
+            fd = fs.openSync(filepath, 'r');
+            const sample = Buffer.allocUnsafe(opts.sampleSize);
+            fs.read(fd, sample, 0, opts.sampleSize, opts.offset, (err) => onReadComplete(err, sample));
+        } else {
+            fs.readFile(filepath, onReadComplete);
+        }
+    });
+}
+
+function detectFileSync(filepath, opts = {}) {
+    const fs = fsModule();
+
+    if (opts.sampleSize) {
+        const fd = fs.openSync(filepath, 'r');
+        const sample = Buffer.allocUnsafe(opts.sampleSize);
+        fs.readSync(fd, sample, 0, opts.sampleSize, opts.offset);
+        fs.closeSync(fd);
+        return detect(sample);
+    }
+
+    return detect(fs.readFileSync(filepath));
+}
+
+module.exports = {
+    analyse,
+    detect,
+    detectFileSync,
+    detectFile,
+};
+```

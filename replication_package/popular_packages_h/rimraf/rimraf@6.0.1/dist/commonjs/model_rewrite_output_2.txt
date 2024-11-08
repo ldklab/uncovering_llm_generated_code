@@ -1,0 +1,120 @@
+The given Node.js code is part of a module that provides an interface for removing files or directories, similar to the Unix command `rm -rf`. It appears to be part of a library that handles file removal operations in different environments (e.g., POSIX, Windows) and using different strategies (native, manual, etc.). Here's a breakdown of its key functionalities:
+
+1. **Exports and Module Imports:** The code imports several modules required for path handling, globbing patterns, and different strategies for file removal (`native`, `manual`, `windows`, `posix`, and others).
+
+2. **Option Handling:** It uses option functions (like `optArg`, `optArgSync`) that prepare and validate options for file removal operations.
+
+3. **Wrapping Strategies:** 
+   - The `wrap` function converts an asynchronous function into one that can handle paths, which might be arrays (due to glob patterns), and applies the function to each path.
+   - The `wrapSync` function is similar but for synchronous operations.
+
+4. **Removal Strategies:**
+   - Implements multiple strategies (`native`, `manual`, `windows`, `posix`, `moveRemove`) each with synchronous and asynchronous variants, wrapped with the `wrap` or `wrapSync` functions to handle paths and options.
+   - The choice between using a native strategy or manual strategy is determined by checking options (like with `useNative` or `useNativeSync`).
+
+5. **Exported Functions:** 
+   - Exports several file removal functions such as `rimraf`, `rimrafSync`, and their strategy-specific and synchronous versions like `manual`, `native`, `windows`.
+
+Having understood this, here's a possible rewrite for clarity while maintaining the original functionality:
+
+```javascript
+"use strict";
+
+const { glob, globSync } = require("glob");
+const { optArg, optArgSync } = require("./opt-arg.js");
+const pathArg = require("./path-arg.js").default;
+const {
+  rimrafManual,
+  rimrafManualSync,
+} = require("./rimraf-manual.js");
+const {
+  rimrafMoveRemove,
+  rimrafMoveRemoveSync,
+} = require("./rimraf-move-remove.js");
+const {
+  rimrafNative,
+  rimrafNativeSync,
+} = require("./rimraf-native.js");
+const {
+  rimrafPosix,
+  rimrafPosixSync,
+} = require("./rimraf-posix.js");
+const {
+  rimrafWindows,
+  rimrafWindowsSync,
+} = require("./rimraf-windows.js");
+const {
+  useNative,
+  useNativeSync,
+} = require("./use-native.js");
+
+const wrap = (fn) => async (path, opt) => {
+  const options = optArg(opt);
+  if (options.glob) {
+    path = await glob(path, options.glob);
+  }
+  if (Array.isArray(path)) {
+    const results = await Promise.all(
+      path.map((p) => fn(pathArg(p, options), options))
+    );
+    return results.every(Boolean);
+  }
+  return !!(await fn(pathArg(path, options), options));
+};
+
+const wrapSync = (fn) => (path, opt) => {
+  const options = optArgSync(opt);
+  if (options.glob) {
+    path = globSync(path, options.glob);
+  }
+  if (Array.isArray(path)) {
+    const results = path.map((p) => fn(pathArg(p, options), options));
+    return results.every(Boolean);
+  }
+  return !!fn(pathArg(path, options), options);
+};
+
+exports.assertRimrafOptions = opt_arg_js_1.assertRimrafOptions;
+exports.isRimrafOptions = opt_arg_js_1.isRimrafOptions;
+
+exports.nativeSync = wrapSync(rimrafNativeSync);
+exports.native = Object.assign(wrap(rimrafNative), { sync: exports.nativeSync });
+exports.manualSync = wrapSync(rimrafManualSync);
+exports.manual = Object.assign(wrap(rimrafManual), { sync: exports.manualSync });
+exports.windowsSync = wrapSync(rimrafWindowsSync);
+exports.windows = Object.assign(wrap(rimrafWindows), { sync: exports.windowsSync });
+exports.posixSync = wrapSync(rimrafPosixSync);
+exports.posix = Object.assign(wrap(rimrafPosix), { sync: exports.posixSync });
+exports.moveRemoveSync = wrapSync(rimrafMoveRemoveSync);
+exports.moveRemove = Object.assign(wrap(rimrafMoveRemove), { sync: exports.moveRemoveSync });
+
+exports.rimrafSync = wrapSync((path, opt) => useNativeSync(opt)
+  ? rimrafNativeSync(path, opt)
+  : rimrafManualSync(path, opt)
+);
+
+exports.sync = exports.rimrafSync;
+
+const rimraf_ = wrap((path, opt) => useNative(opt)
+  ? rimrafNative(path, opt)
+  : rimrafManual(path, opt)
+);
+
+exports.rimraf = Object.assign(rimraf_, {
+  rimraf: rimraf_,
+  sync: exports.rimrafSync,
+  rimrafSync: exports.rimrafSync,
+  manual: exports.manual,
+  manualSync: exports.manualSync,
+  native: exports.native,
+  nativeSync: exports.nativeSync,
+  posix: exports.posix,
+  posixSync: exports.posixSync,
+  windows: exports.windows,
+  windowsSync: exports.windowsSync,
+  moveRemove: exports.moveRemove,
+  moveRemoveSync: exports.moveRemoveSync,
+});
+
+exports.rimraf.rimraf = exports.rimraf;
+```

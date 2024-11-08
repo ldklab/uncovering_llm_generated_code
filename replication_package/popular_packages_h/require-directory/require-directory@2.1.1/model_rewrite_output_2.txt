@@ -1,0 +1,67 @@
+The provided Node.js code is designed to recursively require and return the modules in a directory as an object. It allows customization of how files are included, renamed, and visited through options passed to the main `requireDirectory` function. Key functionalities include:
+
+- **File Inclusion Filtering**: The code checks whether each file in a directory should be included based on specified extensions, inclusion, and exclusion criteria.
+- **Recursive Directory Traversal**: It optionally traverses directories recursively, building a nested object structure that represents the directory and its modules.
+- **Customizable Behavior**: Users can provide custom behavior for module renaming and visiting using the `rename` and `visit` functions in the options.
+- **Defaults**: There are default options for file extensions, recursion behavior, and functions.
+
+Here's a possible rewrite of the code while maintaining the functionality:
+
+```javascript
+'use strict';
+
+const fs = require('fs');
+const path = require('path');
+
+const defaultOptions = {
+  extensions: ['js', 'json', 'coffee'],
+  recurse: true,
+  rename: name => name,
+  visit: obj => obj,
+};
+
+function checkFileInclusion(filePath, fileName, options) {
+  const extRegex = new RegExp(`\\.(${options.extensions.join('|')})$`, 'i');
+
+  return extRegex.test(fileName) &&
+    !(options.include && options.include instanceof RegExp && !options.include.test(filePath)) &&
+    !(options.include && typeof options.include === 'function' && !options.include(filePath, fileName)) &&
+    !(options.exclude && options.exclude instanceof RegExp && options.exclude.test(filePath)) &&
+    !(options.exclude && typeof options.exclude === 'function' && options.exclude(filePath, fileName));
+}
+
+function requireDirectory(module, targetPath, options) {
+  let result = {};
+
+  if (targetPath && !options && typeof targetPath !== 'string') {
+    options = targetPath;
+    targetPath = null;
+  }
+
+  options = { ...defaultOptions, ...options };
+
+  targetPath = targetPath ? path.resolve(path.dirname(module.filename), targetPath) : path.dirname(module.filename);
+
+  fs.readdirSync(targetPath).forEach(fileName => {
+    const fullPath = path.join(targetPath, fileName);
+
+    if (fs.statSync(fullPath).isDirectory() && options.recurse) {
+      const subDirFiles = requireDirectory(module, fullPath, options);
+      if (Object.keys(subDirFiles).length > 0) {
+        result[options.rename(fileName, fullPath)] = subDirFiles;
+      }
+    } else {
+      if (fullPath !== module.filename && checkFileInclusion(fullPath, fileName, options)) {
+        const key = fileName.slice(0, fileName.lastIndexOf('.'));
+        const requiredModule = module.require(fullPath);
+        result[options.rename(key, fullPath, fileName)] = options.visit(requiredModule, fullPath, fileName) || requiredModule;
+      }
+    }
+  });
+
+  return result;
+}
+
+module.exports = requireDirectory;
+module.exports.defaults = defaultOptions;
+```

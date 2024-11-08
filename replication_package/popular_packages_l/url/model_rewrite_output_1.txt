@@ -1,0 +1,133 @@
+The given Node.js code implements basic URL parsing, formatting, and resolution functions inspired by the Node.js `url` module, using regular expressions and string operations. Here's a breakdown of the functionality:
+
+1. **`parse(urlStr, parseQueryString, slashesDenoteHost)`:**
+   - Parses a URL string into its components: protocol, host, port, pathname, query, hash, etc.
+   - Uses a regular expression to extract these components.
+   - Option to parse the query string into an object using the `querystring` module if `parseQueryString` is `true`.
+   - Handles special case where slashes following a protocol (`slashesDenoteHost`) should influence host detection.
+
+2. **`format(urlObj)`:**
+   - Converts a parsed URL object back into a URL string.
+   - Includes conditionals for presence of certain components like protocol, auth, path, search query, and hash.
+
+3. **`resolve(from, to)`:**
+   - Resolves a relative URL against a base URL.
+   - Returns the absolute URL string by combining or replacing components based on the input URLs.
+   - Handles typical cases like protocol-relative URLs, or path navigation using `.` and `..`.
+
+4. **`resolvePath(path)`:**
+   - Helper function for processing paths to resolve directory navigation symbols (`.` and `..`) into a final absolute path structure.
+
+The code is then exported as a module with the functions `parse`, `format`, and `resolve` for external use.
+
+Here is the rewritten code:
+
+```javascript
+const querystring = require('querystring');
+
+function parse(urlStr, parseQueryString = false, slashesDenoteHost = false) {
+    const urlPattern = /^(https?:|ftp:|file:|gopher:)?(\/\/)?((([^:@]*):?([^:@]*))?@)?([^:\/?#]+)?(:([0-9]+))?(\/[^?#]*)?(\?([^#]*))?(#(.*))?$/;
+    const match = urlStr.match(urlPattern);
+
+    if (!match) return {};
+
+    const [
+        href,
+        protocol = '',
+        slashes,
+        ,
+        authUser = '',
+        authPass = '',
+        host = '',
+        ,
+        port = '',
+        pathname = '',
+        search = '',
+        queryStr = '',
+        hash = ''
+    ] = match;
+
+    const auth = authUser || authPass ? `${authUser}:${authPass}` : null;
+    const hostname = host.toLowerCase();
+    const parsedQuery = parseQueryString ? querystring.parse(queryStr) : queryStr;
+
+    const result = {
+        href,
+        protocol: protocol.toLowerCase(),
+        slashes: !!slashes,
+        host: hostname ? `${hostname}:${port}`.trimEnd(':') : null,
+        auth,
+        hostname,
+        port,
+        pathname,
+        search,
+        path: `${pathname}${search}`,
+        query: parsedQuery,
+        hash
+    };
+
+    if (slashesDenoteHost && result.slashes && !result.host) {
+        const [fakedHost, ...pathParts] = pathname.split('/');
+        result.host = fakedHost;
+        result.pathname = `/${pathParts.join('/')}`;
+    }
+
+    return result;
+}
+
+function format(urlObj) {
+    const protocol = urlObj.protocol ? urlObj.protocol + (urlObj.protocol.endsWith(':') ? '' : ':') : '';
+    const auth = urlObj.auth ? `${urlObj.auth}@` : '';
+    const host = urlObj.host || ((urlObj.hostname || '') + (urlObj.port ? ':' + urlObj.port : ''));
+    const pathname = urlObj.pathname ? '/' + urlObj.pathname.replace(/^\//, '') : '';
+    const search = urlObj.search ? ('?' + urlObj.search.replace(/^\?/, '')) : (urlObj.query ? ('?' + querystring.stringify(urlObj.query)) : '');
+    const hash = urlObj.hash ? ('#' + urlObj.hash.replace(/^#/, '')) : '';
+  
+    if (['http', 'https', 'ftp', 'gopher', 'file'].includes(protocol)) {
+        return `${protocol}//${auth}${host}${pathname}${search}${hash}`;
+    }
+
+    return `${protocol}${auth}${host}${pathname}${search}${hash}`;
+}
+
+function resolve(from, to) {
+    const fromParsed = parse(from);
+    const toParsed = parse(to);
+  
+    if (toParsed.protocol) {
+        return to;
+    }
+
+    let base = fromParsed.href.split(/[?#]/)[0];
+    if (toParsed.pathname.startsWith('/')) {
+        base = `${fromParsed.protocol}//${fromParsed.host}`;
+    } else {
+        base = base.substring(0, base.lastIndexOf('/') + 1);
+    }
+
+    const resolvedPath = resolvePath(base + toParsed.pathname);
+    return format({
+        ...fromParsed,
+        pathname: resolvedPath,
+        query: toParsed.query,
+        hash: toParsed.hash
+    });
+}
+
+function resolvePath(path) {
+    const segments = path.split('/');
+    const resolved = [];
+    for (const segment of segments) {
+        if (segment === '.' || segment === '') continue;
+        if (segment === '..') resolved.pop();
+        else resolved.push(segment);
+    }
+    return '/' + resolved.join('/');
+}
+
+module.exports = {
+    parse,
+    format,
+    resolve
+};
+```

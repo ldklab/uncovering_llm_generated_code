@@ -1,0 +1,130 @@
+The provided Node.js code is a module that extends the functionality of Cheerio—a popular library used for parsing HTML and XML. This module includes methods for loading HTML and XML documents from a variety of sources like buffers, streams, and URLs, while handling encoding sniffing and parsing. It integrates other libraries such as `encoding-sniffer` for detecting text encoding and `undici` for making HTTP requests, and utilizes `htmlparser2` for document parsing. The module exports functions like `loadBuffer`, `stringStream`, `decodeStream`, and `fromURL` for different kinds of document loading. It also re-exports functionalities from supporting modules using helper functions to bind and import properties.
+
+Here's a rewritten version of the code:
+
+```javascript
+"use strict";
+
+/**
+ * @file Enhanced Cheerio version providing additional methods for loading documents.
+ */
+Object.defineProperty(exports, "__esModule", { value: true });
+
+const { contains, merge } = require('./static.js');
+const { adapter } = require('parse5-htmlparser2-tree-adapter');
+const htmlparser2 = require('htmlparser2');
+const { ParserStream } = require('parse5-parser-stream');
+const { decodeBuffer, DecodeStream } = require('encoding-sniffer');
+const undici = require('undici');
+const whatwgMimetype = require('whatwg-mimetype');
+const { Writable, finished } = require('node:stream');
+const { flattenOptions } = require('./options.js');
+const { load } = require('./load-parse.js');
+
+/**
+ * Loads a document from a buffer after sniffing its encoding.
+ * @param {Buffer} buffer - The buffer to decode and parse.
+ * @param {Object} options - Options for Cheerio.
+ * @returns {Object} The Cheerio document.
+ */
+function loadBuffer(buffer, options = {}) {
+    const opts = flattenOptions(options);
+    const str = decodeBuffer(buffer, {
+        defaultEncoding: opts.xmlMode ? 'utf8' : 'windows-1252',
+        ...options.encoding,
+    });
+    return load(str, opts);
+}
+
+/**
+ * Creates a writable stream that converts string data into a parsed document.
+ * @param {Object} options - Options for Cheerio.
+ * @param {Function} cb - Callback with the parsed document.
+ * @returns {WritableStream} Writable stream for string input.
+ */
+function stringStream(options, cb) {
+    return createStringStream(flattenOptions(options), cb);
+}
+
+function createStringStream(options, cb) {
+    const parser = htmlparser2.createDocumentStream((err, document) => cb(err, load(document)), options);
+    return new Writable({
+        decodeStrings: false,
+        write(chunk, _encoding, callback) {
+            if (typeof chunk !== 'string') throw new TypeError('Expected a string');
+            parser.write(chunk);
+            callback();
+        },
+        final(callback) {
+            parser.end();
+            callback();
+        },
+    });
+}
+
+/**
+ * Creates a writable stream that converts buffer data into a parsed document.
+ * @param {Object} options - Options for Cheerio.
+ * @param {Function} cb - Callback with the parsed document.
+ * @returns {DecodeStream} Decode stream for buffer input.
+ */
+function decodeStream(options, cb) {
+    const { encoding = {}, ...cheerioOptions } = options;
+    const opts = flattenOptions(cheerioOptions);
+    encoding.defaultEncoding ??= opts.xmlMode ? 'utf8' : 'windows-1252';
+
+    const decodeStream = new DecodeStream(encoding);
+    const stream = createStringStream(opts, cb);
+    decodeStream.pipe(stream);
+    return decodeStream;
+}
+
+const defaultRequestOptions = {
+    method: 'GET',
+    maxRedirections: 5,
+    throwOnError: true,
+    headers: {
+        accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+    },
+};
+
+/**
+ * Loads a document from a given URL.
+ * @param {string} url - The URL to fetch the document from.
+ * @param {Object} options - Options for Cheerio.
+ * @returns {Promise<Object>} Promise resolving with the Cheerio document.
+ */
+async function fromURL(url, options = {}) {
+    const { requestOptions = defaultRequestOptions, encoding = {}, ...cheerioOptions } = options;
+    requestOptions.headers ??= defaultRequestOptions.headers;
+
+    const promise = new Promise((resolve, reject) => {
+        undici.stream(url, requestOptions, (res) => {
+            const contentType = res.headers['content-type'] || 'text/html';
+            const mimeType = new whatwgMimetype(contentType);
+            if (!mimeType.isHTML() && !mimeType.isXML()) {
+                throw new RangeError(`Unsupported content-type "${contentType}"`);
+            }
+            encoding.transportLayerEncodingLabel = mimeType.parameters.get('charset');
+            const history = res.context?.history;
+            const opts = {
+                encoding,
+                xmlMode: mimeType.isXML(),
+                baseURL: history ? history[history.length - 1] : url,
+                ...cheerioOptions,
+            };
+            return decodeStream(opts, (err, $) => (err ? reject(err) : resolve($)));
+        });
+    });
+
+    await undiciStream;
+    return promise;
+}
+
+exports.loadBuffer = loadBuffer;
+exports.stringStream = stringStream;
+exports.decodeStream = decodeStream;
+exports.fromURL = fromURL;
+exports.contains = contains;
+exports.merge = merge;
+```

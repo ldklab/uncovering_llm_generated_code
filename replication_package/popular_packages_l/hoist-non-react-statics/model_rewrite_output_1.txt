@@ -1,0 +1,63 @@
+The provided Node.js code defines a function called `hoistNonReactStatics` which is designed to copy non-React-specific static properties from a source component to a target component. React components can have static properties, but certain properties are inherent to React's functionality (such as `propTypes`, `defaultProps`, etc.) and should not be copied over. The function takes into account these React-specific static properties and avoids copying them. Additionally, it allows for custom exclusions via a parameter.
+
+The function works as follows:
+1. It defines a list of React-specific static properties which are not to be copied (`REACT_STATICS`).
+2. Combines these with any user-defined exclusions (`exclusions`).
+3. Retrieves all property names from the source component.
+4. Iterates over these property names, and for each one that isn't excluded, attempts to copy the property descriptor from the source component to the target component.
+5. Returns the target component with the non-React static properties copied over.
+
+Below is a rewritten code:
+
+```javascript
+// hoist-non-react-statics.js
+
+function hoistNonReactStatics(targetComponent, sourceComponent, exclusions = {}) {
+  const REACT_STATICS = {
+    childContextTypes: true,
+    contextType: true,
+    contextTypes: true,
+    defaultProps: true,
+    displayName: true,
+    getDefaultProps: true,
+    getDerivedStateFromError: true,
+    getDerivedStateFromProps: true,
+    mixins: true,
+    propTypes: true,
+    type: true
+  };
+
+  const KNOWN_STATICS = Object.assign({}, REACT_STATICS, exclusions);
+  const sourceKeys = Object.getOwnPropertyNames(sourceComponent);
+
+  sourceKeys.forEach((key) => {
+    if (!KNOWN_STATICS[key]) {
+      try {
+        const descriptor = Object.getOwnPropertyDescriptor(sourceComponent, key);
+        Object.defineProperty(targetComponent, key, descriptor);
+      } catch (e) {
+        // Handle errors during property definition
+      }
+    }
+  });
+
+  return targetComponent;
+}
+
+module.exports = hoistNonReactStatics;
+
+// Example usage
+/*
+const React = require('react');
+const hoistNonReactStatics = require('./hoist-non-react-statics');
+
+class MyComponent extends React.Component {}
+class MyOtherComponent extends React.Component {
+  static myStatic = "a static property";
+}
+
+hoistNonReactStatics(MyComponent, MyOtherComponent);
+
+console.log(MyComponent.myStatic); // Outputs: "a static property"
+*/
+```

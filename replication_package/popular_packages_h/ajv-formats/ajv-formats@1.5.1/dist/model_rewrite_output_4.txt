@@ -1,0 +1,63 @@
+The Node.js code is a module that acts as a plugin for the AJV (Another JSON Schema Validator) library. The primary purpose of this plugin is to add custom format validation to an AJV instance. It does this by including predefined formats and an optional keyword restriction mechanism.
+
+Functionality Explained:
+1. **Imports**: The plugin imports format definitions from `formats`, a function from `limit` to possibly restrict keywords, and a code generation utility from `ajv`.
+
+2. **Names for Code Generation**: Two `Name` instances are created for managing full and fast format modes: `fullName` and `fastName`. These are used for dynamic code references.
+
+3. **Plugin Definition**: The `formatsPlugin` function configures an AJV instance:
+   - It accepts an AJV instance and options that modify behavior, including the format mode ("full" or "fast") and whether certain keywords are enabled.
+   - Depending on options, it selects either full or fast formats and applies them to the AJV instance. It also includes formats specified in the options or defaults to all available format names.
+   - If the `keywords` option is true, it applies restrictions using `limit`.
+
+4. **Format Retrieval**: A method `get` is assigned to `formatsPlugin`, allowing format retrieval by name and mode. An error is thrown if an unknown format is requested.
+
+5. **Helper Function**: `addFormats` is a utility function that links formats to the AJV instance and ensures they are exported appropriately.
+
+6. **Exports**: The plugin is exported as the default module export, and it also sets `module.exports` to ensure compatibility with both ES module and CommonJS module systems.
+
+Rewritten Code:
+```javascript
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+
+const { fullFormats, fastFormats, formatNames } = require("./formats");
+const limit = require("./limit");
+const { Name, _ } = require("ajv/dist/compile/codegen");
+
+const fullName = new Name("fullFormats");
+const fastName = new Name("fastFormats");
+
+const formatsPlugin = (ajv, opts = { keywords: true }) => {
+    if (Array.isArray(opts)) {
+        configureFormats(ajv, opts, fullFormats, fullName);
+        return ajv;
+    }
+    const [formatSet, exportName] = opts.mode === "fast" ? [fastFormats, fastName] : [fullFormats, fullName];
+    const selectedFormats = opts.formats || formatNames;
+    configureFormats(ajv, selectedFormats, formatSet, exportName);
+    if (opts.keywords) limit(ajv);
+
+    return ajv;
+};
+
+formatsPlugin.get = (name, mode = "full") => {
+    const formatSet = mode === "fast" ? fastFormats : fullFormats;
+    const format = formatSet[name];
+    if (!format) throw new Error(`Unknown format "${name}"`);
+    return format;
+};
+
+function configureFormats(ajv, formatList, formats, exportName) {
+    let codeFormats = ajv.opts.code.formats;
+    codeFormats = codeFormats !== undefined ? codeFormats : (ajv.opts.code.formats = _`require("ajv-formats/dist/formats").${exportName}`);
+    for (const format of formatList) {
+        ajv.addFormat(format, formats[format]);
+    }
+}
+
+exports.default = formatsPlugin;
+
+module.exports = formatsPlugin;
+module.exports.default = formatsPlugin;
+```

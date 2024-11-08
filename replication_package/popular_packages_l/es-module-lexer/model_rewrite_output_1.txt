@@ -1,0 +1,85 @@
+The Node.js code provided is a simplified module for parsing ECMAScript (ES) module syntax, specifically to identify import and export statements. Here's a breakdown of its functionality:
+
+1. **WASM Initialization**: The code simulates the loading of a WebAssembly (WASM) module through the `loadWasm` function, which asynchronously updates a flag (`wasmLoaded`) to indicate that the loading is complete.
+
+2. **Initialization Function (`init`)**: This function checks if the WASM module is loaded. If not, it awaits its loading. It's crucial for users to call and await `init()` to ensure the environment is ready before parsing.
+
+3. **Parsing Function (`parse`)**: This function takes a JavaScript source code string and optionally a source name. It uses regular expressions to identify and extract module export and import statements within the source code.
+
+   - **Export Detection**: It captures patterns like `export var`, `export function`, etc., and records the start and end indices of the names of exported entities.
+
+   - **Import Detection**: It captures `import ... from ...` statements, recording where they occur and the imported module's name for statically imported resources.
+   
+4. **Returned Data**: It returns an array:
+   - A list of imports with detailed information.
+   - A list of exports.
+   - A boolean (always `false` in this example) potentially for future use to signal dynamic import detection.
+   - A boolean indicating if any import or export statement was found.
+
+Below is a rewritten version of the described Node.js module:
+
+```javascript
+// es-module-lexer.js
+
+let wasmLoaded = false;
+
+// Dummy WebAssembly loader simulation
+async function loadWasm() {
+  return new Promise((resolve) => {
+    setTimeout(() => {
+      wasmLoaded = true;
+      resolve();
+    }, 1);
+  });
+}
+
+// Initializes the wasm environment
+async function init() {
+  if (!wasmLoaded) {
+    await loadWasm();
+  }
+}
+
+// Parses source code to extract import/export details
+function parse(source, sourcename = '') {
+  if (!wasmLoaded) {
+    throw new Error('Wasm is not initialized. Call and await `init()` first.');
+  }
+
+  const exports = [];
+  const imports = [];
+
+  const exportRegex = /export\s+(?:var|let|const|function|class|default)\s+([a-zA-Z_$][0-9a-zA-Z_$]*)/g;
+  let match;
+
+  // Detect export statements
+  while ((match = exportRegex.exec(source)) !== null) {
+    exports.push({
+      s: match.index,
+      e: match.index + match[1].length,
+      ls: match.index,
+      le: match.index + match[1].length,
+    });
+  }
+
+  const importRegex = /import\s+([^;'"]+)\s+from\s+(['"])(.*?)\2/g;
+
+  // Detect import statements
+  while ((match = importRegex.exec(source)) !== null) {
+    imports.push({
+      s: match.index + match[1].length + 7,
+      e: match.index + match[0].length - (match[2].length + 1),
+      ss: match.index,
+      se: match.index + match[0].length,
+      n: match[3],
+      t: 1, // Marked as static
+      a: -1,
+      d: -1,
+    });
+  }
+
+  return [imports, exports, false, imports.length > 0 || exports.length > 0];
+}
+
+module.exports = { init, parse };
+```

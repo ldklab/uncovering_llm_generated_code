@@ -1,0 +1,105 @@
+The provided Node.js code defines a module that helps resolve the location of other JavaScript modules/files given their identifiers. It implements both asynchronous and synchronous methods for module resolution.
+
+**Functionality Overview:**
+
+1. **Asynchronous Resolution (`resolve`):**  
+   - Accepts a module `id`, optional `options`, and a callback `cb`.
+   - Combines passed options with default options.
+   - Using a helper function `_resolve`, it finds potential file paths (by computing potential locations where the file might reside) and checks each path iteratively to see if it exists.
+   - Uses an asynchronous method `opts.isFile` to check existence.
+   - Calls the callback with the first matching path or an error if none are found.
+
+2. **Synchronous Resolution (`resolveSync`):**
+   - Accepts a module `id` and optional `options`.
+   - Combines passed options with default options.
+   - Using a helper function `_resolveSync`, it finds and verifies potential file paths synchronously.
+   - Throws an error if module cannot be found.
+
+3. **Common Functionality:**
+   - **`generateCandidates`:** Generates potential file paths where the given module might exist, based on the current directory and up the path hierarchy.
+   - The module resolution uses default extensions, directory paths, and basic file/directory checks configured in `defaultOptions`.
+
+Here's a possible rewrite of the Node.js code in one markdown code block:
+
+```javascript
+const fs = require('fs');
+const path = require('path');
+
+// Asynchronous module resolver
+function resolve(id, opts = {}, cb) {
+    const options = { ...defaultOptions, ...opts };
+    findModuleAsync(id, options, cb);
+}
+
+function findModuleAsync(id, opts, cb) {
+    const baseDir = opts.basedir || path.dirname(module.parent.filename);
+    const candidatePaths = computePotentialPaths(id, baseDir, opts);
+
+    (function attemptNext(paths) {
+        if (!paths.length) return cb(new Error(`MODULE_NOT_FOUND: Unable to locate ${id}`));
+        
+        const current = paths.shift();
+        opts.isFile(current, (err, exists) => {
+            if (err) return cb(err);
+            if (exists) return cb(null, current);
+            attemptNext(paths);
+        });
+    })(candidatePaths);
+}
+
+// Synchronous module resolver
+function resolveSync(id, opts = {}) {
+    const options = { ...defaultOptions, ...opts };
+    return findModuleSync(id, options);
+}
+
+function findModuleSync(id, opts) {
+    const baseDir = opts.basedir || path.dirname(module.parent.filename);
+    const candidatePaths = computePotentialPaths(id, baseDir, opts);
+
+    for (let path of candidatePaths) {
+        if (opts.isFile(path)) return path;
+    }
+    throw new Error(`MODULE_NOT_FOUND: Unable to locate ${id}`);
+}
+
+// Generate paths for module search
+function computePotentialPaths(id, baseDir, opts) {
+    let paths = [];
+    let dir = baseDir;
+    const extensions = opts.extensions || ['.js'];
+
+    while (dir !== path.parse(dir).root) {
+        for (let moduleDir of opts.moduleDirectory) {
+            for (let ext of extensions) {
+                paths.push(path.join(dir, moduleDir, id + ext));
+            }
+        }
+        dir = path.dirname(dir);
+    }
+
+    return paths;
+}
+
+const defaultOptions = {
+    basedir: __dirname,
+    extensions: ['.js'],
+    includeCoreModules: true,
+    isFile(file, cb) {
+        fs.stat(file, (err, stat) => {
+            if (err) return cb(err);
+            cb(null, stat.isFile() || stat.isFIFO());
+        });
+    },
+    isDirectory(dir, cb) {
+        fs.stat(dir, (err, stat) => {
+            if (err) return cb(null, false);
+            cb(null, stat.isDirectory());
+        });
+    },
+    moduleDirectory: ['node_modules']
+};
+
+module.exports = resolve;
+module.exports.sync = resolveSync;
+```

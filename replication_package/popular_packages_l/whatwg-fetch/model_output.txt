@@ -1,0 +1,73 @@
+The `window.fetch` polyfill provides a way to make HTTP requests in environments where the `fetch` API is not natively available. It aims to replicate the behavior of the native `fetch` function according to the Fetch specification, using XMLHttpRequest under the hood. Here's a breakdown of the key functionalities and how it is intended to be used:
+
+1. **Polyfill Purpose**: This polyfill ensures the `fetch()` function is available in browsers that do not support it natively by implementing the core functionalities specified in the Fetch API, sufficient for operations typically handled by XMLHttpRequest.
+
+2. **Installation**: The polyfill can be installed via npm with `npm install whatwg-fetch`. For broader compatibility, especially in older browsers, a Promise polyfill is also recommended.
+
+3. **Usage**: 
+   - **Basic Fetch Call**: The `fetch()` function returns a Promise, resolving with a `Response` object that can be used to access data.
+   - **Response Processing**: The contents of the response can be processed as text or JSON using `response.text()` or `response.json()`. Response metadata, status, and headers can also be accessed.
+   - **HTTP Methods**: Supports GET and POST requests, allowing for form submissions and JSON payloads.
+   - **Cookies and Credentials**: Special handling is required for cross-origin credentials using the `credentials` option.
+   - **Aborting Fetch Requests**: The polyfill supports abortable fetch requests via the `AbortController` and `AbortSignal` APIs.
+
+4. **Caveats and Limitations**: 
+   - The polyfill cannot intercept or modify some behaviors native to the Fetch API, such as CORS policies and networking failures.
+   - It does not handle all Fetch options, like `redirect` or `cache`, nor support `keepalive` due to the limitations of XMLHttpRequest.
+
+5. **Browser Support**: The polyfill is intended for older browsers where `fetch` isn't available. In modern browsers, the polyfill doesn't interfere with the native implementation. It explicitly doesn't work within Node.js environments.
+
+Below is a basic implementation of a `fetch` polyfill using XMLHttpRequest.
+
+```javascript
+// Simple fetch polyfill using XMLHttpRequest
+function fetchPolyfill(url, options={}) {
+    return new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open(options.method || 'GET', url);
+
+        // Set headers if provided
+        if (options.headers) {
+            for (let [key, value] of Object.entries(options.headers)) {
+                xhr.setRequestHeader(key, value);
+            }
+        }
+
+        xhr.onload = () => {
+            const response = {
+                ok: xhr.status >= 200 && xhr.status < 300,
+                status: xhr.status,
+                statusText: xhr.statusText,
+                headers: {
+                    get: (name) => xhr.getResponseHeader(name)
+                },
+                url: xhr.responseURL,
+                text: () => Promise.resolve(xhr.responseText),
+                json: () => Promise.resolve(JSON.parse(xhr.responseText))
+            };
+            resolve(response);
+        };
+
+        xhr.onerror = () => reject(new TypeError('Network request failed'));
+        xhr.ontimeout = () => reject(new TypeError('Network request failed'));
+
+        if (options.credentials === 'include') {
+            xhr.withCredentials = true;
+        }
+
+        xhr.send(options.body || null);
+    });
+}
+
+// Example of usage:
+fetchPolyfill('/api/data', {
+    method: 'GET',
+    headers: {
+        'Accept': 'application/json',
+    }
+})
+.then(response => response.json())
+.then(data => console.log(data))
+.catch(error => console.error('Failed to fetch:', error));
+```
+This code provides a basic implementation that covers essential fetch functionalities like sending requests, handling responses, and using headers. Note that this simple polyfill might not cover all edge cases of the Fetch API, but it serves as a starting point for browsers without native fetch support.

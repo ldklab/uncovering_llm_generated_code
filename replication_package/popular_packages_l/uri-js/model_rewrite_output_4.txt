@@ -1,0 +1,85 @@
+The provided Node.js code defines a `URI` class with several static methods designed to parse, serialize, resolve, normalize, and compare URIs (Uniform Resource Identifiers). The functionalities of the methods are as follows:
+
+1. **parse(uriString)**: Takes a URI string and uses a regular expression to extract different components like scheme, userinfo, host, port, path, query, and fragment. Returns an object with these details or `null` if the URI doesn't match the expected format.
+   
+2. **serialize(uriComponents, options)**: Constructs a URI string from a given object containing URI components (scheme, userinfo, host, port, path, query, fragment).
+
+3. **resolve(baseURI, relativeURI)**: Combines a base URI with a relative URI to form a new absolute URI. Uses a simplified approach to merge paths.
+
+4. **normalize(uriString)**: Converts a URI string to a normalized form by ensuring the scheme and host are in lowercase and decoding the path.
+
+5. **equal(uri1, uri2)**: Compares two URIs by normalizing them and checking if they are equal.
+
+6. **normalizeIP(host)**: Simplifies the normalization process for IPv4/IPv6 addresses by removing leading zeros and converting to lowercase.
+
+7. **parseMailto(uriString)**: Specifically parses `mailto` URIs to extract email addresses, subject, and body from the query string.
+
+Below is a rewritten version of the `URI` class maintaining the same functionalities:
+
+```javascript
+class URI {
+    static parse(uriString) {
+        const parser = /^(?<scheme>[a-z][\w.-]+):\/\/(?<userinfo>[^@]+@)?(?<host>[\w.-]+)(:(?<port>\d+))?(?<path>[\/\w.-]*)\??(?<query>[\w=&]*)#?(?<fragment>\w*)/i;
+        const matched = uriString.match(parser);
+        if (!matched) return null;
+        const { scheme, userinfo, host, port, path, query, fragment } = matched.groups;
+        return {
+            scheme: scheme.toLowerCase(),
+            userinfo: userinfo ? userinfo.slice(0, -1) : undefined,
+            host: host.toLowerCase(),
+            port: port ? parseInt(port) : undefined,
+            path: path || '/',
+            query,
+            fragment
+        };
+    }
+
+    static serialize({ scheme, userinfo, host, port, path = '/', query, fragment }) {
+        return `${scheme}://${userinfo ? `${userinfo}@` : ''}${host}${port ? `:${port}` : ''}${path}${query ? `?${query}` : ''}${fragment ? `#${fragment}` : ''}`;
+    }
+
+    static resolve(baseURI, relativeURI) {
+        const base = URI.parse(baseURI);
+        const relative = URI.parse(relativeURI);
+        const resolvedPath = base.path.split('/').slice(0, -1).concat(relative.path.split('/')).filter(Boolean).join('/');
+        return `${base.scheme}://${base.host}/${resolvedPath}`;
+    }
+
+    static normalize(uriString) {
+        const parsed = URI.parse(uriString);
+        parsed.scheme = parsed.scheme.toLowerCase();
+        parsed.host = parsed.host.toLowerCase();
+        parsed.path = parsed.path.split('/').map(decodeURIComponent).join('/');
+        return URI.serialize(parsed);
+    }
+
+    static equal(uri1, uri2) {
+        return URI.normalize(uri1) === URI.normalize(uri2);
+    }
+
+    static normalizeIP(host) {
+        return host.replace(/^0+/, '').toLowerCase();
+    }
+
+    static parseMailto(uriString) {
+        const mailtoParser = /^mailto:(?<to>[^?]+)\??(?<query>.*)$/i;
+        const matched = uriString.match(mailtoParser);
+        if (!matched) return null;
+        const { to, query } = matched.groups;
+        const params = new URLSearchParams(query);
+        return {
+            scheme: "mailto",
+            to: to.split(','),
+            subject: params.get('subject'),
+            body: params.get('body')
+        };
+    }
+}
+
+module.exports = URI;
+
+// Usage example:
+// const URI = require('./uri');
+// console.log(URI.parse("http://user:pass@example.com:8080/path/to/resource?search=query#fragment"));
+// console.log(URI.serialize({ scheme: 'https', host: 'example.com', path: '/path', query: 'query=test', fragment: 'footer' }));
+```

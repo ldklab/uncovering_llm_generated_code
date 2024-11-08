@@ -1,0 +1,51 @@
+The given Node.js code defines a module for signing and verifying (unsigning) values using the HMAC-SHA256 algorithm. The `sign` function takes a value (`val`) and a secret (`secret`), then returns the value concatenated with a base64-encoded HMAC-SHA256 signature. The `unsign` function verifies that a signed value matches the signature generated with the given secret, returning the original value if valid, or `false` if invalid. 
+
+Here is the rewritten code:
+
+```javascript
+const { createHmac, timingSafeEqual } = require('crypto');
+
+/**
+ * Generate HMAC signature for given value with provided secret
+ *
+ * @param {String} val - Value to sign
+ * @param {String} secret - Secret key for signing
+ * @returns {String} Signed value
+ * @throws {TypeError} if val or secret are not strings
+ */
+function sign(val, secret) {
+  if (typeof val !== 'string') throw new TypeError("Cookie value must be provided as a string.");
+  if (typeof secret !== 'string') throw new TypeError("Secret string must be provided.");
+
+  const signature = createHmac('sha256', secret)
+    .update(val)
+    .digest('base64')
+    .replace(/=+$/, '');
+
+  return `${val}.${signature}`;
+}
+
+/**
+ * Verify and decode signed value with provided secret
+ *
+ * @param {String} val - Signed value to verify
+ * @param {String} secret - Secret key for verification
+ * @returns {String|Boolean} Original value if valid signature, otherwise false
+ * @throws {TypeError} if val or secret are not strings
+ */
+function unsign(val, secret) {
+  if (typeof val !== 'string') throw new TypeError("Signed cookie string must be provided.");
+  if (typeof secret !== 'string') throw new TypeError("Secret string must be provided.");
+
+  const originalValue = val.slice(0, val.lastIndexOf('.'));
+  const expectedSignature = sign(originalValue, secret);
+
+  const expectedBuffer = Buffer.from(expectedSignature);
+  const actualBuffer = Buffer.alloc(expectedBuffer.length);
+  actualBuffer.write(val);
+
+  return timingSafeEqual(expectedBuffer, actualBuffer) ? originalValue : false;
+}
+
+module.exports = { sign, unsign };
+```

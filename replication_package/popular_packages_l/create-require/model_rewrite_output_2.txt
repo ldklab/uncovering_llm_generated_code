@@ -1,0 +1,47 @@
+The Node.js code defines a function called `createRequire` which simulates the behavior of `require` in a given file context, facilitating module loading. Here's a breakdown of its functionality:
+
+1. **Input Determination**: It checks whether the provided `filename` is a string path or a URL, converting it to an absolute file path for accurate processing. If the input is neither, it throws a `TypeError`.
+
+2. **Module Preparation**: It creates a new `Module` instance named `mod` with the specified filename and appropriately sets its `filename` and `paths`. The paths are derived from the node module paths of the given `filename`.
+
+3. **Require Functionality**: It defines a `requireWrapper` function that utilizes `mod.require` to load modules based on the context of the specified `filename`.
+
+4. **Additional Properties**: The `requireWrapper` function is enhanced with additional properties:
+   - `resolve`: Resolves the full path of a module as Node.js would, given the context of the `filename`.
+   - `main`: Represents the entry point module (`require.main`).
+   - `extensions`: Provides access to Node.js module-loading extensions.
+   - `cache`: Offers access to the internal module cache.
+
+5. **Export**: Finally, it exports the `createRequire` function so it can be used in other modules to create a `require` function contextually bound to the specified `filename`.
+
+Below is a possible rewrite of this code following the same logic:
+
+```javascript
+const path = require('path');
+const Module = require('module');
+
+function createRequire(filename) {
+  if (typeof filename === 'string') {
+    filename = path.resolve(filename);
+  } else if (filename instanceof URL) {
+    filename = path.fileURLToPath(filename);
+  } else {
+    throw new TypeError('filename must be a string or a URL');
+  }
+
+  const mod = new Module(filename);
+  mod.filename = filename;
+  mod.paths = Module._nodeModulePaths(path.dirname(filename));
+
+  const requireWrapper = (request) => mod.require(request);
+
+  requireWrapper.resolve = (request) => Module._resolveFilename(request, mod);
+  requireWrapper.main = require.main;
+  requireWrapper.extensions = Module._extensions;
+  requireWrapper.cache = Module._cache;
+
+  return requireWrapper;
+}
+
+module.exports = createRequire;
+```

@@ -1,0 +1,107 @@
+The `rimraf` package for Node.js is designed to provide a cross-platform implementation of the UNIX command `rm -rf`, which is used for recursive file and directory deletion. Here’s a breakdown of its functionality:
+
+### Installation and Usage
+- You can install the package using `npm install rimraf`.
+
+### Major Changes Over Versions
+- **Version 6** requires Node.js 20 or >=22 and adds a `--version` flag to the CLI.
+- **Version 5** removes default exports; you need to import functions directly, using `import { rimrafSync } from 'rimraf'`.
+- **Version 4** introduces a return value of `Promise` instead of using callbacks and changes function capabilities to accept arrays of paths.
+
+### API Overview
+- The package can be imported using both `import` and `require()`.
+- Primary functions (like `rimraf` for async and `rimrafSync` for sync) attempt to delete files and directories recursively, with various options to handle different scenarios, especially on Windows.
+
+### Options for Deletion
+- Options include `preserveRoot`, `tmp`, `maxRetries`, backoff strategies, and more. These help manage how directories and files are handled, especially in scenarios with potential errors (like `EBUSY`, `EMFILE`, etc.).
+
+### Specific Implementations
+- Functions such as `rimraf.native` and `rimraf.manual` let you choose the approach tailored either by Node.js's native capabilities or a JavaScript implementation specific to the OS (Windows or POSIX).
+- Move-remove strategy is available for tricky file deletions on Windows, providing a reliable fallback method.
+
+### Command Line Interface
+- The CLI includes commands for path deletions with options to determine behavior (such as `--preserve-root`, `--glob` options for pattern matching, verbosity settings, and more).
+
+### Use Case
+- The package is beneficial when you need a reliable way to programmatically delete files/folders in a Node.js environment on any OS. 
+
+Here’s a simplified code demonstration of how the package could be implemented:
+
+```js
+// rimraf.js - simplified implementation of the described `rimraf` functionalities
+import fs from 'fs/promises';
+import path from 'path';
+import os from 'os';
+
+async function rimraf(paths, opts = {}) {
+  if (!Array.isArray(paths)) paths = [paths];
+  const results = await Promise.all(paths.map(p => removeRecursively(p, opts)));
+  // return true if all removals were successful
+  return results.every(Boolean);
+}
+
+function removeRecursively(dirPath, opts = {}) {
+  return fs.lstat(dirPath).then(stats => {
+    if (stats.isDirectory()) {
+      return fs.readdir(dirPath).then(entries => {
+        const removalPromises = entries.map(entry => 
+          removeRecursively(path.join(dirPath, entry), opts)
+        );
+        return Promise.all(removalPromises).then(() => fs.rmdir(dirPath));
+      });
+    } else {
+      return fs.unlink(dirPath);
+    }
+  }).catch(err => {
+    if (err.code === 'ENOENT') return false; // path doesn't exist
+    throw err;
+  });
+}
+
+function rimrafSync(paths, opts = {}) {
+  if (!Array.isArray(paths)) paths = [paths];
+  return paths.every(p => removeSync(p, opts));
+}
+
+function removeSync(dirPath, opts = {}) {
+  try {
+    const stats = fs.statSync(dirPath);
+    if (stats.isDirectory()) {
+      const entries = fs.readdirSync(dirPath);
+      entries.forEach(entry => removeSync(path.join(dirPath, entry), opts));
+      fs.rmdirSync(dirPath);
+    } else {
+      fs.unlinkSync(dirPath);
+    }
+    return true;
+  } catch (err) {
+    if (err.code === 'ENOENT') return false;
+    throw err;
+  }
+}
+
+// Exporting functions similar to the described API
+export {
+  rimraf,
+  rimrafSync,
+  // placeholder for `native` and `manual` can be defined following similar patterns
+  // native, nativeSync, manual, manualSync, etc.
+};
+
+// CLI (Command Line Interface), to be run using `node rimraf [options] <path>`
+if (require.main === module) {
+  const args = process.argv.slice(2);
+  // Simple demonstration of parsing CLI args, ideally you'd use a library like 'yargs'
+  const paths = [];
+  for (let arg of args) {
+    if (arg.startsWith('--')) continue; // Handle options here
+    paths.push(arg);
+  }
+  rimraf(paths).then(result => {
+    console.log('Finished deleting files:', result);
+  }).catch(err => {
+    console.error('Error deleting files:', err);
+  });
+}
+```
+This code provides a basic implementation of the core `rimraf` functions, `rimraf` (async) and `rimrafSync` (sync), and a simple CLI processing structure. This can be further expanded to include additional error handling, options, and execution strategies as described in the package documentation.

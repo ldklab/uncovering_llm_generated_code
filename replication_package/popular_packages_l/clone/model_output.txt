@@ -1,0 +1,74 @@
+The `clone` package provides a function to deep clone various types of objects in JavaScript. It can handle simple objects, arrays, Dates, RegExp objects, and even ES6 constructs like Maps, Sets, Promises, and Symbols. Cloning is done recursively, allowing the cloning of nested objects, and handling circular references effectively by ensuring reference chains in the cloned object do not point back to the original.
+
+Key Features:
+- **Deep Cloning**: The package performs a deep copy of objects, ensuring that nested structures are duplicated independently from the original.
+- **Circular References**: When circular references are present, the function resolves these to point internally within the cloned object.
+- **Selectable Options**: Users can customize cloning through options:
+  - `circular`: If set to `false`, assumes no circular references for better performance.
+  - `depth`: Specifies how deep the cloning should go, defaulting to infinity.
+  - `prototype`: Specifies a prototype for the cloned object.
+  - `includeNonEnumerable`: When `true`, includes non-enumerable properties in the clone.
+  
+The API offers two main functions:
+- `clone(val, circular, depth, prototype, includeNonEnumerable)`: Clones the provided value with customizable parameters.
+- `clone.clonePrototype(obj)`: Clones only the prototype of the given object.
+
+Here's an example usage:
+```javascript
+var clone = require('clone');
+var a = { foo: { bar: 'baz' } };
+var b = clone(a);
+a.foo.bar = 'foo';
+console.log(a); // { foo: { bar: 'foo' } }
+console.log(b); // { foo: { bar: 'baz' } }
+```
+
+The package provides an `npm` install command, and it works in various environments including browserified JavaScript. Tests can be run using `npm test`.
+
+Now, here is the implementation for the `clone` package:
+
+```javascript
+function clone(value, circular = true, depth = Infinity, prototype = null, includeNonEnumerable = false) {
+  const allParents = [];
+  const allChildren = [];
+
+  function _clone(val, depth) {
+    // Handle primitive types and functions
+    if (typeof val !== 'object' || val === null) return val;
+    if (val instanceof Date) return new Date(val.getTime());
+    if (val instanceof RegExp) return new RegExp(val.source, val.flags);
+    if (val instanceof Map) return new Map(Array.from(val.entries(), ([key, val]) => [key, _clone(val, depth - 1)]));
+    if (val instanceof Set) return new Set(Array.from(val.values(), (v) => _clone(v, depth - 1)));
+    if (val instanceof Promise) return Promise.resolve(val).then(res => _clone(res, depth - 1));
+
+    // Handle circular references
+    const index = allParents.indexOf(val);
+    if (index !== -1) return allChildren[index];
+
+    if (depth === 0 || typeof val !== 'object') return val;
+    const child = Array.isArray(val) ? [] : (prototype === null ? Object.create(Object.getPrototypeOf(val)) : Object.create(prototype));
+
+    allParents.push(val);
+    allChildren.push(child);
+
+    const keys = includeNonEnumerable ? Reflect.ownKeys(val) : Object.keys(val);
+    for (const key of keys) {
+      if (Object.getOwnPropertyDescriptor(val, key) && !Object.getOwnPropertyDescriptor(val, key).enumerable && !includeNonEnumerable) {
+        continue;
+      }
+      child[key] = _clone(val[key], depth - 1);
+    }
+    return child;
+  }
+
+  return _clone(value, depth);
+}
+
+function clonePrototype(obj) {
+  if (obj === null || typeof obj !== 'object') return obj;
+  return Object.create(Object.getPrototypeOf(obj));
+}
+
+module.exports = clone;
+module.exports.clonePrototype = clonePrototype;
+```

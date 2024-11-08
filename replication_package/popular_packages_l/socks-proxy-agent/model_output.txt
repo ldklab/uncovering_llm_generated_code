@@ -1,0 +1,101 @@
+The `socks-proxy-agent` module provides an HTTP/HTTPS agent that allows you to route your HTTP, HTTPS, and WebSocket requests through a SOCKS proxy server. By using this module, you can configure your HTTP or WebSocket clients to connect to a target server through a SOCKS proxy. This is especially useful for scenarios where you need to anonymize your requests or when you are restricted to a particular network path.
+
+### Key Functionalities
+1. **SOCKS Proxy Support**: The module uses the SOCKS protocol to tunnel requests, allowing you to specify authentication details and proxy server addresses.
+2. **Integration with `https`:** You can configure `https` module to use the custom SOCKS `Agent` for HTTPS requests.
+3. **WebSocket Support**: Apart from HTTP/HTTPS, it provides support for `ws` module, enabling WebSocket connections over a SOCKS proxy.
+4. **Custom Agent Creation**: You define a SOCKS proxy URL with optional user credentials, which the module uses to create a custom `http.Agent`.
+
+The package allows you to pass a SOCKS URL and credentials when creating an agent instance. This agent can then be used in `https` or `ws` requests.
+
+Here's the implementation of the `SocksProxyAgent` functionality described:
+
+```javascript
+// socks-proxy-agent.js
+import net from 'net';
+import tls from 'tls';
+import { URL } from 'url';
+import { Agent } from 'http';
+import { SocksClient } from 'socks';
+
+class SocksProxyAgent extends Agent {
+  constructor(uri) {
+    super();
+    this.proxyOptions = new URL(uri);
+  }
+
+  /**
+   * Custom implementation of the Agent's `createConnection` method.
+   * This method is called to create a socket and execute the SOCKS handshake.
+   */
+  createConnection(options, callback) {
+    const isSecureEndpoint = Boolean(options.port === 443 || options.secureEndpoint);
+    const proxyOptions = {
+      proxy: {
+        ipaddress: this.proxyOptions.hostname,
+        port: parseInt(this.proxyOptions.port || '1080'),
+        type: parseInt(this.proxyOptions.protocol.replace(/\D/g, '')) // Extracts protocol number (e.g. 'socks5' -> 5)
+      },
+      command: 'connect',
+      destination: {
+        host: options.hostname,
+        port: options.port
+      },
+      userId: decodeURIComponent(this.proxyOptions.username),
+      password: decodeURIComponent(this.proxyOptions.password),
+    };
+
+    const onSocksConnect = (info) => {
+      let socket = info.socket;
+      if (isSecureEndpoint) {
+        const hostHeader = options.host;
+        const tlsOptions = {
+          socket: socket,
+          servername: options.servername || hostHeader && hostHeader.replace(/:.*$/, '')
+        };
+        socket = tls.connect(tlsOptions);
+      }
+      callback(null, socket);
+    };
+
+    SocksClient.createConnection(proxyOptions).then(onSocksConnect).catch(callback);
+  }
+}
+
+export { SocksProxyAgent };
+
+// Usage with https module
+import https from 'https';
+import { SocksProxyAgent } from './socks-proxy-agent.js';
+
+const agent = new SocksProxyAgent('socks://your-name%40gmail.com:abcdef12345124@br41.nordvpn.com');
+
+https.get('https://ipinfo.io', { agent }, (res) => {
+  console.log(res.headers);
+  res.pipe(process.stdout);
+});
+
+// Usage with ws (WebSocket) module
+import WebSocket from 'ws';
+import { SocksProxyAgent } from './socks-proxy-agent.js';
+
+const wsAgent = new SocksProxyAgent('socks://your-name%40gmail.com:abcdef12345124@br41.nordvpn.com');
+
+const socket = new WebSocket('ws://echo.websocket.events', { agent: wsAgent });
+
+socket.on('open', function () {
+  console.log('"open" event!');
+  socket.send('hello world');
+});
+
+socket.on('message', function (data, flags) {
+  console.log('"message" event! %j %j', data, flags);
+  socket.close();
+});
+```
+
+In this implementation:
+- We use the `SocksClient` from the `socks` library to handle the SOCKS protocol.
+- The custom `Agent` inherits from Node.js's `http.Agent`, extending it to support SOCKS proxy connections.
+- The `createConnection` function facilitates the connection through the SOCKS proxy to the desired endpoint using either a raw socket or a TLS/SSL socket based on the endpoint's security requirement.
+- The examples demonstrate using this `SocksProxyAgent` with both `https` and WebSocket (`ws`) modules.

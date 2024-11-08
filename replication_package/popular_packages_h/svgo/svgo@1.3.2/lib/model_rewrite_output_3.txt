@@ -1,0 +1,87 @@
+The provided Node.js code defines a module for SVGO, a tool used for optimizing SVG (Scalable Vector Graphics) files. The script defines the SVGO class, which handles the configuration and optimization process of SVG files. The optimization is done using plugins that transform the SVG content, and it can perform multiple passes depending on the configuration to achieve improved optimization results.
+
+Here's a breakdown of the core functionalities of the code:
+
+- **Configuration and Dependencies**: The code imports several modules necessary for SVG manipulation, such as configuration settings, processors for converting SVG to JS objects, plugin management for optimization, an API for manipulating JS objects, and tools for encoding SVGs.
+  
+- **SVGO Class**: The main class, `SVGO`, initializes with a configuration. It has a method `optimize` that returns a promise to optimize an SVG string. It uses a recursive approach with the `_optimizeOnce` method to perform multiple optimization passes if the configuration allows.
+
+- **SVG Optimization Process**: The `_optimizeOnce` method converts an SVG string to a JS object, applies transformations via plugins, and converts the optimized JS object back to SVG. It also handles potential errors during this process.
+
+- **Encoding and Finalization**: Before resolving the promise with the optimized SVG, the code can encode the data as a URI if specified by the configuration. This is useful for embedding the SVG content directly in HTML or CSS.
+
+- **API Enhancements**: The `createContentItem` method is a utility function for creating new content items from given data, facilitating interactions with SVG data.
+
+Here's the rewritten code:
+
+```javascript
+'use strict';
+
+// Import the required modules for SVG optimization
+const CONFIG = require('./svgo/config.js');
+const SVG2JS = require('./svgo/svg2js.js');
+const PLUGINS = require('./svgo/plugins.js');
+const JSAPI = require('./svgo/jsAPI.js');
+const { encodeSVGDatauri } = require('./svgo/tools.js');
+const JS2SVG = require('./svgo/js2svg.js');
+
+class SVGO {
+    constructor(config) {
+        this.config = CONFIG(config);
+    }
+
+    optimize(svgstr, info = {}) {
+        return new Promise((resolve, reject) => {
+            if (this.config.error) {
+                return reject(this.config.error);
+            }
+
+            let counter = 0;
+            let prevResultSize = Number.POSITIVE_INFINITY;
+            const maxPassCount = this.config.multipass ? 10 : 1;
+
+            const optimizeOnceCallback = (svgjs) => {
+                if (svgjs.error) {
+                    return reject(svgjs.error);
+                }
+
+                info.multipassCount = counter;
+                if (++counter < maxPassCount && svgjs.data.length < prevResultSize) {
+                    prevResultSize = svgjs.data.length;
+                    this._optimizeOnce(svgjs.data, info, optimizeOnceCallback);
+                } else {
+                    if (this.config.datauri) {
+                        svgjs.data = encodeSVGDatauri(svgjs.data, this.config.datauri);
+                    }
+                    if (info.path) {
+                        svgjs.path = info.path;
+                    }
+                    resolve(svgjs);
+                }
+            };
+
+            this._optimizeOnce(svgstr, info, optimizeOnceCallback);
+        });
+    }
+
+    _optimizeOnce(svgstr, info, callback) {
+        SVG2JS(svgstr, (svgjs) => {
+            if (svgjs.error) {
+                return callback(svgjs);
+            }
+
+            svgjs = PLUGINS(svgjs, info, this.config.plugins);
+            callback(JS2SVG(svgjs, this.config.js2svg));
+        });
+    }
+
+    createContentItem(data) {
+        return new JSAPI(data);
+    }
+}
+
+SVGO.Config = CONFIG;
+
+module.exports = SVGO;
+module.exports.default = SVGO;
+```

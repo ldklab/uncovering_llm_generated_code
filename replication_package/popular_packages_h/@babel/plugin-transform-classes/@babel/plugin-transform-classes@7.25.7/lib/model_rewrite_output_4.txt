@@ -1,0 +1,104 @@
+The provided Node.js code is a Babel plugin designed to transform ES6 class syntax into a format compatible with older JavaScript engines. It defines a set of transformations for class declarations and expressions within JavaScript code using several utilities from the Babel ecosystem.
+
+### Functionality:
+
+1. **Imports and Utilities:**
+   - The code imports helper functions and methods from the Babel suite and other modules to handle plugin declarations, target compilation, and transforming class structures.
+   - It gathers built-in class names from both Node.js and browser environments to ensure compatibility and transformations are correctly applied.
+
+2. **Primary Function:**
+   - The plugin's main function is declared using Babel's `declare` function, which enforces a specific API version.
+   - It extracts options and assumptions about class behaviors (`setClassMethods`, `constantSuper`, etc.) to control how class transformations are applied.
+
+3. **Visitor Pattern for AST (Abstract Syntax Tree):**
+   - The code employs a visitor pattern to traverse the AST, targeting specific nodes (class declarations and expressions).
+   - **Class Declarations:**
+     - If a `ClassDeclaration` is found, it creates a reference to the class and replaces it with a variable declaration.
+   - **Class Expressions:**
+     - When encountering `ClassExpression`, it ensures class names are reconverted into function expressions.
+     - It uses the `transformClass.js` utility to perform the conversion and annotate pure expressions if necessary using the `helperAnnotateAsPure`.
+
+4. **Transformation Options:**
+   - Sets assumptions for certain features like `setClassMethods` or `constantSuper`, and determines if Unicode identifiers are supported based on compilation targets.
+   - Utilizes a `WeakSet` to avoid processing the same class node multiple times.
+
+5. **Export:**
+   - Exports the plugin as the default module export.
+
+Below is the rewrite of the provided Node.js code:
+
+```javascript
+"use strict";
+
+import { declare } from "@babel/helper-plugin-utils";
+import { isRequired } from "@babel/helper-compilation-targets";
+import annotateAsPure from "@babel/helper-annotate-as-pure";
+import { types as t } from "@babel/core";
+import { builtin as globalsBuiltin, browser as globalsBrowser } from "globals";
+import transformClass from "./transformClass.js";
+
+const getBuiltinClasses = category => Object.keys(category).filter(name => /^[A-Z]/.test(name));
+const builtinClasses = new Set([...getBuiltinClasses(globalsBuiltin), ...getBuiltinClasses(globalsBrowser)]);
+
+const plugin = declare((api, options) => {
+  api.assertVersion(7);
+
+  const {
+    loose = false
+  } = options;
+
+  const setClassMethods = api.assumption("setClassMethods") ?? loose;
+  const constantSuper = api.assumption("constantSuper") ?? loose;
+  const superIsCallableConstructor = api.assumption("superIsCallableConstructor") ?? loose;
+  const noClassCalls = api.assumption("noClassCalls") ?? loose;
+
+  const supportUnicodeId = !isRequired("transform-unicode-escapes", api.targets());
+  const VISITED = new WeakSet();
+
+  return {
+    name: "transform-classes",
+    visitor: {
+      ExportDefaultDeclaration(path) {
+        if (!path.get("declaration").isClassDeclaration()) return;
+        path.splitExportDeclaration ??= require("@babel/traverse").NodePath.prototype.splitExportDeclaration;
+        path.splitExportDeclaration();
+      },
+      ClassDeclaration(path) {
+        const { node } = path;
+        const ref = node.id ? t.cloneNode(node.id) : path.scope.generateUidIdentifier("class");
+        path.replaceWith(t.variableDeclaration("let", [t.variableDeclarator(ref, t.toExpression(node))]));
+      },
+      ClassExpression(path, state) {
+        const { node } = path;
+        if (VISITED.has(node)) return;
+        
+        path.ensureFunctionName ??= require("@babel/traverse").NodePath.prototype.ensureFunctionName;
+        const replacement = path.ensureFunctionName(supportUnicodeId);
+
+        if (replacement && replacement.node !== node) return;
+        
+        VISITED.add(node);
+
+        const [replacedPath] = path.replaceWith(
+          transformClass(path, state.file, builtinClasses, loose, {
+            setClassMethods,
+            constantSuper,
+            superIsCallableConstructor,
+            noClassCalls
+          }, supportUnicodeId)
+        );
+
+        if (replacedPath?.isCallExpression()) {
+          annotateAsPure(replacedPath);
+          const callee = replacedPath.get("callee");
+          if (callee.isArrowFunctionExpression()) {
+            callee.arrowFunctionToExpression();
+          }
+        }
+      }
+    }
+  };
+});
+
+export default plugin;
+```

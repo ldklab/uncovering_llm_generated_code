@@ -1,0 +1,82 @@
+The provided Node.js code defines a module for determining whether a given object is a regular expression (regex). 
+
+### Explanation
+
+1. **Symbol Detection**:
+   - It begins by importing a utility to check if the current environment supports symbols using the `has-symbols` package.
+   - It checks if the environment supports the `Symbol.toStringTag` property.
+
+2. **Variables for Symbol Support**:
+   - Initializes variables: `hasOwnProperty`, `regexExec`, `isRegexMarker`, and `badStringifier` – these are conditionally set if the environment supports `Symbol.toStringTag`.
+
+3. **Function Bindings**:
+   - Binds `Object.prototype.hasOwnProperty`, `RegExp.prototype.exec` to variables if symbols are supported.
+
+4. **Regex Detection Logic**:
+   - In environments supporting `Symbol.toStringTag`, the module exports a function that checks if a value appears to be a regex.
+   - It tries executing the regex with a `badStringifier` that always throws an error. If thrown, it catches the error and confirms the value is a regex.
+   - For environments without `Symbol.toStringTag`, it simply relies on object string classification to determine if the value is a regex.
+
+5. **Fallback for Older Environments**:
+   - In environments that might misidentify the type of regexes, a simpler string classification using `Object.prototype.toString.call()` ensures the value is `[object RegExp]`.
+
+### Rewritten Code
+
+```javascript
+'use strict';
+
+const hasSymbols = require('has-symbols')();
+const hasToStringTag = hasSymbols && typeof Symbol.toStringTag === 'symbol';
+let hasOwnProperty;
+let regexExec;
+let isRegexMarker;
+let badStringifier;
+
+if (hasToStringTag) {
+	hasOwnProperty = Function.call.bind(Object.prototype.hasOwnProperty);
+	regexExec = Function.call.bind(RegExp.prototype.exec);
+	isRegexMarker = {};
+
+	const throwRegexMarker = () => {
+		throw isRegexMarker;
+	};
+	badStringifier = {
+		toString: throwRegexMarker,
+		valueOf: throwRegexMarker
+	};
+
+	if (typeof Symbol.toPrimitive === 'symbol') {
+		badStringifier[Symbol.toPrimitive] = throwRegexMarker;
+	}
+}
+
+const toStr = Object.prototype.toString;
+const gOPD = Object.getOwnPropertyDescriptor;
+const regexClass = '[object RegExp]';
+
+module.exports = hasToStringTag
+	? function isRegex(value) {
+		if (!value || typeof value !== 'object') {
+			return false;
+		}
+
+		const descriptor = gOPD(value, 'lastIndex');
+		const hasLastIndexDataProperty = descriptor && hasOwnProperty(descriptor, 'value');
+		if (!hasLastIndexDataProperty) {
+			return false;
+		}
+
+		try {
+			regexExec(value, badStringifier);
+		} catch (e) {
+			return e === isRegexMarker;
+		}
+	}
+	: function isRegex(value) {
+		if (!value || (typeof value !== 'object' && typeof value !== 'function')) {
+			return false;
+		}
+
+		return toStr.call(value) === regexClass;
+	};
+```

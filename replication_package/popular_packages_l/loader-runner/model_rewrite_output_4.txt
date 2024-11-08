@@ -1,0 +1,93 @@
+The provided Node.js code defines a function `runLoaders` which is used to process a resource using a series of loaders. Here's a breakdown of its functionality:
+
+1. **Parameters and Context Setup**: The `runLoaders` function takes an `options` object and a `callback` as parameters. It extracts several properties from `options`:
+   - `resource`: The path or identifier of the resource to be processed.
+   - `loaders`: An array of loaders to be applied to the resource.
+   - `context`: An optional context object defaulting to an empty object.
+   - `processResource`: An optional function to process the resource.
+   - `readResource`: A function to read the resource, defaulting to `fs.readFile`.
+
+   The loader context is established with resource-specific information for the loaders to use.
+
+2. **Resource Reading and Processing**: The `readAndProcessResource` function is responsible for reading the resource. If a `processResource` function is provided, it will use that; otherwise, it defaults to reading the resource using `readResource`.
+
+3. **Loader Execution**: The loaded resource is processed through a pipeline of loaders:
+   - For each loader, if it is a string, it extracts and requires the loader module. If it's an object, it uses the object to require the loader module and passes custom options.
+   - The loader function is executed, modifying the resource buffer accordingly.
+   - Dependencies (loader modules) are tracked for cache purposes.
+
+4. **Result Compilation**: The final result is prepared, containing:
+   - The resultant buffer converted to a string.
+   - The original resource buffer.
+   - Metadata such as cacheability and dependencies.
+
+5. **Callback Execution**: The function ultimately calls the provided `callback` with the result or any encountered error.
+
+Here is the possible rewrite of this code:
+
+```javascript
+const fs = require('fs');
+const path = require('path');
+
+function runLoaders(options, callback) {
+    const {
+        resource,
+        loaders,
+        context = {},
+        processResource,
+        readResource = fs.readFile.bind(fs)
+    } = options;
+
+    const resourcePath = resource.split('?')[0];
+    const loaderContext = {
+        ...context,
+        resourcePath,
+        loaders,
+        readResource,
+    };
+
+    function processResourceOrRead(callback) {
+        if (processResource) {
+            processResource(loaderContext, resourcePath, callback);
+        } else {
+            readResource(resourcePath, callback);
+        }
+    }
+
+    processResourceOrRead((err, resourceBuffer) => {
+        if (err) return callback(err);
+
+        let processedBuffer = resourceBuffer;
+        const fileDependencies = [resourcePath];
+        const missingDependencies = [];
+        const contextDependencies = [];
+
+        loaders.forEach(loader => {
+            let loaderFunc;
+            if (typeof loader === 'string') {
+                loaderFunc = require(loader.split('?')[0]);
+                fileDependencies.push(loader.split('?')[0]);
+            } else if (loader.loader) {
+                loaderFunc = require(loader.loader);
+                fileDependencies.push(loader.loader);
+            }
+            processedBuffer = loaderFunc(processedBuffer, { ...loaderContext, options: loader.options });
+        });
+
+        const result = {
+            result: processedBuffer.toString(),
+            resourceBuffer,
+            cacheable: true,
+            fileDependencies,
+            missingDependencies,
+            contextDependencies,
+        };
+
+        callback(null, result);
+    });
+}
+
+module.exports = {
+    runLoaders
+};
+```

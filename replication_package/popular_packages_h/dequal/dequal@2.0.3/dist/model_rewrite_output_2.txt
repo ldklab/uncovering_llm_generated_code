@@ -1,0 +1,93 @@
+The provided Node.js code defines a function `dequal` which performs a deep equality check between two values to determine if they are equivalent. Here’s an explanation of its functionality:
+
+1. **Base Case**: Checks if the two input values `foo` and `bar` are strictly equal (`===`); if so, it returns `true`.
+
+2. **Same Constructor**: If both values are objects and have the same constructor:
+   - **Date & RegExp**: Compares `Date` objects by time and `RegExp` objects by their string representation.
+   - **Array**: Recursively compares each element.
+   - **Set**: Checks if sizes are equal and verifies if every element in the first set has an equivalent element in the second.
+   - **Map**: Checks if sizes are equal and recursively compares keys and values.
+   - **ArrayBuffer & Typed Arrays**: Compares their contents element-by-element.
+   - **DataView**: Compares the raw data byte-by-byte.
+   - **Plain Objects**: Recursively checks properties for equality and verifies both objects have the same set of keys.
+
+3. **NaN Handling**: The comparison falls back to checking if both `foo` and `bar` are `NaN` when all other checks fail.
+
+The `find` helper function is designed to find a specific key within iterable objects with custom equality (using `dequal`).
+
+Finally, `exports.dequal = dequal;` exports the `dequal` function for use in other modules.
+
+Below is a possible rewrite of the given code:
+
+```javascript
+function isObjectLike(value) {
+  return typeof value === 'object' && value !== null;
+}
+
+function findKeyInSet(set, targetKey) {
+  for (const key of set.keys()) {
+    if (deepEqual(key, targetKey)) {
+      return key;
+    }
+  }
+}
+
+function deepEqual(a, b) {
+  if (a === b) {
+    return true;
+  }
+
+  if (a && b && a.constructor === b.constructor) {
+    switch (a.constructor) {
+      case Date:
+        return a.getTime() === b.getTime();
+      
+      case RegExp:
+        return a.toString() === b.toString();
+      
+      case Array:
+        if (a.length !== b.length) return false;
+        return a.every((element, index) => deepEqual(element, b[index]));
+      
+      case Set:
+        if (a.size !== b.size) return false;
+        for (let value of a) {
+          if (isObjectLike(value)) {
+            value = findKeyInSet(b, value);
+            if (value === undefined) return false;
+          }
+          if (!b.has(value)) return false;
+        }
+        return true;
+      
+      case Map:
+        if (a.size !== b.size) return false;
+        for (let [key, value] of a) {
+          if (isObjectLike(key)) {
+            key = findKeyInSet(b, key);
+            if (key === undefined) return false;
+          }
+          if (!deepEqual(value, b.get(key))) return false;
+        }
+        return true;
+      
+      case ArrayBuffer:
+      case DataView:
+      case Uint8Array:
+        return new Uint8Array(a).every((byte, idx) => byte === new Uint8Array(b)[idx]);
+      
+      default:
+        if (isObjectLike(a)) {
+          const aKeys = Object.keys(a);
+          const bKeys = Object.keys(b);
+          if (aKeys.length !== bKeys.length) return false;
+          return aKeys.every(key => hasOwnProperty.call(b, key) && deepEqual(a[key], b[key]));
+        }
+    }
+  }
+
+  return a !== a && b !== b; // Check for NaN
+}
+
+exports.deepEqual = deepEqual;
+```

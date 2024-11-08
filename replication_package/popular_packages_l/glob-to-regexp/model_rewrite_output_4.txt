@@ -1,0 +1,71 @@
+The provided Node.js code defines and exports a function named `globToRegExp` which converts a glob pattern into a regular expression. This function takes two arguments: a `glob` string and an optional `options` object. The `options` object can have three properties: 
+
+- `extended` (default `false`): When true, it enables extended matching rules such as `?`, character classes like `[abc]`, groups `{a,b}`.
+- `globstar` (default `false`): When true, it allows `**` to represent a recursive directory match.
+- `flags` (default `''`): The flags that will be applied to the resulting regular expression.
+
+The function processes the glob string character by character, building a string that represents the pattern as a regular expression. It handles special glob pattern characters like `*`, `?`, and `{}` differently based on the provided options. The resultant regular expression pattern is finally wrapped with `^` and `$` to match the entire string and is instantiated with the specified flags.
+
+Here is the possible rewrite of the code:
+
+```javascript
+function globToRegExp(glob, options = {}) {
+  const { extended = false, globstar = false, flags = '' } = options;
+  
+  let regExp = '^';
+  let inGroup = false;
+  let charSetOpen = false;
+  
+  for (let i = 0; i < glob.length; i++) {
+    const char = glob[i];
+    switch (char) {
+      case '/':
+        regExp += '/';
+        break;
+      case '*':
+        if (globstar && glob[i + 1] === '*') {
+          regExp += '.*';
+          i++;
+        } else {
+          regExp += '[^/]*';
+        }
+        break;
+      case '?':
+        regExp += extended ? '.' : '\\?';
+        break;
+      case '[':
+        regExp += extended ? (charSetOpen = true, char) : '\\[';
+        break;
+      case ']':
+        regExp += extended && charSetOpen ? (charSetOpen = false, char) : '\\]';
+        break;
+      case '{':
+        regExp += extended ? (inGroup = true, '(') : '\\{';
+        break;
+      case '}':
+        regExp += extended && inGroup ? (inGroup = false, ')') : '\\}';
+        break;
+      case ',':
+        regExp += extended && inGroup ? '|' : '\\,';
+        break;
+      case '.':
+      case '+':
+      case '^':
+      case '$':
+      case '(':
+      case ')':
+      case '|':
+      case '\\':
+        regExp += '\\' + char;
+        break;
+      default:
+        regExp += char;
+    }
+  }
+  
+  regExp += '$';
+  return new RegExp(regExp, flags);
+}
+
+module.exports = globToRegExp;
+```

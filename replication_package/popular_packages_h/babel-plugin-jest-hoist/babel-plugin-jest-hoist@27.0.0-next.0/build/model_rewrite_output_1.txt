@@ -1,0 +1,254 @@
+The given Node.js code is a Babel plugin designed to transform code related to Jest's mock functions. Here's a breakdown of its functionality:
+
+1. **Import Statements**: It imports essential modules from Babel like `@babel/template` and `@babel/types` to help generate and manipulate abstract syntax trees (ASTs).
+
+2. **Constants and Variables**: 
+   - It defines constants to hold names related to Jest, like `JEST_GLOBAL_NAME`.
+   - It maintains a `WeakSet` named `hoistedVariables` to track certain variables that can be hoisted.
+   - It sets up a `Set` named `ALLOWED_IDENTIFIERS` containing identifiers that are permitted in the Jest mock factory functions. This includes all default Node.js globals, ES2015 built-ins, and identifiers prefixed with 'mock'.
+
+3. **Visitor Configuration**: The `IDVisitor` object is configured to traverse nodes and collect identifiers, with some exclusions like `TypeAnnotation`.
+
+4. **Function Hoisting Rules**: 
+   - `FUNCTIONS.mock` checks if provided arguments to `jest.mock` are valid, enforcing that the second argument must be an inline function. It also checks for any identifiers referenced within this function to ensure they are valid, either being declared in the proper scope or matching allowed criteria.
+   - `FUNCTIONS.unmock`, `FUNCTIONS.deepUnmock`, and similar functions determine if certain Jest functions are used correctly based on their argument structure.
+
+5. **Jest Object Detection**: `isJestObject` determines if a given expression corresponds to the Jest object by examining its structure and reference.
+
+6. **Main Plugin Functionality**:
+   - **pre Hook**: Sets up a way to declare a getter for the Jest object if not already defined.
+   - **visitor Object**: Contains a visitor for `ExpressionStatement` which, if a Jest object expression is hoistable, replaces it using the getter function for the Jest object.
+   - **post Hook**: Traverses the AST and hoists certain expressions and variables to the top of their respective blocks if they fit specified criteria.
+
+This code primarily focuses on managing the hoisting of Jest's mock and related functions while ensuring global and out-of-scope variables are handled with caution, aligning with Jest's execution model.
+
+Here's a possible rewrite organized within a single markdown code block:
+
+```javascript
+'use strict';
+
+const { default: template } = require('@babel/template');
+const { default: types } = require('@babel/types');
+
+const JEST_GLOBAL_NAME = 'jest';
+const JEST_GLOBALS_MODULE_NAME = '@jest/globals';
+const JEST_GLOBALS_MODULE_JEST_EXPORT_NAME = 'jest';
+const hoistedVariables = new WeakSet();
+
+const ALLOWED_IDENTIFIERS = new Set([
+  'Array', 'ArrayBuffer', 'Boolean', 'BigInt', 'DataView', 'Date',
+  'Error', 'EvalError', 'Float32Array', 'Float64Array', 'Function',
+  'Generator', 'GeneratorFunction', 'Infinity', 'Int16Array', 'Int32Array',
+  'Int8Array', 'InternalError', 'Intl', 'JSON', 'Map', 'Math', 'NaN',
+  'Number', 'Object', 'Promise', 'Proxy', 'RangeError', 'ReferenceError',
+  'Reflect', 'RegExp', 'Set', 'String', 'Symbol', 'SyntaxError', 'TypeError',
+  'URIError', 'Uint16Array', 'Uint32Array', 'Uint8Array', 'Uint8ClampedArray',
+  'WeakMap', 'WeakSet', 'arguments', 'console', 'expect', 'isNaN', 'jest',
+  'parseFloat', 'parseInt', 'exports', 'require', 'module', '__filename',
+  '__dirname', 'undefined', ...Object.getOwnPropertyNames(global)
+]);
+
+const IDVisitor = {
+  ReferencedIdentifier(path, { ids }) {
+    ids.add(path);
+  },
+  blacklist: ['TypeAnnotation', 'TSTypeAnnotation', 'TSTypeReference']
+};
+
+const FUNCTIONS = {
+  mock(args) {
+    if (args.length === 1) return args[0].isStringLiteral() || args[0].isLiteral();
+
+    if ([2, 3].includes(args.length)) {
+      const moduleFactory = args[1];
+
+      if (!moduleFactory.isFunction()) {
+        throw moduleFactory.buildCodeFrameError(
+          'The second argument of `jest.mock` must be an inline function.\n',
+          TypeError
+        );
+      }
+
+      const ids = new Set();
+      const parentScope = moduleFactory.parentPath.scope;
+      moduleFactory.traverse(IDVisitor, { ids });
+
+      for (const id of ids) {
+        const { name } = id.node;
+        let found = false;
+        let scope = id.scope;
+        
+        while (scope !== parentScope) {
+          if (scope.bindings[name]) {
+            found = true;
+            break;
+          }
+          scope = scope.parent;
+        }
+
+        if (found) continue;
+
+        let isAllowedIdentifier =
+          (scope.hasGlobal(name) && ALLOWED_IDENTIFIERS.has(name)) ||
+          /^mock/i.test(name) ||
+          /^(?:__)?cov/.test(name);
+
+        if (!isAllowedIdentifier) {
+          const binding = scope.bindings[name];
+          if (binding?.path.isVariableDeclarator()) {
+            const initNode = binding.path.node.init;
+            if (initNode && binding.constant && scope.isPure(initNode, true)) {
+              hoistedVariables.add(binding.path.node);
+              isAllowedIdentifier = true;
+            }
+          }
+        }
+
+        if (!isAllowedIdentifier) {
+          throw id.buildCodeFrameError(
+            `The module factory of \`jest.mock()\` is not allowed to ` +
+            `reference any out-of-scope variables.\nInvalid variable access: ${name}\n` +
+            `Allowed objects: ${Array.from(ALLOWED_IDENTIFIERS).join(', ')}.\n` +
+            `Note: This is a precaution to guard against uninitialized mock variables. ` +
+            `If it is ensured that the mock is required lazily, variable names prefixed with ` +
+            `'mock' (case insensitive) are permitted.\n`,
+            ReferenceError
+          );
+        }
+      }
+      return true;
+    }
+    return false;
+  },
+
+  unmock: args => args.length === 1 && args[0].isStringLiteral(),
+  deepUnmock: args => args.length === 1 && args[0].isStringLiteral(),
+  disableAutomock: args => args.length === 0,
+  enableAutomock: args => args.length === 0
+};
+
+const createJestObjectGetter = template.statement(`
+function GETTER_NAME() {
+  const { JEST_GLOBALS_MODULE_JEST_EXPORT_NAME } = require("JEST_GLOBALS_MODULE_NAME");
+  GETTER_NAME = () => JEST_GLOBALS_MODULE_JEST_EXPORT_NAME;
+  return JEST_GLOBALS_MODULE_JEST_EXPORT_NAME;
+}
+`);
+
+const isJestObject = expression => {
+  if (expression.isIdentifier() && expression.node.name === JEST_GLOBAL_NAME && !expression.scope.hasBinding(JEST_GLOBAL_NAME)) {
+    return true;
+  }
+  if (expression.referencesImport(JEST_GLOBALS_MODULE_NAME, JEST_GLOBALS_MODULE_JEST_EXPORT_NAME)) {
+    return true;
+  }
+  if (expression.isMemberExpression() && !expression.node.computed &&
+    expression.get('object').referencesImport(JEST_GLOBALS_MODULE_NAME, '*') &&
+    expression.node.property.type === 'Identifier' &&
+    expression.node.property.name === JEST_GLOBALS_MODULE_JEST_EXPORT_NAME) {
+    return true;
+  }
+  return false;
+};
+
+const extractJestObjExprIfHoistable = expr => {
+  if (!expr.isCallExpression()) return null;
+
+  const callee = expr.get('callee');
+  const args = expr.get('arguments');
+
+  if (!callee.isMemberExpression() || callee.node.computed) return null;
+
+  const object = callee.get('object');
+  const jestObjExpr = isJestObject(object) ? object : extractJestObjExprIfHoistable(object);
+
+  if (!jestObjExpr) return null;
+
+  const property = callee.get('property');
+  const propertyName = property.node.name;
+  const functionLooksHoistable = FUNCTIONS[propertyName]?.(args);
+  
+  return functionLooksHoistable ? jestObjExpr : null;
+};
+
+const jestPlugin = () => ({
+  pre({ path: program }) {
+    this.declareJestObjGetterIdentifier = () => {
+      if (this.jestObjGetterIdentifier) return this.jestObjGetterIdentifier;
+
+      this.jestObjGetterIdentifier = program.scope.generateUidIdentifier('getJestObj');
+      program.unshiftContainer('body', [
+        createJestObjectGetter({
+          GETTER_NAME: this.jestObjGetterIdentifier.name,
+          JEST_GLOBALS_MODULE_JEST_EXPORT_NAME,
+          JEST_GLOBALS_MODULE_NAME
+        })
+      ]);
+      return this.jestObjGetterIdentifier;
+    };
+  },
+
+  visitor: {
+    ExpressionStatement(exprStmt) {
+      const jestObjExpr = extractJestObjExprIfHoistable(exprStmt.get('expression'));
+      if (jestObjExpr) {
+        jestObjExpr.replaceWith(types.callExpression(this.declareJestObjGetterIdentifier(), []));
+      }
+    }
+  },
+
+  post({ path: program }) {
+    const self = this;
+    visitBlock(program);
+    program.traverse({ BlockStatement: visitBlock });
+
+    function visitBlock(block) {
+      const [varsHoistPoint, callsHoistPoint] = block.unshiftContainer('body', [
+        types.emptyStatement(), types.emptyStatement()
+      ]);
+
+      block.traverse({
+        CallExpression: visitCallExpr,
+        VariableDeclarator: visitVariableDeclarator,
+        blacklist: ['BlockStatement']
+      });
+
+      callsHoistPoint.remove();
+      varsHoistPoint.remove();
+
+      function visitCallExpr(callExpr) {
+        const { node: { callee } } = callExpr;
+
+        if (types.isIdentifier(callee) && callee.name === self.jestObjGetterIdentifier?.name) {
+          const mockStmt = callExpr.getStatementParent();
+          if (mockStmt) {
+            const mockStmtParent = mockStmt.parentPath;
+            if (mockStmtParent.isBlock()) {
+              const mockStmtNode = mockStmt.node;
+              mockStmt.remove();
+              callsHoistPoint.insertBefore(mockStmtNode);
+            }
+          }
+        }
+      }
+
+      function visitVariableDeclarator(varDecl) {
+        if (hoistedVariables.has(varDecl.node)) {
+          varDecl.parentPath.assertVariableDeclaration();
+          const { kind, declarations } = varDecl.parent;
+
+          if (declarations.length === 1) {
+            varDecl.parentPath.remove();
+          } else {
+            varDecl.remove();
+          }
+
+          varsHoistPoint.insertBefore(types.variableDeclaration(kind, [varDecl.node]));
+        }
+      }
+    }
+  }
+});
+
+exports.default = jestPlugin;
+```

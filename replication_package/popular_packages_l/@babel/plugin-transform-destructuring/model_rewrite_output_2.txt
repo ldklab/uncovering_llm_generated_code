@@ -1,0 +1,74 @@
+The functionality of the provided Node.js code involves creating a Babel plugin that transforms JavaScript destructuring assignments into equivalent variable declarations. Specifically, the plugin targets `VariableDeclaration` nodes that involve object or array destructuring. It replaces them with explicit variable assignments that reference the individual properties or elements directly.
+
+Here's a breakdown of how the code works:
+- The Babel plugin is exported as a module.
+- It includes a visitor object with a method `VariableDeclaration`.
+- For each `VariableDeclaration` node, it checks if destructuring is used (`ObjectPattern` or `ArrayPattern`).
+- The `transformDestructuring` function is called for destructuring patterns.
+- This function generates a list of variable assignments equivalent to the destructuring logic.
+- The `path.replaceWithMultiple` method is employed to replace the destructuring declaration with the generated assignments and a comment placeholder `// original declaration`.
+- A usage example demonstrates transforming a code snippet containing destructuring into its non-destructuring form using the plugin.
+
+Below is the rewritten Node.js code:
+
+```javascript
+// index.js
+const babel = require('@babel/core');
+
+module.exports = function () {
+  return {
+    visitor: {
+      VariableDeclaration(path) {
+        const node = path.node;
+        
+        if (!node.declarations) return;
+
+        node.declarations.forEach((declarator) => {
+          if (declarator.id.type === 'ObjectPattern' || declarator.id.type === 'ArrayPattern') {
+            const { declarations, statement } = transformDestructuring(declarator);
+            path.replaceWithMultiple([].concat(declarations, statement));
+          }
+        });
+      },
+    },
+  };
+};
+
+function transformDestructuring(declarator) {
+  const id = declarator.id;
+  const init = declarator.init;
+  let replacements = [];
+
+  if (id.type === 'ObjectPattern') {
+    id.properties.forEach((property) => {
+      const key = property.key.name;
+      const value = property.value.name;
+      replacements.push(
+        babel.template.statement.ast(`var ${value} = ${init.name}.${key};`)
+      );
+    });
+  } else if (id.type === 'ArrayPattern') {
+    id.elements.forEach((element, i) => {
+      if (element) {
+        replacements.push(
+          babel.template.statement.ast(`var ${element.name} = ${init.name}[${i}];`)
+        );
+      }
+    });
+  }
+  
+  return { declarations: replacements, statement: babel.template.statement.ast(`// original declaration`) };
+}
+
+// Usage example
+const code = `
+const { x, y } = obj;
+const [a, b] = arr;
+`;
+
+const transformedCode = babel.transform(code, {
+  plugins: [require('./index')],
+});
+
+console.log(transformedCode.code);
+```

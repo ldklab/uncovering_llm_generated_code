@@ -1,0 +1,113 @@
+The `retry` package provides a way to retry an operation multiple times with various delay strategies until it succeeds or reaches a maximum number of retries. This functionality is particularly useful in handling remote requests or operations that could fail intermittarily due to temporary issues such as network instability.
+
+Key Features:
+1. **Exponential Backoff and Custom Strategies**: The package supports exponential backoff, where each subsequent retry attempt waits longer than the previous one. This strategy helps in cases where the operation might need time to recover or stabilize before trying again. Custom retry strategies can also be configured with options.
+
+2. **Retry Configuration Options**:
+    - `retries`: Maximum number of retry attempts. Default is 10.
+    - `factor`: Exponential factor used to increase delay between retries. Default is 2.
+    - `minTimeout`: Minimum delay (in ms) before the first retry. Default is 1000.
+    - `maxTimeout`: Maximum delay between retries. Default is Infinity.
+    - `randomize`: Whether to randomize delay between retry attempts.
+
+3. **RetryOperations**: Users can create retry operations which encapsulate the logic of attempting the function call, handling any errors, and deciding whether to retry based on the error and retry strategy specified.
+
+4. **Error Handling**: RetryOperation provides methods to access errors encountered during retries (`errors()`, `mainError()`), and functionality like `stop()` to halt retries manually if needed.
+
+To implement these features, the provided package relies heavily on timeout calculations and managing multiple attempts within a structured retry operation. Below is a simple implementation of the described functionality in Node.js:
+
+```javascript
+class RetryOperation {
+  constructor(timeouts, options = {}) {
+    this.timeouts = timeouts;
+    this.maxRetries = options.retries || 10;
+    this.retryErrors = [];
+    this.currentAttempt = 0;
+    this.forever = options.forever || false;
+    this.unref = options.unref || false;
+    this.maxRetryTime = options.maxRetryTime || Infinity;
+
+    this.startTime = Date.now();
+  }
+
+  attempt(fn) {
+    if (this.currentAttempt < this.maxRetries || this.forever) {
+      const timeout = this.timeouts[this.currentAttempt] || 0;
+      if (Date.now() - this.startTime > this.maxRetryTime) {
+        return fn(new Error('Max retry time exceeded'), this.currentAttempt);
+      }
+      
+      setTimeout(() => {
+        this.currentAttempt++;
+        fn(null, this.currentAttempt);
+      }, timeout);
+    } else {
+      fn(new Error('Max retries reached'), this.currentAttempt);
+    }
+  }
+
+  retry(err) {
+    if (!err) return false;
+    if (this.forever || this.currentAttempt < this.maxRetries) {
+      this.retryErrors.push(err);
+      return true;
+    }
+    return false;
+  }
+
+  errors() {
+    return this.retryErrors;
+  }
+
+  mainError() {
+    const errorCounts = this.retryErrors.reduce((acc, error) => {
+      acc[error.message] = (acc[error.message] || 0) + 1;
+      return acc;
+    }, {});
+    const mostFrequentMessage = Object.keys(errorCounts).reduce((a, b) => 
+      errorCounts[a] > errorCounts[b] ? a : b
+    );
+    return this.retryErrors.find(err => err.message === mostFrequentMessage);
+  }
+}
+
+function timeouts(options = {}) {
+  const retries = options.retries || 10;
+  const factor = options.factor || 2;
+  const minTimeout = options.minTimeout || 1000;
+  const maxTimeout = options.maxTimeout || Infinity;
+  const randomize = options.randomize || false;
+
+  return Array.from({ length: retries }, (_, attempt) => {
+    let timeout = Math.min(minTimeout * Math.pow(factor, attempt), maxTimeout);
+    if (randomize) {
+      timeout *= Math.random() + 1;
+    }
+    return Math.round(timeout);
+  });
+}
+
+function operation(options) {
+  return new RetryOperation(timeouts(options), options);
+}
+
+module.exports = {
+  RetryOperation,
+  timeouts,
+  operation,
+  createTimeout(attempt, opts = {}) {
+    const minTimeout = opts.minTimeout || 1000;
+    const factor = opts.factor || 2;
+    const maxTimeout = opts.maxTimeout || Infinity;
+    const randomize = opts.randomize || false;
+
+    let timeout = Math.min(minTimeout * Math.pow(factor, attempt), maxTimeout);
+    if (randomize) {
+      timeout *= Math.random() + 1;
+    }
+    return Math.round(timeout);
+  }
+};
+```
+
+This code implements the exponential backoff strategy with features to configure retry attempts, delay factors, and timeouts, following the functionality described in the README.md.

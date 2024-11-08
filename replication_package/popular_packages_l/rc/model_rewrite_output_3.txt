@@ -1,0 +1,97 @@
+The given Node.js code is a configuration loader module that supports loading configurations from different sources: files, environment variables, and command-line arguments. Here's how it works:
+
+1. **Parse Configuration Files**: The `parseConfigFile` function attempts to parse a config file as JSON, stripping comments first. If JSON parsing fails, it tries to parse the file as INI format.
+
+2. **Load Configurations**: The `loadConfigs` function accumulates configuration settings from a list of file paths. It loads the content of each existing file and merges it into a single configuration object.
+
+3. **Find Config Files**: The `findConfigFiles` function generates a list of potential config file paths based on the application name. Search paths include system, user, and local directories.
+
+4. **Load Environment Variables**: The `loadEnvVariables` function reads environment variables prefixed with the application name and converts them into a nested configuration object. Nested keys are indicated using double underscores (`__`).
+
+5. **Merge Configurations**: The exported function `rc` merges the configurations loaded from files, environment variables, default settings (`defaults`), and command-line arguments. It optionally applies a custom parser to the command-line arguments.
+
+Here is a possible rewrite organizing all these explanations:
+
+```javascript
+const fs = require('fs');
+const path = require('path');
+const minimist = require('minimist');
+const stripJsonComments = require('strip-json-comments');
+
+function parseConfigFile(filePath) {
+  const content = fs.readFileSync(filePath, 'utf8');
+  try {
+    return JSON.parse(stripJsonComments(content));
+  } catch (e) {
+    return require('ini').parse(content);
+  }
+}
+
+function loadConfigs(appname, configPaths) {
+  const configs = [];
+  const result = configPaths.reduce((acc, filePath) => {
+    if (fs.existsSync(filePath)) {
+      const confPart = parseConfigFile(filePath);
+      configs.push(filePath);
+      return { ...acc, ...confPart };
+    }
+    return acc;
+  }, {});
+  return { config: result, configs };
+}
+
+function findConfigFiles(appname) {
+  const home = process.env.HOME || process.env.USERPROFILE;
+  const configPaths = [
+    path.join('/etc', `${appname}rc`),
+    path.join('/etc', `${appname}`, 'config'),
+    path.join(home, `.${appname}rc`),
+    path.join(home, `.${appname}`, 'config'),
+    path.join(home, '.config', `${appname}`),
+    path.join(home, '.config', `${appname}`, 'config'),
+  ];
+
+  let dir = process.cwd();
+  do {
+    configPaths.push(path.join(dir, `.${appname}rc`));
+    dir = path.join(dir, '..');
+  } while (dir !== path.resolve(dir, '..'));
+
+  return configPaths;
+}
+
+function loadEnvVariables(appname) {
+  const prefix = `${appname}_`;
+  return Object.entries(process.env)
+    .filter(([key]) => key.startsWith(prefix))
+    .reduce((acc, [key, value]) => {
+      const path = key.slice(prefix.length).split('__').map(part => part.toLowerCase());
+      let curr = acc;
+      while (path.length > 1) {
+        const segment = path.shift();
+        curr = curr[segment] = curr[segment] || {};
+      }
+      curr[path[0]] = value;
+      return acc;
+    }, {});
+}
+
+module.exports = function rc(appname, defaults = {}, argv = null, customParser = null) {
+  const args = argv || process.argv.slice(2);
+  const parsedArgs = minimist(args);
+  const configsFromFile = parsedArgs.config ? [parsedArgs.config] : findConfigFiles(appname);
+  const { config: configFromFiles, configs } = loadConfigs(appname, configsFromFile);
+  const configFromEnv = loadEnvVariables(appname);
+
+  const mergedConfig = {
+    ...configFromFiles,
+    ...configFromEnv,
+    ...defaults,
+    ...customParser ? customParser(parsedArgs) : parsedArgs,
+  };
+
+  mergedConfig.configs = configs;
+  mergedConfig.config = configs[configs.length - 1];
+  return mergedConfig;
+};
+```

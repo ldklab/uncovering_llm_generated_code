@@ -1,0 +1,85 @@
+The `babel-preset-current-node-syntax` package is a Babel preset designed to allow the Babel transpiler to parse JavaScript language proposals that are supported by the current version of Node.js in use. This means that instead of adding support for specific JavaScript proposals via configuring Babel plugins manually, this preset automatically adapts to the JavaScript features available in the current Node.js environment.
+
+### Installation
+- It can be installed in a development environment using Yarn (`yarn add --dev babel-preset-current-node-syntax`) or npm (`npm install --save-dev babel-preset-current-node-syntax`).
+
+### Contributing
+- Pull Requests (PRs) are welcome.
+- No linter is setup, but contributors are encouraged to match the existing code style.
+- Tests can be run using the command `yarn node test/index.js`.
+- Test cases are contained in `test/fixtures.json`, which includes various JavaScript syntax tests and their corresponding minimum supported Node.js version. The Babel parser should throw an error if a syntax is used in a Node.js version that does not support it.
+- All tests use `@babel/parser@7.0.0`.
+
+Here's the code for a simple implementation of the described package:
+
+```js
+// index.js
+const semver = require('semver');
+const babelParser = require('@babel/parser');
+const fs = require('fs');
+const path = require('path');
+
+function getCurrentNodeVersion() {
+  return process.versions.node;
+}
+
+function loadTestFixtures() {
+  const fixturesPath = path.join(__dirname, 'test', 'fixtures.json');
+  const fixtures = JSON.parse(fs.readFileSync(fixturesPath, 'utf-8'));
+  return fixtures;
+}
+
+function testSyntaxAgainstNodeVersion() {
+  const currentNodeVersion = getCurrentNodeVersion();
+  const fixtures = loadTestFixtures();
+
+  fixtures.forEach(({ code, minNodeVersion, name }) => {
+    if (semver.gte(currentNodeVersion, minNodeVersion)) {
+      // Node supports this syntax
+      try {
+        babelParser.parse(code, { sourceType: 'module' });
+        console.log(`PASS: ${name}`);
+      } catch (error) {
+        console.error(`FAIL: ${name} - Unexpected parse error`);
+        console.error(error);
+      }
+    } else {
+      // Node does not support this syntax
+      try {
+        babelParser.parse(code, { sourceType: 'module' });
+        console.error(`FAIL: ${name} - Should not support this syntax`);
+      } catch {
+        console.log(`PASS: ${name} - Correctly threw parse error`);
+      }
+    }
+  });
+}
+
+// Run the syntax test checks
+testSyntaxAgainstNodeVersion();
+
+```
+
+```json
+// test/fixtures.json
+[
+  {
+    "name": "Optional Chaining",
+    "code": "const obj = {}; const val = obj?.property;",
+    "minNodeVersion": "14.0.0"
+  },
+  {
+    "name": "Nullish Coalescing",
+    "code": "const value = someVar ?? 'default';",
+    "minNodeVersion": "14.0.0"
+  }
+]
+```
+
+```js
+// test/index.js
+// Run syntax tests
+require('../index.js');
+```
+
+This minimal setup defines how the package works by comparing the current Node.js version with the version requirements for specific syntax features. It uses `@babel/parser` to attempt parsing the JavaScript code, verifying if the syntax is supported. The results are logged to the console. The test infrastructure loads test cases from a JSON fixtures file and checks them against the current Node version, providing feedback on supported syntax.

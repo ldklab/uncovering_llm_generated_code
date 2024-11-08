@@ -1,0 +1,55 @@
+// FetchHttpHandler.js
+class FetchHttpHandler {
+  constructor(config = {}) {
+    this.config = config;
+  }
+
+  async handle(request) {
+    if (!request?.url) {
+      throw new Error("Request URL is required");
+    }
+
+    const { method = 'GET', headers = {}, body = null, url } = request;
+    const fetchOptions = {
+      method,
+      headers,
+      body,
+      ...this.config,
+    };
+
+    try {
+      const response = await fetch(url, fetchOptions);
+      const responseBody = await response.text();
+      return {
+        statusCode: response.status,
+        headers: response.headers,
+        body: responseBody,
+      };
+    } catch (error) {
+      throw new Error(`Fetch error: ${error.message}`);
+    }
+  }
+}
+
+module.exports = FetchHttpHandler;
+
+// Example usage
+async function main() {
+  const handler = new FetchHttpHandler();
+
+  const request = {
+    url: 'https://jsonplaceholder.typicode.com/posts/1',
+    method: 'GET'
+  };
+
+  try {
+    const response = await handler.handle(request);
+    console.log('Response:', response);
+  } catch (error) {
+    console.error('Error:', error);
+  }
+}
+
+if (require.main === module) {
+  main();
+}

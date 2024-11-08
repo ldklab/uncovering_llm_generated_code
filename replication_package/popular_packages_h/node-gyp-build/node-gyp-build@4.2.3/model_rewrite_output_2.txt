@@ -1,0 +1,177 @@
+The Node.js code provided is a module for loading prebuilt native binaries for Node.js or Electron applications. It attempts to load a prebuilt native module from directories or fails if none are found. Here's a breakdown of its functionality:
+
+1. **Environment Detection**: Detects runtime (Node or Electron), platform (e.g., Linux), architecture (e.g., x64), and other system-specific variables.
+
+2. **Prebuild and Build Directory Handling**: 
+    - Tries to load a native module from `build/Release` or `build/Debug` directories unless `PREBUILDS_ONLY` is set.
+    - Searches for prebuilt binaries using criteria like platform, architecture, runtime, and version.
+
+3. **Module Loading**: 
+    - Uses `require` (or Node.js’s runtime equivalent) to load the native module based on environmental specifics.
+    - Throws an error if a compatible native module cannot be found.
+
+4. **File System Interactions**: 
+    - Reads directories (using `fs.readdirSync`) to find appropriate files based on naming conventions reflecting platform-specific builds.
+
+5. **Tagging and Sorting**: 
+    - Parses filenames to extract tagging information (e.g., runtime, ABI, etc.).
+    - Filters and sorts these tags to pick the best matching native module file.
+
+6. **Error Handling**: 
+    - If no suitable build is found, throws an error with details of the search criteria and origin directory.
+
+Here's the refactored version of the code that maintains the same functionality:
+
+```javascript
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
+
+const runtimeRequire = typeof __webpack_require__ === 'function' ? __non_webpack_require__ : require;
+
+const vars = (process.config && process.config.variables) || {};
+const prebuildsOnly = Boolean(process.env.PREBUILDS_ONLY);
+const abi = process.versions.modules;
+const runtime = isElectron() ? 'electron' : 'node';
+const arch = os.arch();
+const platform = os.platform();
+const libc = process.env.LIBC || (isAlpine(platform) ? 'musl' : 'glibc');
+const armv = process.env.ARM_VERSION || (arch === 'arm64' ? '8' : vars.arm_version) || '';
+const uv = (process.versions.uv || '').split('.')[0];
+
+module.exports = load;
+
+function load(dir) {
+  return runtimeRequire(load.path(dir));
+}
+
+load.path = function(dir) {
+  dir = path.resolve(dir || '.');
+
+  try {
+    const pkgName = runtimeRequire(path.join(dir, 'package.json')).name.toUpperCase().replace(/-/g, '_');
+    if (process.env[pkgName + '_PREBUILD']) dir = process.env[pkgName + '_PREBUILD'];
+  } catch (err) {}
+
+  if (!prebuildsOnly) {
+    const release = getFirst(path.join(dir, 'build/Release'), matchBuild);
+    if (release) return release;
+
+    const debug = getFirst(path.join(dir, 'build/Debug'), matchBuild);
+    if (debug) return debug;
+  }
+
+  const prebuild = resolve(dir);
+  if (prebuild) return prebuild;
+
+  const nearby = resolve(path.dirname(process.execPath));
+  if (nearby) return nearby;
+
+  const target = [
+    `platform=${platform}`,
+    `arch=${arch}`,
+    `runtime=${runtime}`,
+    `abi=${abi}`,
+    uv ? `uv=${uv}` : '',
+    armv ? `armv=${armv}` : '',
+    `libc=${libc}`,
+    `node=${process.versions.node}`,
+    process.versions.electron ? `electron=${process.versions.electron}` : '',
+    typeof __webpack_require__ === 'function' ? 'webpack=true' : ''
+  ].filter(Boolean).join(' ');
+
+  throw new Error(`No native build was found for ${target}\n    loaded from: ${dir}\n`);
+};
+
+function resolve(dir) {
+  const prebuildsPath = path.join(dir, 'prebuilds', `${platform}-${arch}`);
+  const candidates = readdirSync(prebuildsPath).map(parseTags).filter(matchTags(runtime, abi));
+  const winner = candidates.sort(compareTags(runtime))[0];
+  return winner && path.join(prebuildsPath, winner.file);
+}
+
+function readdirSync(dir) {
+  try {
+    return fs.readdirSync(dir);
+  } catch (err) {
+    return [];
+  }
+}
+
+function getFirst(dir, filter) {
+  const files = readdirSync(dir).filter(filter);
+  return files[0] && path.join(dir, files[0]);
+}
+
+function matchBuild(name) {
+  return /\.node$/.test(name);
+}
+
+function parseTags(file) {
+  const arr = file.split('.');
+  const extension = arr.pop();
+  const tags = { file, specificity: 0 };
+
+  if (extension !== 'node') return;
+
+  for (const tag of arr) {
+    if (tag === 'node' || tag === 'electron' || tag === 'node-webkit') {
+      tags.runtime = tag;
+    } else if (tag.startsWith('abi')) {
+      tags.abi = tag.slice(3);
+    } else if (tag.startsWith('uv')) {
+      tags.uv = tag.slice(2);
+    } else if (tag.startsWith('armv')) {
+      tags.armv = tag.slice(4);
+    } else if (tag === 'napi') {
+      tags.napi = true;
+    } else if (['glibc', 'musl'].includes(tag)) {
+      tags.libc = tag;
+    } else {
+      continue;
+    }
+
+    tags.specificity++;
+  }
+
+  return tags;
+}
+
+function matchTags(runtime, abi) {
+  return tags => {
+    if (!tags) return false;
+    if (tags.runtime !== runtime && !runtimeAgnostic(tags)) return false;
+    if (tags.abi !== abi && !tags.napi) return false;
+    if (tags.uv && tags.uv !== uv) return false;
+    if (tags.armv && tags.armv !== armv) return false;
+    if (tags.libc && tags.libc !== libc) return false;
+
+    return true;
+  };
+}
+
+function runtimeAgnostic(tags) {
+  return tags.runtime === 'node' && tags.napi;
+}
+
+function compareTags(runtime) {
+  return (a, b) => {
+    if (a.runtime !== b.runtime) return a.runtime === runtime ? -1 : 1;
+    if (a.abi !== b.abi) return a.abi ? -1 : 1;
+    return b.specificity - a.specificity;
+  };
+}
+
+function isElectron() {
+  return process.versions && process.versions.electron || process.env.ELECTRON_RUN_AS_NODE || 
+    (typeof window !== 'undefined' && window.process && window.process.type === 'renderer');
+}
+
+function isAlpine(platform) {
+  return platform === 'linux' && fs.existsSync('/etc/alpine-release');
+}
+
+load.parseTags = parseTags;
+load.matchTags = matchTags;
+load.compareTags = compareTags;
+```

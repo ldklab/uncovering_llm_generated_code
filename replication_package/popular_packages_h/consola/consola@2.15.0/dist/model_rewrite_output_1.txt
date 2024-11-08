@@ -1,0 +1,115 @@
+The provided Node.js code is a modular setup for handling and identifying continuous integration (CI) environments. It detects various CI environments based on environment variables. The code also provides logging capabilities with different verbosity levels for various types of messages, such as errors, warnings, and debug information. 
+
+Here's a breakdown of its main components and functionality:
+
+1. **Environment Detection**:
+   - The script uses environment variables to detect if it's running in a CI environment and which one.
+   - Lists supported CI environments like Travis CI, Jenkins, CircleCI, etc., by checking specific environment variables that indicate the presence of those CI systems.
+
+2. **Logging Utilities**:
+   - The code includes a logger that can handle multiple log levels: fatal, error, warn, info, debug, etc.
+   - It supports adding custom reporters for logging messages in different ways (e.g., JSON, Winston logger, etc.).
+   - The logger is configurable with color-coded messages depending on the terminal's capability to support colors.
+
+3. **Cross-platform symbols and color utilities**:
+   - It manages different symbols and emojis representing log messages, ensuring compatibility across different operating systems and terminal types.
+   - Provides utilities to manage colors in the output based on ANSI escape codes.
+
+4. **Configuration and Initialization**:
+   - The script detects the operating environment and sets up appropriate configurations, adapting behavior based on CI presence, terminal types, and user settings.
+   - Supports environment variables to customize behavior, such as debugging options and verbosity levels.
+
+Here's a possible rewrite of this code with a simpler structure but maintaining its core functionalities:
+
+```javascript
+"use strict";
+
+const path = require("path");
+const os = require("os");
+const tty = require("tty");
+const fs = require("fs");
+
+// Helper functions
+const importDefault = (module) => module && typeof module === 'object' && 'default' in module ? module.default : module;
+
+const { formatWithOptions } = importDefault(require("util"));
+
+// CI Environment Detection
+const ciVendors = [
+  { name: "Travis CI", env: "TRAVIS" },
+  { name: "CircleCI", env: "CIRCLECI" },
+  // Add other CI environments here...
+];
+
+function detectCIEnvironment() {
+  const env = process.env;
+  for (const { name, env: varName } of ciVendors) {
+    if (env[varName]) {
+      return { name, ci: true };
+    }
+  }
+  return { ci: false };
+}
+
+const ciEnvironment = detectCIEnvironment();
+const isCI = ciEnvironment.ci;
+
+// Logger Levels
+const LogLevel = {
+  Fatal: 0,
+  Error: 0,
+  Warn: 1,
+  Log: 2,
+  Info: 3,
+  Debug: 4,
+  Trace: 5,
+  Silent: -Infinity,
+  Verbose: Infinity
+};
+
+// Simple Logger
+class Logger {
+  constructor({ level = LogLevel.Info } = {}) {
+    this.level = level;
+  }
+
+  log(level, ...args) {
+    if (level <= this.level) {
+      console.log(...args);
+    }
+  }
+
+  error(...args) {
+    this.log(LogLevel.Error, ...args);
+  }
+
+  warn(...args) {
+    this.log(LogLevel.Warn, ...args);
+  }
+
+  info(...args) {
+    this.log(LogLevel.Info, ...args);
+  }
+}
+
+// Environment Specific Configurations
+const isTTY = tty.isatty(1);
+const platform = os.platform();
+const config = {
+  isCI,
+  isTTY,
+  platform,
+  // Additional configurations or modifications
+};
+
+// Exporting the consola instance with configurations
+const consola = new Logger({ level: isCI ? LogLevel.Warn : LogLevel.Debug });
+
+module.exports = {
+  consola,
+  LogLevel,
+  config
+};
+```
+
+This rewrite maintains the main functionalities such as detecting CI environments and providing a simple logging mechanism with customizable log levels. It trims down more complex parts of the original code to focus on essential features.

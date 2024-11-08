@@ -1,0 +1,126 @@
+The code is part of a module that facilitates the building and watching of project configurations using Rollup.js, a module bundler for JavaScript. It handles importing necessary dependencies, setting up a WatchEmitter class to manage events, and defining a watch function that initializes a file-watching process for given configurations.
+
+**Explanation:**
+1. **Imports and Setup:**
+   - Imports necessary modules and functionalities (`rollup`, `parseAst_js`, `fseventsImporter`, etc.).
+   - The code defines a class `WatchEmitter` to handle event management for a file-watching process, including methods to add, remove, and emit events.
+
+2. **`WatchEmitter` Class:**
+   - **Constructor:** Initializes `currentHandlers` and `persistentHandlers` to manage temporary and persistent event listeners.
+   - **Event Methods:**
+     - `emit`: Triggers all handlers registered for a specific event.
+     - `on`/`off`: Adds and removes persistent event listeners.
+     - `onCurrentRun`: Adds event listeners only for the current run.
+     - `once`: Registers an event listener to be executed only once.
+     - `removeAllListeners`, `removeListenersForCurrentRun`: Clear all registered listeners.
+
+3. **`watch` and `watchInternal` Functions:**
+   - `watch`: Public function that starts the watching process for a given set of configurations by creating a `WatchEmitter` and calling `watchInternal`.
+   - `watchInternal`: Processes the configurations, checks which ones have the `watch` property enabled, and uses a `Watcher` to monitor changes in files. It handles errors and relies on a module (`watch.js`) to perform the actual watching.
+
+4. **Exports:**
+   - Exports various functionalities (`VERSION`, `defineConfig`, `rollup`, `watch`) to be accessible from this module.
+
+Below is a rewritten version of the code with the same functionality:
+
+```javascript
+'use strict';
+
+Object.defineProperty(exports, Symbol.toStringTag, { value: 'Module' });
+
+const rollup = require('./shared/rollup.js');
+const parseAst = require('./shared/parseAst.js');
+const fseventsImporter = require('./shared/fsevents-importer.js');
+const path = require('path');
+require('node:process');
+require('tty');
+require('./native.js');
+require('node:perf_hooks');
+require('node:fs/promises');
+
+class WatchEmitter {
+    constructor() {
+        this.currentHandlers = {};
+        this.persistentHandlers = {};
+    }
+
+    async close() {}
+
+    emit(event, ...args) {
+        return Promise.all([
+            ...this.getCurrentHandlers(event),
+            ...this.getPersistentHandlers(event)
+        ].map(handler => handler(...args)));
+    }
+
+    off(event, listener) {
+        const listeners = this.persistentHandlers[event];
+        if (listeners) {
+            listeners.splice(listeners.indexOf(listener) >>> 0, 1);
+        }
+        return this;
+    }
+
+    on(event, listener) {
+        this.getPersistentHandlers(event).push(listener);
+        return this;
+    }
+
+    onCurrentRun(event, listener) {
+        this.getCurrentHandlers(event).push(listener);
+        return this;
+    }
+
+    once(event, listener) {
+        const onceListener = (...args) => {
+            this.off(event, onceListener);
+            return listener(...args);
+        };
+        this.on(event, onceListener);
+        return this;
+    }
+
+    removeAllListeners() {
+        this.removeListenersForCurrentRun();
+        this.persistentHandlers = {};
+        return this;
+    }
+
+    removeListenersForCurrentRun() {
+        this.currentHandlers = {};
+        return this;
+    }
+
+    getCurrentHandlers(event) {
+        return this.currentHandlers[event] || (this.currentHandlers[event] = []);
+    }
+
+    getPersistentHandlers(event) {
+        return this.persistentHandlers[event] || (this.persistentHandlers[event] = []);
+    }
+}
+
+function watch(configs) {
+    const emitter = new WatchEmitter();
+    watchInternal(configs, emitter).catch(rollup.handleError);
+    return emitter;
+}
+
+async function watchInternal(configs, emitter) {
+    const optionsList = await Promise.all(
+        rollup.ensureArray(configs).map(config => rollup.mergeOptions(config, true))
+    );
+    const watchOptions = optionsList.filter(config => config.watch !== false);
+    if (watchOptions.length === 0) {
+        return parseAst.error(parseAst.logInvalidOption('watch', parseAst.URL_WATCH, 'at least one config must have "watch" not set to "false"'));
+    }
+    await fseventsImporter.loadFsEvents();
+    const { Watcher } = await import('./shared/watch.js');
+    new Watcher(watchOptions, emitter);
+}
+
+exports.VERSION = rollup.version;
+exports.defineConfig = rollup.defineConfig;
+exports.rollup = rollup.rollup;
+exports.watch = watch;
+```

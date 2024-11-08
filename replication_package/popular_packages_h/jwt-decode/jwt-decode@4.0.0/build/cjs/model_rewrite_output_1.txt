@@ -1,0 +1,70 @@
+The provided Node.js code defines a module for decoding JSON Web Tokens (JWT) and includes a custom error class for handling invalid tokens. Here's a breakdown of its functionality:
+
+1. **InvalidTokenError Class**: This is an error class extending the native `Error` object. It's used to handle specific errors related to invalid tokens.
+
+2. **b64DecodeUnicode Function**: This function decodes a base64 string into a Unicode string. It reverses any character encoding using `decodeURIComponent` after converting the base64 input into a binary string using `atob`.
+
+3. **base64UrlDecode Function**: This takes a base64 URL-encoded string and returns its decoded value. It replaces URL-specific characters, adds necessary padding, and decodes using `b64DecodeUnicode`. If an error occurs during Unicode decoding, it falls back to basic base64 decoding.
+
+4. **jwtDecode Function**: This is the main function for decoding a JWT. It accepts a token string and an options object. 
+   - The token is split into parts by the '.' character.
+   - It decodes either the header or payload based on the `options.header` flag.
+   - The decoded part is parsed as JSON and returned.
+   - If the token is malformed or the JSON is invalid, an `InvalidTokenError` is thrown with an appropriate message.
+
+Here's a possible rewrite of the code:
+
+```javascript
+"use strict";
+
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.jwtDecode = exports.InvalidTokenError = void 0;
+
+class InvalidTokenError extends Error {}
+exports.InvalidTokenError = InvalidTokenError;
+InvalidTokenError.prototype.name = "InvalidTokenError";
+
+function b64DecodeUnicode(str) {
+    return decodeURIComponent(atob(str).replace(/(.)/g, (m, p) => {
+        let code = p.charCodeAt(0).toString(16).toUpperCase().padStart(2, '0');
+        return `%${code}`;
+    }));
+}
+
+function base64UrlDecode(str) {
+    let output = str.replace(/-/g, "+").replace(/_/g, "/");
+    output += "=".repeat((4 - (output.length % 4)) % 4);
+    try {
+        return b64DecodeUnicode(output);
+    } catch (err) {
+        return atob(output);
+    }
+}
+
+function jwtDecode(token, options = {}) {
+    if (typeof token !== "string") {
+        throw new InvalidTokenError("Invalid token specified: must be a string");
+    }
+
+    const pos = options.header ? 0 : 1;
+    const part = token.split(".")[pos];
+    if (typeof part !== "string") {
+        throw new InvalidTokenError(`Invalid token specified: missing part #${pos + 1}`);
+    }
+
+    let decoded;
+    try {
+        decoded = base64UrlDecode(part);
+    } catch (e) {
+        throw new InvalidTokenError(`Invalid token specified: invalid base64 for part #${pos + 1} (${e.message})`);
+    }
+
+    try {
+        return JSON.parse(decoded);
+    } catch (e) {
+        throw new InvalidTokenError(`Invalid token specified: invalid json for part #${pos + 1} (${e.message})`);
+    }
+}
+
+exports.jwtDecode = jwtDecode;
+```

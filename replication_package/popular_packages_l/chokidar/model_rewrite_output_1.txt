@@ -1,0 +1,101 @@
+The provided Node.js code is a simplified implementation of a file system watcher similar to the 'chokidar' library. It watches specified directories for changes, such as file addition, removal, or modification, and emits events when these changes occur. Here's a breakdown of its functionality:
+
+1. **FSWatcher Class**: This class manages the file path(s) being watched.
+   - **watchPath**: Watches a specific path for file changes.
+   - **handleEvent**: Handles file system events. It distinguishes between `rename` and `change` events and emits `unlink` or `change` accordingly, using file statistics (like file size).
+   - **add**: Adds one or multiple paths to be watched.
+   - **on**: Registers event listeners for specific events (`add`, `change`, `unlink`).
+   - **emit**: Emits events and calls associated callback functions.
+   - **unwatch**: Stops watching one or multiple paths.
+   - **close**: Stops watching all paths and clears the list of watched paths.
+   - **getWatched**: Returns a list of currently watched paths.
+
+2. **chokidarWatch Function**: Function that creates an instance of the FSWatcher class and begins watching paths specified.
+
+3. **Event Handling**: Demonstrates how to use the watcher instance to listen for changes and log messages when files are added, modified, or removed.
+
+Here is the code rewritten in a more concise manner:
+
+```javascript
+import { watch } from 'fs';
+import { promises as fsPromises } from 'fs';
+
+class FSWatcher {
+  constructor(options = {}) {
+    this.watchedPaths = new Map();
+    this.listeners = new Map();
+  }
+
+  watchPath(path) {
+    if (this.watchedPaths.has(path)) return;
+    
+    const watcher = watch(path, { recursive: true }, (eventType, filename) => {
+      this.handleEvent(eventType, filename);
+    });
+
+    this.watchedPaths.set(path, watcher);
+  }
+
+  async handleEvent(eventType, filename) {
+    const path = `${process.cwd()}/${filename}`;
+    try {
+      const stats = await fsPromises.stat(path);
+      const isRename = eventType === 'rename' && !stats.isFile();
+      this.emit(isRename ? 'unlink' : 'change', path, stats);
+    } catch {
+      this.emit('unlink', path);
+    }
+  }
+
+  add(paths) {
+    (Array.isArray(paths) ? paths : [paths]).forEach(path => this.watchPath(path));
+  }
+
+  on(event, callback) {
+    if (!this.listeners.has(event)) this.listeners.set(event, []);
+    this.listeners.get(event).push(callback);
+  }
+
+  emit(event, ...args) {
+    this.listeners.get(event)?.forEach(callback => callback(...args));
+  }
+
+  unwatch(paths) {
+    (Array.isArray(paths) ? paths : [paths]).forEach(path => {
+      this.watchedPaths.get(path)?.close();
+      this.watchedPaths.delete(path);
+    });
+  }
+
+  close() {
+    this.watchedPaths.forEach(watcher => watcher.close());
+    this.watchedPaths.clear();
+  }
+
+  getWatched() {
+    const watched = {};
+    this.watchedPaths.forEach((_, path) => {
+      watched[path] = [path];
+    });
+    return watched;
+  }
+}
+
+function chokidarWatch(paths, options) {
+  const watcher = new FSWatcher(options);
+  watcher.add(paths);
+  return watcher;
+}
+
+export default chokidarWatch;
+
+// How to use:
+const watcher = chokidarWatch('.', {
+  ignored: (path, stats) => stats?.isFile() && !path.endsWith('.js'),
+  persistent: true
+});
+
+watcher.on('add', path => console.log(`File ${path} has been added`));
+watcher.on('change', (path, stats) => console.log(`File ${path} changed size to ${stats.size}`));
+watcher.on('unlink', path => console.log(`File ${path} has been removed`));
+```

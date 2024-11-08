@@ -1,0 +1,91 @@
+The given Node.js code is a module designed to integrate a 'Content-Length' header into HTTP requests where it is missing. Here's a breakdown of its functionality:
+
+1. **Utility Functions**:
+   - `__defProp`, `__getOwnPropDesc`, `__getOwnPropNames`, and `__hasOwnProp` are utility shorthand references to Object methods for defining properties, getting property descriptors, getting property names, and checking object property ownership.
+   - `__name` is a utility function to define the `name` property of a function for better stack trace readability.
+   - `__export` is a function that exports properties from one object to another as enumerable.
+   - `__copyProps` copies properties from one object (`from`) to another (`to`), excluding specified properties.
+   - `__toCommonJS` encapsulates the module in a CommonJS format with added exports indicating it's an ES module.
+
+2. **Middleware and Plugin**:
+   - The `contentLengthMiddleware` function takes a `bodyLengthChecker` as an argument and returns a function that is part of a middleware chain. It adds a 'Content-Length' header to an HTTP request if it doesn't already exist and the request body is present.
+   - It intercepts each request to ensure the presence of the 'Content-Length' header, calculating it using `bodyLengthChecker`.
+   - `contentLengthMiddlewareOptions` provides configuration for integrating this middleware into an HTTP client, specifying step and tags.
+   - `getContentLengthPlugin` is a factory function that creates a plugin to apply the middleware to a client stack.
+
+Here is a possible rewrite of the code based on the explanation:
+
+```javascript
+const { defineProperty, getOwnPropertyDescriptor, getOwnPropertyNames, prototype } = Object;
+
+const defineName = (fn, name) => defineProperty(fn, 'name', { value: name, configurable: true });
+
+function exportProperties(target, sources) {
+  for (const key in sources) {
+    defineProperty(target, key, { get: sources[key], enumerable: true });
+  }
+}
+
+function copyProperties(target, source, except) {
+  if (source && (typeof source === 'object' || typeof source === 'function')) {
+    for (const key of getOwnPropertyNames(source)) {
+      if (!prototype.hasOwnProperty.call(target, key) && key !== except) {
+        defineProperty(
+          target,
+          key,
+          { get: () => source[key], enumerable: !getOwnPropertyDescriptor(source, key)?.enumerable }
+        );
+      }
+    }
+  }
+  return target;
+}
+
+function toCommonJS(module) {
+  return copyProperties(defineProperty({}, '__esModule', { value: true }), module);
+}
+
+// src/index.ts
+const src_exports = {};
+exportProperties(src_exports, {
+  contentLengthMiddleware,
+  contentLengthMiddlewareOptions,
+  getContentLengthPlugin
+});
+module.exports = toCommonJS(src_exports);
+
+const { HttpRequest } = require('@smithy/protocol-http');
+const CONTENT_LENGTH_HEADER = 'content-length';
+
+function contentLengthMiddleware(bodyLengthChecker) {
+  return (next) => async (args) => {
+    const { request } = args;
+    if (HttpRequest.isInstance(request)) {
+      const { body, headers } = request;
+      if (body && !Object.keys(headers).map((key) => key.toLowerCase()).includes(CONTENT_LENGTH_HEADER)) {
+        try {
+          const length = bodyLengthChecker(body);
+          request.headers = { ...request.headers, [CONTENT_LENGTH_HEADER]: String(length) };
+        } catch (error) {
+          // Silent catch
+        }
+      }
+    }
+    return next({ ...args, request });
+  };
+}
+defineName(contentLengthMiddleware, 'contentLengthMiddleware');
+
+const contentLengthMiddlewareOptions = {
+  step: 'build',
+  tags: ['SET_CONTENT_LENGTH', 'CONTENT_LENGTH'],
+  name: 'contentLengthMiddleware',
+  override: true
+};
+
+const getContentLengthPlugin = defineName((options) => ({
+  applyToStack: (clientStack) => {
+    clientStack.add(contentLengthMiddleware(options.bodyLengthChecker), contentLengthMiddlewareOptions);
+  }
+}), 'getContentLengthPlugin');
+```

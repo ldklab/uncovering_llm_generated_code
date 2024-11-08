@@ -1,0 +1,85 @@
+The given Node.js function is designed to format a 2D array (`rows_`) into a nicely aligned string representation. This function allows customization of the format via an `opts` object. Here's a breakdown of its functionality:
+
+1. **Options Handling**: The function checks for optional parameters, such as `hsep` for horizontal separation between columns, `align` for specifying alignment (left, right, center), and `stringLength` to calculate the length of the string content correctly (accounting for special cases).
+
+2. **Decimal Alignment**: It calculates the index of the decimal point in each element if required and determines the largest index position to help align decimal numbers in columns.
+
+3. **Row and Column Processing**:
+   - Adjusts each cell in the rows for decimal alignment if specified.
+   - Computes the maximum width needed for each column, based on the content.
+   - Aligns the text in each cell according to the specified alignment (`left`, `right`, `center`, or align based on the decimal point) ensuring that the output rows have consistent column widths.
+
+4. **Output Building**: It joins the processed cells into strings for each row, separated by the specified horizontal separator (`hsep`), then joins all rows with newline characters to form the final formatted string.
+
+Here's a possible rewrite of the code:
+
+```javascript
+module.exports = function formatTable(rows, options = {}) {
+    const hsep = options.hsep !== undefined ? options.hsep : '  ';
+    const align = options.align || [];
+    const stringLength = options.stringLength || (s => String(s).length);
+
+    const decimalSizes = calculateDecimalSizes(rows);
+    const formattedRows = formatRows(rows, decimalSizes, align, stringLength);
+    const columnWidths = calculateColumnWidths(formattedRows, stringLength);
+
+    return formattedRows.map(row => {
+        return row.map((content, colIndex) => {
+            const paddingSize = columnWidths[colIndex] - stringLength(content);
+            const padding = ' '.repeat(Math.max(paddingSize, 0));
+
+            if (align[colIndex] === 'r' || align[colIndex] === '.') {
+                return padding + content;
+            } else if (align[colIndex] === 'c') {
+                const halfPadding = paddingSize / 2;
+                return ' '.repeat(Math.floor(halfPadding)) + content + ' '.repeat(Math.ceil(halfPadding));
+            } else {
+                return content + padding;
+            }
+        }).join(hsep).trimEnd();
+    }).join('\n');
+};
+
+function calculateDecimalSizes(rows) {
+    return rows.reduce((acc, row) => {
+        row.forEach((cell, ix) => {
+            const pos = findDecimalIndex(cell);
+            if (!acc[ix] || pos > acc[ix]) {
+                acc[ix] = pos;
+            }
+        });
+        return acc;
+    }, []);
+}
+
+function formatRows(rows, decimalSizes, align, stringLength) {
+    return rows.map(row => {
+        return row.map((cell, ix) => {
+            let content = String(cell);
+            if (align[ix] === '.') {
+                const decIndex = findDecimalIndex(content);
+                const padSize = decimalSizes[ix] + (/\./.test(content) ? 1 : 2) - (stringLength(content) - decIndex);
+                return content + ' '.repeat(padSize);
+            }
+            return content;
+        });
+    });
+}
+
+function calculateColumnWidths(rows, stringLength) {
+    return rows.reduce((acc, row) => {
+        row.forEach((cell, ix) => {
+            const length = stringLength(cell);
+            if (!acc[ix] || length > acc[ix]) {
+                acc[ix] = length;
+            }
+        });
+        return acc;
+    }, []);
+}
+
+function findDecimalIndex(content) {
+    const match = /\.[^.]*$/.exec(content);
+    return match ? match.index + 1 : content.length;
+}
+```

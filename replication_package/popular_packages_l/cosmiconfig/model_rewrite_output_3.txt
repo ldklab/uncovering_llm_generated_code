@@ -1,0 +1,145 @@
+The provided Node.js code defines a module for loading configuration files for a specified module name. It supports loading configurations from multiple file formats and locations, including JSON, YAML, and JavaScript/TypeScript files. The module consists of both asynchronous and synchronous implementations of configuration file searching and loading. 
+
+- **File Formats**: The code supports `.json`, `.yaml`, `.yml`, `.js`, and `.ts` file formats. JSON files can also be parsed using JSON5, a variant of JSON.
+- **Search Strategy**: The code provides a `searchPlaces` function to determine typical configuration file names and locations relative to a given module name. It searches the current directory and traverses upwards until a configuration file is found or the root directory is reached.
+- **Loading Logic**: The code defines loaders for each file type, leveraging external libraries such as `js-yaml` and `json5` to parse YAML and JSON5 formats, respectively. For JavaScript and TypeScript, it uses Node's `require`.
+- **Caching**: Configurations are cached in a `Map` object to potentially optimize repeated searches, although it appears unused in the provided code.
+- **Classes**: 
+  - `Cosmiconfig` handles the asynchronous loading of config files.
+  - `CosmiconfigSync` extends `Cosmiconfig` and overrides methods to provide a synchronous API for loading configurations.
+- **Exports**: Two functions, `cosmiconfig` and `cosmiconfigSync`, create instances of the respective classes, allowing users to integrate this functionality into their applications.
+
+Here's the rewritten code in a single markdown code block:
+
+```javascript
+const fs = require('fs');
+const path = require('path');
+const yaml = require('js-yaml');
+const JSON5 = require('json5');
+
+// Default loaders for different file types
+const defaultLoaders = {
+  '.json': (filepath, content) => JSON5.parse(content),
+  '.yaml': (filepath, content) => yaml.load(content),
+  '.yml': (filepath, content) => yaml.load(content),
+  '.js': (filepath) => require(filepath),
+  '.ts': (filepath) => require(filepath),
+};
+
+// Helper function to read files asynchronously
+const readFile = (filepath) => fs.promises.readFile(filepath, 'utf8');
+
+// Determine potential config file names based on moduleName
+const searchPlaces = (moduleName) => [
+  'package.json',
+  `.${moduleName}rc`,
+  `.${moduleName}rc.json`,
+  `.${moduleName}rc.yaml`,
+  `.${moduleName}rc.yml`,
+  `${moduleName}.config.js`,
+];
+
+// Main class for asynchronous configuration loading
+class Cosmiconfig {
+  constructor(moduleName, options = {}) {
+    this.moduleName = moduleName;
+    this.searchPlaces = options.searchPlaces || searchPlaces(moduleName);
+    this.loaders = { ...defaultLoaders, ...options.loaders };
+    this.cache = new Map();  // Cache for storing loaded configurations
+  }
+
+  // Asynchronous search for configuration files
+  async search(searchFrom = process.cwd()) {
+    let currentDir = searchFrom;
+
+    while (currentDir) {
+      for (const place of this.searchPlaces) {
+        const filepath = path.join(currentDir, place);
+        if (fs.existsSync(filepath)) {
+          const result = await this.load(filepath);
+          if (result) return result;
+        }
+      }
+      const parentDir = path.dirname(currentDir);
+      if (currentDir === parentDir) break;
+      currentDir = parentDir;
+    }
+
+    return null;
+  }
+
+  // Load a configuration file asynchronously
+  async load(filepath) {
+    const ext = path.extname(filepath) || 'noExt';
+    const loader = this.loaders[ext];
+    if (!loader) return null;
+
+    const content = await readFile(filepath);
+    const config = loader(filepath, content);
+
+    return { config, filepath, isEmpty: !config || Object.keys(config).length === 0 };
+  }
+
+  // Clear caches if any usage in the future.
+  clearCache() {
+    this.cache.clear();
+  }
+}
+
+// Synchronous version of the Cosmiconfig for loading configurations
+class CosmiconfigSync extends Cosmiconfig {
+  constructor(moduleName, options = {}) {
+    super(moduleName, options);
+    this.loaders = { ...defaultLoaders, ...this._syncLoaders() };
+  }
+
+  // Specialized synchronous file loaders
+  _syncLoaders() {
+    return {
+      '.json': (filepath, content) => JSON5.parse(content),
+      '.yaml': (filepath, content) => yaml.load(content),
+      '.yml': (filepath, content) => yaml.load(content),
+      '.js': (filepath) => require(filepath),
+      '.ts': (filepath) => require(filepath),
+    };
+  }
+
+  // Synchronous search for configuration files
+  search(searchFrom = process.cwd()) {
+    let currentDir = searchFrom;
+
+    while (currentDir) {
+      for (const place of this.searchPlaces) {
+        const filepath = path.join(currentDir, place);
+        if (fs.existsSync(filepath)) {
+          const result = this.load(filepath);
+          if (result) return result;
+        }
+      }
+      const parentDir = path.dirname(currentDir);
+      if (currentDir === parentDir) break;
+      currentDir = parentDir;
+    }
+
+    return null;
+  }
+
+  // Load a configuration file synchronously
+  load(filepath) {
+    const ext = path.extname(filepath) || 'noExt';
+    const loader = this.loaders[ext];
+    if (!loader) return null;
+
+    const content = fs.readFileSync(filepath, 'utf8');
+    const config = loader(filepath, content);
+
+    return { config, filepath, isEmpty: !config || Object.keys(config).length === 0 };
+  }
+}
+
+// Factory functions for creating instances of the configuration loaders
+const cosmiconfig = (moduleName, options) => new Cosmiconfig(moduleName, options);
+const cosmiconfigSync = (moduleName, options) => new CosmiconfigSync(moduleName, options);
+
+module.exports = { cosmiconfig, cosmiconfigSync };
+```

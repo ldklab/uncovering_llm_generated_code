@@ -1,0 +1,53 @@
+The provided Node.js code defines a module for working with a set of visitor keys used in traversing an Abstract Syntax Tree (AST). Here's a breakdown of its functionality:
+
+1. It imports a JSON file `visitor-keys.json` which contains predefined keys related to different node types in an AST.
+2. It creates a frozen list of node types from the keys in the imported JSON to ensure immutability.
+3. Each set of keys within the `KEYS` object is also frozen to prevent modification.
+4. A set of blacklisted keys is defined, which includes "parent", "leadingComments", and "trailingComments". These keys are not to be used when traversing nodes.
+5. A utility function `filterKey` is implemented to determine if a given key should be used. It ensures that the key is not in the blacklist and does not start with an underscore `_`.
+6. The module exports an object that provides the following:
+   - A `KEYS` property exposing the frozen keys.
+   - A method `getKeys(node)` that returns non-blacklisted, non-private keys of a given node by applying the `filterKey` function.
+   - A method `unionWith(additionalKeys)` that creates a union of the existing `KEYS` and additional keys provided. It ensures no duplicate keys are present for a node type and returns a fully frozen object.
+
+Here's a possible rewrite of the code:
+
+```javascript
+"use strict";
+
+const KEYS_DATA = require("./visitor-keys.json");
+const NODE_TYPES = Object.freeze(Object.keys(KEYS_DATA));
+
+for (const type of NODE_TYPES) {
+    Object.freeze(KEYS_DATA[type]);
+}
+Object.freeze(KEYS_DATA);
+
+const IGNORED_KEYS = new Set(["parent", "leadingComments", "trailingComments"]);
+
+function isKeyValid(key) {
+    return !IGNORED_KEYS.has(key) && !key.startsWith("_");
+}
+
+module.exports = Object.freeze({
+    KEYS: KEYS_DATA,
+
+    getKeys(node) {
+        return Object.keys(node).filter(isKeyValid);
+    },
+
+    unionWith(extraKeys) {
+        const combinedKeys = { ...KEYS_DATA };
+
+        for (const type in extraKeys) {
+            if (combinedKeys[type]) {
+                combinedKeys[type] = Object.freeze([...new Set([...combinedKeys[type], ...extraKeys[type]])]);
+            } else {
+                combinedKeys[type] = Object.freeze([...extraKeys[type]]);
+            }
+        }
+
+        return Object.freeze(combinedKeys);
+    }
+});
+```

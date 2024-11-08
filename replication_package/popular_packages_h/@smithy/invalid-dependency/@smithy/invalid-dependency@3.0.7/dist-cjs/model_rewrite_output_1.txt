@@ -1,0 +1,79 @@
+The provided Node.js code is a module definition using a series of utility functions to handle property definitions and exports. Here's a breakdown of its functionality:
+
+1. **Utility Functions**:
+   - `__defProp`: A shorthand alias for `Object.defineProperty`, used to define properties on objects.
+   - `__getOwnPropDesc`: Retrieves the property descriptor for an object’s own property.
+   - `__getOwnPropNames`: Gets all the own property names of an object.
+   - `__hasOwnProp`: Uses `Object.prototype.hasOwnProperty` to check if an object has a property.
+   - `__name`: Sets the `name` property of a function for easier identification.
+   - `__export`: Defines properties on `target` with getters from `all`, used to export multiple functions or variables.
+   - `__copyProps`: Copies properties from one object (`from`) to another (`to`), optionally excluding certain properties.
+   - `__toCommonJS`: Ensures that the export is compatible with both CommonJS and ES Modules by adding the `__esModule` property.
+
+2. **Module Exports**:
+   - Two functions are defined and exported from the module:
+     - `invalidFunction`: A higher-order function that throws an error with a given message.
+     - `invalidProvider`: A function that returns a rejected Promise with a given message.
+
+3. **Export Handling**:
+   - The `invalidFunction` and `invalidProvider` are exported using the `__export` function, with compatibility ensured for CommonJS and ES Modules.
+
+Here is a possible rewrite for the code:
+
+```javascript
+const defineProperty = Object.defineProperty;
+const getOwnPropertyDescriptor = Object.getOwnPropertyDescriptor;
+const getOwnPropertyNames = Object.getOwnPropertyNames;
+const hasOwnProperty = Object.prototype.hasOwnProperty;
+
+// Helper functions
+const setFunctionName = (func, name) => defineProperty(func, "name", { value: name, configurable: true });
+
+const exportFunctions = (target, functions) => {
+  for (const name in functions) {
+    defineProperty(target, name, { get: functions[name], enumerable: true });
+  }
+};
+
+const copyProperties = (target, source, exclude, desc) => {
+  if (source && (typeof source === "object" || typeof source === "function")) {
+    const keys = getOwnPropertyNames(source);
+    for (const key of keys) {
+      if (!hasOwnProperty.call(target, key) && key !== exclude) {
+        defineProperty(target, key, {
+          get: () => source[key],
+          enumerable: !(desc = getOwnPropertyDescriptor(source, key)) || desc.enumerable,
+        });
+      }
+    }
+  }
+  return target;
+};
+
+const toCommonJSExport = (module) =>
+  copyProperties(defineProperty({}, "__esModule", { value: true }), module);
+
+// Source code
+const exports = {};
+
+// Define and export functions
+exportFunctions(exports, {
+  invalidFunction: () => invalidFunction,
+  invalidProvider: () => invalidProvider,
+});
+
+module.exports = toCommonJSExport(exports);
+
+// Function definitions
+const invalidFunction = /* @__PURE__ */ setFunctionName((message) => () => {
+  throw new Error(message);
+}, "invalidFunction");
+
+const invalidProvider = /* @__PURE__ */ setFunctionName((message) => () => Promise.reject(message), "invalidProvider");
+
+// Compatibility annotation for Node.js
+0 && (module.exports = {
+  invalidFunction,
+  invalidProvider,
+});
+```

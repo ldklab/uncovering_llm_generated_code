@@ -1,0 +1,116 @@
+The provided Node.js code is a module that identifies the type of a TypedArray instance. It utilizes a combination of feature detection, built-in prototype methods, and cached getters for this purpose. Here's an explanation of what each part achieves:
+
+1. **Dependencies and Setup:** 
+   - `forEach` is used for iterating over arrays or collections.
+   - `availableTypedArrays` retrieves names of available typed array constructors like `Int8Array`, `Uint8Array`, etc.
+   - `callBind` and `callBound` help to bind context to functions.
+   - `gOPD` (getObjectPropertyDescriptor) fetches the descriptor of a property, mainly used for reading `Symbol.toStringTag`.
+   - `$toString` is a shortcut to the `Object.prototype.toString` method, bound to its context.
+
+2. **Environment and TypedArrays:**
+   - Checks for global environments and retrieves available TypedArrays.
+   - Uses `Symbol.toStringTag` to differentiate objects if a particular object system supports it.
+
+3. **Cache Initialization:**
+   - Build a cache of typed array names and their associated tag getters or methods (like `slice` or `set`) for runtime use. 
+   - The cache helps in quickly identifying typed arrays via configuration and Symbol-based properties.
+
+4. **TypedArray Detection:**
+   - `tryTypedArrays` and `trySlices` are functions that check if a given object is a TypedArray using different methods depending on the environment. 
+   - They iterate over cached getters/methods to identify the correct type.
+
+5. **Function Exported:**
+   - The exported function `whichTypedArray` checks:
+     - If `value` is not an object, return `false`.
+     - Uses `Symbol.toStringTag` to determine the type if available.
+     - Otherwise, use built-in methods or slice checks when toStringTag is unavailable.
+
+This module is designed to be compatible across various JavaScript environments, including older ones that might lack certain features or have different native bindings. Here is a restructured and slightly clearer version of the code, retaining the same logic:
+
+```js
+'use strict';
+
+const forEach = require('for-each');
+const availableTypedArrays = require('available-typed-arrays');
+const callBind = require('call-bind');
+const callBound = require('call-bind/callBound');
+const gOPD = require('gopd');
+const hasToStringTag = require('has-tostringtag/shams')();
+
+const $toString = callBound('Object.prototype.toString');
+const globalScope = typeof globalThis === 'undefined' ? global : globalThis;
+const typedArrays = availableTypedArrays();
+const $slice = callBound('String.prototype.slice');
+const getPrototypeOf = Object.getPrototypeOf;
+
+const $indexOf = callBound('Array.prototype.indexOf', true) || function indexOf(array, value) {
+  for (let i = 0; i < array.length; i++) {
+    if (array[i] === value) {
+      return i;
+    }
+  }
+  return -1;
+};
+
+let cache = Object.create(null);
+
+if (hasToStringTag && gOPD && getPrototypeOf) {
+  forEach(typedArrays, (typedArray) => {
+    const arr = new globalScope[typedArray]();
+    if (Symbol.toStringTag in arr) {
+      let proto = getPrototypeOf(arr);
+      let descriptor = gOPD(proto, Symbol.toStringTag) || gOPD(getPrototypeOf(proto), Symbol.toStringTag);
+      if (descriptor) {
+        cache[`$${typedArray}`] = callBind(descriptor.get);
+      }
+    }
+  });
+} else {
+  forEach(typedArrays, (typedArray) => {
+    const arr = new globalScope[typedArray]();
+    const fn = arr.slice || arr.set;
+    if (fn) {
+      cache[`$${typedArray}`] = callBind(fn);
+    }
+  });
+}
+
+function tryTypedArrays(value) {
+  let found = false;
+  forEach(cache, (getter, typedArray) => {
+    if (!found) {
+      try {
+        if (`$${getter(value)}` === typedArray) {
+          found = $slice(typedArray, 1);
+        }
+      } catch (e) {}
+    }
+  });
+  return found;
+}
+
+function trySlices(value) {
+  let found = false;
+  forEach(cache, (getter, name) => {
+    if (!found) {
+      try {
+        getter(value);
+        found = $slice(name, 1);
+      } catch (e) {}
+    }
+  });
+  return found;
+}
+
+module.exports = function whichTypedArray(value) {
+  if (!value || typeof value !== 'object') return false;
+
+  if (!hasToStringTag) {
+    const tag = $slice($toString(value), 8, -1);
+    if ($indexOf(typedArrays, tag) > -1) return tag;
+    return tag !== 'Object' ? false : trySlices(value);
+  }
+
+  return gOPD ? tryTypedArrays(value) : null;
+};
+```

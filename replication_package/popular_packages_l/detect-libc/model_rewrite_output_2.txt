@@ -1,0 +1,81 @@
+The provided Node.js code is a module for detecting the type and version of the C standard library (libc) used by a Linux operating system. The script primarily checks whether the system uses GNU C Library (glibc) or MUSL. It does so by examining the content of the `ldd` command, which typically is an indicator of the system's libc variant. The key functionalities provided by this module are:
+- `family` and `familySync`: Asynchronously and synchronously determine if the libc is GLIBC or MUSL.
+- `version` and `versionSync`: Asynchronously and synchronously retrieve the version of the detected libc.
+- `isNonGlibcLinux` and `isNonGlibcLinuxSync`: Asynchronously and synchronously check if the libc is anything other than GLIBC, typically MUSL.
+
+Here is the rewritten code based on the explanation:
+
+```javascript
+// libc-detector.js
+
+const fs = require('fs');
+const { execSync } = require('child_process');
+
+const GLIBC = 'glibc';
+const MUSL = 'musl';
+
+function identifyLibc(content) {
+  if (content.includes('GNU')) return GLIBC;
+  if (content.includes('musl')) return MUSL;
+  return null;
+}
+
+function detectLibcUsingLdd() {
+  try {
+    const lddPath = execSync('which ldd').toString().trim();
+    const lddFileContent = fs.readFileSync(lddPath, 'utf8');
+    return identifyLibc(lddFileContent);
+  } catch {
+    return null;
+  }
+}
+
+function detectLibcVersion(libcType) {
+  try {
+    const commandOutput = execSync(`${libcType === GLIBC ? 'ldd' : 'ldd --version'}`).toString();
+    const version = commandOutput.match(/(\d+\.\d+(\.\d+)?)/);
+    return version ? version[0] : null;
+  } catch {
+    return null;
+  }
+}
+
+async function getLibcFamily() {
+  return detectLibcUsingLdd();
+}
+
+function getLibcFamilySync() {
+  return detectLibcUsingLdd();
+}
+
+async function getVersion() {
+  const libcType = await getLibcFamily();
+  return libcType ? detectLibcVersion(libcType) : null;
+}
+
+function getVersionSync() {
+  const libcType = getLibcFamilySync();
+  return libcType ? detectLibcVersion(libcType) : null;
+}
+
+async function checkNonGlibcLinux() {
+  const libcType = await getLibcFamily();
+  return libcType !== GLIBC;
+}
+
+function checkNonGlibcLinuxSync() {
+  const libcType = getLibcFamilySync();
+  return libcType !== GLIBC;
+}
+
+module.exports = {
+  GLIBC,
+  MUSL,
+  getLibcFamily,
+  getLibcFamilySync,
+  getVersion,
+  getVersionSync,
+  checkNonGlibcLinux,
+  checkNonGlibcLinuxSync
+};
+```

@@ -1,0 +1,114 @@
+The provided Node.js code is a module responsible for resolving the paths to modules. It consists of both asynchronous and synchronous functions to locate a module starting from a specified directory. The functionality can be broken down as follows:
+
+1. **resolve (Asynchronous Function):**
+   - Accepts a module id, an options object, and a callback function.
+   - Uses defaultOptions as a base for options, which includes settings like extensions, the starting directory, and methods to check if a path is a file or directory.
+   - Invokes `_resolve`, which attempts to find the module by generating possible file paths (candidates) and checking them asynchronously to see if they are valid files.
+   - Reports back to the callback when a valid module path is found or if no module is found.
+
+2. **resolveSync (Synchronous Function):**
+   - Similar to `resolve`, but it operates synchronously.
+   - Calls `_resolveSync`, which iterates over all candidate paths and checks them using a blocking call to see if they are valid files.
+   - Throws an error if no valid module path is found.
+
+3. **_resolve and _resolveSync Functions:**
+   - These are the core functions that handle the actual logic of checking the file system either asynchronously or synchronously to resolve the path to the given module id.
+
+4. **generateCandidates Function:**
+   - Responsible for generating all possible file paths by appending module directories and file extensions to the module id starting from the base directory.
+   - Continues generating paths upwards through the directory tree until reaching the file system root.
+
+5. **defaultOptions:**
+   - A set of fallback options providing the base directory, file extensions to check, module directories to search within, and utility functions to check if a path is a file or directory.
+
+Here is a rewritten version of the code with equivalent functionality:
+
+```javascript
+const fs = require('fs');
+const path = require('path');
+
+// Function to resolve module path asynchronously
+function resolve(id, options = {}, callback) {
+    const opts = { ...defaultOptions, ...options };
+    resolveModuleAsync(id, opts, callback);
+}
+
+// Core resolving logic for asynchronous implementation
+function resolveModuleAsync(id, opts, callback) {
+    const startDir = opts.basedir || path.dirname(module.parent.filename);
+    const potentialPaths = generateModulePaths(id, startDir, opts);
+
+    (function checkNextPath(paths) {
+        if (!paths.length) {
+            return callback(new Error(`MODULE_NOT_FOUND: Cannot find module '${id}'`));
+        }
+        const current = paths.shift();
+        opts.isFile(current, (err, exists) => {
+            if (err) return callback(err);
+            if (exists) return callback(null, current);
+            checkNextPath(paths);
+        });
+    })(potentialPaths);
+}
+
+// Function to resolve module path synchronously
+function resolveSync(id, options = {}) {
+    const opts = { ...defaultOptions, ...options };
+    return resolveModuleSync(id, opts);
+}
+
+// Core resolving logic for synchronous implementation
+function resolveModuleSync(id, opts) {
+    const startDir = opts.basedir || path.dirname(module.parent.filename);
+    const potentialPaths = generateModulePaths(id, startDir, opts);
+
+    for (const current of potentialPaths) {
+        if (opts.isFile(current)) {
+            return current;
+        }
+    }
+    throw new Error(`MODULE_NOT_FOUND: Cannot find module '${id}'`);
+}
+
+// Generate potential module paths by iterating over directories upwards
+function generateModulePaths(id, startDir, opts) {
+    const paths = [];
+    const exts = opts.extensions || ['.js'];
+
+    let currentDir = startDir;
+    while (currentDir !== path.parse(currentDir).root) {
+        for (const moduleDir of opts.moduleDirectory) {
+            for (const ext of exts) {
+                paths.push(path.join(currentDir, moduleDir, id + ext));
+            }
+        }
+        currentDir = path.dirname(currentDir);
+    }
+
+    return paths;
+}
+
+// Default options for resolving modules
+const defaultOptions = {
+    basedir: __dirname,
+    extensions: ['.js'],
+    includeCoreModules: true,
+    isFile: (file, cb) => {
+        fs.stat(file, (err, stats) => {
+            if (err) return cb(false);
+            cb(stats.isFile() || stats.isFIFO());
+        });
+    },
+    isDirectory: (dir, cb) => {
+        fs.stat(dir, (err, stats) => {
+            if (err) return cb(false);
+            cb(stats.isDirectory());
+        });
+    },
+    moduleDirectory: ['node_modules']
+};
+
+// Exporting the module resolution functions
+module.exports = resolve;
+module.exports.sync = resolveSync;
+```

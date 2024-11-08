@@ -1,0 +1,83 @@
+The `text-table` package is a tool for creating formatted text tables suitable for printing to terminal outputs like `stdout`. This package does not provide borders or fancy decorations; instead, it generates simple, clean text tables with customizable alignments.
+
+## Features Explained
+
+1. **Basic Table Creation**:
+   - You can pass an array of arrays to the `table` function. Each inner array represents a row, and each element within those represents a column's value in that row.
+   - Default column alignment is left-aligned.
+
+2. **Custom Alignments**:
+   - You can specify alignment for each column using the `align` option.
+   - Alignment options include:
+     - `'l'`: Left-aligned
+     - `'r'`: Right-aligned
+     - `'c'`: Center-aligned
+     - `'.'`: Decimal-aligned, which aligns numbers by their decimal points.
+
+3. **Custom Column Separator**:
+   - You can specify a custom separator between columns using `opts.hsep`. The default separator is two spaces (`'  '`).
+
+4. **String Length Calculation**:
+   - You can provide a custom `stringLength` function to specify how string lengths are computed, useful for strings with special encoding or ANSI color codes.
+
+5. **Installation**:
+   - Installable via npm with `npm install text-table`.
+
+6. **Use Case with ANSI Colors**:
+   - To handle string lengths accurately for strings with ANSI color codes, a custom string length method should be used.
+
+Here is the implementation of the `text-table` package:
+
+```markdown
+// text-table/index.js
+
+function textTable(rows, opts = {}) {
+    const hsep = opts.hsep || '  ';
+    const align = opts.align || [];
+    const stringLength = opts.stringLength || defaultStringLength;
+    
+    // Determine the maximum width of each column
+    const colWidths = rows[0].map((_, colIdx) => {
+        return Math.max(...rows.map(row => stringLength(row[colIdx].toString())));
+    });
+
+    // Format the table
+    return rows.map(row => {
+        return row.map((cell, colIdx) => {
+            const cellString = cell.toString();
+            const width = colWidths[colIdx];
+            
+            return formatCell(cellString, width, align[colIdx], stringLength);
+        }).join(hsep);
+    }).join('\n');
+}
+
+function defaultStringLength(str) {
+    return str.length;
+}
+
+function formatCell(str, width, alignment, stringLength) {
+    const length = stringLength(str);
+    const padding = width - length;
+    if (alignment === 'r') {
+        return ' '.repeat(padding) + str;
+    } else if (alignment === 'c') {
+        const halfPadding = Math.floor(padding / 2);
+        return ' '.repeat(halfPadding) + str + ' '.repeat(padding - halfPadding);
+    } else if (alignment === '.') {
+        const [intPart, fracPart = ''] = str.split('.');
+        const intLength = stringLength(intPart);
+        return ' '.repeat(width - intLength - fracPart.length) + str;
+    }
+    // Defaults to left align
+    return str + ' '.repeat(padding);
+}
+
+module.exports = textTable;
+
+// To use this package, save it as index.js and then:
+// var table = require('./text-table');
+// Example call: var t = table(data, options);
+```
+
+This code defines a function `textTable` for creating text tables, taking rows of data and various optional formatting options like horizontal separator and alignment types. It includes functions to determine string length and formatting each cell according to alignment requirements.

@@ -1,0 +1,76 @@
+The given Node.js code is a module that provides utility functions to perform terminal cursor movements, screen scrolling, and screen erasing. It uses ANSI escape codes to achieve these functionalities. Here’s a breakdown of the main components:
+
+1. **Escape Sequences Definitions**: `ESC` represents the escape character, and `CSI` is created by appending the escape character to `[`, which is the Control Sequence Introducer used in ANSI codes. The `beep` character is defined as the bell character.
+
+2. **`cursor` Object**: Contains methods to:
+   - Move the cursor to a specific position (`to`) or relative position (`move`).
+   - Move the cursor up, down, forward, or backward by a specified count.
+   - Control cursor visibility (`hide`, `show`).
+   - Save and restore cursor positions (`save`, `restore`).
+   - Move to the left-most position of the current line (`left`).
+   - Move the cursor to the next or previous lines.
+
+3. **`scroll` Object**: Provides methods to scroll the terminal screen up or down by a specified number of lines.
+
+4. **`erase` Object**: Contains methods to clear:
+   - The entire screen (`screen`).
+   - Parts of the screen or the lines above or below the cursor.
+   - Entire lines or parts of lines from the start or up to the cursor’s position.
+   - Multiple lines.
+
+5. **Export**: The module exports the `cursor`, `scroll`, `erase` objects, along with the `beep` function, enabling their use in other files.
+
+Here is a rewritten version of the code:
+
+```javascript
+'use strict';
+
+const ESC = '\x1B';
+const CSI = `${ESC}[`;
+const beep = '\u0007';
+
+const cursor = {
+  to(x, y) {
+    return y === undefined ? `${CSI}${x + 1}G` : `${CSI}${y + 1};${x + 1}H`;
+  },
+  move(x, y) {
+    const horizontal = x === 0 ? '' : `${CSI}${Math.abs(x)}${x > 0 ? 'C' : 'D'}`;
+    const vertical = y === 0 ? '' : `${CSI}${Math.abs(y)}${y > 0 ? 'B' : 'A'}`;
+    return horizontal + vertical;
+  },
+  up: (count = 1) => `${CSI}${count}A`,
+  down: (count = 1) => `${CSI}${count}B`,
+  forward: (count = 1) => `${CSI}${count}C`,
+  backward: (count = 1) => `${CSI}${count}D`,
+  nextLine: (count = 1) => `${CSI}E`.repeat(count),
+  prevLine: (count = 1) => `${CSI}F`.repeat(count),
+  left: `${CSI}G`,
+  hide: `${CSI}?25l`,
+  show: `${CSI}?25h`,
+  save: `${ESC}7`,
+  restore: `${ESC}8`
+};
+
+const scroll = {
+  up: (count = 1) => `${CSI}S`.repeat(count),
+  down: (count = 1) => `${CSI}T`.repeat(count)
+};
+
+const erase = {
+  screen: `${CSI}2J`,
+  up: (count = 1) => `${CSI}1J`.repeat(count),
+  down: (count = 1) => `${CSI}J`.repeat(count),
+  line: `${CSI}2K`,
+  lineEnd: `${CSI}K`,
+  lineStart: `${CSI}1K`,
+  lines(count) {
+    let clear = '';
+    for (let i = 0; i < count; i++) {
+      clear += this.line + (i < count - 1 ? cursor.up() : '');
+    }
+    return count ? clear + cursor.left : clear;
+  }
+};
+
+module.exports = { cursor, scroll, erase, beep };
+```

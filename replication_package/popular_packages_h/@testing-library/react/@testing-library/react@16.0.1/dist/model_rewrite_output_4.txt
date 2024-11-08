@@ -1,0 +1,51 @@
+The provided Node.js code is a module that automates the cleanup of test environments in testing frameworks that support `afterEach` or `teardown` functions. It does this by default unless the `RTL_SKIP_AUTO_CLEANUP` environment variable is set to 'true'. The module:
+
+1. Imports functionalities from `./act-compat` and `./pure` modules.
+2. Re-exports all exports from the `./pure` module, except for the default and `__esModule` exports, ensuring there are no conflicts if the same keys exist in the current module exports.
+3. Sets up automatic cleanup after each test if it's not disabled by the `RTL_SKIP_AUTO_CLEANUP` environment variable. It uses either `afterEach` or `teardown` functions provided by test runners to call the `cleanup` method from the `./pure` module.
+4. Checks if the test environment has `beforeAll` and `afterAll` hooks to set up an act environment for tests, ensuring compatibility with React environments < 18 with react-act handling.
+
+Here is the rewritten code:
+
+```javascript
+"use strict";
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+
+const { getIsReactActEnvironment, setReactActEnvironment } = require("./actCompat");
+const { cleanup, ...pureExports } = require("./pure");
+
+Object.keys(pureExports).forEach((key) => {
+  if (!(key in exports)) {
+    Object.defineProperty(exports, key, {
+      enumerable: true,
+      get: () => pureExports[key],
+    });
+  }
+});
+
+if (typeof process !== 'undefined' && !process.env?.RTL_SKIP_AUTO_CLEANUP) {
+  const handleCleanup = () => cleanup();
+
+  if (typeof afterEach === 'function') {
+    afterEach(handleCleanup);
+  } else if (typeof teardown === 'function') {
+    teardown(handleCleanup);
+  }
+
+  if (typeof beforeAll === 'function' && typeof afterAll === 'function') {
+    let previousIsReactActEnvironment;
+    
+    beforeAll(() => {
+      previousIsReactActEnvironment = getIsReactActEnvironment();
+      setReactActEnvironment(true);
+    });
+
+    afterAll(() => {
+      setReactActEnvironment(previousIsReactActEnvironment);
+    });
+  }
+}
+```

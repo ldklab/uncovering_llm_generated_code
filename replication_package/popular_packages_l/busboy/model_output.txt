@@ -1,0 +1,92 @@
+The described Node.js package provides a module named `busboy` for parsing incoming HTML form data, especially handling `multipart/form-data` which is commonly used for file uploads. Here’s a summary of its functionality:
+
+1. **Installation and Requirements**: 
+   - Requires Node.js v10.16.0 or newer.
+   - Installable via npm using the command `npm install busboy`.
+
+2. **Basic Usage**:
+   - It creates an HTTP server that listens for POST requests.
+   - When a POST request is detected, the `busboy` module parses incoming form-data.
+   - For each file in the data, it emits a `file` event from which you can read the file stream and related information like filename, encoding, and mimeType.
+   - For each form field, it emits a `field` event that provides the field name and value.
+   - Once parsing is complete, a `close` event signals that form parsing has finished.
+
+3. **Advanced Usage**:
+   - Save uploaded files to disk by piping the file stream from the `file` event into a writable file stream.
+   - `randomFillSync` from the `crypto` module helps generate unique filenames for storage to avoid conflicts.
+
+4. **API Details**:
+   - `busboy` exports a single function creating a writable stream for form parsing.
+   - Various configuration options include `headers` for HTTP headers, `highWaterMark` for stream buffering, `limits` for field and file constraints, etc.
+   - Emits events such as `file`, `field`, and limits-related events to handle different parts of the form process. 
+
+Here is the implementation code corresponding to the functionality described:
+
+```javascript
+const http = require('http');
+const { randomFillSync } = require('crypto');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const busboy = require('busboy');
+
+const server = http.createServer((req, res) => {
+  if (req.method === 'POST') {
+    const bb = busboy({ headers: req.headers });
+
+    bb.on('file', (name, file, info) => {
+      const { filename, encoding, mimeType } = info;
+      console.log(`File [${name}]: filename: %j, encoding: %j, mimeType: %j`, filename, encoding, mimeType);
+      
+      const saveTo = path.join(os.tmpdir(), `busboy-upload-${randomFileName()}`);
+      file.pipe(fs.createWriteStream(saveTo));
+
+      file.on('data', data => {
+        console.log(`File [${name}] got ${data.length} bytes`);
+      }).on('close', () => {
+        console.log(`File [${name}] done`);
+      });
+    });
+
+    bb.on('field', (name, val, info) => {
+      console.log(`Field [${name}]: value: %j`, val);
+    });
+
+    bb.on('close', () => {
+      console.log('Done parsing form!');
+      res.writeHead(303, { Connection: 'close', Location: '/' });
+      res.end();
+    });
+
+    req.pipe(bb);
+  } else if (req.method === 'GET') {
+    res.writeHead(200, { Connection: 'close' });
+    res.end(`
+      <html>
+        <head></head>
+        <body>
+          <form method="POST" enctype="multipart/form-data">
+            <input type="file" name="filefield"><br />
+            <input type="text" name="textfield"><br />
+            <input type="submit">
+          </form>
+        </body>
+      </html>
+    `);
+  } else {
+    res.writeHead(404);
+    res.end();
+  }
+});
+
+server.listen(8000, () => {
+  console.log('Listening for requests on port 8000');
+});
+
+function randomFileName() {
+  const buf = Buffer.alloc(16);
+  return randomFillSync(buf).toString('hex');
+}
+```
+
+This script creates an HTTP server to demonstrate form parsing using the `busboy` module which can handle both file and non-file fields within multipart data. It saves uploaded files to the operating system’s temporary directory with a uniquely generated filename.

@@ -1,0 +1,99 @@
+The provided Node.js code is a module that makes use of CommonJS export conventions. It encapsulates a middleware function setup for modifying or adding a `Content-Length` header to HTTP requests. The key functionality can be detailed as follows:
+
+1. **Utilities and Helpers**:
+   - It defines utility functions like `__defProp`, `__getOwnPropDesc`, `__getOwnPropNames`, and `__hasOwnProp` for working with object properties.
+   - `__name`, `__export`, `__copyProps`, and `__toCommonJS` are helper functions that assist with property management and setting function names.
+
+2. **Middleware Functionality**:
+   - The `contentLengthMiddleware` checks HTTP requests and calculates the content-length of the request body using a provided checker function (`bodyLengthChecker`) if the `Content-Length` header is not already set.
+   - It attaches this calculated length to the request's headers.
+
+3. **Middleware Options and Plugin**:
+   - `contentLengthMiddlewareOptions` defines configuration options for how the middleware should behave (e.g., in which phase of the request processing it should be applied).
+   - `getContentLengthPlugin` provides an interface to apply this middleware to a client's stack using the middleware configuration options.
+
+4. **Exports**:
+   - The module exports the `contentLengthMiddleware`, `contentLengthMiddlewareOptions`, and `getContentLengthPlugin` using a function to transform the module to support CommonJS module exports, enabling it to be imported in other JavaScript files.
+
+Here is a possible rewrite of the code:
+
+```javascript
+const { HttpRequest } = require("@smithy/protocol-http");
+
+const CONTENT_LENGTH_HEADER = "content-length";
+
+function defineProperty(target, key, descriptor) {
+  Object.defineProperty(target, key, descriptor);
+}
+
+function exportAll(target, exports) {
+  for (const key in exports) {
+    if (Object.prototype.hasOwnProperty.call(exports, key)) {
+      defineProperty(target, key, { get: exports[key], enumerable: true });
+    }
+  }
+}
+
+function copyProperties(target, source, exclude, descriptor) {
+  if (source && (typeof source === "object" || typeof source === "function")) {
+    Object.getOwnPropertyNames(source).forEach((key) => {
+      if (!target.hasOwnProperty(key) && key !== exclude) {
+        defineProperty(target, key, {
+          get: () => source[key],
+          enumerable: !((descriptor = Object.getOwnPropertyDescriptor(source, key)) && !descriptor.enumerable),
+        });
+      }
+    });
+  }
+  return target;
+}
+
+function toCommonJSModule(mod) {
+  return copyProperties({}, mod, '__esModule', { value: true });
+}
+
+function contentLengthMiddleware(bodyLengthChecker) {
+  return (next) => async (args) => {
+    const { request } = args;
+    if (HttpRequest.isInstance(request)) {
+      const { body, headers } = request;
+      if (body && !Object.keys(headers).some((header) => header.toLowerCase() === CONTENT_LENGTH_HEADER)) {
+        try {
+          const length = bodyLengthChecker(body);
+          request.headers = {
+            ...headers,
+            [CONTENT_LENGTH_HEADER]: String(length),
+          };
+        } catch (error) {
+          // Handle error if necessary
+        }
+      }
+    }
+    return next({ ...args, request });
+  };
+}
+defineProperty(contentLengthMiddleware, "name", { value: "contentLengthMiddleware", configurable: true });
+
+const contentLengthMiddlewareOptions = {
+  step: "build",
+  tags: ["SET_CONTENT_LENGTH", "CONTENT_LENGTH"],
+  name: "contentLengthMiddleware",
+  override: true,
+};
+
+const getContentLengthPlugin = (options) => ({
+  applyToStack: (clientStack) => {
+    clientStack.add(contentLengthMiddleware(options.bodyLengthChecker), contentLengthMiddlewareOptions);
+  },
+});
+defineProperty(getContentLengthPlugin, "name", { value: "getContentLengthPlugin", configurable: true });
+
+const exports = {};
+exportAll(exports, {
+  contentLengthMiddleware: () => contentLengthMiddleware,
+  contentLengthMiddlewareOptions: () => contentLengthMiddlewareOptions,
+  getContentLengthPlugin: () => getContentLengthPlugin,
+});
+
+module.exports = toCommonJSModule(exports);
+```

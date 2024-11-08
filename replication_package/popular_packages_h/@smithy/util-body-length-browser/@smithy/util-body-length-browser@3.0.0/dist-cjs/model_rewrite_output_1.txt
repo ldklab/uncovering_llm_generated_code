@@ -1,0 +1,84 @@
+The provided Node.js code appears to be a module that exports a function named `calculateBodyLength`. This function is used to compute the length of a given body (string or object with `byteLength` or `size` property).
+
+Here's a detailed breakdown of the functionality:
+
+1. **Helpers and Utilities:**
+   - The code defines several utility functions for defining properties, copying properties, and exporting functions:
+     - `__defProp`: A shorthand for `Object.defineProperty`.
+     - `__getOwnPropDesc`, `__getOwnPropNames`, `__hasOwnProp`: Utility functions for working with object properties.
+     - `__name`: Assigns a name to a function by modifying its `name` property.
+     - `__export`: Iterates over an object and defines each property on a target object with `Object.defineProperty`.
+     - `__copyProps`: Copies properties from one object to another excluding specified properties.
+     - `__toCommonJS`: Converts a module to CommonJS format.
+
+2. **Module Exports:**
+   - The `src_exports` object is created to store exports from the module.
+   - The `__export` function is used to add the `calculateBodyLength` function to `src_exports`.
+   - The `module.exports` is set using `__toCommonJS` to make the module compatible with CommonJS modules.
+
+3. **Function `calculateBodyLength`:**
+   - Determines the byte length of a body:
+     - If the body is a string, it calculates the byte length using a `TextEncoder`, if available.
+     - If `TextEncoder` isn't available, it manually computes the byte length, accounting for multibyte characters.
+     - If the body is an object with a `byteLength` or `size` property, it returns the respective value.
+     - Throws an error if the body does not match these conditions.
+
+Here is a possible rewrite of the code based on this explanation:
+
+```javascript
+const { defineProperty, getOwnPropertyDescriptor, getOwnPropertyNames } = Object;
+const hasOwnProperty = Object.prototype.hasOwnProperty;
+
+const assignFunctionName = (fn, name) => defineProperty(fn, 'name', { value: name, configurable: true });
+
+const exportFunctions = (target, functions) => {
+  for (const name in functions) {
+    defineProperty(target, name, { get: functions[name], enumerable: true });
+  }
+};
+
+const copyProperties = (to, from, except) => {
+  if (from && (typeof from === 'object' || typeof from === 'function')) {
+    for (const key of getOwnPropertyNames(from)) {
+      if (!hasOwnProperty.call(to, key) && key !== except) {
+        const desc = getOwnPropertyDescriptor(from, key);
+        defineProperty(to, key, { get: () => from[key], enumerable: !desc || desc.enumerable });
+      }
+    }
+  }
+  return to;
+};
+
+const convertToCommonJS = (mod) => copyProperties(defineProperty({}, '__esModule', { value: true }), mod);
+
+// Module exporting
+const srcExports = {};
+exportFunctions(srcExports, {
+  calculateBodyLength: () => calculateBodyLength
+});
+module.exports = convertToCommonJS(srcExports);
+
+// Calculate body length utility
+const textEncoder = typeof TextEncoder === 'function' ? new TextEncoder() : null;
+
+const calculateBodyLength = assignFunctionName((body) => {
+  if (typeof body === 'string') {
+    if (textEncoder) {
+      return textEncoder.encode(body).byteLength;
+    }
+    let length = body.length;
+    for (let i = length - 1; i >= 0; i--) {
+      const code = body.charCodeAt(i);
+      if (code > 127 && code <= 2047) length++;
+      else if (code > 2047 && code <= 65535) length += 2;
+      if (code >= 56320 && code <= 57343) i--; // Skip surrogate pairs
+    }
+    return length;
+  } else if (typeof body.byteLength === 'number') {
+    return body.byteLength;
+  } else if (typeof body.size === 'number') {
+    return body.size;
+  }
+  throw new Error(`Body Length computation failed for ${body}`);
+}, 'calculateBodyLength');
+```

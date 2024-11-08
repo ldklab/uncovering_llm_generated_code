@@ -1,0 +1,79 @@
+The Node.js code defines a module named 'escope', which is used for analyzing lexical scopes in ECMAScript (JavaScript) programs. The module provides a method `analyze` that takes an Abstract Syntax Tree (AST) generated from source code and returns a `ScopeManager` object representing the analyzed scopes. It uses several internal components such as `ScopeManager`, `Referencer`, `Reference`, `Variable`, and `Scope` to perform the analysis. The functionality of `escope` involves finding lexical scopes, collecting variables, and linking identifier references to their corresponding variables.
+
+Key features of the code:
+- It defines a `defaultOptions` function to set default options for the analysis.
+- The `updateDeeply` function is provided to deeply merge the provided options with the default options.
+- The `analyze` function implements the main functionality by creating instances of `ScopeManager` and `Referencer` and invoking a visit on the provided AST.
+- It uses the `assert` module to check the consistency of the scope state during the analysis.
+- The module exports objects and functions such as `version`, `Reference`, `Variable`, `Scope`, `ScopeManager`, and `analyze` to be used externally.
+
+Below is the rewritten version of the provided Node.js code:
+
+```javascript
+"use strict";
+
+const assert = require("assert");
+const ScopeManager = require("./scope-manager");
+const Referencer = require("./referencer");
+const Reference = require("./reference");
+const Variable = require("./variable");
+const { Scope } = require("./scope");
+const { version } = require("../package.json");
+
+function defaultOptions() {
+    return {
+        optimistic: false,
+        directive: false,
+        nodejsScope: false,
+        impliedStrict: false,
+        sourceType: "script",
+        ecmaVersion: 5,
+        childVisitorKeys: null,
+        fallback: "iteration"
+    };
+}
+
+function updateDeeply(target, override) {
+    function isHashObject(value) {
+        return typeof value === "object" && value instanceof Object && !Array.isArray(value) && !(value instanceof RegExp);
+    }
+
+    for (const key in override) {
+        if (Object.prototype.hasOwnProperty.call(override, key)) {
+            const val = override[key];
+
+            if (isHashObject(val)) {
+                if (isHashObject(target[key])) {
+                    updateDeeply(target[key], val);
+                } else {
+                    target[key] = updateDeeply({}, val);
+                }
+            } else {
+                target[key] = val;
+            }
+        }
+    }
+    return target;
+}
+
+function analyze(tree, providedOptions) {
+    const options = updateDeeply(defaultOptions(), providedOptions);
+    const scopeManager = new ScopeManager(options);
+    const referencer = new Referencer(options, scopeManager);
+
+    referencer.visit(tree);
+
+    assert(scopeManager.__currentScope === null, "currentScope should be null.");
+
+    return scopeManager;
+}
+
+module.exports = {
+    version,
+    Reference,
+    Variable,
+    Scope,
+    ScopeManager,
+    analyze
+};
+```

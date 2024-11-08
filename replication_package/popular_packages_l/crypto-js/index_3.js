@@ -1,0 +1,8 @@
+json
+// package.json
+{
+  "name": "crypto-native-wrapper",
+  "version": "1.0.0",
+  "main": "index.js",
+  "type": "module"
+}

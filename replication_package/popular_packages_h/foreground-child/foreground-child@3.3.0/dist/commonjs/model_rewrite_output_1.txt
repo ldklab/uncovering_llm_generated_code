@@ -1,0 +1,123 @@
+The provided Node.js code defines a module that assists in running child processes in the foreground, handling various cross-platform concerns, signal forwarding, and cleanup activities. Here's a breakdown of its key functionalities:
+
+1. **Module Imports**: The script imports several modules needed for handling child processes (`child_process`), process spawning with better cross-platform support (`cross-spawn`), signal forwarding on exit (`signal-exit`), and custom modules for signal proxying and watchdog functionality.
+
+2. **Cross-Platform Spawning**: It decides whether to use Node.js's native `spawn` method or `cross-spawn` based on whether the platform is Windows, ensuring better compatibility.
+
+3. **normalizeFgArgs Function**: This function normalizes and processes the input arguments for the `foregroundChild` function. It handles optional arguments using default values, ensuring correct parameter assignment and allows for certain parameters to be omitted or functions to be passed as arguments.
+
+4. **foregroundChild Function**: The main function for running a child process in the foreground.
+   - It starts a child process using the program and arguments processed by `normalizeFgArgs`.
+   - Sets up standard input/output and inter-process communication channels if available.
+   - Handles child process termination properly and ensures the parent exits with correct signals or exit codes.
+   - Employs a cleanup function to perform necessary actions after the child process ends, allowing returning a specific exit code or signal.
+   - Utilizes signal-forwarding and watchdog functionality to maintain process stability and accurately propagate signals between the parent and child.
+
+5. **Message Passing Support**: If the process supports sending messages (IPC), it forwards messages between the parent and child processes.
+
+6. **Utility Functions**: The `isPromise` function checks if a given object is a promise, which aids in handling asynchronous cleanup logic within `foregroundChild`.
+
+Here's a possible rewrite of the code:
+
+```javascript
+"use strict";
+const { spawn } = require("child_process");
+const crossSpawn = require("cross-spawn");
+const { onExit } = require("signal-exit");
+const { proxySignals } = require("./proxy-signals.js");
+const { watchdog } = require("./watchdog.js");
+
+const childSpawn = process.platform === 'win32' ? crossSpawn : spawn;
+
+/**
+ * Normalizes the arguments passed to `foregroundChild`.
+ * @internal
+ */
+const normalizeFgArgs = (fgArgs) => {
+    let [program, args = [], spawnOpts = {}, cleanup = () => {}] = fgArgs;
+    if (typeof args === 'function') {
+        cleanup = args;
+        args = [];
+        spawnOpts = {};
+    } else if (typeof args === 'object' && !Array.isArray(args)) {
+        if (typeof spawnOpts === 'function') {
+            cleanup = spawnOpts;
+        }
+        spawnOpts = args;
+        args = [];
+    } else if (typeof spawnOpts === 'function') {
+        cleanup = spawnOpts;
+        spawnOpts = {};
+    }
+    
+    if (Array.isArray(program)) {
+        [program, ...args] = program;
+    }
+    
+    return [program, args, { ...spawnOpts }, cleanup];
+};
+
+function foregroundChild(...fgArgs) {
+    const [program, args, spawnOpts, cleanup] = normalizeFgArgs(fgArgs);
+    spawnOpts.stdio = [0, 1, 2];
+    if (process.send) {
+        spawnOpts.stdio.push('ipc');
+    }
+
+    const child = childSpawn(program, args, spawnOpts);
+    const handleExit = () => {
+        try {
+            child.kill('SIGHUP');
+        } catch (_) {
+            child.kill('SIGTERM');
+        }
+    };
+
+    const removeExitHandler = onExit(handleExit);
+    proxySignals(child);
+    const dogMonitor = watchdog(child);
+    let processFinished = false;
+    child.on('close', async (code, signal) => {
+        if (processFinished) return;
+        processFinished = true;
+        
+        const cleanupResult = cleanup(code, signal, { watchdogPid: dogMonitor.pid });
+        const resolvedCleanup = isPromise(cleanupResult) ? await cleanupResult : cleanupResult;
+        
+        removeExitHandler();
+        if (resolvedCleanup === false) return;
+        
+        if (typeof resolvedCleanup === 'string') {
+            signal = resolvedCleanup;
+            code = null;
+        } else if (typeof resolvedCleanup === 'number') {
+            code = resolvedCleanup;
+            signal = null;
+        }
+        
+        if (signal) {
+            setTimeout(() => {}, 2000); // Ensure process is alive to handle signal
+            try {
+                process.kill(process.pid, signal);
+            } catch (_) {
+                process.kill(process.pid, 'SIGTERM');
+            }
+        } else {
+            process.exit(code || 0);
+        }
+    });
+
+    if (process.send) {
+        process.removeAllListeners('message');
+        child.on('message', (msg, handle) => process.send && process.send(msg, handle));
+        process.on('message', (msg, handle) => child.send(msg, handle));
+    }
+
+    return child;
+}
+
+const isPromise = (o) => !!o && typeof o.then === 'function';
+
+exports.normalizeFgArgs = normalizeFgArgs;
+exports.foregroundChild = foregroundChild;
+```

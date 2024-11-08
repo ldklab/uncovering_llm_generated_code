@@ -1,0 +1,84 @@
+The JSON5 library provides an extended version of JSON (JavaScript Object Notation) that incorporates features from ECMAScript 5.1, making it more user-friendly for hand-written configuration files. Unlike regular JSON, JSON5 supports:
+
+1. **Objects**: 
+   - Object keys can be ECMAScript 5.1 IdentifierNames.
+   - Trailing commas are allowed in objects.
+   
+2. **Arrays**:
+   - Trailing commas are allowed.
+   
+3. **Strings**:
+   - Can be enclosed in single quotes.
+   - May span multiple lines using backslashes to escape line breaks.
+   - Support character escapes.
+
+4. **Numbers**:
+   - Can be hexadecimal.
+   - Support leading or trailing decimal points.
+   - Can represent IEEE 754 positive/negative infinity, and NaN.
+   - May start with a plus sign.
+
+5. **Comments**:
+   - Both single-line (`//`) and multi-line (`/* ... */`) comments are supported.
+
+6. **White Space**:
+   - Additional white space characters are accepted.
+
+The library provides two main functionalities: `JSON5.parse()` to parse JSON5 formatted strings into JavaScript objects and `JSON5.stringify()` to convert JavaScript objects into JSON5 strings. Additionally, JSON5 files can be directly required as modules in a Node.js environment after a simple setup.
+
+Below is a Node.js package implementation for these JSON5 functionalities:
+
+```js
+// json5.js
+
+class JSON5 {
+    static parse(text, reviver) {
+        let commentsAndWhiteSpaceRemoved = text.replace(/\/\/.*|\/\*[\s\S]*?\*\/|[\n\r\t]/g, '');
+        let json = commentsAndWhiteSpaceRemoved
+                      .replace(/(['"])?([a-zA-Z0-9_]+)(['"])?:/g, '"$2":')
+                      .replace(/(['"])?(Infinity|NaN)(['"])?/g, (_, quote, value) => {
+                          if (quote) return quote + value + quote; 
+                          return (value === "Infinity") ? "1.0/0" : "0/0";
+                      });
+        return reviver ? JSON.parse(json, reviver) : JSON.parse(json);
+    }
+
+    static stringify(value, replacer, space) {
+        let json = JSON.stringify(value, replacer, space);
+        
+        if (space !== undefined) {
+            return json.replace(/\n/g, '\n') // Retain multi-line for readability.
+                       .replace(/"([^"]+)":/g, '$1:') // Remove quotes around keys.
+                       .replace(/,\n(\s*[\]}])/g, '\n$1'); // Remove trailing commas.
+        }
+        
+        return json;
+    }
+}
+
+// Expose as a module
+module.exports = JSON5;
+
+// Node.js `require()` registration (optionally allow require of .json5 files)
+require.extensions['.json5'] = function(module, filename) {
+    const fs = require('fs');
+    const content = fs.readFileSync(filename, 'utf8');
+    module.exports = JSON5.parse(content);
+};
+
+// CLI Tool Execution
+if (require.main === module) {
+    const fs = require('fs');
+    const file = process.argv[2];
+    const space = process.argv.includes('--space') ? '  ' : undefined;
+    if (!file) {
+        console.error("Please provide a file to process.");
+        process.exit(1);
+    }
+    const text = fs.readFileSync(file, 'utf8');
+    const parsed = JSON5.parse(text);
+    console.log(JSON5.stringify(parsed, null, space));
+}
+```
+
+This code describes a basic implementation of JSON5's functionality, including both parsing and stringification methods, with provision for integrating JSON5 file support in Node.js require statements. It also provides a CLI tool to parse and stringify JSON5 files, defaulting to JSON-like formatting with optional indentation.

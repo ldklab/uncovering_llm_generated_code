@@ -1,0 +1,94 @@
+The provided Node.js code is a utility function designed to escape strings for safe use in CSS. It converts characters to their escape sequences, ensuring they comply with CSS formatting rules, which is especially helpful when dealing with special characters or constructing dynamic CSS code.
+
+### Functionality
+
+1. **Default Options and Configuration**:
+   - The `defaultOptions` object defines the default behavior for escaping characters:
+     - `isIdentifier`: Determines if the input is a CSS identifier.
+     - `quotes`: Chooses between single or double quotes for wrapping.
+     - `wrap`: Specifies if the entire string should be wrapped in quotes.
+     - `escapeEverything`: If true, all characters are escaped.
+
+2. **Character Conversion**:
+   - The `toHex` function converts a character to a hexadecimal representation.
+   - The `escapeCharacter` function uses a set of conditions to determine how each character should be escaped based on the provided options:
+     - Unicode and special ASCII characters are escaped using their hex codes.
+     - Common escape sequences are directly converted (e.g., newlines to `\A`).
+
+3. **Main Function (`cssesc`)**:
+   - Accepts a string input and optional user-defined options for customizing the escape process.
+   - Escapes all characters in the string using `escapeCharacter`.
+   - Optionally wraps the string in quotes.
+   - Adjusts the string to be a valid CSS identifier if specified by handling leading numeric characters.
+
+4. **Exports and CLI**:
+   - The function is assigned default options and a version number.
+   - Includes a simple command-line interface to escape strings provided as input arguments.
+
+### Rewritten Code
+
+```javascript
+const defaultOptions = {
+  isIdentifier: false,
+  quotes: 'single',
+  wrap: false,
+  escapeEverything: false,
+};
+
+function toHex(character) {
+  return character.charCodeAt(0).toString(16).toUpperCase();
+}
+
+function escapeCharacter(character, options) {
+  if (options.escapeEverything) {
+    const hex = toHex(character);
+    return `\\${hex.length === 1 ? '0' : ''}${hex} `;
+  }
+  if (character.charCodeAt(0) > 0x7F) {
+    return `\\${toHex(character)} `;
+  }
+  switch (character) {
+    case '\0': return '\\0 ';
+    case '\b': case '\v': case '\t': case '\r': case '\f':
+      return `\\${character.charCodeAt(0).toString(16)} `;
+    case '\n': return '\\A ';
+    case '\u0000': return '\\0 ';
+    case '\u000C': return '\\c ';
+    case '"': return options.quotes === 'double' ? `\\"` : '"';
+    case '\'': return options.quotes === 'single' ? `\\'` : '\'';
+    case ' ': return '\\ ';
+    default:
+      if (!character.match(/[ -~]/)) {
+        return `\\${toHex(character).padStart(2, '0')} `;
+      }
+      return character;
+  }
+}
+
+function cssesc(input, options = {}) {
+  options = { ...defaultOptions, ...options };
+
+  let escaped = Array.from(input, character => escapeCharacter(character, options)).join('');
+
+  if (options.wrap) {
+    const quote = options.quotes === 'double' ? '"' : '\'';
+    escaped = `${quote}${escaped}${quote}`;
+  }
+
+  if (options.isIdentifier && /^[0-9]/.test(escaped)) {
+    escaped = `\\3${escaped.charAt(0)}${escaped.slice(1)}`;
+  }
+
+  return escaped;
+}
+
+cssesc.options = { ...defaultOptions };
+cssesc.version = '1.0.0';
+
+if (require.main === module) {
+  const input = process.argv.slice(2).join(' ');
+  console.log(cssesc(input, { wrap: true }));
+}
+
+module.exports = cssesc;
+```

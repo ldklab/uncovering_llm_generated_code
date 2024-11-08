@@ -1,0 +1,64 @@
+The given Node.js code is designed to export a function that determines whether a given object is an instance of a `Map`. Here’s how it works:
+
+1. The code checks if the `Map` and `Set` constructors are available in the environment. If they are, it assigns them to `$Map` and `$Set`, respectively.
+
+2. It declares a variable `exported` to store the function to be exported.
+
+3. If `$Map` is not available (i.e., the `Map` constructor is not defined in the environment), it sets `exported` to a function that always returns `false`. This is because if `Map` does not exist, no object can be a `Map`.
+
+4. If the environment has `Map` but its prototype doesn't have a `has` method, it again sets `exported` to a function that always returns `false`. This scenario is unlikely but accounted for to ensure robustness.
+
+5. Finally, if the above conditions are not met, it exports a function that attempts to use `Map.prototype.has` on the object to determine if it's a `Map`. It additionally checks against `Set.prototype.has` to ensure the object isn't a `Set` and confirms that the object is an instance of the `Map` constructor.
+
+Here's a possible rewrite of the code:
+
+```javascript
+'use strict';
+
+/** @const */
+const $Map = typeof Map === 'function' ? Map : null;
+const $Set = typeof Set === 'function' ? Set : null;
+
+// Exported function placeholder
+let exported;
+
+// If Map is not available, the isMap function always returns false
+if (!$Map) {
+	exported = function isMap(x) {
+		return false;
+	};
+} else {
+	const $mapHas = Map.prototype.has;
+	const $setHas = $Set ? Set.prototype.has : null;
+
+	// If the environment has Map but not the 'has' method
+	if (!$mapHas) {
+		exported = function isMap(x) {
+			return false;
+		};
+	} else {
+		// Define the actual isMap function
+		exported = function isMap(x) {
+			if (!x || typeof x !== 'object') {
+				return false;
+			}
+			try {
+				$mapHas.call(x);
+				if ($setHas) {
+					try {
+						$setHas.call(x);
+					} catch (e) {
+						return true;
+					}
+				}
+				return x instanceof $Map; // Ensures x is a Map, especially in environments with older polyfills
+			} catch (e) {
+				return false;
+			}
+		};
+	}
+}
+
+// Export the isMap function
+module.exports = exported;
+```

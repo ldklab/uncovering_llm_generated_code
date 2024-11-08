@@ -1,0 +1,61 @@
+The `babel-plugin-polyfill-regenerator` package is a Babel plugin designed to polyfill generator functions in JavaScript environments that do not natively support the modern JavaScript generator and async functions. This plugin specifically ensures compatibility by integrating with the regenerator-runtime, which is necessary for transforming generator and async functions.
+
+### Functionality
+
+1. **Installation**: 
+   - It can be installed as a development dependency using either npm or yarn.
+
+2. **Configuration**:
+   - This plugin needs to be added to the Babel configuration (`.babelrc`, `babel.config.json`, etc.) within the `plugins` array.
+   - The configuration specifies the usage of the plugin and can take three different methods: `usage-pure`, `usage-global`, and `entry-global`.
+
+3. **Methods**:
+   - **`usage-pure`**: Adds `regenerator-runtime` import in files that use generators or async functions, but doesn't pollute the global namespace.
+   - **`usage-global`**: Automatically includes `regenerator-runtime` in every file that utilizes generators, adding it globally.
+   - **`entry-global`**: Utilizes a single import at the entry point of your application to provide `regenerator-runtime` globally, replacing individual imports or usages across the codebase. Specifically replaces imports of `regenerator-runtime`.
+
+Here's the implementation code for the `babel-plugin-polyfill-regenerator` package:
+
+```javascript
+// babel-plugin-polyfill-regenerator.js
+module.exports = function({ types: t }) {
+  return {
+    name: 'babel-plugin-polyfill-regenerator',
+    visitor: {
+      Program(path, state) {
+        const method = state.opts.method;
+        const hasRuntime = path.node.body.some(statement =>
+          t.isImportDeclaration(statement) &&
+          statement.source.value === 'regenerator-runtime'
+        );
+
+        if (method === 'entry-global') {
+          if (!hasRuntime) {
+            path.node.body.unshift(
+              t.importDeclaration([], t.stringLiteral('regenerator-runtime/runtime'))
+            );
+          }
+        } else if (method === 'usage-global' || method === 'usage-pure') {
+          path.traverse({
+            Function(path) {
+              if ((path.node.async || path.node.generator) && !hasRuntime) {
+                if (method === 'usage-global') {
+                  path.node.body.body.unshift(
+                    t.importDeclaration([], t.stringLiteral('regenerator-runtime/runtime'))
+                  );
+                } else if (method === 'usage-pure') {
+                  path.node.body.body.unshift(
+                    t.importDeclaration([], t.stringLiteral('regenerator-runtime'))
+                  );
+                }
+              }
+            }
+          });
+        }
+      }
+    }
+  };
+};
+```
+
+To use this plugin in a project, you would place this code in a file (e.g., `babel-plugin-polyfill-regenerator.js`) and reference it in your `.babelrc` or Babel configuration file as described in the usage section. The plugin works by traversing the AST of your JavaScript code during the build process and injecting necessary imports for regenerator-runtime based on the selected method.

@@ -1,0 +1,89 @@
+// run-async.js
+
+// Ensure that Promise exists, using a polyfill if it's not natively available
+if (typeof Promise === 'undefined') {
+  var Promise = require('es6-promise').Promise;
+}
+
+function runAsync(func, customAsyncProperty) {
+  return function() {
+    const self = this;
+    const args = Array.from(arguments);
+    let callback = createCallbackPromise();
+
+    if (customAsyncProperty) {
+      attachCustomAsyncMethod(self, customAsyncProperty, callback);
+    }
+
+    attachAsyncMethod(self, callback);
+
+    handleFunctionExecution(func, self, args, callback, customAsyncProperty);
+
+    return callback.promise;
+  };
+}
+
+function createCallbackPromise() {
+  // Defines a callback with resolve and reject tied to a promise's methods
+  let callback = {
+    promise: new Promise((resolve, reject) => {
+      callback.resolve = resolve;
+      callback.reject = reject;
+    })
+  };
+  return callback;
+}
+
+function attachAsyncMethod(target, callback) {
+  Object.defineProperty(target, 'async', {
+    value: () => callback,
+    enumerable: false
+  });
+}
+
+function attachCustomAsyncMethod(target, property, callback) {
+  Object.defineProperty(target, property, {
+    value: () => callback,
+    enumerable: false
+  });
+}
+
+function handleFunctionExecution(func, context, args, callback, customAsync) {
+  try {
+    const result = func.apply(context, args);
+    if (isPromise(result)) {
+      result.then(callback.resolve, callback.reject);
+    } else if (!customAsync && func.length < args.length + 1) {
+      callback.resolve(result);
+    }
+  } catch (error) {
+    callback.reject(error);
+  }
+}
+
+function isPromise(obj) {
+  return obj && typeof obj.then === 'function';
+}
+
+function runAsyncCb(func, callback) {
+  return function() {
+    const self = this;
+    const args = Array.from(arguments);
+    const hasExternalCallback = isFunction(args[args.length - 1]);
+
+    if (hasExternalCallback) {
+      callback = args.pop();
+    }
+
+    runAsync(func).apply(self, args)
+      .then(result => callback(null, result), callback);
+  };
+}
+
+function isFunction(obj) {
+  return typeof obj === 'function';
+}
+
+runAsync.cb = runAsyncCb;
+
+module.exports = runAsync;

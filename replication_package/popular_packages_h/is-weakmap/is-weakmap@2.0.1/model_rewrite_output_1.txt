@@ -1,0 +1,50 @@
+The Node.js code defines a function to check if a given value is a `WeakMap`. It first determines if `WeakMap` and `WeakSet` are available in the current environment. If `WeakMap` is not available, it exports a function that always returns `false`. If `WeakMap` is available but does not have the `has` method, it also returns `false`. Otherwise, the main export function checks if the input is an object, attempts to use the `has` method on it as a `WeakMap`, and distinguishes it from a `WeakSet` by catching potential errors.
+
+Here is a possible rewrite of the code:
+
+```javascript
+'use strict';
+
+const $WeakMap = (typeof WeakMap === 'function' && WeakMap.prototype) ? WeakMap : null;
+const $WeakSet = (typeof WeakSet === 'function' && WeakSet.prototype) ? WeakSet : null;
+
+let isWeakMapFunction;
+
+if (!$WeakMap) {
+	// WeakMap is not available in this environment.
+	isWeakMapFunction = function (x) {
+		return false;
+	};
+} else {
+	const $mapHas = $WeakMap.prototype.has;
+	const $setHas = $WeakSet ? $WeakSet.prototype.has : null;
+
+	if (!$mapHas) {
+		// WeakMap does not have a 'has' method
+		isWeakMapFunction = function (x) {
+			return false;
+		};
+	} else {
+		isWeakMapFunction = function (x) {
+			if (!x || typeof x !== 'object') {
+				return false;
+			}
+			try {
+				$mapHas.call(x, $mapHas);
+				if ($setHas) {
+					try {
+						$setHas.call(x, $setHas);
+					} catch (e) {
+						return true;
+					}
+				}
+				return x instanceof $WeakMap; // For environments like core-js pre-v3
+			} catch (e) {
+				return false;
+			}
+		};
+	}
+}
+
+module.exports = isWeakMapFunction;
+```

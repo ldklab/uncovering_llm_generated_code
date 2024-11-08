@@ -1,0 +1,85 @@
+The `lint-staged` package is a utility for running scripts on files that are staged for a git commit. The primary goal is to ensure code quality by running linters like ESLint, Prettier, or any custom script only on files that are about to be committed, instead of on the entire codebase. This can be more efficient and ensures any issues can be caught before they are pushed to the repository.
+
+### Key Features:
+- **Efficiency:** Only lints staged files, avoiding unnecessary linting on untouched files.
+- **Integrates with git:** Works as a pre-commit hook, typically set up with husky to automatically run before a commit is completed.
+- **Flexible configurations:** Supports configuration via `package.json`, a `.lintstagedrc` file, or a JavaScript configuration file.
+- **Concurrency:** Supports running tasks in parallel or sequentially to better utilize system resources.
+- **Plugins & Tools:** Can be combined with tools like Prettier or ESLint for code formatting and linting.
+- **Error Management:** If any task errors out, the commit will be aborted, preventing problematic code from being committed.
+- **Customization:** Offers a range of command-line flags to customize its behavior, e.g., enabling or disabling debug mode, using configuration files, and handling concurrency.
+
+### Configuration:
+- You can specify commands to be run on the files using globs (e.g., all `.js` files) in your configuration.
+- Commands can be chained, meaning a successful linter script can lead into an auto-formatting script.
+- Configuration can be done directly in `package.json` or through a `.lintstagedrc` file in JSON, YAML, or .js formats.
+
+### Running Commands:
+- Commands specified in the configuration must handle path arguments passed by `lint-staged` representing the staged files. This modular approach means any executable or script can be used, so long as it accepts file paths as arguments.
+
+### Using as a Node Module:
+- `lint-staged` can also be invoked programmatically through a Node.js script, offering more flexibility in how it can be included in different workflows.
+
+### Example:
+The typical setup might involve using `lint-staged` alongside `husky` so that whenever a `git commit` is executed, specified tasks will run only on files that are staged for the commit.
+
+Here's a simplified implementation of the `lint-staged` package in Node.js:
+
+```javascript
+const execa = require('execa');
+const micromatch = require('micromatch');
+
+/**
+ * Main function to run lint-staged tasks.
+ * @param {Object} config - The configuration object with glob pattern keys and command values.
+ * @param {Object} options - Additional options (e.g., concurrency, debug).
+ * @returns {Promise<Boolean>} - Resolves to true if tasks succeed, false otherwise.
+ */
+async function lintStaged(config, options = {}) {
+  const stagedFiles = await getStagedFiles();
+  for (const globPattern in config) {
+    const files = micromatch(stagedFiles, globPattern);
+    if (files.length > 0) {
+      const commands = Array.isArray(config[globPattern]) ? config[globPattern] : [config[globPattern]];
+      for (const command of commands) {
+        try {
+          const cmdWithFiles = `${command} ${files.join(' ')}`;
+          await execa.command(cmdWithFiles, { shell: options.shell !== false });
+        } catch (error) {
+          if (!options.quiet) {
+            console.error(`Error executing "${command}" with files "${files.join(' ')}":`, error.message);
+          }
+          return false;
+        }
+      }
+    }
+  }
+  return true;
+}
+
+/**
+ * Get the list of files staged for commit.
+ * @returns {Promise<Array>} - List of staged files.
+ */
+async function getStagedFiles() {
+  const { stdout } = await execa('git', ['diff', '--cached', '--name-only']);
+  return stdout.split('\n').filter(Boolean);
+}
+
+module.exports = lintStaged;
+
+// Sample usage:
+(async () => {
+  const success = await lintStaged({
+    '*.js': 'eslint --fix',
+    '*.md': 'prettier --write',
+  }, { shell: true, quiet: false });
+  if (success) {
+    console.log('Linting successful.');
+  } else {
+    console.error('Linting failed.');
+  }
+})();
+```
+
+This implementation uses `execa` to execute shell commands and `micromatch` for file path matching. The `lintStaged` function fetches staged files using a git command, matches them against configured globs, and runs respective commands on matched files. The outcome of these tasks dictates whether the commit proceeds or is aborted.

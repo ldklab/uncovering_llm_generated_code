@@ -1,0 +1,120 @@
+The `unbox-primitive` package is a utility for extracting primitive values from their boxed object wrappers in JavaScript. Boxed primitives are instances of certain objects that wrap primitive data types. This package converts them back to their original primitive format. It works across different JavaScript realms or contexts, such as iframes, by avoiding reliance on the `instanceof` operator or mutable properties, and it accommodates ES6 Symbol.toStringTag.
+
+### Functionality:
+- **Boolean:** Converts `new Boolean(false)` to `false`.
+- **String:** Converts `new String('f')` to `'f'`.
+- **Number:** Converts `new Number(42)` to `42`.
+- **Symbol:** Converts `Object(Symbol())` to `Symbol`.
+- **BigInt:** Converts `new BigInt(42)` to `42n`.
+
+If you pass a primitive that isn’t boxed or a non-primitive object, it will throw an error.
+
+### Example Usage:
+```js
+var unboxPrimitive = require('unbox-primitive');
+var assert = require('assert');
+
+assert.equal(unboxPrimitive(new Boolean(false)), false);
+assert.equal(unboxPrimitive(new String('f')), 'f');
+assert.equal(unboxPrimitive(new Number(42)), 42);
+const s = Symbol();
+assert.equal(unboxPrimitive(Object(s)), s);
+assert.equal(unboxPrimitive(new BigInt(42)), 42n);
+```
+
+### Implementation:
+
+```js
+// index.js
+
+function unboxPrimitive(value) {
+  if (value == null) {
+    throw new TypeError('Cannot unbox null or undefined');
+  }
+
+  if (typeof value === 'object') {
+    if (value instanceof Boolean) {
+      return Boolean.prototype.valueOf.call(value);
+    }
+    if (value instanceof String) {
+      return String.prototype.valueOf.call(value);
+    }
+    if (value instanceof Number) {
+      return Number.prototype.valueOf.call(value);
+    }
+    if (typeof value === 'object' && value.constructor.name === 'Symbol') {
+      return Symbol.prototype.valueOf.call(value);
+    }
+    if (typeof value === 'object' && value.constructor.name === 'BigInt') {
+      return BigInt.prototype.valueOf.call(value);
+    }
+    throw new TypeError('Argument is not a boxed primitive');
+  }
+  
+  throw new TypeError('Argument is a primitive, not a boxed primitive');
+}
+
+module.exports = unboxPrimitive;
+
+// test/unbox-primitive.test.js
+
+const assert = require('assert');
+const unboxPrimitive = require('../index');
+
+describe('unboxPrimitive', function() {
+  it('should unbox Boolean', function() {
+    assert.strictEqual(unboxPrimitive(new Boolean(false)), false);
+    assert.strictEqual(unboxPrimitive(new Boolean(true)), true);
+  });
+
+  it('should unbox String', function() {
+    assert.strictEqual(unboxPrimitive(new String('f')), 'f');
+    assert.strictEqual(unboxPrimitive(new String('hello')), 'hello');
+  });
+
+  it('should unbox Number', function() {
+    assert.strictEqual(unboxPrimitive(new Number(42)), 42);
+    assert.strictEqual(unboxPrimitive(new Number(3.1415)), 3.1415);
+  });
+
+  it('should unbox Symbol', function() {
+    const s = Symbol();
+    assert.strictEqual(unboxPrimitive(Object(s)), s);
+  });
+
+  it('should unbox BigInt', function() {
+    assert.strictEqual(unboxPrimitive(Object(BigInt(42))), 42n);
+  });
+
+  it('should throw for non-boxed primitives', function() {
+    assert.throws(() => unboxPrimitive(true), TypeError);
+    assert.throws(() => unboxPrimitive(42), TypeError);
+  });
+
+  it('should throw for null or undefined', function() {
+    assert.throws(() => unboxPrimitive(null), TypeError);
+    assert.throws(() => unboxPrimitive(undefined), TypeError);
+  });
+
+  it('should throw for non-primitive objects', function() {
+    assert.throws(() => unboxPrimitive({}), TypeError);
+    assert.throws(() => unboxPrimitive([]), TypeError);
+  });
+});
+
+// package.json
+
+{
+  "name": "unbox-primitive",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "test": "mocha"
+  },
+  "devDependencies": {
+    "mocha": "^9.0.0"
+  },
+  "license": "MIT"
+}
+```
+This package provides a function and supporting tests to handle unboxing in line with the functionalities and examples given in the README.

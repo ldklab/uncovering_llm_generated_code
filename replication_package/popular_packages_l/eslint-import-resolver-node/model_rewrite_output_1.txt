@@ -1,0 +1,81 @@
+The provided Node.js code defines a custom module resolver function specifically tailored for use with ESLint's import plugin. Here's what it does:
+
+1. **Imports the "resolve" package**: This is used for synchronously resolving module paths in a Node.js style resolution strategy.
+
+2. **Defines a `nodeResolver` function**: This function accepts optional custom options to modify its behavior.
+
+3. **Sets default options**: The resolver has default configurations for module extensions (like `.js`), paths, and directories to look in (like `node_modules`).
+
+4. **Merges options**: Custom user options can override the default options.
+
+5. **Returns a resolver object**: It includes `interfaceVersion` and a `resolve` function, which is responsible for handling the actual resolution of modules.
+
+6. **Resolve function operation**:
+   - Computes the `basedir` from which resolution should be attempted, defaulting to the directory of the file requesting the module, or the current working directory.
+   - Attempts to resolve the module using `resolve.sync` from the given source and options.
+   - Returns an object indicating whether the module was found and if so, the path to the module.
+
+7. **Exports the `nodeResolver` function**: This makes it available for use in other modules.
+
+8. **Package Information**: In the `package.json`, it briefly describes this as a module resolution plugin for ESLint, listing its dependencies (like the "resolve" package), author, and license.
+
+Here is a possible rewrite of the provided code:
+
+```javascript
+// index.js
+const resolve = require('resolve');
+
+function createNodeResolver(customOptions = {}) {
+  const defaultResolveOptions = {
+    extensions: ['.js'],
+    paths: [],
+    moduleDirectory: ['node_modules'],
+  };
+
+  const mergeOptions = {
+    ...defaultResolveOptions,
+    ...customOptions,
+  };
+
+  return {
+    interfaceVersion: 2,
+    resolve(source, filename, config) {
+      const resolveOptions = {
+        ...mergeOptions,
+        basedir: filename ? filename.substring(0, filename.lastIndexOf('/')) : process.cwd(),
+      };
+
+      try {
+        const resolvedPath = resolve.sync(source, resolveOptions);
+        return {
+          found: true,
+          path: resolvedPath,
+        };
+      } catch (error) {
+        return { found: false };
+      }
+    },
+  };
+}
+
+module.exports = { createNodeResolver };
+
+// package.json
+{
+  "name": "eslint-import-resolver-node",
+  "version": "1.0.0",
+  "description": "Node-style module resolution plugin for eslint-plugin-import.",
+  "main": "index.js",
+  "keywords": [
+    "eslint",
+    "import",
+    "resolve",
+    "plugin"
+  ],
+  "dependencies": {
+    "resolve": "^1.20.0"
+  },
+  "author": "Your Name",
+  "license": "MIT"
+}
+```

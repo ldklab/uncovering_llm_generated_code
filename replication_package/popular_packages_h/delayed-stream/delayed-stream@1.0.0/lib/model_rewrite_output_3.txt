@@ -1,0 +1,114 @@
+The provided Node.js code defines a module for a `DelayedStream`, which is a wrapper around a standard Node.js stream. The primary purpose of this `DelayedStream` is to allow buffering of events emitted by a source stream and optionally pause the source stream until it's ready to handle the buffered events. Key aspects of its functionality include:
+
+1. **Buffering Events**: Events emitted by the source stream are caught and stored in a buffer until the stream is released.
+
+2. **Pausing Source Stream**: Optionally, the source stream is paused when being attached, preventing it from emitting data until the events are released.
+
+3. **Release Mechanism**: When the stream is released (or resumed), buffered events are emitted.
+
+4. **Data Size Limiting**: A maximum data size can be set to prevent excessive memory usage. If the data buffer exceeds this limit, an error is emitted.
+
+The code makes use of Node.js core modules such as `Stream` and `util`.
+
+Here is the revised code reflecting the same functionality, organized into a single code block:
+
+```javascript
+const { Stream } = require('stream');
+const util = require('util');
+
+module.exports = DelayedStream;
+
+function DelayedStream() {
+  this.source = null;
+  this.dataSize = 0;
+  this.maxDataSize = 1024 * 1024; // 1 MB
+  this.pauseStream = true;
+
+  this._maxDataSizeExceeded = false;
+  this._released = false;
+  this._bufferedEvents = [];
+}
+
+util.inherits(DelayedStream, Stream);
+
+DelayedStream.create = function (source, options = {}) {
+  const delayedStream = new this();
+
+  Object.assign(delayedStream, options);
+
+  delayedStream.source = source;
+
+  const realEmit = source.emit;
+  source.emit = function (...args) {
+    delayedStream._handleEmit(args);
+    return realEmit.apply(source, args);
+  };
+
+  source.on('error', () => {});
+
+  if (delayedStream.pauseStream) {
+    source.pause();
+  }
+
+  return delayedStream;
+};
+
+Object.defineProperty(DelayedStream.prototype, 'readable', {
+  configurable: true,
+  enumerable: true,
+  get() {
+    return this.source.readable;
+  }
+});
+
+DelayedStream.prototype.setEncoding = function (...args) {
+  return this.source.setEncoding(...args);
+};
+
+DelayedStream.prototype.resume = function () {
+  if (!this._released) {
+    this.release();
+  }
+  this.source.resume();
+};
+
+DelayedStream.prototype.pause = function () {
+  this.source.pause();
+};
+
+DelayedStream.prototype.release = function () {
+  this._released = true;
+  this._bufferedEvents.forEach(args => {
+    this.emit(...args);
+  });
+  this._bufferedEvents = [];
+};
+
+DelayedStream.prototype.pipe = function (...args) {
+  const result = Stream.prototype.pipe.apply(this, args);
+  this.resume();
+  return result;
+};
+
+DelayedStream.prototype._handleEmit = function (args) {
+  if (this._released) {
+    this.emit(...args);
+    return;
+  }
+
+  if (args[0] === 'data') {
+    this.dataSize += args[1].length;
+    this._checkIfMaxDataSizeExceeded();
+  }
+
+  this._bufferedEvents.push(args);
+};
+
+DelayedStream.prototype._checkIfMaxDataSizeExceeded = function () {
+  if (this._maxDataSizeExceeded || this.dataSize <= this.maxDataSize) return;
+
+  this._maxDataSizeExceeded = true;
+  const message = `DelayedStream#maxDataSize of ${this.maxDataSize} bytes exceeded.`;
+  this.emit('error', new Error(message));
+};
+```

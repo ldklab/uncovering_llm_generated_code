@@ -1,0 +1,68 @@
+The `jest-leak-detector` module is designed to help detect if an object has been garbage collected in Node.js. It utilizes a weak reference mechanism to monitor whether an object remains in memory or has been collected by the garbage collector. This can be particularly useful in testing environments like Jest to ensure there are no memory leaks in your code.
+
+### Functionality Explanation
+
+1. **Weak Reference Creation**: The `LeakDetector` class is initialized with an object reference. Internally, it creates a weak reference to this object. A weak reference does not prevent the object from being garbage collected.
+
+2. **Garbage Collection**: The detector assumes control over garbage collection by forcing a GC run. This ensures that any objects no longer in use are eligible for collection immediately.
+
+3. **Leak Detection**: 
+   - The `isLeaking` method checks the status of the object.
+   - If the weak reference is still active, it means the object is still considered live (i.e., it is leaking because something else holds a reference to it).
+   - If the weak reference is gone, it indicates that the object has been garbage collected.
+
+### Code Implementation
+
+Below is the implementation of the `jest-leak-detector` module:
+
+```javascript
+class LeakDetector {
+  weakRef;
+
+  constructor(object) {
+    if (typeof object !== 'object' || object === null) {
+      throw new TypeError('LeakDetector expects an object reference.');
+    }
+    this.weakRef = new WeakRef(object);
+  }
+
+  async isLeaking() {
+    // Force garbage collection in Node.js; note this requires `node --expose-gc`.
+    if (global.gc) {
+      global.gc();
+    } else {
+      throw new Error('Garbage collector is not exposed. Run node with --expose-gc.');
+    }
+
+    // Allow some time for GC to process
+    await new Promise(resolve => setTimeout(resolve, 100));
+
+    // `WeakRef.deref()` returns undefined if the object has been collected
+    return this.weakRef.deref() !== undefined;
+  }
+}
+
+(async function () {
+  let reference = {};
+  let isLeaking;
+
+  const detector = new LeakDetector(reference);
+
+  // Reference is held in memory.
+  isLeaking = await detector.isLeaking();
+  console.log(isLeaking); // true
+
+  // We destroy the only reference to the object.
+  reference = null;
+
+  // Reference is gone.
+  isLeaking = await detector.isLeaking();
+  console.log(isLeaking); // false
+})();
+```
+
+### Important Notes
+
+- Forcing garbage collection with `global.gc()` requires running Node.js with the `--expose-gc` flag.
+- The function utilizes `WeakRef` and assumes the object was properly set to be weakly referenced.
+- The script uses an asynchronous approach with `setTimeout` to allow garbage collection to potentially clear the reference. This acknowledges that garbage collection timing is not immediate or deterministic.

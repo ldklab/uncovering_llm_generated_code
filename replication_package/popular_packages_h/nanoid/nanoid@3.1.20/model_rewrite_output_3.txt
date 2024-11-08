@@ -1,0 +1,66 @@
+The provided Node.js code is a module designed to generate unique random strings (IDs). It uses the `crypto` module for secure randomness and a custom alphabet for encoding the IDs:
+
+1. **Pool Management**: The module uses a buffer pool to reduce the overhead of frequent calls to the crypto module. The pool is initially allocated with a size that is a multiple of the requested byte size, and it reuses this pool until more bytes are needed than are available, at which point it refills the pool.
+
+2. **Random Byte Generation**: The `random` function facilitates efficient byte acquisition from the buffer pool, reducing the need for repeated system calls.
+
+3. **Custom Random String Generation**:
+   - `customRandom` generates random strings using a specified alphabet and size. It calculates a bitmask to ensure random bytes are within the desired length of the alphabet.
+   - The function computes the number of random bytes needed and attempts to generate a string that matches the given size by mapping random bytes to the provided alphabet.
+
+4. **Predefined Random String Function**:
+   - `customAlphabet` is a convenience function that creates a random string generator using user-defined alphabets and sizes, relying on the `customRandom` function.
+   - `nanoid` is a default function that generates a random ID of specified or default length 21, using a predefined URL-safe character set.
+
+```javascript
+const crypto = require('crypto');
+const { urlAlphabet } = require('./url-alphabet/index.cjs');
+
+const POOL_SIZE_MULTIPLIER = 32;
+let pool, poolOffset;
+
+const random = bytes => {
+  if (!pool || pool.length < bytes) {
+    pool = Buffer.allocUnsafe(bytes * POOL_SIZE_MULTIPLIER);
+    crypto.randomFillSync(pool);
+    poolOffset = 0;
+  } else if (poolOffset + bytes > pool.length) {
+    crypto.randomFillSync(pool);
+    poolOffset = 0;
+  }
+
+  const res = pool.subarray(poolOffset, poolOffset + bytes);
+  poolOffset += bytes;
+  return res;
+}
+
+const customRandom = (alphabet, size, getRandom) => {
+  const mask = (2 << (31 - Math.clz32((alphabet.length - 1) | 1))) - 1;
+  const step = Math.ceil((1.6 * mask * size) / alphabet.length);
+
+  return () => {
+    let id = '';
+    while (true) {
+      const bytes = getRandom(step);
+      let i = step;
+      while (i--) {
+        id += alphabet[bytes[i] & mask] || '';
+        if (id.length === size) return id;
+      }
+    }
+  }
+}
+
+const customAlphabet = (alphabet, size) => customRandom(alphabet, size, random);
+
+const nanoid = (size = 21) => {
+  const bytes = random(size);
+  let id = '';
+  while (size--) {
+    id += urlAlphabet[bytes[size] & 63];
+  }
+  return id;
+}
+
+module.exports = { nanoid, customAlphabet, customRandom, urlAlphabet, random };
+```

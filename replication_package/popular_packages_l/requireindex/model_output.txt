@@ -1,0 +1,99 @@
+The `requireindex` package is designed to streamline the process of creating `index.js` files that automatically require and export sibling modules within a directory. This is particularly useful when you want to create a module export for all files within a directory without manually requiring each one. The package provides a function that walks through the specified directory, requires each sibling file, and exports them. It excludes files that are named with a leading underscore or that are not explicitly listed if a specific subset of modules is provided.
+
+Here's a detailed explanation of its functionality:
+
+- **Automatic Exports**: The package automatically creates exports of all JavaScript files in a directory from the `index.js` file.
+- **Exclusion of Private Files**: Files with names starting with an underscore (e.g., `_private.js`) are treated as private and are not exported.
+- **Selective Export**: The package allows specifying an array of filenames (without extensions) as a second argument to only export those files, ignoring others.
+- **Directory Structure**: It recognizes nested structures and creates exports accordingly, preserving the directory hierarchy.
+  
+The typical usage looks like this:
+- In the `index.js` file located within a directory (e.g., `lib/`), you would add `module.exports = require('requireindex')(__dirname);`
+- Optionally provide an array for the specific filenames that need to be exported: `require('requireindex')(__dirname, ['again', 'somemore']);`
+
+The generated export object includes all specified modules, allowing for modular, clean, and organized code.
+
+Here's the implemented code for the `requireindex` package:
+
+```markdown
+// requireindex.js
+const fs = require('fs');
+const path = require('path');
+
+/**
+ * Function to require all sibling files in a directory and export them.
+ * 
+ * @param {string} dirname - The directory path.
+ * @param {string[]} [include] - List of basenames to explicitly include. If not provided,
+ * all files (except those beginning with '_') are included.
+ * @returns {Object} - An object mapping filenames (without extension) to their required module.
+ */
+function requireIndex(dirname, include = null) {
+  const files = fs.readdirSync(dirname);
+  const modules = {};
+
+  files.forEach(file => {
+    const basename = path.basename(file, path.extname(file));
+
+    // Skip if underscore prefixed or explicitly excluded
+    if (file.startsWith('_') || (include && !include.includes(basename))) {
+      return;
+    }
+
+    const filepath = path.join(dirname, file);
+    const stat = fs.statSync(filepath);
+
+    // Recursively require sub-index files or require JS module files
+    if (stat.isDirectory()) {
+      modules[basename] = require(filepath);
+    } else if (stat.isFile() && path.extname(file) === '.js') {
+      modules[basename] = require(filepath);
+    }
+  });
+
+  return modules;
+}
+
+module.exports = requireIndex;
+```
+
+Here's how you might set up a directory structure to use this function:
+
+```markdown
+// Example directory structure:
+
+// lib/index.js
+module.exports = require('./requireindex')(__dirname);
+
+// lib/Foo.js
+module.exports = { l: () => console.log('Foo.l'), ls: () => console.log('Foo.ls') };
+
+// lib/bar/index.js
+module.exports = require('../requireindex')(__dirname);
+
+// lib/bar/f.js
+module.exports = () => console.log('bar.f');
+
+// lib/bar/fing.js
+module.exports = () => console.log('bar.fing');
+
+// lib/bar/fed/index.js
+module.exports = require('../../requireindex')(__dirname, ['again', 'somemore']);
+
+// lib/bar/fed/again.js
+module.exports = () => console.log('bar.fed.again');
+
+// lib/bar/fed/somemore.js
+module.exports = () => console.log('bar.fed.somemore');
+
+// lib/bar/fed/ignored.js
+module.exports = () => console.log('This should not be required');
+
+// lib/bam.js
+module.exports = { m: () => console.log('bam.m'), n: () => console.log('bam.n') };
+
+// lib/_private.js
+module.exports = () => console.log('This should be private');
+```
+
+Place the `requireindex.js` file in the root of your project alongside your `lib` folder for it to function as intended. The function utilizes `fs` to scan directories and conditionally requires modules based on the rules specified.

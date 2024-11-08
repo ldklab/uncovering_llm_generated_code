@@ -1,0 +1,116 @@
+The `image-size` Node.js package provides functionality for determining the dimensions of various image file formats. It supports synchronous, asynchronous, promise-based, and async/await usage patterns, and allows users to obtain width, height, and orientation information from image files.
+
+Here's a breakdown of its features and usage:
+
+1. **Supported Image Formats**: The package supports a wide range of image formats including popular ones like BMP, JPEG, PNG, GIF, and SVG, as well as less common formats such as CUR, DDS, PNM, and KTX.
+
+2. **Programmatic Usage**:
+   - **Synchronous**: Instantly obtain image dimensions using a straightforward function call.
+   - **Asynchronous**: Retrieve image dimensions with a callback function, suitable for non-blocking operations.
+   - **Promises and Async/Await**: Utilize modern JavaScript promises and async/await for asynchronous operations, enhancing readability in asynchronous code.
+
+3. **Concurrency Control**: The package allows adjusting the concurrency limit for asynchronous operations, useful in environments with high image processing demands.
+
+4. **Multi-size Icons**: For multi-size image files like ICO or CUR, the package returns dimensions for the first image, but also provides access to dimensions of all contained images via an array.
+
+5. **Image URLs**: Supports fetching image dimensions from URLs by downloading just enough of the image data to determine dimensions without requiring the entire image to be downloaded.
+
+6. **Disable Specific Image Types**: Users can disable processing of specific image types to improve performance or focus on certain formats.
+
+7. **Disable File System Access**: Prevents the library from reading image files from the file system, useful in controlled environments or when working exclusively with buffers.
+
+8. **JPEG Orientation**: If present, the EXIF orientation metadata is returned for JPEGs, indicating how the image should be rotated or flipped for correct viewing.
+
+9. **Command-Line Interface (CLI)**: The package can also be used from the command line to quickly output dimensions of multiple images.
+
+Here's a possible implementation of the package:
+
+```javascript
+const fs = require('fs');
+const http = require('http');
+const url = require('url');
+const path = require('path');
+const imageType = require('image-type');
+const util = require('util');
+
+class ImageSize {
+  constructor() {
+    this.concurrency = 100;
+    this.disabledTypes = new Set();
+    this.disableFS = false;
+  }
+
+  setConcurrency(newLimit) {
+    this.concurrency = newLimit;
+  }
+
+  disableTypes(types) {
+    types.forEach(type => this.disabledTypes.add(type));
+  }
+
+  disableFS(readFromFS) {
+    this.disableFS = readFromFS;
+  }
+
+  getImageSizeFromBuffer(buffer) {
+    const type = imageType(buffer);
+    if (!type || this.disabledTypes.has(type.ext)) {
+      throw new Error('Unsupported or disabled image type');
+    }
+
+    // Dummy image size example, actual implementation requires specific logic per type
+    const width = buffer[0] % 100; // Placeholder logic
+    const height = buffer[1] % 100; // Placeholder logic
+
+    return { width, height };
+  }
+
+  sizeOf(input, callback) {
+    if (Buffer.isBuffer(input)) {
+      try {
+        const dimensions = this.getImageSizeFromBuffer(input);
+        if (callback) callback(null, dimensions);
+        return dimensions;
+      } catch (err) {
+        if (callback) callback(err, null);
+        else throw err;
+      }
+    } else {
+      if (this.disableFS) {
+        const error = new Error('File system reads are disabled');
+        if (callback) return callback(error);
+        throw error;
+      }
+
+      fs.readFile(input, (err, buffer) => {
+        if (err) return callback ? callback(err) : Promise.reject(err);
+        this.sizeOf(buffer, callback);
+      });
+    }
+  }
+
+  sizeOfPromise(input) {
+    return new Promise((resolve, reject) => {
+      this.sizeOf(input, (err, dimensions) => {
+        if (err) reject(err);
+        resolve(dimensions);
+      });
+    });
+  }
+
+  sizeOfAsync(input) {
+    if (typeof input !== 'string') {
+      const error = new Error('Asynchronous support only with file paths');
+      return Promise.reject(error);
+    }
+
+    return util.promisify(this.sizeOf.bind(this))(input);
+  }
+}
+
+const imageSize = new ImageSize();
+
+module.exports = imageSize;
+```
+
+This code outlines a basic framework, assuming the presence of image-type detection and some logic to parse dimensions from a buffer. The actual implementation would need specific logic for each supported image format, possibly utilizing third-party libraries for format-specific parsing. Additionally, error handling and buffer processing would be expanded to handle edge cases and partial reads for efficiency.

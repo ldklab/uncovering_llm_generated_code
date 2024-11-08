@@ -1,0 +1,67 @@
+The given Node.js code defines a utility function `createRequire` that is used to create a `require` function in Node.js, which can be used to load modules relative to a specific file path. This can be particularly useful when dealing with module loading in dynamic or non-standard directory structures.
+
+Here's a breakdown of the code's functionality:
+
+1. **Imports:**
+   - `module` from Node.js is used to access `Module` which provides methods for module creation.
+   - `path` is used for handling and transforming file paths.
+   - `fs` (file system) is used to check if a given path is a directory.
+
+2. **Function `createRequire`:**
+   - Takes an optional `filename` parameter. If not provided, it defaults to the current working directory.
+   - If the `filename` is a directory, it appends `index.js` to the path because modules in directories typically resolve to an `index.js` file.
+   - Depending on the Node.js version, it uses different methods to create a `require` function:
+     - `createRequire` is used for Node versions 12.2.0 and above.
+     - `createRequireFromPath` is used for Node versions 10.12.0 to before 12.2.0 but is deprecated after 12.2.0.
+     - A custom polyfill `_createRequire` is used for older Node versions that don’t support the above methods.
+
+3. **Function `_createRequire`:**
+   - It's a polyfill that creates a module, sets its filename and paths, compiles a dummy module that exports the `require` function, and returns it.
+
+4. **Function `isDir`:**
+   - Checks if a path is a directory using `fs.lstatSync`. It returns `false` if the path is non-existent or not a directory.
+
+5. **Export:**
+   - The `createRequire` function is exported for use in other modules.
+
+Here's a possible rewrite of the original code:
+
+```javascript
+const { createRequire: nativeCreateRequire, createRequireFromPath } = require('module');
+const { join, dirname } = require('path');
+const { lstatSync } = require('fs');
+
+function createRequire(filename = process.cwd()) {
+  if (checkIfDirectory(filename)) {
+    filename = join(filename, 'index.js');
+  }
+
+  if (nativeCreateRequire) {
+    return nativeCreateRequire(filename);
+  }
+
+  if (createRequireFromPath) {
+    return createRequireFromPath(filename);
+  }
+
+  return usePolyfillToCreateRequire(filename);
+}
+
+function usePolyfillToCreateRequire(filename) {
+  const moduleInstance = new require('module').Module(filename, null);
+  moduleInstance.filename = filename;
+  moduleInstance.paths = require('module').Module._nodeModulePaths(dirname(filename));
+  moduleInstance._compile('module.exports = require;', filename);
+  return moduleInstance.exports;
+}
+
+function checkIfDirectory(path) {
+  try {
+    return lstatSync(path).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+module.exports = createRequire;
+```

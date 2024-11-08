@@ -1,0 +1,186 @@
+The provided Node.js code is a class definition for `DomHandler`, which is part of a DOM parsing library. This class is responsible for managing the parsing process and constructing a DOM tree from the parsed HTML/XML content. Here's a breakdown of the functionality:
+
+1. **Utility Functions**: 
+   - `__createBinding` and `__exportStar` are used to handle module exports and imports, mainly for compatibility with older JavaScript environments.
+
+2. **Regular Expressions**:
+   - `reWhitespace` is a regex pattern used to normalize whitespace in text nodes.
+
+3. **Default Options**:
+   - `defaultOpts` defines default configuration options for whitespace normalization and index tracking.
+
+4. **DomHandler Class**:
+   - The constructor initializes various properties of the class, such as the DOM tree (`this.dom`), the root element, parsing state, and tag stack.
+   - The constructor can also handle its parameters flexibly for backwards compatibility.
+   - Support for various parsing events:
+     - `onparserinit`: Initializes the parser.
+     - `onreset`: Resets the handler to its initial state.
+     - `onend`: Called when parsing is finished.
+     - `onerror`: Called when an error occurs during parsing.
+     - `onopentag` and `onclosetag`: Handle opening and closing tags respectively.
+     - `ontext`: Processes text data, potentially normalizing whitespace.
+     - `oncomment` and `oncommentend`: Handle comments.
+     - `oncdatastart` and `oncdataend`: Manage CDATA section handling.
+     - `onprocessinginstruction`: Deals with processing instructions.
+
+5. **Callback Handling**: `handleCallback` manages the invocation of a callback function when parsing is complete or when an error occurs.
+
+6. **Node Management**: 
+   - `addNode` and `addDataNode` add nodes to the DOM tree, maintaining sibling and parent relationships and potentially tracking start/end indices if specified in the options.
+
+Here's a possible rewrite of the provided Node.js code:
+
+```javascript
+"use strict";
+
+const { Document, Element, Text, Comment, NodeWithChildren, ProcessingInstruction } = require("./node");
+const reWhitespace = /\s+/g;
+
+const defaultOpts = {
+  normalizeWhitespace: false,
+  withStartIndices: false,
+  withEndIndices: false,
+};
+
+class DomHandler {
+  constructor(callback, options, elementCB) {
+    this.dom = [];
+    this.root = new Document(this.dom);
+    this.done = false;
+    this.tagStack = [this.root];
+    this.lastNode = null;
+    this.parser = null;
+
+    if (typeof options === "function") {
+      elementCB = options;
+      options = defaultOpts;
+    }
+    if (typeof callback === "object") {
+      options = callback;
+      callback = undefined;
+    }
+
+    this.callback = callback || null;
+    this.options = options || defaultOpts;
+    this.elementCB = elementCB || null;
+  }
+
+  onparserinit(parser) {
+    this.parser = parser;
+  }
+
+  onreset() {
+    this.dom = [];
+    this.root = new Document(this.dom);
+    this.done = false;
+    this.tagStack = [this.root];
+    this.lastNode = null;
+    this.parser = this.parser || null;
+  }
+
+  onend() {
+    if (this.done) return;
+
+    this.done = true;
+    this.parser = null;
+    this.handleCallback(null);
+  }
+
+  onerror(error) {
+    this.handleCallback(error);
+  }
+
+  onclosetag() {
+    this.lastNode = null;
+    const elem = this.tagStack.pop();
+
+    if (this.options.withEndIndices) {
+      elem.endIndex = this.parser.endIndex;
+    }
+    if (this.elementCB) this.elementCB(elem);
+  }
+
+  onopentag(name, attribs) {
+    const element = new Element(name, attribs);
+    this.addNode(element);
+    this.tagStack.push(element);
+  }
+
+  ontext(data) {
+    if (this.options.normalizeWhitespace) {
+      data = data.replace(reWhitespace, ' ');
+    }
+
+    if (this.lastNode && this.lastNode.type === "text") {
+      this.lastNode.data += data;
+    } else {
+      const node = new Text(data);
+      this.addNode(node);
+      this.lastNode = node;
+    }
+  }
+
+  oncomment(data) {
+    if (this.lastNode && this.lastNode.type === "comment") {
+      this.lastNode.data += data;
+    } else {
+      const node = new Comment(data);
+      this.addNode(node);
+      this.lastNode = node;
+    }
+  }
+
+  oncommentend() {
+    this.lastNode = null;
+  }
+
+  oncdatastart() {
+    const text = new Text("");
+    const node = new NodeWithChildren("cdata", [text]);
+    this.addNode(node);
+    text.parent = node;
+    this.lastNode = text;
+  }
+
+  oncdataend() {
+    this.lastNode = null;
+  }
+
+  onprocessinginstruction(name, data) {
+    const node = new ProcessingInstruction(name, data);
+    this.addNode(node);
+  }
+
+  handleCallback(error) {
+    if (typeof this.callback === "function") {
+      this.callback(error, this.dom);
+    } else if (error) {
+      throw error;
+    }
+  }
+
+  addNode(node) {
+    const parent = this.tagStack[this.tagStack.length - 1];
+    const previousSibling = parent.children[parent.children.length - 1];
+
+    if (this.options.withStartIndices) {
+      node.startIndex = this.parser.startIndex;
+    }
+    if (this.options.withEndIndices) {
+      node.endIndex = this.parser.endIndex;
+    }
+
+    parent.children.push(node);
+
+    if (previousSibling) {
+      node.prev = previousSibling;
+      previousSibling.next = node;
+    }
+
+    node.parent = parent;
+    this.lastNode = null;
+  }
+}
+
+module.exports = DomHandler;
+```

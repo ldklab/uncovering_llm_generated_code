@@ -1,0 +1,86 @@
+The `interpret` package provides a dictionary of file extensions and their corresponding module loaders, which are used to automatically register appropriate dependencies for configuration files. It's a utility for consumers, such as other tools or libraries like "Liftoff" and "rechoir", that need to interpret different file types by enabling them to require files with various extensions automatically.
+
+Key features and functionality provided by the package:
+
+1. **File Extensions Mapping**: The package exports two main objects, `extensions` and `jsVariants`, which map file extensions (like `.ts`, `.jsx`, etc.) to module loaders. These loaders can be:
+   - `null`, meaning the loader should fall back to Node's built-in loader.
+   - A string representing a module to be required.
+   - An object containing a `module` field that indicates the module to require, and a `register` function to be executed with the required module.
+   - An array of any combination of the above.
+
+2. **Usage Instructions**: The consumer uses these mappings to decide which module loader to register for a given file extension. If the value for an extension is `null`, nothing is done. If it's a string, the consumer tries to require it. If it's an object, the consumer requires the `module` and calls the `register` function. If it's an array, the consumer iterates through until one module is successfully required without throwing an error.
+
+3. **Unsupported Dependencies**: The module does not install the loaders it recommends. Users of the package need to manually include the hooks (modules) they wish to use, allowing for flexibility in dependency management.
+
+Here's the implementation code for the `interpret` package:
+
+```javascript
+// interpret/index.js
+
+const extensions = {
+  '.babel.js': ['@babel/register'],
+  '.babel.jsx': ['@babel/register'],
+  '.babel.ts': ['@babel/register'],
+  '.babel.tsx': ['@babel/register'],
+  '.cjs': ['interpret/cjs-stub'],
+  '.coffee': ['coffeescript/register'],
+  '.coffee.md': ['coffeescript/register'],
+  '.cts': ['ts-node/register'],
+  '.esbuild.js': ['esbuild-register/dist/node'],
+  '.esbuild.jsx': ['esbuild-register/dist/node'],
+  '.esbuild.ts': ['esbuild-register/dist/node'],
+  '.esbuild.tsx': ['esbuild-register/dist/node'],
+  '.esm.js': ['esm'],
+  '.js': [null], // built-in node.js loader
+  '.json': [null], // built-in node.js loader
+  '.json5': ['json5/lib/register'],
+  '.jsx': ['@babel/register', 'sucrase/register/jsx'],
+  '.litcoffee': ['coffeescript/register'],
+  '.mdx': ['@mdx-js/register'],
+  '.mjs': ['interpret/mjs-stub'],
+  '.node': [null], // built-in node.js loader
+  '.sucrase.js': ['sucrase/dist/register'],
+  '.sucrase.jsx': ['sucrase/dist/register'],
+  '.sucrase.ts': ['sucrase/dist/register'],
+  '.sucrase.tsx': ['sucrase/dist/register'],
+  '.swc.js': ['@swc/register'],
+  '.swc.jsx': ['@swc/register'],
+  '.swc.ts': ['@swc/register'],
+  '.swc.tsx': ['@swc/register'],
+  '.toml': ['toml-require'],
+  '.ts': ['ts-node/register', 'sucrase/register/ts', {
+    module: '@babel/register',
+    register: function(hook) {
+      hook({
+        extensions: '.ts',
+        rootMode: 'upward-optional',
+        ignore: [], // user can provide specific ignore patterns
+      });
+    },
+  }, 'esbuild-register/dist/node', '@swc/register'],
+  '.tsx': ['ts-node/register', 'sucrase/register/tsx', {
+    module: '@babel/register',
+    register: function(hook) {
+      hook({
+        extensions: '.tsx',
+        rootMode: 'upward-optional',
+        ignore: [], // user can provide specific ignore patterns
+      });
+    },
+  }, 'esbuild-register/dist/node', '@swc/register'],
+  '.yaml': ['yaml-hook/register'],
+  '.yml': ['yaml-hook/register'],
+};
+
+const jsVariants = Object.fromEntries(
+  Object.entries(extensions).filter(([ext]) =>
+    ['.babel.js', '.babel.jsx', '.babel.ts', '.babel.tsx', '.cjs', '.coffee', '.coffee.md', '.esbuild.js', '.esbuild.jsx', '.esbuild.ts', '.esbuild.tsx', '.esm.js', 
+    '.js', '.jsx', '.litcoffee', '.mdx', '.mjs', '.sucrase.js', '.sucrase.jsx', '.sucrase.ts', '.sucrase.tsx', '.swc.js', '.swc.jsx', '.swc.ts', '.swc.tsx', '.ts', 
+    '.tsx'].includes(ext)
+  )
+);
+
+module.exports = { extensions, jsVariants };
+```
+
+This implementation maps various file extensions to modules or functions that handle them, providing an API to facilitate working with different configuration files by automatically registering the required modules for execution.

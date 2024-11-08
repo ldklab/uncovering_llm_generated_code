@@ -1,0 +1,57 @@
+The provided Node.js code defines a custom `request` function that mimics the functionality of the `undici` library's request method. This function sends HTTP requests and returns a promise that resolves with the response details. It takes a URL and an options object as parameters. The options object may include HTTP method, headers, and body. Depending on the body type, it sets the appropriate `Content-Type` header and formats the body data. Internally, it uses Node.js's `http` module to construct and send the request.
+
+Here's the rewritten code:
+
+```javascript
+import http from 'node:http';
+import { URL } from 'node:url';
+
+// A simple implementation of HTTP request function
+async function request(url, options = {}) {
+  const { method = 'GET', headers = {}, body = null } = options;
+  const urlObject = new URL(url);
+
+  const requestOptions = {
+    hostname: urlObject.hostname,
+    port: urlObject.port || (urlObject.protocol === 'https:' ? 443 : 80),
+    path: urlObject.pathname + urlObject.search,
+    method,
+    headers
+  };
+
+  return new Promise((resolve, reject) => {
+    const req = http.request(requestOptions, (res) => {
+      const chunks = [];
+
+      res.on('data', (chunk) => {
+        chunks.push(chunk);
+      });
+
+      res.on('end', () => {
+        resolve({
+          statusCode: res.statusCode,
+          headers: res.headers,
+          trailers: res.trailers,
+          body: Buffer.concat(chunks)
+        });
+      });
+    });
+
+    req.on('error', reject);
+
+    if (body) {
+      if (body instanceof URLSearchParams || body instanceof String || typeof body === 'string') {
+        req.setHeader('Content-Type', 'application/x-www-form-urlencoded');
+        req.write(body.toString());
+      } else if (typeof body === 'object') {
+        req.setHeader('Content-Type', 'application/json');
+        req.write(JSON.stringify(body));
+      }
+    }
+
+    req.end();
+  });
+}
+
+export { request };
+```

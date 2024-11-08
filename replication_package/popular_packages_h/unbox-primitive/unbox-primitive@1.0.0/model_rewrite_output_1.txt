@@ -1,0 +1,41 @@
+The Node.js code is a module that exports a function for "unboxing" JavaScript primitive values from their corresponding "boxed" objects. In JavaScript, primitives such as strings, numbers, booleans, symbols, and bigints have object counterparts known as boxed primitives. This function takes such a boxed primitive and returns the underlying primitive value. It uses the `which-boxed-primitive` module to determine the type of the boxed primitive and then appropriately retrieves the primitive value using pre-defined functions (`toString` for strings, `valueOf` for numbers, booleans, symbols, and bigints). It ensures compatibility with environments that may lack some native features like Symbols or BigInts. If the input is a non-boxed primitive or an invalid type, it throws an error.
+
+```javascript
+'use strict';
+
+const whichBoxedPrimitive = require('which-boxed-primitive');
+const { call } = require('function-bind');
+const hasSymbols = require('has-symbols')();
+const hasBigInts = require('has-bigints')();
+
+const toString = call.bind(String.prototype.toString);
+const numberValueOf = call.bind(Number.prototype.valueOf);
+const booleanValueOf = call.bind(Boolean.prototype.valueOf);
+const symbolValueOf = hasSymbols ? call.bind(Symbol.prototype.valueOf) : null;
+const bigIntValueOf = hasBigInts ? call.bind(BigInt.prototype.valueOf) : null;
+
+module.exports = function unboxPrimitive(value) {
+    const type = whichBoxedPrimitive(value);
+    if (typeof type !== 'string') {
+        throw new TypeError(type === null ? 'value is an unboxed primitive' : 'value is a non-boxed-primitive object');
+    }
+
+    switch (type) {
+        case 'String':
+            return toString(value);
+        case 'Number':
+            return numberValueOf(value);
+        case 'Boolean':
+            return booleanValueOf(value);
+        case 'Symbol':
+            if (!hasSymbols) {
+                throw new EvalError('Environment lacks Symbols, yet a boxed Symbol is present. Please report this!');
+            }
+            return symbolValueOf(value);
+        case 'BigInt':
+            return bigIntValueOf(value);
+        default:
+            throw new RangeError('Unknown boxed primitive: ' + type);
+    }
+};
+```

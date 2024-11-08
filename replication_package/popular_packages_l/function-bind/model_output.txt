@@ -1,0 +1,87 @@
+The `function-bind` Node.js package implements a polyfill for `Function.prototype.bind`. This is useful for environments that do not natively support the `bind` method on functions, such as older versions of PhantomJS, Internet Explorer versions before 9, and Node.js versions before 0.6.
+
+The `bind` method is used to create a new function that, when called, has its `this` keyword set to the provided value with a given sequence of arguments preceding any provided when the new function is called. 
+
+### Usage
+
+In your project, you can overwrite the existing `Function.prototype.bind` with this polyfill to ensure compatibility:
+
+```javascript
+Function.prototype.bind = require("function-bind");
+```
+
+### Installation
+
+The package can be installed via npm using the following command:
+
+```bash
+npm install function-bind
+```
+
+### Contribution and Licensing
+
+The primary contributor to this package is Raynos, and it is licensed under the MIT License.
+
+Here is the implementation code for the Node.js package that replicates the `Function.prototype.bind` functionality:
+
+```javascript
+// function-bind.js
+(function() {
+    'use strict';
+
+    var slice = Array.prototype.slice;
+    
+    function bind(that) {
+        var target = this;
+        if (typeof target !== 'function') {
+            throw new TypeError('Function.prototype.bind called on incompatible ' + target);
+        }
+        
+        var args = slice.call(arguments, 1);
+
+        var binder = function() {
+            if (this instanceof bound) {
+                var result = target.apply(this,
+                    args.concat(slice.call(arguments))
+                );
+                if (Object(result) === result) {
+                    return result;
+                }
+                return this;
+            } else {
+                return target.apply(that,
+                    args.concat(slice.call(arguments))
+                );
+            }
+        };
+
+        var boundLength = Math.max(0, target.length - args.length);
+        var boundArgs = [];
+        for (var i = 0; i < boundLength; i++) {
+            boundArgs.push('$' + i);
+        }
+
+        var bound = Function('binder', 'slice',
+            'return function (' + boundArgs.join(',') + '){ return binder.apply(this, slice.call(arguments)); }'
+        )(binder, slice);
+
+        if (target.prototype) {
+            Empty.prototype = target.prototype;
+            bound.prototype = new Empty();
+            Empty.prototype = null;
+        }
+
+        return bound;
+    }
+
+    function Empty() {}
+
+    if (!Function.prototype.bind) {
+        Function.prototype.bind = bind;
+    }
+
+    module.exports = bind;
+})();
+```
+
+This code defines a `bind` function that polyfills `Function.prototype.bind`. It checks if the environment already supports `bind` and, if not, defines and attaches a custom `bind` implementation to `Function.prototype`.

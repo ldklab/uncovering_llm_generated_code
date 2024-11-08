@@ -1,0 +1,112 @@
+The provided Node.js code defines a class `CSSwhat` that includes two static methods: `parse` and `stringify`. The `CSSwhat` class is designed to parse CSS selectors into a tokenized format and then convert them back to a string representation.
+
+1. **Parsing Functionality (`parse` method):**
+   - The `parse` method takes a CSS selector string as input and processes it into structured tokens.
+   - It splits the input string by commas to handle multiple selector groups.
+   - For each group, it iterates over its characters to identify and classify different parts of the selector such as tags, attributes, pseudo-classes, combinators (like child, sibling, descendant), and special characters.
+   - The method recognizes tags, attributes enclosed in brackets `[]`, pseudo-classes prefixed with `:`, and various combinators represented by characters (`>`, `<`, `~`, `+`).
+   - The outcome is an array of token objects, each representing a part of the CSS selector with type and associated data.
+
+2. **Stringifying Functionality (`stringify` method):**
+   - The `stringify` method takes the tokenized selector (array of objects) and reconstructs it into a human-readable CSS selector string.
+   - It maps over the tokenized groups and individual tokens, converting them into their respective string components based on their types.
+   - The `stringify` function can handle various token types like tags, attributes, pseudo-classes, and combinators, forming a complete selector string.
+
+The code is structured into a module, which exports the `CSSwhat` class to be used elsewhere in a project.
+
+```javascript
+// css-what.js
+class CSSwhat {
+  static parse(selector) {
+    const result = [];
+    const groups = selector.split(',');
+
+    for (const group of groups) {
+      const tokens = [];
+      let current = '';
+      let inAttribute = false;
+      let inPseudo = false;
+
+      for (let char of group.trim()) {
+        if (char === '[') {
+          inAttribute = true;
+          if (current) {
+            tokens.push({ type: 'tag', name: current });
+            current = '';
+          }
+        } else if (char === ']') {
+          tokens.push({ type: 'attribute', name: current, action: 'exists', value: '', ignoreCase: false });
+          current = '';
+          inAttribute = false;
+        } else if (char === ':' && !inAttribute) {
+          if (current) {
+            tokens.push({ type: 'tag', name: current });
+            current = '';
+          }
+          inPseudo = true;
+        } else if (['>', '<', '~', '+'].includes(char) && !inAttribute && !inPseudo) {
+          if (current) {
+            tokens.push({ type: 'tag', name: current });
+            current = '';
+          }
+          const typeMap = { '>': 'child', '<': 'parent', '~': 'sibling', '+': 'adjacent' };
+          tokens.push({ type: typeMap[char] });
+        } else if (char.match(/\s/) && !inAttribute && !inPseudo) {
+          if (current) {
+            tokens.push({ type: 'tag', name: current });
+            current = '';
+          }
+          tokens.push({ type: 'descendant' });
+        } else if (char === '(' && inPseudo) {
+          inPseudo = false;
+          const [name, data] = current.split('(');
+          tokens.push({ type: 'pseudo', name: name, data: data.slice(0, -1) });
+          current = '';
+        } else if (char === ')' && inPseudo) {
+          tokens.push({ type: 'pseudo', name: current, data: null });
+          current = '';
+          inPseudo = false;
+        } else {
+          current += char;
+        }
+      }
+
+      if (current) {
+        tokens.push({ type: 'tag', name: current });
+      }
+
+      result.push(tokens);
+    }
+    return result;
+  }
+
+  static stringify(selector) {
+    return selector.map(group => group.map(token => {
+      switch (token.type) {
+        case 'tag': return token.name;
+        case 'attribute': return `[${token.name}]`;
+        case 'pseudo': return `:${token.name}${token.data ? '(' + token.data + ')' : ''}`;
+        case 'child': return '>';
+        case 'parent': return '<';
+        case 'sibling': return '~';
+        case 'adjacent': return '+';
+        case 'descendant': return ' ';
+        case 'universal': return '*';
+        case 'column-combinator': return '||';
+        default: return '';
+      }
+    }).join('')).join(', ');
+  }
+}
+
+module.exports = CSSwhat;
+
+// Example usage:
+const CSSwhat = require('./css-what');
+
+// Parsing a simple example
+console.log(CSSwhat.parse("foo[bar]:baz"));
+
+// Stringifying the parsed selector back
+console.log(CSSwhat.stringify([[{ type: "tag", name: "foo" }, { type: "attribute", name: "bar", action: "exists", value: "", ignoreCase: false }, { type: "pseudo", name: "baz", data: null }]]));
+```

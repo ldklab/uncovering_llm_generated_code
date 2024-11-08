@@ -1,0 +1,113 @@
+The provided Node.js code defines a `CLIUI` class, which is a utility for creating command-line interface (CLI) user interfaces, particularly focusing on managing text output in a structured and formatted way. Here's a breakdown of its functionality:
+
+1. **Initialization**: The `CLIUI` class takes an optional configuration object that sets a default width for the output (defaulting to 80 characters) and a flag to enable or disable text wrapping (enabled by default).
+
+2. **Row and Column Management**:
+   - `div(...cols)`: Adds a new row with specified columns.
+   - `span(...cols)`: Adds columns to the last row. If no rows exist, it adds a new one.
+
+3. **Text Output Reset**:
+   - `resetOutput()`: Resets the stored rows to an empty array.
+
+4. **Output Generation**:
+   - `toString()`: Generates the formatted string representation of all stored rows. Each row is constructed from its columns, with text formatting applied according to its configuration (e.g., alignment, padding, wrapping, etc.).
+
+5. **Text Wrapping and Alignment**:
+   - `wrapText(text, width)`: Wraps the text to the specified width if wrapping is enabled.
+   - `alignText(text, width, align)`: Aligns text within a given width. Supports left, right, and center alignments.
+
+6. **Factory Method**:
+   - `static create(options)`: Static method to instantiate a new CLIUI object.
+   
+7. **Module Export**:
+   - It exports a function that creates and returns a new instance of `CLIUI`.
+
+Here is a possible rewrite of this code:
+
+```javascript
+const util = require('util');
+
+class CLIUI {
+  constructor(options = {}) {
+    this.options = options;
+    this.width = options.width || 80; // Set default width to 80 if not provided
+    this.wrap = options.wrap !== undefined ? options.wrap : true; // Enable wrapping by default
+    this.rows = []; // Initialize rows as an empty array
+  }
+
+  // Method to add a new row with specified columns
+  div(...cols) {
+    this.rows.push(cols);
+  }
+
+  // Method to add columns to the last row, or create one if none exists
+  span(...cols) {
+    if (this.rows.length === 0) {
+      this.div(...cols);
+    } else {
+      this.rows[this.rows.length - 1].push(...cols);
+    }
+  }
+
+  // Method to clear all rows
+  resetOutput() {
+    this.rows = [];
+  }
+
+  // Generate the formatted string representation of all rows
+  toString() {
+    let output = '';
+
+    // Iterate over each row
+    for (const row of this.rows) {
+      const rowOutput = [];
+
+      // Process each column in the row
+      for (const col of row) {
+        const textContent = typeof col === 'string' ? col : col.text || '';
+        const columnWidth = typeof col === 'object' && col.width ? col.width : this.width / row.length;
+        const padding = typeof col === 'object' && col.padding ? col.padding : [0, 0, 0, 0];
+        const alignment = typeof col === 'object' && col.align ? col.align : 'left';
+
+        const paddedText = ' '.repeat(padding[3]) + textContent + ' '.repeat(padding[1]);
+        const wrappedText = this.wrapText(paddedText, columnWidth);
+        const alignedText = this.alignText(wrappedText, columnWidth, alignment);
+
+        rowOutput.push(alignedText);
+      }
+
+      output += rowOutput.join('') + '\n';
+    }
+    
+    return output;
+  }
+
+  // Helper method to handle text wrapping
+  wrapText(text, width) {
+    if (!this.wrap) return text;
+    const regex = new RegExp(`(.{1,${width}})(\\s+|$)`, 'g');
+    return text.match(regex).join('\n');
+  }
+
+  // Helper method to handle text alignment
+  alignText(text, width, align) {
+    const lines = text.split('\n');
+    return lines.map(line => {
+      const spaces = width - line.length;
+      if (align === 'right') return ' '.repeat(spaces) + line;
+      if (align === 'center') return ' '.repeat(Math.floor(spaces / 2)) + line + ' '.repeat(Math.ceil(spaces / 2));
+      return line + ' '.repeat(spaces);
+    }).join('');
+  }
+
+  // Static method to create a new instance
+  static create(options) {
+    return new CLIUI(options);
+  }
+}
+
+// Export a function to create a new CLIUI instance
+module.exports = function (options) {
+  return CLIUI.create(options);
+};
+```

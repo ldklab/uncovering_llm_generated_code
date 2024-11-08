@@ -1,0 +1,80 @@
+The Node.js code defines two classes, `EventShim` and `EventTargetShim`, which emulate some of the behavior found in browser-based event handling using a custom implementation.
+
+### Explanation:
+
+1. **`EventShim` Class:**
+   - Represents an event with a specified `type`.
+   - Can be initialized with options, particularly focusing on whether the event is `cancelable`.
+   - Provides a `preventDefault` method that sets a flag `defaultPrevented` if the event is cancelable, otherwise it logs a warning.
+
+2. **`EventTargetShim` Class:**
+   - Manages event listeners for different event types.
+   - `addEventListener` method adds an event listener for a specified type. If a signal option is provided, it registers an abort signal to automatically remove the listener.
+   - `removeEventListener` removes an event listener for a specified type.
+   - `dispatchEvent` dispatches an event to all relevant listeners of the event's type. If a listener has the `once` option set, it is removed after being called.
+
+These classes are exported as a module for use elsewhere in a Node.js environment.
+
+### Rewritten Code:
+
+```javascript
+// event-target-shim.js
+
+class EventShim {
+  constructor(type, options = {}) {
+    this.type = type;
+    this.cancelable = Boolean(options.cancelable);
+    this.defaultPrevented = false;
+  }
+
+  preventDefault() {
+    if (this.cancelable) {
+      this.defaultPrevented = true;
+    } else {
+      console.warn('Ignored as event is passive.');
+    }
+  }
+}
+
+class EventTargetShim {
+  constructor() {
+    this.listeners = {};
+  }
+
+  addEventListener(type, listener, options = {}) {
+    if (!this.listeners[type]) {
+      this.listeners[type] = [];
+    }
+
+    let listenerOptions = typeof options === 'boolean' ? { capture: options } : options;
+
+    if (listenerOptions.signal) {
+      listenerOptions.signal.addEventListener('abort', () => {
+        this.removeEventListener(type, listener);
+      });
+    }
+
+    this.listeners[type].push({ listener, options: listenerOptions });
+  }
+
+  removeEventListener(type, listener) {
+    if (!this.listeners[type]) return;
+    this.listeners[type] = this.listeners[type].filter(obj => obj.listener !== listener);
+  }
+
+  dispatchEvent(event) {
+    const listeners = this.listeners[event.type] || [];
+    for (const { listener, options } of listeners) {
+      if (options.once) {
+        this.removeEventListener(event.type, listener);
+      }
+      listener.call(this, event);
+    }
+  }
+}
+
+module.exports = {
+  EventShim,
+  EventTargetShim,
+};
+```

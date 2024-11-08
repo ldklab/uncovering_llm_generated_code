@@ -1,0 +1,172 @@
+The `jest-matcher-utils` package provides a set of utilities that are primarily used by Jest's `expect` library, particularly within the context of matchers. These utilities are used to format messages, perform diff operations, and ensure proper types and values during test assertions. The package includes a variety of functions, types, and constants aimed at enhancing the usage and efficiency of Jest matchers.
+
+### Key Functionalities:
+
+1. **Functions**: 
+   - **stringify**: Converts values to a string representation.
+   - **highlightTrailingWhitespace**: Highlights the trailing whitespace in strings.
+   - **printReceived** and **printExpected**: Formats received and expected values for better readability in test output.
+   - **printWithType**: Prints a value with its type included.
+   - **ensureNoExpected**, **ensureActualIsNumber**, **ensureExpectedIsNumber**, **ensureNumbers**, **ensureExpectedIsNonNegativeInteger**: These functions are used to validate that the values passed to matchers meet certain criteria, like being numbers or ensuring no expectations are set when not needed.
+   - **printDiffOrStringify**: Provides a diff between two values or stringifies them if they are identical.
+   - **diff**: Generates a text diff between two values.
+   - **pluralize**: Outputs the correct singular or plural form based on count.
+   - **getLabelPrinter**: Returns a function to print labels consistently.
+   - **matcherErrorMessage**: Constructs an error message for matcher failure.
+   - **matcherHint**: Supplies hints to improve error messages by indicating the matcher used.
+
+2. **Types**:
+   - **MatcherHintOptions** and **DiffOptions**: Options that configure behavior of the printer functions and diff utilities.
+
+3. **Constants**:
+   - **EXPECTED_COLOR**, **RECEIVED_COLOR**, **INVERTED_COLOR**, **BOLD_WEIGHT**, **DIM_COLOR**, **SUGGEST_TO_CONTAIN_EQUAL**: Constants for styling outputs, such as colors used to highlight expected and received outputs or making text bold/dim.
+
+These utilities are extensively used within Jest to provide detailed and user-friendly feedback on tests, especially in scenarios where values differ unexpectedly or when an assertion fails.
+
+```javascript
+// jest-matcher-utils/index.js
+
+// Import required Node.js module for creating text diff
+const { diffLines } = require('diff');
+
+// Constants for styling
+const EXPECTED_COLOR = '\x1b[32m'; // Green
+const RECEIVED_COLOR = '\x1b[31m'; // Red
+const INVERTED_COLOR = '\x1b[7m';
+const BOLD_WEIGHT = '\x1b[1m';
+const DIM_COLOR = '\x1b[2m';
+
+const SUGGEST_TO_CONTAIN_EQUAL = 'Did you mean to use .toContainEqual()?';
+
+// Function to stringify any JavaScript value
+function stringify(value) {
+  return JSON.stringify(value, null, 2);
+}
+
+// Function to highlight trailing whitespace
+function highlightTrailingWhitespace(text) {
+  return text.replace(/[\s]+$/g, (match) => INVERTED_COLOR + match + EXPECTED_COLOR);
+}
+
+// Function to print received value
+function printReceived(value) {
+  return RECEIVED_COLOR + stringify(value) + '\x1b[0m';
+}
+
+// Function to print expected value
+function printExpected(value) {
+  return EXPECTED_COLOR + stringify(value) + '\x1b[0m';
+}
+
+// Function to print value with its type
+function printWithType(name, value) {
+  return `${name}: ${typeof value} = ${stringify(value)}`;
+}
+
+// Function to ensure no expected value is provided
+function ensureNoExpected(expected) {
+  if (typeof expected !== 'undefined') {
+    throw new Error('Expected has to be undefined');
+  }
+}
+
+// Function to ensure actual is a number
+function ensureActualIsNumber(actual) {
+  if (typeof actual !== 'number') {
+    throw new Error('Actual value must be a number');
+  }
+}
+
+// Function to ensure expected is a number
+function ensureExpectedIsNumber(expected) {
+  if (typeof expected !== 'number') {
+    throw new Error('Expected value must be a number');
+  }
+}
+
+// Function checks that both are numbers
+function ensureNumbers(actual, expected) {
+  ensureActualIsNumber(actual);
+  ensureExpectedIsNumber(expected);
+}
+
+// Function to ensure expected is a non-negative integer
+function ensureExpectedIsNonNegativeInteger(expected) {
+  if (!Number.isInteger(expected) || expected < 0) {
+    throw new Error('Expected value must be a non-negative integer');
+  }
+}
+
+// Function to provide a diff or stringify
+function printDiffOrStringify(expected, received) {
+  const result = diff(stringify(expected), stringify(received));
+  return result ? result : RECEIVED_COLOR + stringify(received);
+}
+
+// Function to calculate the difference
+function diff(a, b) {
+  const changes = diffLines(a, b);
+  return changes.map(change => {
+    const color = change.added ? EXPECTED_COLOR : (change.removed ? RECEIVED_COLOR : DIM_COLOR);
+    return color + change.value + '\x1b[0m';
+  }).join('');
+}
+
+// Pluralize function
+function pluralize(word, count) {
+  return count === 1 ? word : word + 's';
+}
+
+// Label Printer
+function getLabelPrinter(...strings) {
+  const maxLength = Math.max(...strings.map(s => s.length));
+  return (str) => str + ':'.padEnd(maxLength - str.length + 2, ' ');
+}
+
+// Function for formatting matcher error messages
+function matcherErrorMessage(hint, received, expected, options) {
+  return `${hint}\n\nReceived:\n${printReceived(received)}\nExpected:\n${printExpected(expected)}`;
+}
+
+// Function to provide matcher hint
+function matcherHint(matcherName, received = 'received', expected = 'expected', options = {}) {
+  return `${BOLD_WEIGHT}${matcherName}${DIM_COLOR}(${received}${options.secondArgument ? `, ${expected}` : ''})\x1b[0m`;
+}
+
+// Types (not implemented in this example)
+const MatcherHintOptions = {};
+const DiffOptions = {};
+
+// Exports
+module.exports = {
+  // Functions
+  stringify,
+  highlightTrailingWhitespace,
+  printReceived,
+  printExpected,
+  printWithType,
+  ensureNoExpected,
+  ensureActualIsNumber,
+  ensureExpectedIsNumber,
+  ensureNumbers,
+  ensureExpectedIsNonNegativeInteger,
+  printDiffOrStringify,
+  diff,
+  pluralize,
+  getLabelPrinter,
+  matcherErrorMessage,
+  matcherHint,
+
+  // Constants
+  EXPECTED_COLOR,
+  RECEIVED_COLOR,
+  INVERTED_COLOR,
+  BOLD_WEIGHT,
+  DIM_COLOR,
+  SUGGEST_TO_CONTAIN_EQUAL,
+
+  // Types (if needed)
+  MatcherHintOptions,
+  DiffOptions
+};
+```

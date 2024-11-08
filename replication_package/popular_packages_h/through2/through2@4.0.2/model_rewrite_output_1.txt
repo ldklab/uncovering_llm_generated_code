@@ -1,0 +1,97 @@
+The given Node.js code exports a utility for creating transform streams using the `readable-stream` package. It achieves this in three forms: a factory function for creating a transform stream instance, a constructor function for creating instances of a transform stream that can be instantiated multiple times, and an object mode implementation. 
+
+Here's a step-by-step explanation of the structure and functionality of the code:
+
+1. **Inheritance Helper**: The `inherits` function is a utility to facilitate classical inheritance, allowing a function to inherit from a superclass.
+
+2. **`through2` Function**: This function is a factory that handles the arguments and creates a stream using a provided construction logic. It supports both buffering and transforming of stream data.
+
+3. **`make` Function**: This is the module's main export. It uses `through2` to create a standard transform stream where you can specify transformation logic in a callback function.
+
+4. **`ctor` Function**: Allows creating a reusable prototype for streams, enabling you to instantiate new transform streams with `new` or without it.
+
+5. **`obj` Function**: Similar to `make`, but creates transform streams in "object mode", which handles stream elements as objects rather than Buffers or strings.
+
+6. **Module Exports**: The module exports the `make` function, the `ctor` constructor, and the `obj` function for object-mode streams.
+
+Here's a rewritten version of the code structured for clarity:
+
+```javascript
+const { Transform } = require('readable-stream');
+
+function inherits(subConstructor, superConstructor) {
+  subConstructor.super_ = superConstructor;
+  subConstructor.prototype = Object.create(superConstructor.prototype, {
+    constructor: { value: subConstructor, enumerable: false, writable: true, configurable: true }
+  });
+}
+
+function createThrough2(constructor) {
+  return (options, transform, flush) => {
+    if (typeof options === 'function') {
+      flush = transform;
+      transform = options;
+      options = {};
+    }
+
+    if (typeof transform !== 'function') {
+      transform = (chunk, enc, cb) => cb(null, chunk);
+    }
+
+    if (typeof flush !== 'function') {
+      flush = null;
+    }
+
+    return constructor(options, transform, flush);
+  };
+}
+
+const make = createThrough2((options, transform, flush) => {
+  const t2 = new Transform(options);
+
+  t2._transform = transform;
+
+  if (flush) {
+    t2._flush = flush;
+  }
+
+  return t2;
+});
+
+const ctor = createThrough2((options, transform, flush) => {
+  function Through2(override) {
+    if (!(this instanceof Through2)) {
+      return new Through2(override);
+    }
+
+    this.options = Object.assign({}, options, override);
+    Transform.call(this, this.options);
+
+    this._transform = transform;
+
+    if (flush) {
+      this._flush = flush;
+    }
+  }
+
+  inherits(Through2, Transform);
+
+  return Through2;
+});
+
+const obj = createThrough2((options, transform, flush) => {
+  const t2 = new Transform(Object.assign({ objectMode: true, highWaterMark: 16 }, options));
+
+  t2._transform = transform;
+
+  if (flush) {
+    t2._flush = flush;
+  }
+
+  return t2;
+});
+
+module.exports = make;
+module.exports.ctor = ctor;
+module.exports.obj = obj;
+```

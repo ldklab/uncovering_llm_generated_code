@@ -1,0 +1,193 @@
+The given Node.js code is a custom implementation of the `sprintf` and `vsprintf` functions, which are used for formatted string output similar to the functions found in the C programming language. The `sprintf` function takes a format string and arguments to produce a formatted string. `vsprintf` does the same but takes an array of arguments instead. Here's a breakdown of the key functionalities:
+
+- **Regular Expressions**: The code starts by defining a set of regular expressions that are used to parse format specifiers, extract and handle placeholders, types, and other parts of the format string.
+- **`sprintf` Function**: It generates a formatted string based on a format string and subsequent arguments.
+- **`vsprintf` Function**: Similar to `sprintf`, but expects the arguments to be passed as an array.
+- **`sprintf_format` Function**: This function handles the core logic of formatting the output string according to the parsed format information. It iterates over a parse tree to construct and return the formatted string.
+- **`sprintf_parse` Function**: It parses a format string into a "parse tree" that describes the structure of the format, differentiating between literal text and placeholders.
+- **Exporting Functions**: The code exports these functions for use in both browser and Node.js environments. It checks for `exports` to define the functions for Node.js and `window` for browsers, also providing support for AMD module definition.
+
+Here's the rewritten code, organized and simplified to maintain the same functionality:
+
+```javascript
+(function(global) {
+    'use strict';
+
+    const regex = {
+        not_string: /[^s]/,
+        not_bool: /[^t]/,
+        not_type: /[^T]/,
+        not_primitive: /[^v]/,
+        number: /[diefg]/,
+        numeric_arg: /[bcdiefguxX]/,
+        json: /[j]/,
+        not_json: /[^j]/,
+        text: /^[^\x25]+/,
+        modulo: /^\x25{2}/,
+        placeholder: /^\x25(?:([1-9]\d*)\$|\(([^)]+)\))?(\+)?(0|'[^$])?(-)?(\d+)?(?:\.(\d+))?([b-gijostTuvxX])/,
+        key: /^([a-z_][a-z_\d]*)/i,
+        key_access: /^\.([a-z_][a-z_\d]*)/i,
+        index_access: /^\[(\d+)\]/,
+        sign: /^[+-]/
+    };
+
+    function sprintf(key) {
+        return sprintfFormat(sprintfParse(key), arguments);
+    }
+
+    function vsprintf(fmt, argv) {
+        return sprintf.apply(null, [fmt].concat(argv || []));
+    }
+
+    function sprintfFormat(parseTree, args) {
+        let cursor = 1, output = '';
+        for (const node of parseTree) {
+            if (typeof node === 'string') {
+                output += node;
+            } else if (typeof node === 'object') {
+                let arg = getNodeArgument(node, args, cursor);
+                cursor = updateCursor(node, cursor);
+
+                if (regex.numeric_arg.test(node.type) && (typeof arg !== 'number' && isNaN(arg))) {
+                    throw new TypeError(sprintf('[sprintf] expecting number but found %T', arg));
+                }
+                if (regex.number.test(node.type)) {
+                    arg = formatNumber(node, arg);
+                }
+                
+                output += formatPlaceholder(node, arg);
+            }
+        }
+        return output;
+    }
+
+    function sprintfParse(format) {
+        let parseTree = [];
+        while (format) {
+            let match;
+            if ((match = regex.text.exec(format)) !== null) {
+                parseTree.push(match[0]);
+            } else if ((match = regex.modulo.exec(format)) !== null) {
+                parseTree.push('%');
+            } else if ((match = regex.placeholder.exec(format)) !== null) {
+                parseTree.push(parsePlaceholder(match));
+            } else {
+                throw new SyntaxError('[sprintf] unexpected placeholder');
+            }
+            format = format.substring(match[0].length);
+        }
+        return parseTree;
+    }
+
+    function parsePlaceholder(match) {
+        return {
+            placeholder: match[0],
+            param_no:    match[1],
+            keys:        parseKeys(match[2]),
+            sign:        match[3],
+            pad_char:    match[4],
+            align:       match[5],
+            width:       match[6],
+            precision:   match[7],
+            type:        match[8]
+        };
+    }
+
+    function parseKeys(keyString) {
+        if (!keyString) return null;
+
+        let fieldList = [];
+        let remaining = keyString;
+        let match;
+        while (remaining) {
+            if ((match = regex.key.exec(remaining)) !== null) {
+                fieldList.push(match[1]);
+                remaining = remaining.substring(match[0].length);
+            } else if ((match = regex.key_access.exec(remaining)) !== null || 
+                       (match = regex.index_access.exec(remaining)) !== null) {
+                fieldList.push(match[1]);
+                remaining = remaining.substring(match[0].length);
+            } else {
+                throw new SyntaxError('[sprintf] failed to parse named argument key');
+            }
+        }
+        return fieldList;
+    }
+
+    function getNodeArgument(node, args, cursor) {
+        let arg;
+        if (node.keys) {
+            arg = args[cursor];
+            for (const key of node.keys) {
+                if (arg == undefined) {
+                    throw new Error(sprintf('[sprintf] Cannot access property "%s" of undefined value "%s"', key, node.keys[node.keys.indexOf(key) - 1]));
+                }
+                arg = arg[key];
+            }
+        } else if (node.param_no) {
+            arg = args[node.param_no];
+        } else {
+            arg = args[cursor];
+        }
+        return arg;
+    }
+
+    function updateCursor(node, cursor) {
+        return node.param_no ? cursor : cursor + 1;
+    }
+
+    function formatNumber(node, arg) {
+        switch (node.type) {
+            case 'b': return parseInt(arg, 10).toString(2);
+            case 'c': return String.fromCharCode(parseInt(arg, 10));
+            case 'd':
+            case 'i': return parseInt(arg, 10).toString(10);
+            case 'e': return node.precision ? parseFloat(arg).toExponential(node.precision) : parseFloat(arg).toExponential();
+            case 'f': return node.precision ? parseFloat(arg).toFixed(node.precision) : parseFloat(arg).toString();
+            case 'g': return node.precision ? String(Number(arg.toPrecision(node.precision))) : parseFloat(arg).toString();
+            case 'o': return (parseInt(arg, 10) >>> 0).toString(8);
+            case 'u': return parseInt(arg, 10) >>> 0;
+            case 'x': return (parseInt(arg, 10) >>> 0).toString(16);
+            case 'X': return (parseInt(arg, 10) >>> 0).toString(16).toUpperCase();
+        }
+    }
+
+    function formatPlaceholder(node, arg) {
+        if (regex.json.test(node.type)) {
+            return arg;
+        }
+        let sign = '', pad = '';
+        if (regex.number.test(node.type) && (!isNumberPositive(arg) || node.sign)) {
+            sign = isNumberPositive(arg) ? '+' : '-';
+            arg = arg.toString().replace(regex.sign, '');
+        }
+        let padChar = node.pad_char ? (node.pad_char === '0' ? '0' : node.pad_char.charAt(1)) : ' ';
+        let padLength = node.width - (sign + arg).length;
+        pad = node.width ? (padLength > 0 ? padChar.repeat(padLength) : '') : '';
+        return node.align ? sign + arg + pad : (padChar === '0' ? sign + pad + arg : pad + sign + arg);
+    }
+
+    function isNumberPositive(number) {
+        return number >= 0;
+    }
+
+    // Export to global scope or CommonJS if possible
+    if (typeof module !== 'undefined' && module.exports) {
+        exports.sprintf = sprintf;
+        exports.vsprintf = vsprintf;
+    }
+    if (typeof global !== 'undefined') {
+        global.sprintf = sprintf;
+        global.vsprintf = vsprintf;
+
+        if (typeof define === 'function' && define.amd) {
+            define(function() {
+                return {
+                    sprintf: sprintf,
+                    vsprintf: vsprintf
+                };
+            });
+        }
+    }
+})(typeof global !== 'undefined' ? global : typeof window !== 'undefined' ? window : this);
+```

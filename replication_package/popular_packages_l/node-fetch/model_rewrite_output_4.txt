@@ -1,0 +1,170 @@
+The provided Node.js code is a simplified implementation of a fetch-like function which mimics the behavior of the browser's Fetch API using Node.js `http` and `https` modules. It consists of several classes and functionalities:
+
+1. **FetchError**: A custom error class for handling fetch-related errors, allowing an error message, type, and system-related error details.
+
+2. **AbortError**: A custom error class representing request abort errors with a specified error type.
+
+3. **Body**: A class that enables consuming request/response body data with methods to retrieve body content as text or JSON. It manages and tracks the body usage to prevent multiple consumptions.
+
+4. **Headers**: A class for encapsulating HTTP headers, providing methods for adding, retrieving, and modifying headers.
+
+5. **Request**: Extends the `Body` class to represent HTTP requests, allowing configuration of method, URL, headers, and body content.
+
+6. **Response**: Extends the `Body` class to represent HTTP responses, capturing information such as status, status text, headers, and body content. It contains a method to check response status success.
+
+7. **fetch**: A function that performs HTTP(S) requests. It resolves with a `Response` object or rejects with a `FetchError`. It constructs a request using Node.js's `http` or `https` module depending on the URL protocol. It processes response data and respects body size options.
+
+Here's the rewritten code:
+
+```javascript
+// index.mjs
+import http from 'node:http';
+import https from 'node:https';
+import { Readable } from 'node:stream';
+import { TextDecoder } from 'node:util';
+
+class FetchError extends Error {
+  constructor(message, type, systemError) {
+    super(message);
+    this.type = type;
+    if (systemError) {
+      this.code = systemError.code;
+      this.erroredAt = systemError.erroredAt;
+    }
+  }
+}
+
+class AbortError extends Error {
+  constructor(message) {
+    super(message);
+    this.type = 'aborted';
+  }
+}
+
+class Body {
+  constructor(body) {
+    this.body = body;
+    this.bodyUsed = false;
+  }
+
+  async _consumeBody() {
+    if (this.bodyUsed) throw new TypeError('Body has already been used');
+    this.bodyUsed = true;
+    if (this.body instanceof Readable) {
+      return new Promise((resolve, reject) => {
+        const chunks = [];
+        this.body.on('data', (chunk) => chunks.push(chunk));
+        this.body.on('end', () => resolve(Buffer.concat(chunks)));
+        this.body.on('error', reject);
+      });
+    }
+    return this.body || Buffer.alloc(0);
+  }
+
+  async text() {
+    const buffer = await this._consumeBody();
+    return buffer.toString('utf-8');
+  }
+
+  async json() {
+    const text = await this.text();
+    return JSON.parse(text);
+  }
+}
+
+class Headers {
+  constructor(init = {}) {
+    this.map = {};
+    for (const [key, value] of Object.entries(init)) {
+      this.map[key.toLowerCase()] = [value.toString()];
+    }
+  }
+
+  get(name) {
+    const entries = this.map[name.toLowerCase()];
+    return entries ? entries.join(', ') : null;
+  }
+
+  set(name, value) {
+    this.map[name.toLowerCase()] = [value];
+  }
+  
+  raw() {
+    return this.map;
+  }
+}
+
+class Request extends Body {
+  constructor(input, options = {}) {
+    super(options.body);
+    this.url = input;
+    this.method = options.method || 'GET';
+    this.headers = new Headers(options.headers);
+  }
+}
+
+class Response extends Body {
+  constructor(body, options = {}) {
+    super(body);
+    this.status = options.status || 200;
+    this.statusText = options.statusText || '';
+    this.headers = new Headers(options.headers);
+  }
+
+  get ok() {
+    return this.status >= 200 && this.status < 300;
+  }
+}
+
+function fetch(url, options = {}) {
+  return new Promise((resolve, reject) => {
+    const parsedURL = new URL(url);
+    const protocol = parsedURL.protocol === 'http:' ? http : https;
+
+    const headers = new Headers(options.headers);
+    const request = protocol.request(
+      url,
+      {
+        method: options.method || 'GET',
+        headers: headers.raw(),
+        agent: options.agent
+      },
+      (res) => {
+        const body = new Readable();
+        res.on('data', (chunk) => body.push(chunk));
+        res.on('end', () => body.push(null));
+
+        const responseOptions = {
+          status: res.statusCode,
+          statusText: res.statusMessage,
+          headers: res.headers,
+        };
+        
+        const responseBody = body;
+        
+        if (options.size && Buffer.byteLength(body) > options.size) {
+          return reject(new FetchError(`content size at ${url} over limit: ${options.size}`, 'max-size'));
+        }
+        
+        resolve(new Response(responseBody, responseOptions));
+      }
+    );
+
+    request.on('error', (err) => {
+      reject(new FetchError(`request to ${url} failed, reason: ${err.message}`, 'system', err));
+    });
+
+    if (options.body) {
+      if (options.body instanceof Readable) {
+        options.body.pipe(request);
+      } else {
+        request.write(options.body);
+      }
+    }
+
+    request.end();
+  });
+}
+
+export { fetch, Headers, Request, Response, FetchError, AbortError };
+```

@@ -1,0 +1,54 @@
+The provided Node.js code defines a shim for `Object.keys`, which is a method that returns an array of a given object's own enumerable property names. The purpose of the shim is to ensure consistent behavior across different JavaScript environments.
+
+### Explanation:
+
+1. **Dependencies and Variables:**
+   - The code begins by importing required modules and setting up variables.
+   - `isArgs` is a required module used to check if a value is an `arguments` object.
+   - `origKeys` stores the original `Object.keys` method.
+   - `keysShim` is a function that decides whether to use the built-in `Object.keys` or a custom implementation.
+
+2. **Shim Installation:**
+   - The `shimObjectKeys` function modifies `Object.keys` if needed.
+   - It tests whether `Object.keys` works correctly with `arguments` objects. This is necessary because older versions of Safari had buggy behavior.
+   - If the default `Object.keys` does not handle `arguments` correctly, a patched version replaces it. This patched version converts `arguments` to an array before applying the original `Object.keys`.
+
+3. **Export:**
+   - Finally, the shim is exported as a module, allowing it to be imported and used elsewhere.
+
+Here's a possible rewrite of the code with the same functionality:
+
+```javascript
+'use strict';
+
+const slice = Array.prototype.slice;
+const isArgs = require('./isArguments');
+
+const originalKeys = Object.keys;
+
+function getKeys(o) {
+    return originalKeys(o);
+}
+
+const keysShim = originalKeys ? getKeys : require('./implementation');
+
+keysShim.shim = function shimObjectKeys() {
+    if (originalKeys) {
+        const keysWorksWithArguments = (function() {
+            const args = originalKeys(arguments);
+            return args && args.length === arguments.length;
+        }(1, 2));
+
+        if (!keysWorksWithArguments) {
+            Object.keys = function keys(object) {
+                return isArgs(object) ? originalKeys(slice.call(object)) : originalKeys(object);
+            };
+        }
+    } else {
+        Object.keys = keysShim;
+    }
+    return Object.keys || keysShim;
+};
+
+module.exports = keysShim;
+```

@@ -1,0 +1,74 @@
+The provided Node.js code consists of two modules, `quote.js` and `parse.js`, which are then integrated in `index.js`.
+
+1. **`quote.js`:**
+   - The `quote` function takes an array of strings (`args`) and iterates over each element.
+   - It checks if the string contains whitespace or any special characters (`'`, `"`, `$`, `` ` ``).
+   - If such characters exist, the string is wrapped in single quotes.
+   - Single quotes inside the string are escaped by replacing them with `'\\''`.
+   - The transformed strings are then concatenated into a single space-separated string.
+
+2. **`parse.js`:**
+   - The `parse` function takes a command string (`cmd`), an optional environment object (`env`), and an options object (`opts`) with a default escape character `\\`.
+   - The command string is split using a regular expression that identifies words, including quoted text.
+   - Each part is processed: 
+     - If enclosed in quotes, the outer quotes are removed.
+     - Escape characters as defined in `opts` are removed.
+     - Environment variable references in the form `$VARIABLE` are replaced with the corresponding value from `env`.
+     - Key-value pairs in the form `key=value` are processed, potentially resolving environment variables for the value.
+   - The processed parts are collected into an array, which is returned.
+
+3. **`index.js`:**
+   - Both the `quote` and `parse` functions are imported and exported together as a module.
+
+Below is the rewritten code:
+
+```javascript
+// quote.js
+function quote(args) {
+    return args.map(arg => {
+        if (/[\s'"\$`]/.test(arg)) {
+            return "'" + arg.replace(/'/g, "'\\''") + "'";
+        }
+        return arg;
+    }).join(' ');
+}
+
+module.exports = quote;
+
+// parse.js
+function parse(cmd, env = {}, opts = { escape: '\\' }) {
+    const result = [];
+    const re = /'[^']*'|"[^"]*"|\S+/g;
+    let match;
+
+    while ((match = re.exec(cmd)) !== null) {
+        let part = match[0];
+        if (part[0] === '"' || part[0] === "'") {
+            part = part.slice(1, -1);
+        }
+        part = part.replace(new RegExp(`\\${opts.escape}`, 'g'), '');
+
+        if (part.includes('=')) {
+            let [key, value] = part.split('=');
+            if (value.startsWith("$") && env.hasOwnProperty(value.slice(1))) {
+                value = env[value.slice(1)];
+            }
+            result.push(`${key}=${value}`);
+        } else if (part.startsWith("$") && env.hasOwnProperty(part.slice(1))) {
+            result.push(env[part.slice(1)]);
+        } else {
+            result.push(part);
+        }
+    }
+
+    return result;
+}
+
+module.exports = parse;
+
+// index.js
+const quote = require('./quote');
+const parse = require('./parse');
+
+module.exports = { quote, parse };
+```

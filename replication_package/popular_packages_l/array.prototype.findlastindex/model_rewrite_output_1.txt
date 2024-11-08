@@ -1,0 +1,57 @@
+The Node.js code provided is a polyfill implementation for the `Array.prototype.findLastIndex` method. The polyfill adds backwards compatibility for environments where `findLastIndex` might not be natively supported. The code defines several functions to facilitate this:
+
+1. **getPolyfill**: Checks if `Array.prototype.findLastIndex` is already defined. If not, it defines a custom `findLastIndex` function that iterates over the array from right to left, calling the provided callback function on each element until it finds one that returns a truthy value. It returns the function's index or -1 if not found.
+
+2. **shimArrayPrototypeFindLastIndex**: Applies the polyfill to `Array.prototype` if it's not already available. It uses `Object.defineProperty` to define the property with the appropriate descriptor settings.
+
+3. **findLastIndex**: A utility function that uses the polyfill to find the last index in an array according to the given callback and optional `thisArg`.
+
+Finally, the code exports the `getPolyfill`, `shim`, `implementation`, and `findLastIndex` functions for use elsewhere.
+
+```javascript
+const { defineProperty } = Object;
+const { call } = Function.prototype;
+
+function getPolyfill() {
+  return Array.prototype.findLastIndex || function findLastIndex(callback, thisArg) {
+    if (this == null) {
+      throw new TypeError('Array.prototype.findLastIndex called on null or undefined');
+    }
+    if (typeof callback !== 'function') {
+      throw new TypeError('callback must be a function');
+    }
+    const object = Object(this);
+    const length = object.length >>> 0;
+    for (let i = length - 1; i >= 0; i--) {
+      if (i in object && callback.call(thisArg, object[i], i, object)) {
+        return i;
+      }
+    }
+    return -1;
+  };
+}
+
+function shimArrayPrototypeFindLastIndex() {
+  const polyfill = getPolyfill();
+  if (Array.prototype.findLastIndex !== polyfill) {
+    defineProperty(Array.prototype, 'findLastIndex', {
+      value: polyfill,
+      configurable: true,
+      enumerable: false,
+      writable: true
+    });
+  }
+  return polyfill;
+}
+
+function findLastIndex(array, callback, thisArg) {
+  return call.call(getPolyfill(), array, callback, thisArg);
+}
+
+module.exports = {
+  getPolyfill,
+  shim: shimArrayPrototypeFindLastIndex,
+  implementation: getPolyfill(),
+  findLastIndex
+};
+```

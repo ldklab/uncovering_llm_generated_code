@@ -1,0 +1,71 @@
+The Node.js code defines a class named `LinesAndColumns` that helps in converting between character indices and line/column positions within a string. It handles both newline (`\n`) and carriage return (`\r`) characters, allowing it to work with different newline conventions found in text files. Here is a step by step explanation of the code:
+
+1. The constructor `LinesAndColumns(string)` takes a string and processes it to find the character offsets of line beginnings. It populates an `offsets` array that keeps track of where each line starts in the string.
+
+2. It iterates over the string characters, checking for newline (`LF`) and carriage return (`CR`) characters. For each new line found, it calculates the offset position and pushes it to the `offsets` array. It also handles the `CRLF` sequence encountered in Windows-style line endings.
+
+3. The method `locationForIndex(index)` converts a character index into a line/column object. It uses the `offsets` array to determine which line the index belongs to and calculates the column by subtracting the line's start offset from the index.
+
+4. The method `indexForLocation(location)` takes a `location` object (with `line` and `column` properties) and returns the corresponding character index in the string. It validates that the given line and column exist within the string's bounds.
+
+5. The method `lengthOfLine(line)` returns the number of characters in the specified line by subtracting the starting offset of the line from the starting offset of the next line.
+
+6. The class is then exported as a module using `exports.__esModule = true;` and `exports["default"] = LinesAndColumns;`.
+
+Here is a possible rewrite of this Node.js code:
+
+```javascript
+"use strict";
+
+const LF = '\n';
+const CR = '\r';
+
+class LinesAndColumns {
+    constructor(string) {
+        this.string = string;
+        this.offsets = [0];
+        
+        for (let offset = 0; offset < string.length;) {
+            const char = string[offset];
+            
+            if (char === LF) {
+                offset += LF.length;
+                this.offsets.push(offset);
+            } else if (char === CR) {
+                offset += CR.length;
+                if (string[offset] === LF) offset += LF.length;
+                this.offsets.push(offset);
+            } else {
+                offset++;
+            }
+        }
+    }
+
+    locationForIndex(index) {
+        if (index < 0 || index > this.string.length) return null;
+
+        let line = 0;
+        while (this.offsets[line + 1] <= index) line++;
+        
+        const column = index - this.offsets[line];
+        return { line, column };
+    }
+
+    indexForLocation(location) {
+        const { line, column } = location;
+        if (line < 0 || line >= this.offsets.length || column < 0 || column > this.lengthOfLine(line)) {
+            return null;
+        }
+
+        return this.offsets[line] + column;
+    }
+
+    lengthOfLine(line) {
+        const offset = this.offsets[line];
+        const nextOffset = line === this.offsets.length - 1 ? this.string.length : this.offsets[line + 1];
+        return nextOffset - offset;
+    }
+}
+
+export default LinesAndColumns;
+```

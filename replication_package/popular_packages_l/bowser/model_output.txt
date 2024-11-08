@@ -1,0 +1,148 @@
+The package described in the README is `Bowser`, a library designed to detect and provide information about web browsers, platforms, and rendering engines, which is useful for customizing user experiences based on the user's environment. It is a compact and optimized library that can be used both in browsers and Node.js environments, and offers a rich API for identifying various aspects of the browser such as its name, version, operating system, platform type, and rendering engine.
+
+Key functionalities include:
+1. Multi-Platform Support: Works in both browser and Node.js environments.
+2. ES5 Version: Provides a transpiled ES5 version without polyfills by default, suitable for environments that require backwards compatibility.
+3. Browser Properties Detection: Allows developers to retrieve detailed information about the browser and the user's operating system and platform.
+4. Browser Filtering: Developers can use the `satisfies()` method to filter and identify browser versions for implementing specific support or workarounds for different browsers.
+5. Modular Usage: Allows selective usage of parsers to optimize performance.
+
+Here's the implementation of the `Bowser` package:
+
+```javascript
+// bowser.js
+
+class BrowserParser {
+  constructor(userAgent) {
+    this.userAgent = userAgent.toLowerCase();
+    this.parsedResult = this.parseUserAgent();
+  }
+
+  parseUserAgent() {
+    const ua = this.userAgent;
+    const browserRegexes = [
+      { name: 'chrome', regex: /chrome\/([\d.]+)/ },
+      { name: 'firefox', regex: /firefox\/([\d.]+)/ },
+      { name: 'safari', regex: /version\/([\d.]+).*safari/ },
+      { name: 'internet explorer', regex: /msie ([\d.]+)/ },
+      { name: 'opera', regex: /opera\/([\d.]+)/ },
+    ];
+
+    const osRegexes = [
+      { name: 'windows', regex: /windows nt ([\d.]+)/ },
+      { name: 'macos', regex: /mac os x ([\d_]+)/ },
+      { name: 'linux', regex: /linux/ },
+    ];
+
+    const platformRegexes = [
+      { type: 'desktop', regex: /(win|mac|linux)/ },
+      { type: 'mobile', regex: /(iphone|android|mobile)/ },
+    ];
+
+    const engineRegexes = [
+      { name: 'trident', regex: /trident\/([\d.]+)/ },
+      { name: 'webkit', regex: /webkit\/([\d.]+)/ },
+      { name: 'gecko', regex: /gecko\/([\d.]+)/ },
+    ];
+
+    const parseWithRegexes = (regexes) => {
+      for (let item of regexes) {
+        const match = item.regex.exec(ua);
+        if (match) {
+          return { name: item.name, version: match[1].replace('_', '.') };
+        }
+      }
+      return null;
+    };
+
+    const browser = parseWithRegexes(browserRegexes) || { name: 'unknown', version: '' };
+    const os = parseWithRegexes(osRegexes) || { name: 'unknown', version: '' };
+    const platform = parseWithRegexes(platformRegexes) || { type: 'unknown' };
+    const engine = parseWithRegexes(engineRegexes) || { name: 'unknown', version: '' };
+
+    if (os.name === 'macos') {
+      os.versionName = this.getMacOSVersionName(os.version);
+    }
+
+    return { browser, os, platform, engine };
+  }
+
+  getMacOSVersionName(version) {
+    const versionMap = {
+      '10.15': 'Catalina',
+      '10.14': 'Mojave',
+      '10.13': 'High Sierra',
+      '10.12': 'Sierra',
+      '10.11': 'El Capitan',
+      '10.10': 'Yosemite',
+      '10.9': 'Mavericks',
+      '10.8': 'Mountain Lion',
+      '10.7': 'Lion',
+      '10.6': 'Snow Leopard',
+      '10.5': 'Leopard',
+      '10.4': 'Tiger',
+      '10.3': 'Panther',
+      '10.2': 'Jaguar',
+      '10.1': 'Puma',
+    };
+    return versionMap[version] || 'unknown';
+  }
+
+  getBrowserName() {
+    return this.parsedResult.browser.name;
+  }
+
+  getBrowser() {
+    return this.parsedResult.browser;
+  }
+
+  satisfies(conditions = {}) {
+    const { browser, os, platform } = this.parsedResult;
+
+    const checkVersion = (name, version, condition) => {
+      const operator = condition[0];
+      const targetVersion = condition.slice(1);
+      switch (operator) {
+        case '>':
+          return version > targetVersion;
+        case '<':
+          return version < targetVersion;
+        case '=':
+          return version === targetVersion;
+        case '~':
+          return version.startsWith(targetVersion);
+        default:
+          return false;
+      }
+    };
+
+    const checkConditions = (conditions, type, availableVersion) => {
+      return Object.keys(conditions[type] || {}).some((name) => {
+        return (
+          browser.name.includes(name) &&
+          checkVersion(name, availableVersion, conditions[type][name])
+        );
+      });
+    };
+
+    return (
+      checkConditions(conditions, 'windows', browser.version) ||
+      checkConditions(conditions, 'macos', browser.version) ||
+      checkConditions(conditions, 'mobile', browser.version) ||
+      checkConditions(conditions, 'desktop', browser.version) ||
+      checkConditions(conditions, 'browser', browser.version)
+    );
+  }
+
+  static getParser(userAgent) {
+    return new BrowserParser(userAgent);
+  }
+
+  static parse(userAgent) {
+    const parser = new BrowserParser(userAgent);
+    return parser.parsedResult;
+  }
+}
+
+module.exports = BrowserParser;
+```

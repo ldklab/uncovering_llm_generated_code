@@ -1,0 +1,143 @@
+The given Node.js code implements a simple templating engine similar to Mustache. Let's break down its functionality:
+
+1. **Mustache Class**: The class provides methods to parse and render templates using Mustache-like syntax. It initializes with default tags `{{` and `}}` and a cache for storing parsed templates.
+
+2. **escapeHtml**: A static method to escape special HTML characters in strings to prevent XSS attacks by replacing them with their respective HTML entity codes.
+
+3. **render**: A static method to render a template string with the given view (data context) and optional partials and custom tags. It creates a Mustache instance, parses the template into tokens, and then renders the tokens.
+
+4. **parse**: Method to tokenize the template. It caches the tokens for a template once parsed to improve performance on subsequent calls. It identifies different types of tokens, such as text, variables (to be replaced with view data), and section tags (for loops/conditionals).
+
+5. **renderTokens**: Method to convert parsed tokens into a rendered string using the provided view. It handles text replacements, HTML escaping of variables, and iterates over arrays in section tags to render repeating content.
+
+6. **lookup**: A utility method for resolving nested properties in the view object by dot-separated paths.
+
+7. **Module Export/Global Assignment**: At the end, it checks if `module.exports` is available for CommonJS module export. If not, it assigns the Mustache class to the `window` object for browser environments.
+
+Below is the rewritten code based on this explanation:
+
+```javascript
+class CustomMustacheTemplate {
+
+  constructor() {
+    this.delimiters = ['{{', '}}'];
+    this.cache = {};
+  }
+
+  static escapeSpecialChars(html) {
+    const htmlEntities = {
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#39;',
+      '/': '&#x2F;',
+    };
+    return String(html).replace(/[&<>"'\/]/g, char => htmlEntities[char]);
+  }
+
+  static interpret(template, context, fragments = {}, delimiters = null) {
+    const mustacheInstance = new CustomMustacheTemplate();
+    if (delimiters) mustacheInstance.delimiters = delimiters;
+    const parsedTokens = mustacheInstance.tokenize(template);
+    return mustacheInstance.generateOutput(parsedTokens, context, fragments, context);
+  }
+
+  tokenize(template) {
+    if (this.cache[template]) {
+      return this.cache[template];
+    }
+
+    const tokens = [];
+    const sectionsStack = [];
+    let cursor = 0, templateLength = template.length;
+    const [startDelimiter, endDelimiter] = this.delimiters;
+
+    while (cursor < templateLength) {
+      const startDelimiterIndex = template.indexOf(startDelimiter, cursor);
+      if (startDelimiterIndex === -1) {
+        tokens.push(['text', template.slice(cursor)]);
+        break;
+      }
+
+      if (startDelimiterIndex > cursor) {
+        tokens.push(['text', template.slice(cursor, startDelimiterIndex)]);
+      }
+
+      const endDelimiterIndex = template.indexOf(endDelimiter, startDelimiterIndex + startDelimiter.length);
+      if (endDelimiterIndex === -1) throw new Error('Missing closing tag at ' + startDelimiterIndex);
+
+      const tagContent = template.slice(startDelimiterIndex + startDelimiter.length, endDelimiterIndex).trim();
+      const latestSectionIndex = sectionsStack.length;
+
+      if (tagContent[0] === '#') {
+        sectionsStack.push(tagContent.slice(1));
+        tokens.push(['section_start', tagContent.slice(1), endDelimiterIndex + endDelimiter.length]);
+      } else if (tagContent[0] === '/') {
+        if (!sectionsStack.length || sectionsStack[latestSectionIndex - 1] !== tagContent.slice(1)) {
+          throw new Error(`Section "${tagContent.slice(1)}" not correctly closed at ${startDelimiterIndex}`);
+        }
+        sectionsStack.pop();
+      } else {
+        tokens.push(['variable', tagContent]);
+      }
+
+      cursor = endDelimiterIndex + endDelimiter.length;
+    }
+
+    if (sectionsStack.length) {
+      throw new Error(`Unclosed section "${sectionsStack[sectionsStack.length - 1]}"`);
+    }
+
+    this.cache[template] = tokens;
+    return tokens;
+  }
+
+  generateOutput(tokens, context, fragments, rootContext) {
+    let renderedString = '';
+
+    tokens.forEach(token => {
+      const [tokenType, tokenValue] = token;
+
+      switch (tokenType) {
+        case 'text':
+          renderedString += tokenValue;
+          break;
+        case 'variable':
+          renderedString += CustomMustacheTemplate.escapeSpecialChars(this.resolve(tokenValue, context));
+          break;
+        case 'section_start':
+          const sectionContent = this.resolve(tokenValue, context);
+          if (!sectionContent) return;
+          if (Array.isArray(sectionContent)) {
+            sectionContent.forEach(item => {
+              renderedString += this.generateOutput(tokens, item, fragments, item);
+            });
+          } else {
+            renderedString += this.generateOutput(tokens, sectionContent, fragments, rootContext);
+          }
+          break;
+        default:
+          break;
+      }
+    });
+
+    return renderedString;
+  }
+
+  resolve(path, context) {
+    const pathSegments = path.split('.');
+    let result = context;
+    pathSegments.forEach(segment => {
+      if (result) result = result[segment];
+    });
+    return result;
+  }
+}
+
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = CustomMustacheTemplate;
+} else {
+  window.CustomMustacheTemplate = CustomMustacheTemplate;
+}
+```

@@ -1,0 +1,69 @@
+The `deep-eql` package provides functionality to check if two JavaScript objects are "deeply equal". This involves comparing the inner structures and values of objects rather than just their references, which is unlike usual equality checks that only compare references in case of non-primitive values.
+
+Here is how it handles equality:
+
+1. **Primitives**: Uses strict equality (`Object.is`) for primitive types which include checks like `NaN === NaN` being true and `-0 === +0` being false.
+
+2. **Objects**: For objects, it recursively checks whether all keys and corresponding values are equal. It considers all own and inherited enumerable properties.
+
+3. **Error Objects**: When comparing error objects, it only considers the `name`, `message`, and `code` properties for equality. Other properties are ignored, regardless of whether they are enumerable.
+
+4. **Special Types**: Arrays and other object structures are appropriately handled by comparing their contents recursively.
+
+5. **Arguments vs Arrays**: The package distinguishes between the `arguments` object and actual arrays, recognizing that although they might be similar, they are distinct types unless converted.
+
+Below is a sample implementation of the `deep-eql` functionality in a Node.js package:
+
+```javascript
+// File: deep-eql.js
+
+function deepEql(obj1, obj2) {
+  if (Object.is(obj1, obj2)) {
+    return true;
+  }
+
+  if (typeof obj1 !== 'object' || obj1 === null ||
+      typeof obj2 !== 'object' || obj2 === null) {
+    return false;
+  }
+
+  if (obj1.constructor !== obj2.constructor) {
+    return false;
+  }
+
+  if (obj1 instanceof Error) {
+    return obj1.name === obj2.name &&
+           obj1.message === obj2.message &&
+           obj1.code === obj2.code;
+  }
+
+  const keys1 = Object.keys(obj1);
+  const keys2 = Object.keys(obj2);
+
+  if (keys1.length !== keys2.length) {
+    return false;
+  }
+
+  for (const key of keys1) {
+    if (!keys2.includes(key) || !deepEql(obj1[key], obj2[key])) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+module.exports = deepEql;
+
+// Usage example
+const deepEql = require('./deep-eql');
+
+console.log(deepEql({ a: 1 }, { a: 1 })); // true
+console.log(deepEql({ a: 1 }, { a: 2 })); // false
+console.log(deepEql(Error('foo'), Error('foo'))); // true
+console.log(deepEql(Error('foo'), Error('bar'))); // false
+console.log(deepEql([], arguments)); // false
+console.log(deepEql([], Array.prototype.slice.call(arguments))); // true
+```
+
+This code defines a function `deepEql` that takes two objects and returns true if they are deeply equal according to the rules outlined. It exports the function using Node.js module exports, allowing it to be used in other files. It includes handling of Error objects, enumerable properties, and strict checks similar to `Object.is` for non-object values.

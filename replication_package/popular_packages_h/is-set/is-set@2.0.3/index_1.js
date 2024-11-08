@@ -1,0 +1,52 @@
+'use strict';
+
+// Check if Map and Set are supported by the environment and assign them to $Map and $Set
+var $Map = typeof Map === 'function' && Map.prototype ? Map : null;
+var $Set = typeof Set === 'function' && Set.prototype ? Set : null;
+
+// Variable to hold the exported function
+var exported;
+
+// If Set is not supported, define a dummy function that always returns false
+if (!$Set) {
+	exported = function isSet(x) {
+		// Set is not present in this environment.
+		return false;
+	};
+}
+
+// Get the 'has' methods from Map and Set prototypes, if available
+var $mapHas = $Map ? Map.prototype.has : null;
+var $setHas = $Set ? Set.prototype.has : null;
+
+// If the exported function is not defined (which means Set is supported) but Set doesn't have 'has', redefine exported
+if (!exported && !$setHas) {
+	exported = function isSet(x) {
+		// Set does not have a 'has' method
+		return false;
+	};
+}
+
+// Export a function that determines if an object is a Set, considering various environment limitations
+module.exports = exported || function isSet(x) {
+	if (!x || typeof x !== 'object') {
+		return false;
+	}
+	try {
+		// Checking if the object has a Set-like 'has' function
+		$setHas.call(x);
+		if ($mapHas) {
+			try {
+				// Check for Map-like behavior to distinguish between Map and Set
+				$mapHas.call(x);
+			} catch (e) {
+				// If there's an error, it's likely a Set
+				return true;
+			}
+		}
+		// If Set is supported, check if 'x' is an instance of Set
+		return x instanceof $Set;
+	} catch (e) {}
+	// If any errors occur, x is likely not a Set
+	return false;
+};

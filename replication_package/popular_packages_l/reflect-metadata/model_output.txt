@@ -1,0 +1,140 @@
+The `reflect-metadata` package provides a way to define and interact with metadata defined on JavaScript classes and their members. This package augments JavaScript's `Reflect` object with methods for handling metadata, allowing users to associate metadata with class and object properties in a consistent way. It supports various workloads such as dependency injection, runtime type assertions, and reflective operations using decorators.
+
+### Key Features and Usage:
+1. **Installation**: Install the package using `npm install reflect-metadata`.
+
+2. **Usage in Different Environments**:
+   - **ES Modules or CommonJS**: `reflect-metadata` can be imported or required in both module systems. It automatically modifies the global `Reflect` object with additional metadata-handling capabilities. Two versions are available:
+     - Standard (`reflect-metadata`): Includes polyfills for `Map`, `Set`, and `WeakMap`.
+     - Lite (`reflect-metadata/lite`): Does not include polyfills, requiring native support in the runtime.
+   - **Browser via `<script>`**: Can be included in a web page using `<script>` tags for both standard and lite versions.
+
+3. **Defining Metadata**:
+   - **Declarative (using decorators)**: You can annotate class members with metadata using the `@Reflect.metadata(key, value)` decorator.
+   - **Imperative**: Metadata can be directly set using `Reflect.defineMetadata(metadataKey, metadataValue, target, propertyKey)`.
+
+4. **Accessing Metadata**:
+   - Check if metadata is defined using `Reflect.hasMetadata` or `Reflect.hasOwnMetadata`.
+   - Retrieve metadata values using `Reflect.getMetadata` or `Reflect.getOwnMetadata`.
+   - List all metadata keys using `Reflect.getMetadataKeys` or `Reflect.getOwnMetadataKeys`.
+   - Remove metadata with `Reflect.deleteMetadata`.
+
+5. **API Overview**:
+   - The API allows for defining, checking, retrieving, and deleting metadata on objects and their properties.
+   - Metadata is stored in a hierarchical manner aligning with JavaScript's prototype chain, enabling introspection and reflective programming.
+
+6. **Considerations**:
+   - This package is particularly useful for projects using TypeScript with experimental decorators.
+   - Mutating decorators should be carefully implemented to maintain the prototype chain, avoiding potential loss of metadata.
+
+Here is the code for the `reflect-metadata` Node.js package implementation:
+
+```javascript
+class MetadataMap {
+  constructor() {
+    this.map = new Map();
+  }
+  
+  set(property, metaKey, metaValue) {
+    if (!this.map.has(property)) {
+      this.map.set(property, new Map());
+    }
+    this.map.get(property).set(metaKey, metaValue);
+  }
+
+  get(property, metaKey) {
+    return this.map.has(property) ? this.map.get(property).get(metaKey) : undefined;
+  }
+
+  has(property, metaKey) {
+    return this.map.has(property) && this.map.get(property).has(metaKey);
+  }
+  
+  keys(property) {
+    return this.map.has(property) ? Array.from(this.map.get(property).keys()) : [];
+  }
+
+  delete(property, metaKey) {
+    if (this.map.has(property)) {
+      return this.map.get(property).delete(metaKey);
+    }
+    return false;
+  }
+}
+
+// Metadata internal store as WeakMap
+const metadataStore = new WeakMap();
+
+// Helper to ensure metadata map exists
+function ensureMetadataMap(target) {
+  if (!metadataStore.has(target)) {
+    metadataStore.set(target, new MetadataMap());
+  }
+}
+
+const Reflect = globalThis.Reflect || {}; 
+
+Reflect.defineMetadata = function (metadataKey, metadataValue, target, propertyKey) {
+  ensureMetadataMap(target);
+  metadataStore.get(target).set(propertyKey || 'default', metadataKey, metadataValue);
+};
+
+Reflect.hasMetadata = function (metadataKey, target, propertyKey) {
+  while (target !== null) {
+    if (Reflect.hasOwnMetadata(metadataKey, target, propertyKey)) {
+      return true;
+    }
+    target = Object.getPrototypeOf(target);
+  }
+  return false;
+};
+
+Reflect.hasOwnMetadata = function (metadataKey, target, propertyKey) {
+  ensureMetadataMap(target);
+  return metadataStore.get(target).has(propertyKey || 'default', metadataKey);
+};
+
+Reflect.getMetadata = function (metadataKey, target, propertyKey) {
+  while (target !== null) {
+    const result = Reflect.getOwnMetadata(metadataKey, target, propertyKey);
+    if (result !== undefined) {
+      return result;
+    }
+    target = Object.getPrototypeOf(target);
+  }
+  return undefined;
+};
+
+Reflect.getOwnMetadata = function (metadataKey, target, propertyKey) {
+  ensureMetadataMap(target);
+  return metadataStore.get(target).get(propertyKey || 'default', metadataKey);
+};
+
+Reflect.getMetadataKeys = function (target, propertyKey) {
+  const keys = new Set();
+  while (target !== null) {
+    Reflect.getOwnMetadataKeys(target, propertyKey).forEach(key => keys.add(key));
+    target = Object.getPrototypeOf(target);
+  }
+  return [...keys];
+};
+
+Reflect.getOwnMetadataKeys = function (target, propertyKey) {
+  ensureMetadataMap(target);
+  return metadataStore.get(target).keys(propertyKey || 'default');
+};
+
+Reflect.deleteMetadata = function (metadataKey, target, propertyKey) {
+  ensureMetadataMap(target);
+  return metadataStore.get(target).delete(propertyKey || 'default', metadataKey);
+};
+
+// Polyfill global Reflect if it doesn't exist
+if (!globalThis.Reflect) {
+  globalThis.Reflect = Reflect;
+}
+
+export default Reflect;
+```
+
+This code defines a metadata management API that integrates with the JavaScript `Reflect` object, offering methods for assigning and accessing metadata associated with objects and their properties. This functionality is useful in scenarios like dependency injection and reflection, particularly in conjunction with TypeScript decorators.

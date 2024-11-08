@@ -1,0 +1,83 @@
+The given Node.js code defines a custom readable stream to recursively list directory contents. It includes a class `ReaddirpStream` that extends a readable stream to asynchronously traverse a directory tree starting from a given root path. The stream emits file and directory entries, filtering them based on optional conditions specified in `fileFilter` and `directoryFilter` options.
+
+Here's a breakdown of how it works:
+1. The constructor of `ReaddirpStream` initializes the stream in object mode, sets the root directory, and accepts options for filtering.
+2. The `_read()` method handles reading entries:
+   - It checks if there are files queued, pushing them downstream.
+   - If there are directories to read, it processes them using `fs.readdir` to get their contents:
+     - For each directory entry, it constructs an object with path details.
+     - Files and directories are filtered based on provided criteria.
+     - Files are queued to be emitted, while directories are queued for further exploration.
+3. If no files or directories remain, it signifies the end of data by pushing `null`.
+4. The function `readdirp()` returns an instance of `ReaddirpStream`.
+5. The function `readdirpPromise()` uses `for await` to consume the stream asynchronously, collecting entries into an array which is returned as a promise.
+6. The module exports both `readdirp` (to create a stream) and `readdirpPromise` (to resolve directory entries as a promise).
+
+Here's the rewritten code:
+
+```javascript
+import fs from 'fs';
+import path from 'path';
+import { Readable } from 'stream';
+
+class ReaddirpStream extends Readable {
+  constructor(root, options = {}) {
+    super({ objectMode: true });
+    this.root = root;
+    this.options = options;
+    this.fileQueue = [];
+    this.directoryQueue = [root];
+  }
+
+  _read() {
+    if (this.fileQueue.length > 0) {
+      return this.push(this.fileQueue.shift());
+    }
+
+    if (this.directoryQueue.length > 0) {
+      const currentDir = this.directoryQueue.shift();
+      fs.readdir(currentDir, { withFileTypes: true }, (error, items) => {
+        if (error) {
+          this.emit('warn', error);
+          return this._read();
+        }
+
+        items.forEach(item => {
+          const itemFullPath = path.join(currentDir, item.name);
+          const entryDetail = {
+            path: path.relative(this.root, itemFullPath),
+            fullPath: itemFullPath,
+            basename: item.name,
+            dirent: item
+          };
+
+          if (item.isFile() && (!this.options.fileFilter || this.options.fileFilter(entryDetail))) {
+            this.fileQueue.push(entryDetail);
+          } else if (item.isDirectory() && (!this.options.directoryFilter || this.options.directoryFilter(entryDetail))) {
+            this.directoryQueue.push(itemFullPath);
+          }
+        });
+
+        this._read();
+      });
+    } else {
+      this.push(null);
+    }
+  }
+}
+
+function readdirp(root, options) {
+  return new ReaddirpStream(root, options);
+}
+
+async function readdirpPromise(root, options) {
+  const entries = [];
+  for await (const entry of readdirp(root, options)) {
+    entries.push(entry);
+  }
+  return entries;
+}
+
+export default readdirp;
+export { readdirpPromise };
+```

@@ -1,0 +1,99 @@
+The `@smithy/core` package is an internal package designed to provide core functionalities for generic Smithy clients. Here's a breakdown of the functionalities and organizational structure described in the README:
+
+1. **Core Submodules Organization**: The package is structured to support reusable components, called submodules, which are organized using the `exports` field in `package.json`. This setup allows submodules to be distributed individually while sharing a consistent version of core dependencies.
+
+2. **Submodules Development**:
+   - Each submodule is stored under `./src/submodules/<MODULE_NAME>/` with an `index.ts` and a `README.md`.
+   - Submodules are bundled individually using a build script named `Inliner.js`.
+   - Importing a submodule in Node.js will result in resolving a separate bundle, promoting modularization.
+   - Developers need to declare submodule metadata correctly in configuration files (`package.json`, `tsconfig.json`), which can be automatically fixed by the linter.
+   - Submodules are restricted from importing files from other submodules relatively; instead, submodule imports should be absolute.
+   - Validation of metadata and restrictions is enforced by a linter during the build (`yarn build`) and linting (`yarn lint`) processes.
+
+3. **Purpose and Usage**: The package, while not intended to be used directly by external users, serves to optimize initialization speed and reduce package sprawl by consolidating dependencies needed by Smithy runtime clients.
+
+4. **Decision for New Submodules vs. Packages**: 
+   - Common functionalities shared by multiple clients should be developed as submodules within `@smithy/core`.
+   - Components used by a small subset of clients may be developed as standalone packages.
+
+Based on this explanation, below is a sample implementation of a Node.js package following the described guidelines:
+
+```markdown
+// File Structure:
+// /package.json
+// /src/submodules/exampleSubmodule/index.ts
+// /src/submodules/exampleSubmodule/README.md
+// /Inliner.js
+
+// package.json
+{
+  "name": "@smithy/core",
+  "version": "1.0.0",
+  "main": "./dist/index.js",
+  "exports": "./dist/submodules/exampleSubmodule/index.js",
+  "scripts": {
+    "build": "node Inliner.js",
+    "lint": "eslint ./src"
+  },
+  "devDependencies": {
+    "typescript": "^4.0.0",
+    "eslint": "^7.0.0"
+  }
+}
+
+// src/submodules/exampleSubmodule/index.ts
+export function exampleFunction() {
+  console.log('Example function from exampleSubmodule');
+}
+
+// src/submodules/exampleSubmodule/README.md
+# Example Submodule
+This is an example submodule of @smithy/core demonstrating organization and build structure.
+
+// Inliner.js
+const fs = require('fs-extra');
+const path = require('path');
+
+async function buildSubmodule() {
+  const submodulePath = path.join(__dirname, 'src', 'submodules', 'exampleSubmodule');
+  const distPath = path.join(__dirname, 'dist', 'submodules', 'exampleSubmodule');
+
+  await fs.ensureDir(distPath);
+  await fs.copyFile(
+    path.join(submodulePath, 'index.ts'),
+    path.join(distPath, 'index.js') // Simulating a simple copy for the example
+  );
+  console.log('Submodule built successfully.');
+}
+
+buildSubmodule().catch(err => console.error(err));
+
+// .eslintrc
+{
+  "env": {
+    "node": true,
+    "es2021": true
+  },
+  "extends": "eslint:recommended",
+  "parserOptions": {
+    "ecmaVersion": 12
+  },
+  "rules": {
+    // Define any linting rules here
+  }
+}
+
+// tsconfig.json
+{
+  "compilerOptions": {
+    "target": "ES6",
+    "module": "CommonJS",
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "strict": true
+  },
+  "include": ["src/submodules/exampleSubmodule/**/*.ts"]
+}
+```
+
+In this example, `exampleSubmodule` is a simple functional submodule illustrating how to structure and build a part of the `@smithy/core` package according to the guidelines in the README. The system uses a basic copy mechanism (`Inliner.js`) to simulate building or bundling the submodule, and it includes configuration for TypeScript and ESLint to ensure code quality and consistency.

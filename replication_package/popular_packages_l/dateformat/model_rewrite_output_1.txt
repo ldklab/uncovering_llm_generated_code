@@ -1,0 +1,132 @@
+The provided Node.js code is a date formatting utility. It features the following functionality:
+
+1. **Internationalization (i18n) Support:** 
+   - Defines abbreviations and full names for days (Sunday to Saturday) and months (January to December).
+   - Defines parts of time of day (a.m., p.m., both in lowercase and uppercase).
+
+2. **Date Format Masks:** 
+   - Provides a set of predefined date format masks such as default format, short date, medium time, ISO formats, etc. These masks define the structure of date/time representations.
+
+3. **Helper Function (`pad`):** 
+   - Pads numerical values with zeros to ensure they have a minimum length. This is often used for formatting numbers like `01` for months or days.
+
+4. **Date Formatting Function (`dateFormat`):**
+   - Takes a date object, a specific mask for the format, and a boolean indicating UTC adjustment.
+   - If only one string argument is passed and it represents the mask, it uses the current date.
+   - Throws an error if the provided date is invalid.
+   - Calculates date components like day, month, year, hours, etc., applying i18n conversion if necessary.
+   - Constructs the formatted date string replacing any mask-specific placeholders with calculated values.
+
+5. **Pattern Matching and Replacement:**
+   - Uses regular expressions to identify and replace placeholders in the mask with actual date/time components as specified in `flags`.
+
+6. **Exports:**
+   - Exports the i18n data and predefined masks, along with the `dateFormat` function as the default export for formatting dates according to custom or predefined formats.
+
+Below is a potential rewrite of the code using similar logic:
+
+```javascript
+const i18n = {
+    dayNames: [
+        "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat",
+        "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"
+    ],
+    monthNames: [
+        "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+        "January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"
+    ],
+    timeNames: ["a", "p", "am", "pm", "A", "P", "AM", "PM"]
+};
+
+const masks = {
+    "default": "ddd mmm dd yyyy HH:MM:ss",
+    shortDate: "m/d/yy",
+    paddedShortDate: "mm/dd/yyyy",
+    mediumDate: "mmm d, yyyy",
+    longDate: "mmmm d, yyyy",
+    fullDate: "dddd, mmmm d, yyyy",
+    shortTime: "h:MM TT",
+    mediumTime: "h:MM:ss TT",
+    longTime: "h:MM:ss TT Z",
+    isoDate: "yyyy-mm-dd",
+    isoTime: "HH:MM:ss",
+    isoDateTime: "yyyy-mm-dd'T'HH:MM:sso",
+    isoUtcDateTime: "UTC:yyyy-mm-dd'T'HH:MM:ss'Z'"
+};
+
+function pad(number, length = 2) {
+    return String(number).padStart(length, '0');
+}
+
+function dateFormat(date, mask, utc) {
+    if (arguments.length === 1 && typeof date === "string" && !/\d/.test(date)) {
+        mask = date;
+        date = undefined;
+    }
+
+    date = date ? new Date(date) : new Date();
+
+    if (isNaN(date)) throw TypeError("Invalid date");
+
+    mask = String(masks[mask] || mask || masks["default"]);
+
+    if (mask.startsWith("UTC:")) {
+        mask = mask.slice(4);
+        utc = true;
+    }
+
+    const prefix = utc ? 'getUTC' : 'get';
+    const d = date[prefix + "Date"](),
+          D = date[prefix + "Day"](),
+          m = date[prefix + "Month"](),
+          y = date[prefix + "FullYear"](),
+          H = date[prefix + "Hours"](),
+          M = date[prefix + "Minutes"](),
+          s = date[prefix + "Seconds"](),
+          L = date[prefix + "Milliseconds"](),
+          o = utc ? 0 : date.getTimezoneOffset(),
+          flags = {
+              d: d,
+              dd: pad(d),
+              ddd: i18n.dayNames[D],
+              DDD: D === (new Date().getDay() + 6) % 7 ? "Yesterday" :
+                    D === new Date().getDay() ? "Today" :
+                    D === (new Date().getDay() + 1) % 7 ? "Tomorrow" : i18n.dayNames[D],
+              dddd: i18n.dayNames[D + 7],
+              DDDD: D === (new Date().getDay() + 6) % 7 ? "Yesterday" :
+                    D === new Date().getDay() ? "Today" :
+                    D === (new Date().getDay() + 1) % 7 ? "Tomorrow" : i18n.dayNames[D + 7],
+              m: m + 1,
+              mm: pad(m + 1),
+              mmm: i18n.monthNames[m],
+              mmmm: i18n.monthNames[m + 12],
+              yy: String(y).slice(2),
+              yyyy: y,
+              h: H % 12 || 12,
+              hh: pad(H % 12 || 12),
+              H: H,
+              HH: pad(H),
+              M: M,
+              MM: pad(M),
+              s: s,
+              ss: pad(s),
+              l: pad(L, 3),
+              L: pad(Math.round(L / 10)),
+              t: H < 12 ? i18n.timeNames[0] : i18n.timeNames[1],
+              tt: H < 12 ? i18n.timeNames[2] : i18n.timeNames[3],
+              T: H < 12 ? i18n.timeNames[4] : i18n.timeNames[5],
+              TT: H < 12 ? i18n.timeNames[6] : i18n.timeNames[7],
+              Z: utc ? "UTC" : (String(date).match(/\(([\w\s]+)\)/) || [])[1] || "", 
+              o: (o > 0 ? "-" : "+") + pad(Math.floor(Math.abs(o) / 60) * 100 + Math.abs(o) % 60, 4),
+              p: (o > 0 ? "-" : "+") + pad(Math.floor(Math.abs(o) / 60)) + ":" + pad(Math.abs(o) % 60),
+              S: ["th", "st", "nd", "rd"][(d % 10 > 3 || (d % 100 - d % 10) / 10 === 1) ? 0 : d % 10],
+              W: Math.ceil((((new Date(Date.UTC(y, m, d)).getTime() - new Date(Date.UTC(y, 0, 1)).getTime()) / 86400000) + new Date(Date.UTC(y, 0, 1)).getDay() + 1) / 7),
+              N: D || 7
+          };
+
+    return mask.replace(/'([^']+)'|"([^"]+)"|%(.)|([a-z])\1*|./gi, match => flags[match] !== undefined ? flags[match] : match.slice(1, match.length - 1));
+}
+
+export { i18n, masks };
+export default dateFormat;
+```

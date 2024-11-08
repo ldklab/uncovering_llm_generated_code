@@ -1,0 +1,108 @@
+The given Node.js code is designed to determine the type of a given TypedArray. Here's a breakdown of its functionality:
+
+1. **Dependencies**: It uses various modules like `for-each`, `available-typed-arrays`, `call-bind`, `call-bound`, and `gopd` (get own property descriptor) to manage TypedArrays and execute required operations.
+
+2. **TypedArray Check**: It gathers all available TypedArray names and checks for the presence of the `Symbol.toStringTag` property to distinguish between different TypedArray instances.
+
+3. **Prototype Caching**: A cache object is created to store getter functions for different TypedArray types, optimizing the type-checking process.
+
+4. **Type Detection Methods**: Two main methods, `tryTypedArrays` and `trySlices`, are utilized. These methods iterate over the cache and use try-catch blocks to identify the TypedArray type by either using the `Symbol.toStringTag` or by testing slice or set operations on the array.
+
+5. **Exported Function**: The `whichTypedArray` function is exported. This function takes an object, checks if it is a TypedArray, and returns the appropriate TypedArray type name or `false` if none is found. It accommodates scenarios where `Symbol.toStringTag` is not supported or certain environments behave differently.
+
+Here's a rewritten version of the code following the explained functionality:
+
+```javascript
+'use strict';
+
+const forEach = require('for-each');
+const availableTypedArrays = require('available-typed-arrays');
+const callBind = require('call-bind');
+const callBound = require('call-bind/callBound');
+const gOPD = require('gopd');
+
+const $toString = callBound('Object.prototype.toString');
+const hasToStringTag = require('has-tostringtag/shams')();
+
+const globalScope = typeof globalThis === 'undefined' ? global : globalThis;
+const typedArrayNames = availableTypedArrays();
+
+const $slice = callBound('String.prototype.slice');
+const getPrototypeOf = Object.getPrototypeOf;
+
+const $indexOf = callBound('Array.prototype.indexOf', true) || function indexOf(array, value) {
+    for (let i = 0; i < array.length; i++) {
+        if (array[i] === value) return i;
+    }
+    return -1;
+};
+
+let cache = { __proto__: null };
+if (hasToStringTag && gOPD && getPrototypeOf) {
+    forEach(typedArrayNames, (name) => {
+        const instance = new globalScope[name]();
+        if (Symbol.toStringTag in instance) {
+            const proto = getPrototypeOf(instance);
+            let descriptor = gOPD(proto, Symbol.toStringTag) || gOPD(getPrototypeOf(proto), Symbol.toStringTag);
+            if (descriptor) {
+                cache['$' + name] = callBind(descriptor.get);
+            }
+        }
+    });
+} else {
+    forEach(typedArrayNames, (name) => {
+        const instance = new globalScope[name]();
+        const method = instance.slice || instance.set;
+        if (method) {
+            cache['$' + name] = callBind(method);
+        }
+    });
+}
+
+function tryTypedArrays(value) {
+    let result = false;
+    forEach(cache, (getter, typedArray) => {
+        if (!result) {
+            try {
+                if ('$' + getter(value) === typedArray) {
+                    result = $slice(typedArray, 1);
+                }
+            } catch (e) {}
+        }
+    });
+    return result;
+}
+
+function trySlices(value) {
+    let result = false;
+    forEach(cache, (getter, name) => {
+        if (!result) {
+            try {
+                getter(value);
+                result = $slice(name, 1);
+            } catch (e) {}
+        }
+    });
+    return result;
+}
+
+module.exports = function whichTypedArray(value) {
+    if (!value || typeof value !== 'object') {
+        return false;
+    }
+    if (!hasToStringTag) {
+        const tag = $slice($toString(value), 8, -1);
+        if ($indexOf(typedArrayNames, tag) > -1) {
+            return tag;
+        }
+        if (tag !== 'Object') {
+            return false;
+        }
+        return trySlices(value);
+    }
+    if (!gOPD) {
+        return null;
+    }
+    return tryTypedArrays(value);
+};
+```

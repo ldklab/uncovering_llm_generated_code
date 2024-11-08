@@ -1,0 +1,63 @@
+The functionality of the provided Node.js code is to manage "slots" on objects using a private storage mechanism. It utilizes a side-channel to associate custom properties with objects without directly modifying them. This helps in maintaining encapsulation and avoiding property name conflicts on objects.
+
+Here's a breakdown of the main functions:
+
+1. **assert(O, slot)**: Checks if the object `O` is an object or a function and if `slot` is a string. It then ensures `O` is tracked by the channel.
+2. **get(O, slot)**: Retrieves the value associated with the `slot` for a particular object `O` from the side-channel storage.
+3. **has(O, slot)**: Checks if a specific `slot` exists for the object `O` in the storage.
+4. **set(O, slot, V)**: Sets the value `V` for a given `slot` on the object `O` in the side-channel storage.
+
+The code uses the `es-abstract` package to access intrinsic JavaScript objects like `TypeError`, the `has` package to check property existence, and the `side-channel` package for private storage.
+
+Here's a possible rewrite for the Node.js code:
+
+```javascript
+'use strict';
+
+const GetIntrinsic = require('es-abstract/GetIntrinsic');
+const hasOwnProp = require('has');
+const sideChannel = require('side-channel')();
+
+const $TypeError = GetIntrinsic('%TypeError%');
+
+const SLOT = {
+  assert: (O, slot) => {
+    validateInputs(O, slot);
+    sideChannel.assert(O);
+  },
+  get: (O, slot) => {
+    validateInputs(O, slot);
+    const slots = sideChannel.get(O);
+    return slots ? slots[`$${slot}`] : undefined;
+  },
+  has: (O, slot) => {
+    validateInputs(O, slot);
+    const slots = sideChannel.get(O);
+    return slots ? hasOwnProp(slots, `$${slot}`) : false;
+  },
+  set: (O, slot, V) => {
+    validateInputs(O, slot);
+    let slots = sideChannel.get(O);
+    if (!slots) {
+      slots = {};
+      sideChannel.set(O, slots);
+    }
+    slots[`$${slot}`] = V;
+  }
+};
+
+const validateInputs = (O, slot) => {
+  if (!O || (typeof O !== 'object' && typeof O !== 'function')) {
+    throw new $TypeError('`O` is not an object');
+  }
+  if (typeof slot !== 'string') {
+    throw new $TypeError('`slot` must be a string');
+  }
+};
+
+if (Object.freeze) {
+  Object.freeze(SLOT);
+}
+
+module.exports = SLOT;
+```

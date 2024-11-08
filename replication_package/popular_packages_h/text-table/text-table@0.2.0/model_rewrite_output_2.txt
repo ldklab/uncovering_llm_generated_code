@@ -1,0 +1,107 @@
+The provided Node.js code is a module that formats a given set of data rows into a table-like string output. It allows for custom horizontal separators between columns, alignment options for each column (left, right, centered, or aligned at a decimal dot), and provides functions to calculate string lengths and handle different alignment cases. The code consists of a main formatting function and helper functions for array manipulation and index calculation.
+
+Here is the explanation broken down step by step followed by the rewritten code:
+
+1. **Initialization and Defaults**:
+   - The function accepts two parameters: `rows_` (an array of arrays representing rows and columns of data) and `opts` (an optional object for configuration).
+   - If `opts` is not provided, it defaults to an empty object.
+   - `hsep` is the horizontal separator between columns, defaulting to two spaces.
+   - `align` determines alignment for each column and defaults to an empty array.
+   - `stringLength` is a function to calculate the length of a string, which defaults to using the basic `String.length`.
+
+2. **Dot Index and Alignment Adjustment**:
+   - `dotindex` is a function used to find the index of the decimal dot in a string or the end of the string if no dot is found.
+   - Rows are processed to determine maximum indices of dots for alignment using `dotsizes`, which is calculated using a reduced array.
+
+3. **Row Processing and Padding**:
+   - Each cell in the rows is examined and adjusted based on alignment specifications.
+   - If alignment is set to '.', padding adjusts for dot alignment considering the dot positions from `dotsizes`.
+   - For right ('r') and center ('c') alignment, cells are padded with spaces to achieve the desired alignment.
+
+4. **Final Output Construction**:
+   - The processed rows are converted to strings, with each cell delimited by `hsep`.
+   - The output is a concatenated string of all rows joined by newline characters.
+
+5. **Helper Functions**:
+   - `reduce`, `forEach`, and `map` are implemented to operate over arrays. They respectively reduce an array, iterate over an array executing a function, and create a new array with the results of a provided function applied to each element.
+
+Here is the rewritten Node.js code:
+
+```javascript
+module.exports = function formatTable(rows_, opts = {}) {
+    const hsep = opts.hsep !== undefined ? opts.hsep : '  ';
+    const align = opts.align || [];
+    const stringLength = opts.stringLength || (s => String(s).length);
+
+    const dotsizes = reduce(rows_, (acc, row) => {
+        forEach(row, (cell, index) => {
+            const dotPosition = dotindex(cell);
+            acc[index] = Math.max(acc[index] || 0, dotPosition);
+        });
+        return acc;
+    }, []);
+
+    const rows = map(rows_, row =>
+        map(row, (cell, index) => {
+            let cellStr = String(cell);
+            if (align[index] === '.') {
+                const dotPos = dotindex(cellStr);
+                const extraSpaces = dotsizes[index] + (/\./.test(cellStr) ? 1 : 2) - (stringLength(cellStr) - dotPos);
+                return cellStr + ' '.repeat(extraSpaces);
+            }
+            return cellStr;
+        })
+    );
+
+    const columnSizes = reduce(rows, (acc, row) => {
+        forEach(row, (cell, index) => {
+            const cellLength = stringLength(cell);
+            acc[index] = Math.max(acc[index] || 0, cellLength);
+        });
+        return acc;
+    }, []);
+
+    return map(rows, row =>
+        map(row, (cell, index) => {
+            const padding = (columnSizes[index] - stringLength(cell)) || 0;
+            const spacePad = ' '.repeat(Math.max(padding + 1, 1));
+            if (align[index] === 'r' || align[index] === '.') {
+                return spacePad + cell;
+            }
+            if (align[index] === 'c') {
+                const leftPad = ' '.repeat(Math.ceil(padding / 2 + 1));
+                const rightPad = ' '.repeat(Math.floor(padding / 2 + 1));
+                return leftPad + cell + rightPad;
+            }
+            return cell + spacePad;
+        })
+        .join(hsep)
+        .replace(/\s+$/, '')
+    ).join('\n');
+};
+
+function dotindex(cell) {
+    const match = /\.[^.]*$/.exec(cell);
+    return match ? match.index + 1 : cell.length;
+}
+
+function reduce(xs, fn, initial) {
+    return xs.reduce ? xs.reduce(fn, initial) : (() => {
+        let i = 0, acc = initial !== undefined ? initial : xs[i++];
+        for (; i < xs.length; i++) fn(acc, xs[i], i);
+        return acc;
+    })();
+}
+
+function forEach(xs, fn) {
+    if (xs.forEach) xs.forEach(fn);
+    else for (let i = 0; i < xs.length; i++) fn(xs[i], i);
+}
+
+function map(xs, fn) {
+    if (xs.map) return xs.map(fn);
+    const result = [];
+    for (let i = 0; i < xs.length; i++) result.push(fn(xs[i], i));
+    return result;
+}
+```

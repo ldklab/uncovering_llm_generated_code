@@ -1,0 +1,72 @@
+The provided Node.js code defines a UMD (Universal Module Definition) structure to create a module for handling HTML entities, which is capable of both encoding and decoding HTML entities. It supports different sets of named references like XML and HTML5, and provides functions to convert special characters in a string to their HTML entities and vice versa.
+
+### Functionality:
+1. **UMD Wrapper**: The code is wrapped in a UMD pattern, allowing it to be used as a CommonJS, AMD (Asynchronous Module Definition), or globally accessible module.
+2. **Encoding Function**: It provides an `encode` function that takes a string and an options object to replace characters like `<, >, &, " and '` with their respective HTML entities. It also supports non-ASCII characters and can output the numeric representation in decimal or hexadecimal.
+3. **Decoding Function**: The `decode` function is provided to convert HTML entities back into their respective characters, capable of parsing XML entities, HTML entities, and numeric character references.
+4. **Named References**: It includes predefined sets of named HTML and XML character references, supporting different standards like HTML4 and HTML5.
+5. **Surrogate Pairs Handling**: The module checks for surrogate pairs in Unicode to correctly handle characters outside the Basic Multilingual Plane (BMP) by providing utility functions to convert these.
+
+### Rewritten Code:
+```javascript
+(function(root, factory) {
+  if (typeof exports === 'object' && typeof module !== 'undefined') {
+    module.exports = factory();
+  } else if (typeof define === 'function' && define.amd) {
+    define([], factory);
+  } else {
+    (root || globalThis).htmlEntities = factory();
+  }
+})(this, function() {
+  const namedReferences = require('./named-references');
+  const unicodeMap = require('./numeric-unicode-map');
+  const surrogatePairs = require('./surrogate-pairs');
+
+  const allNamedReferences = { ...namedReferences.namedReferences, all: namedReferences.namedReferences.html5 };
+
+  const regex = {
+    specialChars: /[<>'"&]/g,
+    nonAscii: /[<>'"&\u0080-\uD7FF\uE000-\uFFFF]|[\uD800-\uDBFF][\uDC00-\uDFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?:[^\uD800-\uDBFF]|^)[\uDC00-\uDFFF]/g
+  };
+
+  const defaultEncodeOptions = { mode: 'specialChars', level: 'all', numeric: 'decimal' };
+  const defaultDecodeOptions = { scope: 'body', level: 'all' };
+
+  function encode(text, options = {}) {
+    options = { ...defaultEncodeOptions, ...options };
+    if (!text) return '';
+
+    const charactersMap = allNamedReferences[options.level].characters;
+    const isHex = options.numeric === 'hexadecimal';
+
+    return text.replace(regex[options.mode], char => {
+      const namedEntity = charactersMap[char];
+      if (namedEntity) return namedEntity;
+
+      const codePoint = char.length > 1 ? surrogatePairs.getCodePoint(char, 0) : char.charCodeAt(0);
+      return isHex ? `&#x${codePoint.toString(16)};` : `&#${codePoint};`;
+    });
+  }
+
+  function decode(text, options = {}) {
+    options = { ...defaultDecodeOptions, ...options };
+    if (!text) return '';
+    
+    const entitiesMap = allNamedReferences[options.level].entities;
+    const scopeRegex = options.scope === 'attribute' ? /&(?:#\d+|#x[\da-fA-F]+|[0-9a-zA-Z]+)[;=]?/g : /&(?:#\d+|#x[\da-fA-F]+|[0-9a-zA-Z]+);?/g;
+
+    return text.replace(scopeRegex, entity => {
+      if (options.scope === 'attribute' && entity.endsWith('=')) return entity;
+
+      if (entity[1] !== '#') return entitiesMap[entity] || entity;
+
+      const isHex = entity[2].toLowerCase() === 'x';
+      const codePoint = isHex ? parseInt(entity.substr(3), 16) : parseInt(entity.substr(2));
+
+      return codePoint > 65535 ? surrogatePairs.fromCodePoint(codePoint) : String.fromCharCode(unicodeMap.numericUnicodeMap[codePoint] || codePoint);
+    });
+  }
+
+  return { encode, decode };
+});
+```

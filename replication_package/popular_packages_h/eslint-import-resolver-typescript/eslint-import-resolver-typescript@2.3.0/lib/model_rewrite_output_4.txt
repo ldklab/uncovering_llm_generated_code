@@ -1,0 +1,188 @@
+The provided Node.js code defines a TypeScript module resolver for ESLint, specifically designed to resolve TypeScript modules using TypeScript's path mapping feature. This code utilizes various Node.js modules and packages like `path`, `tsconfig-paths`, `glob`, `resolve`, and `debug` to implement its functionality. 
+
+Here is a breakdown of the key components:
+
+1. **Dependency Imports and Helpers**:
+   - Dependencies are imported, and some modules are prepared using the `_interopDefault` function for default imports.
+   - A utility function `__spreadArrays` is provided to handle array concatenation in a manner compatible with older JavaScript versions.
+
+2. **Set Constants and Variables**:
+   - Constants like `IMPORTER_NAME` and `defaultExtensions` are defined to configure the resolver.
+   - A debug instance is created for logging under the provided importer name. 
+
+3. **Resolve Function**:
+   - The `resolve` function is defined to determine the resolved path of a given module source, considering TypeScript's path mappings.
+   - Skips resolution if the module is a core Node.js module, uses mappings to find potential paths, and attempts resolution using node's resolution strategy.
+   - Provides special consideration for resolving `@types` packages and checks if the resolved path is valid.
+
+4. **Support Functions**:
+   - `packageFilterDefault` modifies how the main field is resolved in package.json files.
+   - `tsResolve` and `removeJsExtension` enhance module resolution by considering `.js` and `.jsx` extensions.
+   - `getMappedPath`, `initMappers`, and `isConfigLoaderSuccessResult` support TypeScript's path mappings by setting up path mappers and validating config loader results.
+   - `createExtendedMatchPath` extends `createMatchPath` to accommodate `.js` and `.jsx` extensions in module IDs.
+   - `mangleScopedPackage` is used to adjust scoped package names for `@types` resolution.
+
+Here is a possible rewrite of the described Node.js code:
+
+```javascript
+'use strict';
+
+Object.defineProperty(exports, '__esModule', { value: true });
+
+const path = require('path');
+const tsconfigPaths = require('tsconfig-paths');
+const glob = require('glob');
+const isGlob = require('is-glob');
+const resolve$1 = require('resolve');
+const debug = require('debug');
+
+function __spreadArrays() {
+    return Array.prototype.concat.apply([], arguments);
+}
+
+const IMPORTER_NAME = 'eslint-import-resolver-typescript';
+const log = debug(IMPORTER_NAME);
+const defaultExtensions = ['.ts', '.tsx', '.d.ts', ...Object.keys(require.extensions), '.jsx'];
+const interfaceVersion = 2;
+
+function resolve(source, file, options = {}) {
+    log('looking for:', source);
+
+    if (resolve$1.isCore(source)) {
+        log('matched core:', source);
+        return { found: true, path: null };
+    }
+
+    initMappers(options);
+    const mappedPath = getMappedPath(source, file);
+
+    if (mappedPath) {
+        log('matched ts path:', mappedPath);
+    }
+
+    let foundNodePath;
+    try {
+        foundNodePath = tsResolve(mappedPath || source, {
+            extensions: options.extensions || defaultExtensions,
+            basedir: path.dirname(path.resolve(file)),
+            packageFilter: options.packageFilter || packageFilterDefault,
+        });
+    } catch {
+        foundNodePath = null;
+    }
+
+    if (/\.jsx?$/.test(foundNodePath) || (options.alwaysTryTypes && !foundNodePath) && 
+        !/^@types[/\\]/.test(source) && !path.isAbsolute(source) && !source.startsWith('.')) {
+        
+        const definitelyTyped = resolve('@types' + path.sep + mangleScopedPackage(source), file, options);
+        if (definitelyTyped.found) {
+            return definitelyTyped;
+        }
+    }
+
+    if (foundNodePath) {
+        log('matched node path:', foundNodePath);
+        return { found: true, path: foundNodePath };
+    }
+
+    log("didn't find ", source);
+    return { found: false };
+}
+
+function packageFilterDefault(pkg) {
+    pkg.main = pkg.types || pkg.typings || pkg.module || pkg['jsnext:main'] || pkg.main;
+    return pkg;
+}
+
+function tsResolve(id, opts) {
+    try {
+        return resolve$1.sync(id, opts);
+    } catch (error) {
+        const idWithoutJsExt = removeJsExtension(id);
+        if (idWithoutJsExt !== id) {
+            return resolve$1.sync(idWithoutJsExt, opts);
+        }
+        throw error;
+    }
+}
+
+function removeJsExtension(id) {
+    return id.replace(/\.jsx?$/, '');
+}
+
+let mappersBuildForOptions;
+let mappers;
+
+function getMappedPath(source, file) {
+    const paths = mappers.map(mapper => mapper(source, file)).filter(Boolean);
+    if (paths.length > 1) {
+        log('found multiple matching ts paths:', paths);
+    }
+    return paths[0];
+}
+
+const createExtendedMatchPath = (...createArgs) => {
+    const matchPath = tsconfigPaths.createMatchPath(...createArgs);
+    return (id, ...otherArgs) => {
+        let match = matchPath(id, ...otherArgs);
+        if (match != null) return match;
+
+        const idWithoutJsExt = removeJsExtension(id);
+        if (idWithoutJsExt !== id) {
+            return matchPath(idWithoutJsExt, ...otherArgs);
+        }
+    };
+};
+
+function initMappers(options) {
+    if (mappers && mappersBuildForOptions === options) return;
+
+    if (options.directory) {
+        console.warn(`[${IMPORTER_NAME}]: option 'directory' is deprecated, please use 'project' instead`);
+        if (!options.project) {
+            options.project = options.directory;
+        }
+    }
+
+    const configPaths = typeof options.project === 'string'
+        ? [options.project]
+        : Array.isArray(options.project)
+            ? options.project
+            : [process.cwd()];
+
+    mappers = configPaths
+        .reduce((paths, path) => paths.concat(isGlob(path) ? glob.sync(path) : path), [])
+        .map(tsconfigPaths.loadConfig)
+        .filter(isConfigLoaderSuccessResult)
+        .map(configLoaderResult => {
+            const matchPath = createExtendedMatchPath(configLoaderResult.absoluteBaseUrl, configLoaderResult.paths);
+            return (source, file) => {
+                if (!file.includes(configLoaderResult.absoluteBaseUrl)) return;
+                return matchPath(source, undefined, undefined, options.extensions || defaultExtensions);
+            };
+        });
+
+    mappersBuildForOptions = options;
+}
+
+function isConfigLoaderSuccessResult(configLoaderResult) {
+    if (configLoaderResult.resultType !== 'success') {
+        log('failed to init tsconfig-paths:', configLoaderResult.message);
+        return false;
+    }
+    return true;
+}
+
+function mangleScopedPackage(moduleName) {
+    if (moduleName.startsWith('@')) {
+        const replaceSlash = moduleName.replace(path.sep, '__');
+        if (replaceSlash !== moduleName) {
+            return replaceSlash.slice(1);
+        }
+    }
+    return moduleName;
+}
+
+exports.interfaceVersion = interfaceVersion;
+exports.resolve = resolve;
+```

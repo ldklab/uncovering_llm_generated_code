@@ -1,0 +1,57 @@
+The provided Node.js code is a module that exports a function to check if a given object is a `WeakMap`. Here's a breakdown of its functionality:
+
+1. The code checks for the presence of `WeakMap` and `WeakSet` in the global environment and retrieves their prototypes if they exist.
+2. It declares a variable `exported` to potentially hold an alternative implementation of the `isWeakMap` function.
+3. If `WeakMap` is not available in the environment, `exported` is set to a function that always returns `false`.
+4. It retrieves the `has` method from the `WeakMap` and `WeakSet` prototypes if they are available.
+5. If neither `exported` nor the `has` method from `WeakMap` is available, it reassigns `exported` to a function that always returns `false`.
+6. The module exports a function `isWeakMap`, which:
+   - Checks if the input `x` is an object.
+   - Tries to use the `has` method on `x` (if available) to determine if it's a `WeakMap`.
+   - If `x` has the `has` method of `WeakMap` but not `WeakSet`, it confirms `x` is a `WeakMap`.
+   - Uses a fallback check with `instanceof` to determine if `x` is a `WeakMap`.
+
+Here's a possible rewrite of the Node.js code:
+
+```javascript
+'use strict';
+
+const hasWeakMap = typeof WeakMap === 'function' && WeakMap.prototype;
+const hasWeakSet = typeof WeakSet === 'function' && WeakSet.prototype;
+
+let isWeakMapFunction;
+
+// Handle environments without WeakMap support
+if (!hasWeakMap) {
+	isWeakMapFunction = () => false;
+}
+
+// Retrieve prototype methods if available
+const weakMapHas = hasWeakMap ? WeakMap.prototype.has : null;
+const weakSetHas = hasWeakSet ? WeakSet.prototype.has : null;
+
+// Handle environments where WeakMap has no `has` method
+if (!isWeakMapFunction && !weakMapHas) {
+	isWeakMapFunction = () => false;
+}
+
+// Export the function
+module.exports = isWeakMapFunction || function isWeakMap(x) {
+	if (!x || typeof x !== 'object') {
+		return false;
+	}
+	try {
+		weakMapHas.call(x, weakMapHas);
+		if (weakSetHas) {
+			try {
+				weakSetHas.call(x, weakSetHas);
+			} catch (e) {
+				return true;
+			}
+		}
+		return x instanceof WeakMap; // Compatibility with environments that support WeakMap
+	} catch (e) {
+		return false;
+	}
+};
+```

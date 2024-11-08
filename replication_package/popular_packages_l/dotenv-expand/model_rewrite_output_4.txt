@@ -1,0 +1,78 @@
+The provided Node.js script manages environment variables by loading them from a `.env` file and expanding them to include support for referencing other variables. Here’s how the script functions:
+
+1. **Dependencies and Setup**: 
+   - It imports `path`, `fs`, and `dotenv` modules.
+   - It provides functionality for loading and expanding environment variables defined in a `.env` file.
+
+2. **Function `expand`**:
+   - Processes the loaded environment variables to allow variable interpolation, where variables can refer to the values of other variables.
+   - It uses a regular expression to find and replace variables denoted by `$VAR` or `${VAR}` syntax, also supporting default values with the `:-` syntax, i.e., `${VAR:-default}`.
+
+3. **Function `config`**:
+   - Loads and parses the `.env` file using the `dotenv` package.
+   - Enhances the parsed variables by applying `expand` to resolve any interpolations.
+   - Allows overriding of the default path and encoding through options.
+
+4. **Default Execution**:
+   - If the script is executed directly (not imported as a module), it will load the `.env` file and log the expanded environment variables to the console.
+
+By using this script, applications can manage environment variables more flexibly, using placeholders and defaults within `.env` files.
+
+Below is a rewritten version of this Node.js code:
+
+```javascript
+const path = require('path');
+const fs = require('fs');
+const dotenv = require('dotenv');
+
+// Function to handle variable expansion
+function expandVariables(env) {
+  const variablePattern = /\$(?:\{([^}]+)\}|([A-Z0-9_]+))/gi;
+  
+  const resolveValue = (value) => {
+    return value.replace(variablePattern, (match, capture1, capture2) => {
+      if (capture1 !== undefined) {
+        const [varName, defaultVal] = capture1.split(':-');
+        return process.env[varName] || defaultVal || '';
+      }
+      return process.env[capture2] || '';
+    });
+  };
+
+  if (env.parsed) {
+    Object.keys(env.parsed).forEach((key) => {
+      env.processEnv[key] = resolveValue(env.parsed[key]);
+    });
+  }
+
+  return env;
+}
+
+// Function to load .env and apply expansion
+function loadConfig(options = {}) {
+  const defaultOptions = {
+    path: path.resolve(process.cwd(), '.env'),
+    encoding: 'utf8',
+    processEnv: process.env,
+  };
+
+  const currentOptions = { ...defaultOptions, ...options };
+
+  try {
+    const dotenvContent = fs.readFileSync(currentOptions.path, { encoding: currentOptions.encoding });
+    const parsedVariables = dotenv.parse(dotenvContent);
+    const env = { parsed: parsedVariables, processEnv: currentOptions.processEnv };
+    return expandVariables(env);
+  } catch (error) {
+    return { error };
+  }
+}
+
+module.exports = { expand: expandVariables, config: loadConfig };
+
+// Self-executing script logic
+if (require.main === module) {
+  const envVariables = loadConfig();
+  console.log(envVariables.processEnv);
+}
+```

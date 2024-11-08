@@ -1,0 +1,69 @@
+The provided Node.js code represents the main file for Espree, which acts as a layer over the Acorn JavaScript parser to produce Esprima-compatible output. The code deals with parsing JavaScript and JSX code, tokenizing input source code, and exporting specific functionalities to be used by other modules or applications. Here’s a breakdown of the code functions:
+
+1. **Parsers Initialization**: The code initializes lazy-loaded parsers for both regular JavaScript and JSX, using Acorn's `Parser.extend` method combined with Espree and Acorn-JSX plugins.
+
+2. **Tokenization**: The `tokenize` function generates tokens for the given source code string based on specified options. It ensures that tokens are collected by modifying options if needed.
+
+3. **Parsing**: The `parse` function converts input source code into an Abstract Syntax Tree (AST) and uses the appropriate parser depending on options.
+
+4. **Exports**: 
+   - `version`: The current version of the Espree package.
+   - `tokenize` and `parse`: Exposing the tokenization and parsing functions for external use.
+   - `Syntax`: Provides a frozen object of AST node types defined by Espree, copied from `ast-node-types`.
+   - `VisitorKeys`: Loads and exposes visitor keys, which are used to traverse the AST.
+   - `latestEcmaVersion` and `supportedEcmaVersions`: Offer information regarding ECMAScript version support.
+
+The rewritten code maintains the same functionality while being organized more concisely.
+
+```javascript
+"use strict";
+
+const acorn = require("acorn");
+const jsx = require("acorn-jsx");
+const astNodeTypes = require("./lib/ast-node-types");
+const espree = require("./lib/espree");
+const { getLatestEcmaVersion, getSupportedEcmaVersions } = require("./lib/options");
+
+const parsers = {
+    _regular: null,
+    _jsx: null,
+
+    get regular() {
+        if (!this._regular) this._regular = acorn.Parser.extend(espree());
+        return this._regular;
+    },
+
+    get jsx() {
+        if (!this._jsx) this._jsx = acorn.Parser.extend(jsx(), espree());
+        return this._jsx;
+    },
+
+    get(options) {
+        return options?.ecmaFeatures?.jsx ? this.jsx : this.regular;
+    }
+};
+
+function tokenize(code, options) {
+    const Parser = parsers.get(options);
+    if (!(options?.tokens)) options = { ...options, tokens: true };
+    return new Parser(options, code).tokenize();
+}
+
+function parse(code, options) {
+    const Parser = parsers.get(options);
+    return new Parser(options, code).parse();
+}
+
+exports.version = require("./package.json").version;
+exports.tokenize = tokenize;
+exports.parse = parse;
+
+exports.Syntax = (() => {
+    const types = Object.fromEntries(Object.entries(astNodeTypes));
+    return Object.freeze(types);
+})();
+
+exports.VisitorKeys = require("eslint-visitor-keys").KEYS;
+exports.latestEcmaVersion = getLatestEcmaVersion();
+exports.supportedEcmaVersions = getSupportedEcmaVersions();
+```

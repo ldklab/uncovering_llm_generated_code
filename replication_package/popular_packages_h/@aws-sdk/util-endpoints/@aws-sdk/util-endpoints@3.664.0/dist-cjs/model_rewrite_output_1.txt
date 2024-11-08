@@ -1,0 +1,151 @@
+The provided Node.js code defines a module system using a CommonJS approach and exports various utility functions related to AWS and endpoint management. It uses some utility functions to create and export variables and functionalities systematically. Here's a breakdown of what the code does:
+
+1. **Utility Functions**: It defines several utility functions for operations like defining properties, copying properties from one object to another, etc. The `__name` function is used to assign a name to a function, which can aid in debugging.
+
+2. **Exporting Functionality**: It uses `__export` to expose various functions and objects from this module, such as `ConditionObject`, `DeprecatedObject`, `EndpointObject`, `isIpAddress`, etc., from an imported module `@smithy/util-endpoints`.
+
+3. **Importing Modules**: It imports a module named `@smithy/util-endpoints` which seems to contain various functions related to endpoint handling.
+
+4. **AWS-related Functions**: 
+   - `isVirtualHostableS3Bucket`: Checks if a string can be used as a virtual-hosted–style bucket name in AWS S3, with optional subdomain support.
+   - `parseArn`: Parses a string into AWS ARN (Amazon Resource Name) components.
+   - `partition`, `setPartitionInfo`, `useDefaultPartitionInfo`, and `getUserAgentPrefix`: Functions to manage AWS partitioning and to interact with a mock partition data structure.
+
+5. **Mock Partition Data**: 
+   - `partitions_default`: Contains a JSON structure of AWS partitions, regions, and their descriptions.
+   
+6. **Modules and Namespace**: Defines namespaces for AWS endpoint functions and sets them in the imported module's custom endpoint functions.
+
+7. **Export Statement**: Uses `module.exports` to expose all defined and imported functionalities as a CommonJS module.
+
+Here's a possible rewrite of the Node.js code based on the above explanation:
+
+```js
+"use strict";
+
+const { objectHasOwn, defineProp, getOwnPropNames, getOwnPropDesc, copyProperties, toCommonJS } = require('object-utils');
+const importUtilEndpoints = require("@smithy/util-endpoints");
+
+const exportFunctions = (target, all) => {
+  for (const name in all) {
+    defineProp(target, name, { get: all[name], enumerable: true });
+  }
+};
+
+let partitionInfo = require('./partitions.json');
+let userAgentPrefix = "";
+
+// Define and export various utilities
+const { 
+  ConditionObject, 
+  DeprecatedObject, 
+  EndpointError, 
+  EndpointObject, 
+  EndpointObjectHeaders, 
+  EndpointObjectProperties, 
+  EndpointParams, 
+  EndpointResolverOptions, 
+  EndpointRuleObject, 
+  ErrorRuleObject, 
+  EvaluateOptions, 
+  Expression, 
+  FunctionArgv, 
+  FunctionObject, 
+  FunctionReturn, 
+  ParameterObject, 
+  ReferenceObject, 
+  ReferenceRecord, 
+  RuleSetObject, 
+  RuleSetRules, 
+  TreeRuleObject, 
+  isIpAddress,
+  resolveEndpoint 
+} = importUtilEndpoints;
+
+const srcExports = {};
+exportFunctions(srcExports, {
+  ConditionObject,
+  DeprecatedObject,
+  EndpointError,
+  EndpointObject,
+  EndpointObjectHeaders,
+  EndpointObjectProperties,
+  EndpointParams,
+  EndpointResolverOptions,
+  EndpointRuleObject,
+  ErrorRuleObject,
+  EvaluateOptions,
+  Expression,
+  FunctionArgv,
+  FunctionObject,
+  FunctionReturn,
+  ParameterObject,
+  ReferenceObject,
+  ReferenceRecord,
+  RuleSetObject,
+  RuleSetRules,
+  TreeRuleObject,
+  awsEndpointFunctions,
+  getUserAgentPrefix,
+  isIpAddress,
+  partition,
+  resolveEndpoint,
+  setPartitionInfo,
+  useDefaultPartitionInfo
+});
+
+// AWS functions
+const isVirtualHostableS3Bucket = (value, allowSubDomains = false) => {
+  if (allowSubDomains) {
+    return value.split(".").every(isVirtualHostableS3Bucket);
+  }
+  return importUtilEndpoints.isValidHostLabel(value) && value.length >= 3 && value.length <= 63 && value.toLowerCase() === value && !importUtilEndpoints.isIpAddress(value);
+};
+
+const parseArn = (arnValue) => {
+  const segments = arnValue.split(":");
+  if (segments.length < 6) return null;
+  const [arn, partition, service, region, accountId, ...resourcePath] = segments;
+  if (arn !== "arn" || !partition || !service || !resourcePath.join(":")) return null;
+  const resourceId = resourcePath.flatMap(r => r.split("/"));
+  return { partition, service, region, accountId, resourceId };
+};
+
+const partition = (regionValue) => {
+  const { partitions } = partitionInfo;
+  for (const partition of partitions) {
+    const { regions, outputs } = partition;
+    if (regions[regionValue]) {
+      return { ...outputs, ...regions[regionValue] };
+    }
+  }
+  for (const partition of partitions) {
+    const { regionRegex, outputs } = partition;
+    if (new RegExp(regionRegex).test(regionValue)) {
+      return { ...outputs };
+    }
+  }
+  const defaultPartition = partitions.find(p => p.id === "aws");
+  if (!defaultPartition) throw new Error("Region not found in partitions, and no default 'aws' partition exists.");
+  return { ...defaultPartition.outputs };
+};
+
+const setPartitionInfo = (newPartitionInfo, userPrefix = "") => {
+  partitionInfo = newPartitionInfo;
+  userAgentPrefix = userPrefix;
+};
+
+const useDefaultPartitionInfo = () => setPartitionInfo(require('./partitions.json'), "");
+
+const getUserAgentPrefix = () => userAgentPrefix;
+
+const awsEndpointFunctions = {
+  isVirtualHostableS3Bucket,
+  parseArn,
+  partition
+};
+
+importUtilEndpoints.customEndpointFunctions.aws = awsEndpointFunctions;
+
+module.exports = toCommonJS(srcExports);
+```

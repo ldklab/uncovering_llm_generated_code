@@ -1,0 +1,42 @@
+The given Node.js code provides a simple way to sign and verify strings using HMAC and SHA-256. It consists of two main functions:
+
+1. `sign(val, secret)`: This function takes a string `val` and a `secret`, and returns the signed string. It uses the HMAC algorithm with SHA-256 to generate a signature for `val`, concatenates it with `val` separated by a dot, and returns this signed string. If the input arguments are not strings, it throws a TypeError.
+
+2. `unsign(val, secret)`: This function takes a signed string `val` and a `secret`, and verifies if the signature is valid. It splits the `val` to get the original string before the dot. It then uses the same `sign` function to generate a new signature and compares it with the signature in `val`, using a timing-safe comparison to prevent timing attacks. If the signatures match, it returns the original string; otherwise, it returns false. Like `sign`, it also validates that the inputs are strings.
+
+Below is a rewritten version of the code:
+
+```javascript
+const crypto = require('crypto');
+
+// Function to sign a value with a secret
+exports.sign = function(val, secret) {
+  if (typeof val !== 'string') throw new TypeError("Cookie value must be provided as a string.");
+  if (typeof secret !== 'string') throw new TypeError("Secret string must be provided.");
+  
+  const signature = crypto.createHmac('sha256', secret)
+                          .update(val)
+                          .digest('base64')
+                          .replace(/\=+$/, '');
+
+  return `${val}.${signature}`;
+};
+
+// Function to unsign and verify a signed value
+exports.unsign = function(val, secret) {
+  if (typeof val !== 'string') throw new TypeError("Signed cookie string must be provided.");
+  if (typeof secret !== 'string') throw new TypeError("Secret string must be provided.");
+  
+  const index = val.lastIndexOf('.');
+  if (index === -1) return false;
+  
+  const originalValue = val.slice(0, index);
+  const originalSignature = val.slice(index + 1);
+  const computedSignature = exports.sign(originalValue, secret).slice(index + 1);
+
+  const originalBuffer = Buffer.from(originalSignature);
+  const computedBuffer = Buffer.from(computedSignature);
+
+  return crypto.timingSafeEqual(originalBuffer, computedBuffer) ? originalValue : false;
+};
+```

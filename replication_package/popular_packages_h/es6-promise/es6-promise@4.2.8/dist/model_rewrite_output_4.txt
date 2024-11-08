@@ -1,0 +1,97 @@
+The original code is a polyfill for ES6 Promises, which implements the Promises/A+ specification. It aims to provide a basic working implementation of native JavaScript promises for environments that do not support them natively. The code defines key methods like `then`, `resolve`, `reject`, `all`, and `race`, which are essential for handling asynchronous operations in JavaScript.
+
+Here's a simplified rewrite of the core concepts of this implementation:
+
+```javascript
+(function (global) {
+  'use strict';
+
+  class SimplePromise {
+    constructor(executor) {
+      this.state = 'pending';
+      this.value = undefined;
+      this.handlers = [];
+
+      const resolve = value => this.updateResult(value, 'fulfilled');
+      const reject = error => this.updateResult(error, 'rejected');
+
+      executor(resolve, reject);
+    }
+
+    updateResult(value, state) {
+      setTimeout(() => {
+        if (this.state !== 'pending') return;
+
+        this.state = state;
+        this.value = value;
+        
+        this.handlers.forEach(({ onFulfilled, onRejected }) => {
+          if (state === 'fulfilled') {
+            onFulfilled(value);
+          } else {
+            onRejected(value);
+          }
+        });
+      }, 0);
+    }
+
+    then(onFulfilled, onRejected) {
+      return new SimplePromise((resolve, reject) => {
+        this.handlers.push({
+          onFulfilled: value => {
+            try {
+              resolve(onFulfilled ? onFulfilled(value) : value);
+            } catch (error) {
+              reject(error);
+            }
+          },
+          onRejected: error => {
+            try {
+              reject(onRejected ? onRejected(error) : error);
+            } catch (error) {
+              reject(error);
+            }
+          }
+        });
+      });
+    }
+
+    catch(onRejected) {
+      return this.then(null, onRejected);
+    }
+  }
+
+  SimplePromise.resolve = value => new SimplePromise(resolve => resolve(value));
+  SimplePromise.reject = error => new SimplePromise((_, reject) => reject(error));
+
+  SimplePromise.all = promises => {
+    return new SimplePromise((resolve, reject) => {
+      const results = [];
+      let completedPromises = 0;
+
+      promises.forEach((promise, index) => {
+        promise.then(value => {
+          results[index] = value;
+          completedPromises += 1;
+          if (completedPromises === promises.length) {
+            resolve(results);
+          }
+        }).catch(reject);
+      });
+    });
+  };
+
+  SimplePromise.race = promises => {
+    return new SimplePromise((resolve, reject) => {
+      promises.forEach(promise => {
+        promise.then(resolve).catch(reject);
+      });
+    });
+  };
+
+  global.SimplePromise = SimplePromise;
+
+}(typeof window !== 'undefined' ? window : global));
+```
+
+This rewrite encapsulates an essential subset of the original code's functionality using ES6 classes, providing a more modern, concise, and readable structure. It includes basic methods for promise creation and handling of fulfilled and rejected states, along with static methods for `Promise.all` and `Promise.race` operations.

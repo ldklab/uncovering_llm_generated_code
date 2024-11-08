@@ -1,0 +1,80 @@
+The given Node.js code defines a class named `Graphemer` which is used for handling and managing graphemes in a string based on Unicode rules. This class provides functionality such as splitting a string into graphemes, iterating over graphemes, and counting the number of graphemes.
+
+Key functionalities include:
+- **Loading Break Rules**: Rules for determining grapheme breaks are loaded in the constructor. They include simplified rules for surrogate pairs and combining marks.
+- **Determining Breaks**: Using the `shouldBreak` method, the code decides whether a break should occur between two characters based on the loaded rules.
+- **Splitting Graphemes**: The `splitGraphemes` method breaks a string into an array of graphemes.
+- **Iterating and Counting**: Methods `iterateGraphemes` and `countGraphemes` help to iterate over and count graphemes respectively in a given string.
+- **Export**: The class is exported as a module, which is useful in other JavaScript files.
+
+Here's a rewritten version of this code:
+
+```javascript
+// graphemer.js
+
+class Graphemer {
+    constructor() {
+        this.breakRules = this.initializeBreakRules();
+    }
+    
+    initializeBreakRules() {
+        return {
+            SurrogatePair: (current, next) => {
+                return (0xD800 <= current && current <= 0xDBFF) &&
+                       (0xDC00 <= next && next <= 0xDFFF);
+            },
+            CombiningMark: (current, next) => {
+                return (this.isBaseChar(current) && this.isCombiningMark(next));
+            },
+        };
+    }
+    
+    isBaseChar(codePoint) {
+        return codePoint >= 0x0041 && codePoint <= 0x007A;
+    }
+    
+    isCombiningMark(codePoint) {
+        return codePoint >= 0x0300 && codePoint <= 0x036F;
+    }
+
+    splitGraphemes(text) {
+        let segments = [];
+        let currentSegment = '';
+        for (let i = 0; i < text.length; i++) {
+            const current = text.charCodeAt(i);
+            const next = text.charCodeAt(i + 1);
+            currentSegment += text[i];
+
+            if (!this.shouldBreak(current, next)) continue;
+
+            segments.push(currentSegment);
+            currentSegment = '';
+        }
+        
+        if (currentSegment) {
+            segments.push(currentSegment);
+        }
+        
+        return segments;
+    }
+
+    iterateGraphemes(text) {
+        return this.splitGraphemes(text).values();
+    }
+
+    countGraphemes(text) {
+        return this.splitGraphemes(text).length;
+    }
+    
+    shouldBreak(current, next) {
+        if (next === undefined) return true;
+        if (this.breakRules.SurrogatePair(current, next)) return false;
+        if (this.breakRules.CombiningMark(current, next)) return false;
+        return true;
+    }
+}
+
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports.default = Graphemer;
+}
+```

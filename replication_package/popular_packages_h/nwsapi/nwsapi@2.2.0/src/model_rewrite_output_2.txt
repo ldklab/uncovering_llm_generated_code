@@ -1,0 +1,190 @@
+The provided Node.js code is a module named `nwsapi.js`. This module is designed to act as a high-performance CSS selectors API engine. It provides advanced functionalities for querying and matching DOM elements within a document using complex CSS selectors. The module supports various types of selectors and combinators, including pseudo-classes, attributes, and combinator selectors.
+
+### Key Features and Functionality:
+1. **Universal Export:** The code is set up to work universally in environments that support CommonJS, AMD, or as a global object. This ensures compatibility across different JavaScript environments like Node.js and browsers.
+
+2. **Selectors and Operators:** The module contains a rich set of regex patterns and configurations to parse and interpret a wide variety of CSS selector syntax. It supports standard selectors, attributes, and even uncommon or experimental ones.
+
+3. **Resolvers:** The module provides methods to compile selectors into executable functions for matching (`match`) or selecting (`select`) DOM elements. These functions are optimized for performance and ensure that only minimal DOM traversal is performed.
+
+4. **XPath-like Methods:** Methods such as `querySelector` and `querySelectorAll` are implemented to override native methods if installed (for browsers), enhancing or replacing them with this module's custom functions designed for efficiency and feature-rich querying capabilities.
+
+5. **Pseudos and Extensions:** It includes extensive support for pseudo-classes and elements, and allows for registration of custom selectors, operators, and combinators. The flexibility extends to customize the engine behavior further if needed.
+
+6. **Cache Optimization:** It employs caching strategies for compiled selector functions (match and select lambdas) to improve performance by avoiding redundant computations.
+
+7. **Error Handling and Configuration:** There are mechanisms for handling different types of errors and configurations. It can output verbose error messages for debugging purposes and offers methods to configure the engine's behavior.
+
+8. **Module Installation:** It provides install and uninstall methods to effect or revert modifications to the global environment when used in browser contexts.
+
+Here's a possible rewrite of this Node.js code:
+
+```javascript
+/*!
+ * nwsapi.js - A Fast CSS Selectors API Engine
+ * © 2007-2019 Diego Perini. All rights reserved.
+ * Version 2.2.0
+ * License: MIT License (http://javascript.nwbox.com/nwsapi/MIT-LICENSE)
+ */
+
+(function (global, factory) {
+  'use strict';
+
+  // Module export based on environment
+  if (typeof module === 'object' && typeof exports === 'object') {
+    module.exports = factory;
+  } else if (typeof define === 'function' && define.amd) {
+    define(factory);
+  } else {
+    global.NW = global.NW || {};
+    global.NW.Dom = factory(global);
+  }
+})(this, function (global) {
+  // Core setup
+  const version = 'nwsapi-2.2.0',
+        document = global.document,
+        root = document.documentElement,
+        slice = Array.prototype.slice;
+
+  const CFG = {
+    operators: '[~*^$|]=|=',
+    combinators: '[\\x20\\t>+~](?=[^>+~])'
+  };
+
+  const REX = {
+    HasEscapes: /\\/,
+    HexNumbers: /^[0-9a-fA-F]/,
+    RegExpChar: /[\\^$.*+?()[\]{}|/]/g,
+    TrimSpaces: /[\r\n\f]|^\s+|\s+$/g,
+  };
+
+  const Patterns = {
+    id: /^#(\S+)(.*)/,
+    className: /^\.([\w-]+)(.*)/,
+    tagName: /^(\w+)(.*)/
+  };
+
+  const Config = {
+    IDS_DUPES: true,
+    MIXEDCASE: true,
+    LOGERRORS: true,
+    VERBOSITY: true
+  };
+
+  const none = [];
+
+  // Utility functions
+  function emit(message, proto) {
+    if (Config.VERBOSITY) {
+      throw proto ? new proto(message) : new global.DOMException(message, 'SyntaxError');
+    }
+    if (Config.LOGERRORS && console && console.log) {
+      console.log(message);
+    }
+  }
+
+  function switchContext(context, force) {
+    document = context.ownerDocument || context;
+    root = document.documentElement;
+    return document;
+  }
+
+  function compile(selector, mode, callback) {
+    // Compilation logic...
+  }
+
+  function match(selectors, element, callback) {
+    if (!element) return false;
+    if (matchResolvers[selectors]) {
+      return match_assert(matchResolvers[selectors].factory, element, callback);
+    }
+
+    lastMatched = selectors;
+    if (arguments.length === 0) {
+      emit('Not enough arguments', TypeError);
+      return Config.VERBOSITY ? undefined : false;
+    } else if (selectors === '') {
+      emit('Empty string is not a valid selector');
+      return Config.VERBOSITY ? undefined : false;
+    }
+
+    selectors = '' + selectors;
+
+    const parsed = selectors
+      .replace(REX.TrimSpaces, '');
+    let expressions;
+
+    if ((expressions = parsed.match(reValidator))) {
+      expressions = parsed.match(REX.SplitGroup);
+    } else {
+      emit(`'${selectors}' is not a valid selector`);
+      return Config.VERBOSITY ? undefined : false;
+    }
+
+    matchResolvers[selectors] = match_collect(expressions, callback);
+    return match_assert(matchResolvers[selectors].factory, element, callback);
+  }
+
+  function select(selectors, context, callback) {
+    const nodes = [];
+    context = context || document;
+
+    if (selectors) {
+      const resolver = selectResolvers[selectors];
+      if (resolver && resolver.context === context && resolver.callback === callback) {
+        return callback ? concatCall(resolver.results, callback) : resolver.results;
+      }
+    }
+
+    lastSelected = selectors;
+    if (arguments.length === 0) {
+      emit('Not enough arguments', TypeError);
+      return Config.VERBOSITY ? undefined : none;
+    } else if (selectors === '') {
+      emit('Empty string is not a valid selector');
+      return Config.VERBOSITY ? undefined : none;
+    }
+
+    selectors = '' + selectors;
+    const parsed = selectors
+      .replace(REX.TrimSpaces, '');
+
+    let expressions;
+
+    if ((expressions = parsed.match(reValidator))) {
+      expressions = parsed.match(REX.SplitGroup);
+    } else {
+      emit(`'${selectors}' is not a valid selector`);
+      return Config.VERBOSITY ? undefined : none;
+    }
+
+    selectResolvers[selectors] = collect(expressions, context, callback);
+    return callback ? concatCall(selectResolvers[selectors].results, callback) : selectResolvers[selectors].results;
+  }
+
+  function collect(selectors, context, callback) {
+    const results = [];
+    selectors.forEach(selector => {
+      const token = (selector.match(reOptimizer) || [])[0] || '*';
+      const htmlset = compat[token[0]](context, token.slice(1));
+      const factory = compile(selector, true, callback);
+      results.push(...(factory ? factory(htmlset(), callback, context, results) : htmlset()));
+    });
+
+    if (results.length > 1) {
+      results.sort(documentOrder);
+      hasDupes && (results = unique(results));
+    }
+
+    return { context, factory, results };
+  }
+
+  // Public API
+  return {
+    match,
+    select,
+    compile,
+    version
+  };
+});
+```

@@ -1,0 +1,67 @@
+The `react-dom` package provides functions for rendering React components both on the client-side (browser) and server-side. It works alongside the `react` package to enable React applications to be rendered onto the DOM or output as HTML strings for server-side rendering.
+
+### Main functionalities
+
+1. **Client-side Rendering (In the Browser):**
+    - Use `createRoot` from `react-dom/client` to create a root container into which React components are rendered.
+    - You typically pass a DOM element (the root element) to `createRoot` and then call the `render` method with React components.
+
+2. **Server-side Rendering:**
+    - Use `renderToPipeableStream` from `react-dom/server` to render React components to an HTML stream.
+    - This function is designed for streaming the rendered HTML to the client directly, which is useful in a server environment for dynamic web applications.
+    - The `onShellReady` option allows execution when the shell of the app is ready to be streamed, helping to send an initial response as soon as possible.
+
+Below is a sample implementation of a Node.js package showcasing how these functionalities can be set up efficiently:
+
+```js
+// server.js
+const http = require('http');
+const React = require('react');
+const { renderToPipeableStream } = require('react-dom/server');
+const { createElement } = React;
+
+function App() {
+  return createElement('div', null, 'Hello World');
+}
+
+const server = http.createServer((req, res) => {
+  if (req.url === '/') {
+    const stream = renderToPipeableStream(createElement(App), {
+      onShellReady() {
+        res.statusCode = 200;
+        res.setHeader('Content-type', 'text/html');
+        res.write('<!DOCTYPE html><html><body>');
+        stream.pipe(res, { end: false });
+        stream.on('end', () => res.end('</body></html>'));
+      },
+      onError(error) {
+        console.error(error);
+        res.statusCode = 500;
+        res.end('Internal Server Error');
+      },
+    });
+  } else {
+    res.statusCode = 404;
+    res.end('Not Found');
+  }
+});
+
+server.listen(3000, () => {
+  console.log('Server is listening on port 3000');
+});
+
+// client.js
+import React from 'react';
+import { createRoot } from 'react-dom/client';
+
+const rootElement = document.getElementById('root');
+const root = createRoot(rootElement);
+
+function App() {
+  return React.createElement('div', null, 'Hello World');
+}
+
+root.render(React.createElement(App));
+```
+
+In the provided code, `server.js` handles server requests and uses `renderToPipeableStream` for server-side rendering. `client.js` demonstrates rendering the `App` component in a browser environment using `createRoot` from `react-dom/client`.

@@ -1,0 +1,44 @@
+The provided Node.js code defines a module that exports a function called `setToStringTag`. This function is used to set the `Symbol.toStringTag` property on a given object, which affects the behavior of the `Object.prototype.toString` method for that object. The key details of the functionality are as follows:
+
+1. **Prerequisites and Modules**: It requires a few modules to determine if the environment supports symbols (`has-tostringtag/shams` for checking `Symbol.toStringTag`) and to use `Object.defineProperty` (`get-intrinsic` to get this intrinsic if available).
+
+2. **Functionality**: The `setToStringTag` function takes three arguments:
+   - `object`: The target object on which the `Symbol.toStringTag` property is to be set.
+   - `value`: The value to assign to the `Symbol.toStringTag` property.
+   - An optional third argument object with a `force` property:
+     - If `force` is true, the function will set the `Symbol.toStringTag` property even if it already exists on the object.
+
+3. **Symbol.toStringTag Usage**: If symbol functionality is supported and either `force` is enabled or the `Symbol.toStringTag` does not exist on the object:
+   - It attempts to use `Object.defineProperty` to define the `Symbol.toStringTag` property with specific property descriptors (non-enumerable, non-writable, configurable).
+   - If `Object.defineProperty` is unavailable, it directly assigns the value to `object[toStringTag]`.
+
+Here's a revised version of the code:
+
+```javascript
+'use strict';
+
+const GetIntrinsic = require('get-intrinsic');
+
+const defineProperty = GetIntrinsic('%Object.defineProperty%', true);
+
+const supportsToStringTag = require('has-tostringtag/shams')();
+const hasOwn = require('hasown');
+
+const toStringTagSymbol = supportsToStringTag ? Symbol.toStringTag : null;
+
+module.exports = function setToStringTag(object, value, options = {}) {
+    const { force } = options;
+    if (toStringTagSymbol && (force || !hasOwn(object, toStringTagSymbol))) {
+        if (defineProperty) {
+            defineProperty(object, toStringTagSymbol, {
+                configurable: true,
+                enumerable: false,
+                value: value,
+                writable: false
+            });
+        } else {
+            object[toStringTagSymbol] = value; // Direct assignment if unable to define property
+        }
+    }
+};
+```

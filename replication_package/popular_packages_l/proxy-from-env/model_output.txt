@@ -1,0 +1,69 @@
+The `proxy-from-env` package provides a utility function `getProxyForUrl` which determines the appropriate proxy for a given URL based on standard environment variables. When a URL is supplied, this function checks against a series of environment variables (`HTTP_PROXY`, `HTTPS_PROXY`, etc.) to decide which proxy should be used. If the URL's host or pattern is excluded by `NO_PROXY`, no proxy will be set, and a direct connection is used instead. Here's a brief breakdown of the process:
+
+1. **Check `NO_PROXY`:** The `NO_PROXY` environment variable lists hostnames or patterns that should bypass the proxy. If the hostname matches any in `NO_PROXY`, the function will return an empty string to signify no proxy is used.
+
+2. **Determine Protocol-Specific Proxy:** Depending on the URL's protocol (http, https, ftp, etc.), the corresponding proxy environment variable (e.g., `HTTP_PROXY` for http, `HTTPS_PROXY` for https) is evaluated. The function checks if any such proxy is set in the environment variables. 
+
+3. **Fallback to `ALL_PROXY`**: If the specific proxy variable for the protocol isn't set, the function checks for the `ALL_PROXY` as a catch-all proxy.
+
+4. **Case Insensitivity:** Both uppercase (`HTTP_PROXY`) and lowercase (`http_proxy`) variable names are considered, with lowercase taking precedence.
+
+Here's the complete code implementation of the described functionality:
+
+```javascript
+const url = require('url');
+
+function getProxyForUrl(requestUrl) {
+  // Parse the input URL
+  const parsedUrl = url.parse(requestUrl);
+  const protocol = (parsedUrl.protocol || '').toLowerCase().replace(':', '');
+
+  if (!protocol) return '';
+
+  const hostname = parsedUrl.hostname.toLowerCase();
+  const port = parsedUrl.port || defaultPort(protocol);
+
+  // Check NO_PROXY
+  const noProxy = getEnv('no_proxy');
+  if (noProxy) {
+    const noProxyList = noProxy.split(/[\s,]+/);
+    if (noProxyList.includes('*')) return '';
+    for (let item of noProxyList) {
+      item = item.trim().toLowerCase();
+      if (!item) continue;
+      const [noProxyHost, noProxyPort] = item.split(':');
+      if (noProxyPort && noProxyPort !== port) continue;
+      if (hostname === noProxyHost || 
+          (noProxyHost.startsWith('.') && hostname.endsWith(noProxyHost)) ||
+          (noProxyHost.startsWith('*') && hostname.endsWith(noProxyHost.slice(1))) ||
+          (!noProxyHost && hostname.endsWith(noProxyHost))) {
+        return '';
+      }
+    }
+  }
+
+  // Select proxy based on the URL’s protocol
+  const proxyVar = `${protocol}_proxy`;
+  const proxyUrl = getEnv(proxyVar) || getEnv('all_proxy');
+
+  return proxyUrl ? proxyUrl : '';
+}
+
+function defaultPort(protocol) {
+  switch (protocol) {
+    case 'http': return '80';
+    case 'https': return '443';
+    case 'ftp': return '21';
+    // Add other protocols here if needed
+    default: return '';
+  }
+}
+
+function getEnv(name) {
+  return process.env[name.toLowerCase()] || process.env[name.toUpperCase()] || '';
+}
+
+module.exports = { getProxyForUrl };
+```
+
+This code correctly handles proxy detection and respects environment configurations as specified by typical setups for proxies in many applications and programming environments.

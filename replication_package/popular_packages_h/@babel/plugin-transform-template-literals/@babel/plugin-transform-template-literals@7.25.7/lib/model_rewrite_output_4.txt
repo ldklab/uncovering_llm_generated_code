@@ -1,0 +1,127 @@
+The provided Node.js code is a Babel plugin that transforms ECMAScript 6 template literals and tagged template expressions into a format compatible with older JavaScript environments. Here's a breakdown of its functionality:
+
+1. **Imports**: It imports functions from `@babel/helper-plugin-utils` and `@babel/core`.
+2. **Plugin Declaration**: Using `@babel/helper-plugin-utils`, it declares a new Babel plugin.
+3. **API Verification**: It asserts the API version to ensure compatibility with version 7 of Babel.
+4. **Assumptions and Options**: It checks plugin-specific assumptions: `ignoreToPrimitiveHint` and `mutableTemplateObject`, defaulting to `options.loose` if the assumptions are not explicitly set.
+5. **Helper Name Determination**: Decides the helper method's name to use based on the assumption of `mutableTemplateObject`.
+6. **Helper Function (`buildConcatCallExpressions`)**: A utility function that builds a concatenated expression call, used for combining strings.
+7. **Transformation Handlers**:
+   
+   - **TaggedTemplateExpression Visitor**: 
+     - Processes tagged template expressions.
+     - Extracts cooked (runtime) and raw string values from template elements.
+     - Determines if raw and cooked strings are identical.
+     - Handles internals by generating a unique identifier for the template object.
+     - Replaces the original path with a call expression using the helper.
+
+   - **TemplateLiteral Visitor**: 
+     - Processes regular template literals.
+     - Ignored when part of a TypeScript literal type.
+     - Breaks down template literals into smaller nodes.
+     - Constructs concatenated string expressions using binary operations or by joining them with helper calls.
+     - Handles optional transformations based on `ignoreToPrimitiveHint`.
+
+```javascript
+"use strict";
+
+import { declare } from "@babel/helper-plugin-utils";
+import * as babelCore from "@babel/core";
+
+export default declare((api, options) => {
+  api.assertVersion(7);
+  const ignoreToPrimitiveHint = api.assumption("ignoreToPrimitiveHint") ?? options.loose;
+  const mutableTemplateObject = api.assumption("mutableTemplateObject") ?? options.loose;
+
+  let helperName = "taggedTemplateLiteral";
+  if (mutableTemplateObject) helperName += "Loose";
+
+  function buildConcatCallExpressions(items) {
+    let available = true;
+    return items.reduce((left, right) => {
+      let canInsert = babelCore.types.isLiteral(right);
+      if (!canInsert && available) {
+        canInsert = true;
+        available = false;
+      }
+      if (canInsert && babelCore.types.isCallExpression(left)) {
+        left.arguments.push(right);
+        return left;
+      }
+      return babelCore.types.callExpression(
+        babelCore.types.memberExpression(left, babelCore.types.identifier("concat")), [right]
+      );
+    });
+  }
+
+  return {
+    name: "transform-template-literals",
+    visitor: {
+      TaggedTemplateExpression(path) {
+        const { node } = path;
+        const { quasi } = node;
+        const strings = [], raws = [];
+        let isStringsRawEqual = true;
+
+        for (const elem of quasi.quasis) {
+          const { raw, cooked } = elem.value;
+          const value = cooked == null ? path.scope.buildUndefinedNode() : babelCore.types.stringLiteral(cooked);
+          strings.push(value);
+          raws.push(babelCore.types.stringLiteral(raw));
+          if (raw !== cooked) {
+            isStringsRawEqual = false;
+          }
+        }
+
+        const helperArgs = [babelCore.types.arrayExpression(strings)];
+        if (!isStringsRawEqual) {
+          helperArgs.push(babelCore.types.arrayExpression(raws));
+        }
+        const tmp = path.scope.generateUidIdentifier("templateObject");
+        path.scope.getProgramParent().push({
+          id: babelCore.types.cloneNode(tmp)
+        });
+        path.replaceWith(babelCore.types.callExpression(node.tag, [babelCore.template.expression.ast`
+          ${babelCore.types.cloneNode(tmp)} || (
+            ${tmp} = ${path.addHelper(helperName)}(${helperArgs})
+          )
+        `, ...quasi.expressions]));
+      },
+      TemplateLiteral(path) {
+        if (path.parent.type === "TSLiteralType") return;
+
+        const nodes = [];
+        const expressions = path.get("expressions");
+        let index = 0;
+
+        for (const elem of path.node.quasis) {
+          if (elem.value.cooked) {
+            nodes.push(babelCore.types.stringLiteral(elem.value.cooked));
+          }
+          if (index < expressions.length) {
+            const exprNode = expressions[index++].node;
+            if (!babelCore.types.isStringLiteral(exprNode, { value: "" })) {
+              nodes.push(exprNode);
+            }
+          }
+        }
+
+        if (!babelCore.types.isStringLiteral(nodes[0]) && !(ignoreToPrimitiveHint && babelCore.types.isStringLiteral(nodes[1]))) {
+          nodes.unshift(babelCore.types.stringLiteral(""));
+        }
+
+        let rootNode = nodes[0];
+        if (ignoreToPrimitiveHint) {
+          for (let i = 1; i < nodes.length; i++) {
+            rootNode = babelCore.types.binaryExpression("+", rootNode, nodes[i]);
+          }
+        } else if (nodes.length > 1) {
+          rootNode = buildConcatCallExpressions(nodes);
+        }
+
+        path.replaceWith(rootNode);
+      }
+    }
+  };
+});
+```

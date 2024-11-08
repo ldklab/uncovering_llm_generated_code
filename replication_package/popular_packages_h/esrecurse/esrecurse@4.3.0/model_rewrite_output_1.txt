@@ -1,0 +1,79 @@
+The provided code is an implementation of a custom tree traversal utility built on top of the `estraverse` library for JavaScript ASTs (Abstract Syntax Trees). It defines a `Visitor` class that can be used to navigate an AST and perform operations on each node. Here's a breakdown of its functionality:
+
+1. **isNode and isProperty Functions**: 
+   - `isNode` checks whether a given object is a valid AST node by determining if it is not `null`, is an object, and has a `type` property.
+   - `isProperty` checks if a given `nodeType` is an `ObjectExpression` or `ObjectPattern`, and if the property `key` is `properties`.
+
+2. **Visitor Class**: 
+   - The `Visitor` class is initialized with a visitor function/object and optional settings. It handles visiting nodes and their children in the AST.
+   - Uses `__childVisitorKeys` to determine what properties of a node to visit based on node type. It supports custom keys and fallback strategies.
+   - `visitChildren` method iterates over the children nodes of a node and applies the visiting operation.
+   - `visit` method handles dispatching to appropriate visitor function for a node's type or defaults to visiting the node's children.
+
+3. **Exports**:
+   - Exports the package version and the `Visitor` class, allowing external code to create visitors and perform AST walking with the `visit` function.
+
+```javascript
+(function () {
+    'use strict';
+    
+    const estraverse = require('estraverse');
+
+    function isNode(node) {
+        return node != null && typeof node === 'object' && typeof node.type === 'string';
+    }
+
+    function isProperty(nodeType, key) {
+        return (nodeType === estraverse.Syntax.ObjectExpression || nodeType === estraverse.Syntax.ObjectPattern) && key === 'properties';
+    }
+
+    class Visitor {
+        constructor(visitor = this, options = {}) {
+            this.__visitor = visitor;
+            this.__childVisitorKeys = options.childVisitorKeys
+                ? { ...estraverse.VisitorKeys, ...options.childVisitorKeys }
+                : estraverse.VisitorKeys;
+            this.__fallback = (options.fallback === 'iteration')
+                ? Object.keys
+                : (typeof options.fallback === 'function' ? options.fallback : undefined);
+        }
+        
+        visitChildren(node) {
+            if (node == null) return;
+            
+            const type = node.type || estraverse.Syntax.Property;
+            let children = this.__childVisitorKeys[type] || this.__fallback?.(node);
+            if (!children) throw new Error(`Unknown node type ${type}.`);
+
+            for (const childKey of children) {
+                const child = node[childKey];
+                if (child) {
+                    if (Array.isArray(child)) {
+                        child.forEach(c => { if (c && (isNode(c) || isProperty(type, childKey))) this.visit(c); });
+                    } else if (isNode(child)) {
+                        this.visit(child);
+                    }
+                }
+            }
+        }
+        
+        visit(node) {
+            if (node == null) return;
+            
+            const type = node.type || estraverse.Syntax.Property;
+            if (typeof this.__visitor[type] === 'function') {
+                this.__visitor[type](node);
+            } else {
+                this.visitChildren(node);
+            }
+        }
+    }
+
+    exports.version = require('./package.json').version;
+    exports.Visitor = Visitor;
+    exports.visit = (node, visitor, options) => {
+        new Visitor(visitor, options).visit(node);
+    };
+
+}());
+```

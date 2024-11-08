@@ -1,0 +1,63 @@
+The original Node.js code defines a function `runParallel` that executes a collection of asynchronous tasks in parallel and invokes a callback when all tasks are completed or if an error occurs. The tasks can be passed either as an array or an object, and the results are returned in the same structure as the input tasks. 
+
+Here's a breakdown of how the function works:
+
+1. It initializes the results storage, pending task counter, and input type keys.
+2. If tasks are stored as an array, results are initialized as an array; otherwise, as an object.
+3. `pending` keeps track of the number of asynchronous tasks yet to be completed.
+4. The `done` function is defined to handle the callback execution once all tasks are finished or an error occurs, utilizing `queueMicrotask` to ensure asynchronous execution if needed.
+5. `each` function updates the results with output from individual tasks and calls `done` once all results are available or an error occurs.
+6. If there are no tasks, it immediately calls the callback with null.
+7. It checks if tasks are in object form (keys exist), it iterates over keys and executes each task; otherwise, it treats tasks as an array and processes them similarly.
+
+Here's a possible rewrite of the original code:
+
+```javascript
+const queueMicrotask = require('queue-microtask');
+
+function runParallel(tasks, callback) {
+  let results, pendingTasks, taskKeys;
+  let isSynchronous = true;
+
+  if (Array.isArray(tasks)) {
+    results = [];
+    pendingTasks = tasks.length;
+  } else {
+    taskKeys = Object.keys(tasks);
+    results = {};
+    pendingTasks = taskKeys.length;
+  }
+
+  function finalize(err) {
+    function conclude() {
+      if (callback) callback(err, results);
+      callback = null;
+    }
+    if (isSynchronous) queueMicrotask(conclude);
+    else conclude();
+  }
+
+  function taskCallback(index, err, result) {
+    results[index] = result;
+    if (--pendingTasks === 0 || err) {
+      finalize(err);
+    }
+  }
+
+  if (!pendingTasks) {
+    finalize(null);
+  } else if (taskKeys) {
+    taskKeys.forEach((key) => {
+      tasks[key]((err, result) => taskCallback(key, err, result));
+    });
+  } else {
+    tasks.forEach((task, index) => {
+      task((err, result) => taskCallback(index, err, result));
+    });
+  }
+
+  isSynchronous = false;
+}
+
+module.exports = runParallel;
+```

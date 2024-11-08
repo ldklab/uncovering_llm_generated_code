@@ -1,0 +1,93 @@
+The `graphql-tag` package provides utilities for parsing GraphQL queries into Abstract Syntax Trees (ASTs). Here's a breakdown of its main functionality:
+
+- **`gql` Template Literal Tag**: The package features the `gql` function which allows developers to write GraphQL queries using ES6 template literals. When used, `gql` converts these query strings into executable ASTs compliant with the GraphQL language specification. This can be particularly useful for static analysis, query validation, and integration with GraphQL clients like Apollo Client.
+
+- **Fragment Support**: Beyond simple queries, `gql` supports the definition of reusable fragments. These fragments are pieces of a GraphQL query that can be used within other queries to promote reusability and improve readability.
+
+- **Caching Parse Results**: To optimize performance, `graphql-tag` caches the results of parsed queries to avoid redundant parsing for identical queries. This feature allows the use of identity comparison (`===`) to check for query equality.
+
+- **GraphQL File Imports**: The package supports importing `.graphql` or `.gql` files, enabling queries to be stored and managed separately from the main application codebase. This is typically set up using webpack loaders or similar tools.
+
+- **Preprocessing with Babel and TypeScript**: The package supports preprocessing GraphQL queries at build time using Babel or TypeScript plugins. This can reduce bundle sizes and improve application load times by avoiding runtime parsing of GraphQL queries.
+
+- **Warnings and Experimental Features**: The package includes functionality to emit warnings for duplicate fragment names and provides an experimental feature for fragment variables, which allows fragments to have parameters.
+
+- **Webpack Loader**: `graphql-tag` includes a webpack loader for preprocessing `.graphql` or `.gql` files into ASTs as part of the build process. This is useful in projects using technologies that don't inherently recognize GraphQL syntax.
+
+Below is an example implementation of a Node.js package implementing the described functionality of `graphql-tag`.
+
+```javascript
+// graphql-tag/index.js
+
+const { parse } = require('graphql');
+const cache = {};
+
+function gql(literals, ...placeholders) {
+  const query = literals
+    .map((literal, index) => literal + (placeholders[index] || ''))
+    .join('');
+  
+  if (!cache[query]) {
+    cache[query] = parse(query);
+  }
+  
+  return cache[query];
+}
+
+exports.gql = gql;
+
+let fragmentWarningsEnabled = true;
+
+exports.disableFragmentWarnings = () => {
+  fragmentWarningsEnabled = false;
+};
+
+const fragmentVariableSupport = { enabled: false };
+
+exports.enableExperimentalFragmentVariables = () => {
+  fragmentVariableSupport.enabled = true;
+};
+
+exports.disableExperimentalFragmentVariables = () => {
+  fragmentVariableSupport.enabled = false;
+};
+
+// Simple warning for demonstrating purposes
+function checkFragmentWarnings(queryAST) {
+  if (!fragmentWarningsEnabled) return;
+  const fragmentNames = new Set();
+  queryAST.definitions.forEach(def => {
+    if (def.kind === 'FragmentDefinition') {
+      if (fragmentNames.has(def.name.value)) {
+        console.warn(`Duplicate fragment name: ${def.name.value}`);
+      }
+      fragmentNames.add(def.name.value);
+    }
+  });
+}
+
+// Example Usage
+const query = gql`
+  {
+    user(id: 5) {
+      firstName
+      lastName
+    }
+  }
+`;
+
+console.log(JSON.stringify(query, null, 2)); // Visualize the AST
+checkFragmentWarnings(query);
+
+// Example for experimental feature switch
+if (fragmentVariableSupport.enabled) {
+  const fragmentWithVariables = gql`
+  fragment ExampleFragment($arg: String!) on Type {
+    field
+  }
+  `;
+  console.log(fragmentWithVariables);
+}
+```
+
+This code implements the core functionality of a GraphQL query parser with caching for efficiency and includes toggles for fragment naming warnings and experimental features. It is a simplified stand-in for the actual `graphql-tag` module which would have more robust implementations and probably more sophisticated webpack loader configurations and file importing support.

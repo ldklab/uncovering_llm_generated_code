@@ -1,0 +1,87 @@
+The provided Node.js code is a simplified implementation of the `process.nextTick` functionality, commonly found in the Node.js runtime. The script ensures that certain functions are executed after the current operation completes but before any other I/O tasks.
+
+### Functionality Explanation:
+
+1. **Process Object**: A `process` object is created and scoped to a function to prevent global namespace pollution.
+
+2. **Queue Management**: It maintains a `queue` where tasks (functions and their arguments) are queued. An additional `currentQueue` reference is used to handle the queue during the execution period.
+
+3. **Draining Logic**: The script implements a `drainQueue` function responsible for executing the queued tasks using a cycle:
+   - It sets `draining` to `true` to indicate a draining operation is in progress.
+   - It clears the queue while tasks are executed.
+   - It uses a `setTimeout` call to schedule the `cleanUpNextTick` to reset the draining state.
+
+4. **Task Execution**: A `Task` class (or function) encapsulates the function and its arguments, providing a `run` method to execute the function with its arguments.
+
+5. **nextTick Method**: The `process.nextTick` method accepts a function and an optional set of arguments to schedule into the queue. If the queue was previously empty, it initializes the draining process via `setTimeout`.
+
+6. **Environment Setup**: The `process` is either exported using `module.exports` or added as a property to the global object based on the environment.
+
+Here is a possible rewrite of the functionally equivalent code:
+
+```javascript
+// process.js
+(function(scope) {
+  const process = {};
+  let queue = [];
+  let draining = false;
+  let currentQueue;
+  let queueIndex = -1;
+
+  function cleanUpNextTick() {
+    if (!draining) return;
+    draining = false;
+    if (currentQueue?.length) {
+      queue = currentQueue.concat(queue);
+    } else {
+      queueIndex = -1;
+    }
+    if (queue.length) drainQueue();
+  }
+
+  function drainQueue() {
+    if (draining) return;
+    const timeout = setTimeout(cleanUpNextTick);
+    draining = true;
+
+    while (queue.length) {
+      currentQueue = queue;
+      queue = [];
+      queueIndex = -1;
+      while (++queueIndex < currentQueue.length) {
+        currentQueue[queueIndex]?.run();
+      }
+    }
+
+    currentQueue = null;
+    draining = false;
+    clearTimeout(timeout);
+  }
+
+  process.nextTick = function(func, ...args) {
+    queue.push(new Task(func, args));
+    if (queue.length === 1 && !draining) {
+      setTimeout(drainQueue, 0);
+    }
+  };
+
+  class Task {
+    constructor(func, args) {
+      this.func = func;
+      this.args = args;
+    }
+
+    run() {
+      this.func(...this.args);
+    }
+  }
+
+  process.browser = true;
+
+  if (typeof module !== 'undefined' && typeof module.exports !== 'undefined') {
+    module.exports = process;
+  } else {
+    scope.process = process;
+  }
+})(typeof globalThis !== 'undefined' ? globalThis : typeof self !== 'undefined' ? self : this);
+```

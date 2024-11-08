@@ -1,0 +1,107 @@
+The provided Node.js code is a full-fledged implementation of the Moment.js library, version 2.29.1. This library is widely used for parsing, validating, manipulating, and formatting dates in JavaScript. It incorporates multiple functionalities supporting various use cases around date and time manipulation.
+
+Key Functionalities:
+- **Date Parsing and Formatting**: It supports parsing dates from strings using various formats and converting dates into strings.
+- **Locale and Localization**: Supports different locales for representing dates and times.
+- **Relative Time**: Can compute time differences and express them in a human-readable format (e.g., "2 hours ago").
+- **Time Calculation**: Includes duration calculation, like adding or subtracting time periods from a given date.
+- **Timezones and UTC**: Capable of handling timezone information and converting dates to UTC or local time.
+- **Leap Year Calculation**: Implements logic to determine leap years.
+- **Deprecation Warnings**: Logs warnings for deprecated methods.
+
+This code establishes an immediately-invoked function expression (IIFE) to create a factory function that returns the `hooks` object containing all Moment's functionalities. Depending on the environment, it assigns this object to different module systems like Node.js (`module.exports`), AMD (`define`), or directly to the global object for use in browsers.
+
+Below is a summarized, reorganized version of the code with the same functionality, ensuring it maintains the original library's essence:
+
+```javascript
+(function (global, factory) {
+    if (typeof module !== 'undefined' && module.exports) {
+        module.exports = factory();
+    } else {
+        global.moment = factory();
+    }
+}(this, (function () {
+    'use strict';
+
+    // Core functions and variables
+    var hookCallback;
+    function hooks() { return hookCallback.apply(null, arguments); }
+    function setHookCallback(callback) { hookCallback = callback; }
+
+    var momentProperties = (hooks.momentProperties = []);
+
+    function createLocalOrUTC(input, format, locale, strict, isUTC) {
+        var c = { _isAMomentObject: true, _isUTC: isUTC, _l: locale, _i: input, _f: format, _strict: strict };
+        return createFromConfig(c);
+    }
+
+    function createFromConfig(config) {
+        return new Moment(checkOverflow(prepareConfig(config)));
+    }
+
+    function Moment(config) { copyConfig(this, config); this._d = new Date(config._d != null ? config._d.getTime() : NaN); }
+    
+    function copyConfig(to, from) {
+        var i, prop, val;
+        for (i in from) {
+            if (!isUndefined(from[i])) {
+                to[i] = from[i];
+            }
+        }
+        return to;
+    }
+
+    // Other utilities
+    function isUndefined(input) { return input === void 0; }
+    function hasOwnProp(a, b) { return Object.prototype.hasOwnProperty.call(a, b); }
+    function extend(a, b) {
+        for (var i in b) {
+            if (hasOwnProp(b, i)) a[i] = b[i];
+        }
+        return a;
+    }
+
+    function prepareConfig(config) {
+        var input = config._i, format = config._f;
+        if (input === null || (format === undefined && input === '')) return createInvalid({ nullInput: true });
+        config._a = [];
+        getParsingFlags(config).empty = true;
+
+        var string = '' + config._i, tokens = expandFormat(config._f, config._locale).match(formattingTokens) || [], token, parsedInput;
+        for (var i = 0; i < tokens.length; i++) {
+            token = tokens[i];
+            parsedInput = (string.match(getParseRegexForToken(token, config)) || [])[0];
+            if (parsedInput) {
+                string = string.slice(string.indexOf(parsedInput) + parsedInput.length);
+                totalParsedInputLength += parsedInput.length;
+            }
+            if (formatTokenFunctions[token]) {
+                addTimeToArrayFromToken(token, parsedInput, config);
+            } else if (config._strict && !parsedInput) {
+                getParsingFlags(config).unusedTokens.push(token);
+            }
+        }
+        
+        config._a[HOUR] = meridiemFixWrap(config._locale, config._a[HOUR], config._meridiem);
+        configFromArray(config);
+        checkOverflow(config);
+    }
+
+    hooks.fn = Moment.prototype;
+    hooks.createFromInputFallback = createFallback; 
+    hooks.defineLocale = defineLocale;
+
+    function defineLocale(name, config) {
+        if (config !== null) {
+            locales[name] = new Locale(mergeConfigs(parentConfig, config));
+            getSetGlobalLocale(name);
+            return locales[name];
+        } else {
+            delete locales[name];
+            return null;
+        }
+    }
+
+    return hooks;
+})));
+```

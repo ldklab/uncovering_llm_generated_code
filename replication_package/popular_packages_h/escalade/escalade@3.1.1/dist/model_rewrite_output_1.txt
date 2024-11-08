@@ -1,0 +1,38 @@
+The provided Node.js code is an asynchronous function that searches directories upwards from a starting directory. The function takes two parameters: a starting directory ("start") and a callback function ("callback"). It computes the path of the starting directory and retrieves its statistics. If it's not a directory, the code adjusts the path to the directory's parent. The function continually moves up the directory tree, invoking the callback with the current directory and its contents. If the callback returns a truthy value, the function resolves that value against the current directory path and returns it. The traversal stops when no further moving up the directory tree is possible (i.e., reaching the root directory).
+
+Here is the rewritten code:
+
+```javascript
+const path = require('path');
+const fs = require('fs');
+const util = require('util');
+
+const getStats = util.promisify(fs.stat);
+const readDir = util.promisify(fs.readdir);
+
+module.exports = async function findInDirectoriesUpwards(startDirectory, callback) {
+    // Resolve the starting directory path 
+    let currentDir = path.resolve('.', startDirectory);
+    let directoryStats = await getStats(currentDir);
+
+    // Adjust path if not a directory
+    if (!directoryStats.isDirectory()) {
+        currentDir = path.dirname(currentDir);
+    }
+
+    while (true) {
+        const potentialResult = await callback(currentDir, await readDir(currentDir));
+        if (potentialResult) {
+            // Return resolved path if the callback gives a truthy result
+            return path.resolve(currentDir, potentialResult);
+        }
+        // Move to parent directory
+        const parentDir = path.dirname(currentDir);
+        if (parentDir === currentDir) {
+            // Stop if the root directory is reached
+            break;
+        }
+        currentDir = parentDir;
+    }
+}
+```

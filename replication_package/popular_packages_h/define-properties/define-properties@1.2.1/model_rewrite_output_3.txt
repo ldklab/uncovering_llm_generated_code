@@ -1,0 +1,64 @@
+The given Node.js code defines a utility function used for defining properties on an object with specified predicates, leveraging property descriptors if available. The code has several components:
+
+1. **Imports and Initial Checks**:
+   - `object-keys`: A module to get an object's enumerable property names.
+   - `define-data-property`: A utility for defining properties.
+   - `has-property-descriptors`: A module to check support for property descriptors.
+   - Checks for native support of ES6 Symbols.
+
+2. **Helper Functions**:
+   - `isFunction`: Validates if an argument is a function.
+   - `defineProperty`: Adds a property to an object if certain conditions (predicates) are met. Utilizes property descriptors if supported.
+
+3. **Core Functionality**:
+   - `defineProperties`: Takes an object and a map of property names with their values and optionally predicates. It iterates through each property and defines them on the target object using `defineProperty`.
+
+4. **Export**: 
+   - Exports the `defineProperties` function for use in other modules. Adds a property to indicate support for property descriptors.
+
+Here's the refactored code:
+
+```javascript
+'use strict';
+
+const keys = require('object-keys');
+const defineDataProperty = require('define-data-property');
+const supportsDescriptors = require('has-property-descriptors')();
+const hasSymbols = typeof Symbol === 'function' && typeof Symbol('foo') === 'symbol';
+
+const isFunction = function (fn) {
+  return typeof fn === 'function' && Object.prototype.toString.call(fn) === '[object Function]';
+};
+
+const defineProperty = function (object, name, value, predicate) {
+  if (name in object) {
+    if (predicate === true) {
+      if (object[name] === value) {
+        return;
+      }
+    } else if (!isFunction(predicate) || !predicate()) {
+      return;
+    }
+  }
+
+  if (supportsDescriptors) {
+    defineDataProperty(object, name, value, true);
+  } else {
+    defineDataProperty(object, name, value);
+  }
+};
+
+const defineProperties = function (object, map, predicates = {}) {
+  let props = keys(map);
+  if (hasSymbols) {
+    props = props.concat(Object.getOwnPropertySymbols(map));
+  }
+  props.forEach(prop => {
+    defineProperty(object, prop, map[prop], predicates[prop]);
+  });
+};
+
+defineProperties.supportsDescriptors = !!supportsDescriptors;
+
+module.exports = defineProperties;
+```

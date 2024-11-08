@@ -1,0 +1,486 @@
+The given Node.js code provides support for stack trace processing in a JavaScript environment, particularly in regards to handling source maps. Here's a breakdown of the functionality:
+
+1. **Environment Detection**: Determines whether the code is running in a browser or Node.js environment to use appropriate methods for file retrieval.
+
+2. **Error Handling**: Installs custom error formatter and uncaught exception handler to parse and display stack traces with source map support. These handlers convert stack trace positions from compiled to original source code for better readability.
+
+3. **File and Source Map Retrieval**: Includes functions to fetch file contents and source maps. In a browser, it uses XMLHttpRequest for this, while in Node.js, it uses the `fs` module (file system).
+
+4. **Source Map Parsing**: Uses `source-map` library to interpret the source maps, allowing stack traces to map to the correct original source positions.
+
+5. **Utility Functions**: Handles string manipulation and URL resolution, especially to support data URIs and relative URLs in source maps.
+
+6. **Shim Implementation**: Offers a shim for uncaught exception events to ensure source-mapped stack traces are used when an error occurs without custom error listeners.
+
+7. **Exported Functions**: Exposes various functions such as `wrapCallSite`, `getErrorSource`, `mapSourcePosition`, and `retrieveSourceMap`.
+
+8. **Configuration Options**: Provides an `install` function that allows users to install this enhanced error handling behavior with specific options, like custom file retrieval and handling uncaught exceptions.
+
+Here is a potential rewritten version of the code, organized cleanly:
+
+```javascript
+const { SourceMapConsumer } = require('source-map');
+const path = require('path');
+
+let fs;
+try {
+  fs = require('fs');
+  if (!fs.existsSync || !fs.readFileSync) {
+    fs = null;
+  }
+} catch {}
+
+const bufferFrom = require('buffer-from');
+
+// Function to require modules dynamically
+function dynamicRequire(mod, request) {
+  return mod.require(request);
+}
+
+let errorFormatterInstalled = false;
+let uncaughtShimInstalled = false;
+let emptyCacheBetweenOperations = false;
+let environment = "auto";
+let fileContentsCache = {};
+let sourceMapCache = {};
+const reSourceMap = /^data:application\/json[^,]+base64,/;
+const retrieveFileHandlers = [];
+const retrieveMapHandlers = [];
+
+function isInBrowser() {
+  return environment === "browser" || 
+    (environment !== "node" && typeof window !== 'undefined' && typeof XMLHttpRequest === 'function' && 
+    !(window.require && window.module && window.process && window.process.type === "renderer"));
+}
+
+function hasGlobalProcessEventEmitter() {
+  return typeof process === 'object' && process !== null && typeof process.on === 'function';
+}
+
+function globalProcessVersion() {
+  return (typeof process === 'object' && process !== null) ? process.version : '';
+}
+
+function globalProcessStderr() {
+  return (typeof process === 'object' && process !== null) ? process.stderr : undefined;
+}
+
+function globalProcessExit(code) {
+  if (typeof process === 'object' && process !== null && typeof process.exit === 'function') {
+    return process.exit(code);
+  }
+}
+
+function handlerExec(list) {
+  return function(arg) {
+    for (const handler of list) {
+      const result = handler(arg);
+      if (result) return result;
+    }
+    return null;
+  };
+}
+
+const retrieveFile = handlerExec(retrieveFileHandlers);
+
+retrieveFileHandlers.push(function(filePath) {
+  filePath = filePath.trim();
+  if (/^file:/.test(filePath)) {
+    filePath = filePath.replace(/file:\/\/\/(\w:)?/, (protocol, drive) => drive ? '' : '/');
+  }
+  if (filePath in fileContentsCache) {
+    return fileContentsCache[filePath];
+  }
+
+  try {
+    if (!fs) {
+      const xhr = new XMLHttpRequest();
+      xhr.open('GET', filePath, false);
+      xhr.send(null);
+      if (xhr.readyState === 4 && xhr.status === 200) {
+        return fileContentsCache[filePath] = xhr.responseText;
+      }
+    } else if (fs.existsSync(filePath)) {
+      return fileContentsCache[filePath] = fs.readFileSync(filePath, 'utf8');
+    }
+  } catch {}
+
+  return '';
+});
+
+function supportRelativeURL(file, url) {
+  if (!file) return url;
+  const dir = path.dirname(file);
+  const protocolMatch = /^\w+:\/\/[^\/]*/.exec(dir);
+  const protocol = protocolMatch ? protocolMatch[0] : '';
+  const startPath = dir.slice(protocol.length);
+  if (protocol && /^\/\w\:/.test(startPath)) {
+    protocol += '/';
+    return protocol + path.resolve(dir.slice(protocol.length), url).replace(/\\/g, '/');
+  }
+  return protocol + path.resolve(dir.slice(protocol.length), url);
+}
+
+function retrieveSourceMapURL(source) {
+  if (isInBrowser()) {
+    try {
+      const xhr = new XMLHttpRequest();
+      xhr.open('GET', source, false);
+      xhr.send(null);
+      const fileData = xhr.readyState === 4 ? xhr.responseText : null;
+      const sourceMapHeader = xhr.getResponseHeader("SourceMap") || xhr.getResponseHeader("X-SourceMap");
+      if (sourceMapHeader) return sourceMapHeader;
+    } catch {}
+  }
+
+  const fileData = retrieveFile(source);
+  const re = /(?:\/\/[@#][\s]*sourceMappingURL=([^\s'"]+)[\s]*$)|(?:\/\*[@#][\s]*sourceMappingURL=([^\s*'"]+)[\s]*(?:\*\/)[\s]*$)/mg;
+  let lastMatch;
+  let match;
+  while (match = re.exec(fileData)) lastMatch = match;
+  return lastMatch ? lastMatch[1] : null;
+}
+
+const retrieveSourceMap = handlerExec(retrieveMapHandlers);
+
+retrieveMapHandlers.push((source) => {
+  let sourceMappingURL = retrieveSourceMapURL(source);
+  if (!sourceMappingURL) return null;
+
+  if (reSourceMap.test(sourceMappingURL)) {
+    const rawData = sourceMappingURL.slice(sourceMappingURL.indexOf(',') + 1);
+    const sourceMapData = bufferFrom(rawData, "base64").toString();
+    sourceMappingURL = source;
+    return { url: sourceMappingURL, map: sourceMapData };
+  } else {
+    sourceMappingURL = supportRelativeURL(source, sourceMappingURL);
+    const sourceMapData = retrieveFile(sourceMappingURL);
+    if (!sourceMapData) return null;
+    return { url: sourceMappingURL, map: sourceMapData };
+  }
+});
+
+function mapSourcePosition(position) {
+  let sourceMap = sourceMapCache[position.source];
+  if (!sourceMap) {
+    const urlAndMap = retrieveSourceMap(position.source);
+    if (urlAndMap) {
+      sourceMap = sourceMapCache[position.source] = {
+        url: urlAndMap.url,
+        map: new SourceMapConsumer(urlAndMap.map)
+      };
+
+      if (sourceMap.map.sourcesContent) {
+        sourceMap.map.sources.forEach((source, i) => {
+          const contents = sourceMap.map.sourcesContent[i];
+          if (contents) {
+            const url = supportRelativeURL(sourceMap.url, source);
+            fileContentsCache[url] = contents;
+          }
+        });
+      }
+    } else {
+      sourceMap = sourceMapCache[position.source] = { url: null, map: null };
+    }
+  }
+
+  if (sourceMap && sourceMap.map && typeof sourceMap.map.originalPositionFor === 'function') {
+    const originalPosition = sourceMap.map.originalPositionFor(position);
+    if (originalPosition.source !== null) {
+      originalPosition.source = supportRelativeURL(sourceMap.url, originalPosition.source);
+      return originalPosition;
+    }
+  }
+
+  return position;
+}
+
+function mapEvalOrigin(origin) {
+  const match = /^eval at ([^(]+) \((.+):(\d+):(\d+)\)$/.exec(origin);
+  if (match) {
+    const position = mapSourcePosition({
+      source: match[2],
+      line: +match[3],
+      column: match[4] - 1
+    });
+    return `eval at ${match[1]} (${position.source}:${position.line}:${position.column + 1})`;
+  }
+
+  const recursiveMatch = /^eval at ([^(]+) \((.+)\)$/.exec(origin);
+  if (recursiveMatch) {
+    return `eval at ${recursiveMatch[1]} (${mapEvalOrigin(recursiveMatch[2])})`;
+  }
+
+  return origin;
+}
+
+function CallSiteToString() {
+  let fileName, fileLocation = "";
+  if (this.isNative()) {
+    fileLocation = "native";
+  } else {
+    fileName = this.getScriptNameOrSourceURL();
+    if (!fileName && this.isEval()) {
+      fileLocation = this.getEvalOrigin();
+      fileLocation += ", ";
+    }
+
+    if (fileName) {
+      fileLocation += fileName;
+    } else {
+      fileLocation += "<anonymous>";
+    }
+    const lineNumber = this.getLineNumber();
+    if (lineNumber != null) {
+      fileLocation += ":" + lineNumber;
+      const columnNumber = this.getColumnNumber();
+      if (columnNumber) {
+        fileLocation += ":" + columnNumber;
+      }
+    }
+  }
+
+  let line = "";
+  const functionName = this.getFunctionName();
+  let addSuffix = true;
+  const isConstructor = this.isConstructor();
+  const isMethodCall = !(this.isToplevel() || isConstructor);
+  if (isMethodCall) {
+    let typeName = this.getTypeName();
+    if (typeName === "[object Object]") {
+      typeName = "null";
+    }
+    const methodName = this.getMethodName();
+    if (functionName) {
+      if (typeName && !functionName.startsWith(typeName)) {
+        line += `${typeName}.`;
+      }
+      line += functionName;
+      if (methodName && !functionName.endsWith(`.${methodName}`)) {
+        line += ` [as ${methodName}]`;
+      }
+    } else {
+      line += `${typeName}.${methodName || "<anonymous>"}`;
+    }
+  } else if (isConstructor) {
+    line += `new ${functionName || "<anonymous>"}`;
+  } else if (functionName) {
+    line += functionName;
+  } else {
+    line += fileLocation;
+    addSuffix = false;
+  }
+  if (addSuffix) {
+    line += ` (${fileLocation})`;
+  }
+  return line;
+}
+
+function cloneCallSite(frame) {
+  const object = {};
+  Object.getOwnPropertyNames(Object.getPrototypeOf(frame)).forEach((name) => {
+    object[name] = /^(?:is|get)/.test(name) ? () => frame[name].call(frame) : frame[name];
+  });
+  object.toString = CallSiteToString;
+  return object;
+}
+
+function wrapCallSite(frame, state) {
+  if (!state) {
+    state = { nextPosition: null, curPosition: null };
+  }
+  if(frame.isNative()) {
+    state.curPosition = null;
+    return frame;
+  }
+
+  const source = frame.getFileName() || frame.getScriptNameOrSourceURL();
+  if (source) {
+    let line = frame.getLineNumber();
+    let column = frame.getColumnNumber() - 1;
+
+    if (/^v(10\.1[6-9]|10\.[2-9][0-9]|10\.[0-9]{3,}|1[2-9]\d*|[2-9]\d|\d{3,}|11\.11)/.test(globalProcessVersion())) {
+      const headerLength = 62;
+      if (line === 1 && column > headerLength && !isInBrowser() && !frame.isEval()) {
+        column -= headerLength;
+      }
+    }
+
+    const position = mapSourcePosition({ source, line, column });
+    state.curPosition = position;
+    frame = cloneCallSite(frame);
+    const originalFunctionName = frame.getFunctionName;
+    frame.getFunctionName = () => state.nextPosition == null ? originalFunctionName() : state.nextPosition.name || originalFunctionName();
+    frame.getFileName = () => position.source;
+    frame.getLineNumber = () => position.line;
+    frame.getColumnNumber = () => position.column + 1;
+    frame.getScriptNameOrSourceURL = () => position.source;
+    return frame;
+  }
+
+  const origin = frame.isEval() && frame.getEvalOrigin();
+  if (origin) {
+    const mappedOrigin = mapEvalOrigin(origin);
+    frame = cloneCallSite(frame);
+    frame.getEvalOrigin = () => mappedOrigin;
+    return frame;
+  }
+
+  return frame;
+}
+
+function prepareStackTrace(error, stack) {
+  if (emptyCacheBetweenOperations) {
+    fileContentsCache = {};
+    sourceMapCache = {};
+  }
+
+  const name = error.name || 'Error';
+  const message = error.message || '';
+  const errorString = `${name}: ${message}`;
+
+  const state = { nextPosition: null, curPosition: null };
+  const processedStack = stack.reduceRight((acc, frame) => {
+    acc.push(`\n    at ${wrapCallSite(frame, state)}`);
+    state.nextPosition = state.curPosition;
+    return acc;
+  }, []);
+  state.curPosition = state.nextPosition = null;
+  return errorString + processedStack.reverse().join('');
+}
+
+function getErrorSource(error) {
+  const match = /\n    at [^(]+ \((.*):(\d+):(\d+)\)/.exec(error.stack);
+  if (match) {
+    const [ , source, line, column ] = match;
+    const lineNumber = +line;
+    const columnNumber = +column;
+
+    let contents = fileContentsCache[source];
+    if (!contents && fs && fs.existsSync(source)) {
+      try {
+        contents = fs.readFileSync(source, 'utf8');
+      } catch {
+        contents = '';
+      }
+    }
+
+    if (contents) {
+      const codeLine = contents.split(/(?:\r\n|\r|\n)/)[lineNumber - 1];
+      if (codeLine) {
+        return `${source}:${lineNumber}\n${codeLine}\n${new Array(columnNumber).join(' ')}^`;
+      }
+    }
+  }
+  return null;
+}
+
+function printErrorAndExit(error) {
+  const source = getErrorSource(error);
+
+  const stderr = globalProcessStderr();
+  if (stderr && stderr._handle && stderr._handle.setBlocking) {
+    stderr._handle.setBlocking(true);
+  }
+
+  if (source) {
+    console.error();
+    console.error(source);
+  }
+
+  console.error(error.stack);
+  globalProcessExit(1);
+}
+
+function shimEmitUncaughtException() {
+  const origEmit = process.emit;
+
+  process.emit = function(type, ...args) {
+    if (type === 'uncaughtException') {
+      const hasStack = args[0] && args[0].stack;
+      const hasListeners = this.listeners(type).length > 0;
+
+      if (hasStack && !hasListeners) {
+        return printErrorAndExit(args[0]);
+      }
+    }
+
+    return origEmit.call(this, type, ...args);
+  };
+}
+
+const originalRetrieveFileHandlers = retrieveFileHandlers.slice();
+const originalRetrieveMapHandlers = retrieveMapHandlers.slice();
+
+exports.wrapCallSite = wrapCallSite;
+exports.getErrorSource = getErrorSource;
+exports.mapSourcePosition = mapSourcePosition;
+exports.retrieveSourceMap = retrieveSourceMap;
+
+exports.install = function(options = {}) {
+  environment = options.environment || environment;
+  if (!["node", "browser", "auto"].includes(environment)) {
+    throw new Error(`Unknown environment: ${environment}. Options are {auto, browser, node}`);
+  }
+
+  if (options.retrieveFile) {
+    if (options.overrideRetrieveFile) {
+      retrieveFileHandlers.length = 0;
+    }
+    retrieveFileHandlers.unshift(options.retrieveFile);
+  }
+
+  if (options.retrieveSourceMap) {
+    if (options.overrideRetrieveSourceMap) {
+      retrieveMapHandlers.length = 0;
+    }
+    retrieveMapHandlers.unshift(options.retrieveSourceMap);
+  }
+
+  if (options.hookRequire && !isInBrowser()) {
+    const Module = dynamicRequire(module, 'module');
+    const originalCompile = Module.prototype._compile;
+
+    if (!originalCompile.__sourceMapSupport) {
+      Module.prototype._compile = function(content, filename) {
+        fileContentsCache[filename] = content;
+        sourceMapCache[filename] = undefined;
+        return originalCompile.call(this, content, filename);
+      };
+
+      Module.prototype._compile.__sourceMapSupport = true;
+    }
+  }
+
+  emptyCacheBetweenOperations = options.emptyCacheBetweenOperations ?? emptyCacheBetweenOperations;
+
+  if (!errorFormatterInstalled) {
+    errorFormatterInstalled = true;
+    Error.prepareStackTrace = prepareStackTrace;
+  }
+
+  let installHandler = options.handleUncaughtExceptions ?? true;
+  try {
+    const worker_threads = dynamicRequire(module, 'worker_threads');
+    if (!worker_threads.isMainThread) {
+      installHandler = false;
+    }
+  } catch {}
+
+  if (installHandler && hasGlobalProcessEventEmitter()) {
+    uncaughtShimInstalled = true;
+    shimEmitUncaughtException();
+  }
+};
+
+exports.resetRetrieveHandlers = function() {
+  retrieveFileHandlers.length = 0;
+  retrieveMapHandlers.length = 0;
+  
+  retrieveFileHandlers.push(...originalRetrieveFileHandlers);
+  retrieveMapHandlers.push(...originalRetrieveMapHandlers);
+
+  retrieveSourceMap = handlerExec(retrieveMapHandlers);
+  retrieveFile = handlerExec(retrieveFileHandlers);
+};
+```

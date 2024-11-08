@@ -1,0 +1,101 @@
+The Node.js code defines functionality for loading Protocol Buffers (.proto) files using the `protobufjs` library and generating TypeScript definitions from them. The code is split into two main parts:
+
+1. **GRPCProtoLoader Class (index.js)**:
+   - This class provides methods to load `.proto` files, both asynchronously and synchronously.
+   - The `load` method is an asynchronous function that takes a file path and options and loads the proto file using `protobuf.load`.
+   - The `loadSync` method does the same synchronously using `protobuf.loadSync` and then transforms the loaded content into a descriptor format using `protobuf.toDescriptor`.
+   - The class handles optional directories specified for includes.
+
+2. **TypeScript Generation (proto-loader-gen-types.js)**:
+   - The script uses `yargs` to handle command-line arguments for processing `.proto` files.
+   - It defines a `generateTypeScript` function that loads a `.proto` file, resolves any included paths, and outputs TypeScript definitions.
+   - The definitions are generated for the types defined in the `.proto` file and then written to a specified output directory.
+   - It considers include paths and output directory options provided via command line arguments.
+
+Here is a rewritten version of the code:
+
+```javascript
+// index.js
+const protobuf = require('protobufjs');
+
+class ProtoLoader {
+    static async load(filePath, options = {}) {
+        const root = new protobuf.Root();
+        if (options.includeDirs) {
+            options.includeDirs.forEach(dir => {
+                root.resolvePath = (origin, target) => protobuf.util.path.resolve(dir, target);
+            });
+        }
+        return protobuf.load(filePath, root, options);
+    }
+
+    static loadSync(filePath, options = {}) {
+        const root = new protobuf.Root();
+        if (options.includeDirs) {
+            options.includeDirs.forEach(dir => {
+                root.resolvePath = (origin, target) => protobuf.util.path.resolve(dir, target);
+            });
+        }
+        const loadedRoot = protobuf.loadSync(filePath, root, options);
+        return protobuf.Root.toDescriptor(loadedRoot);
+    }
+}
+
+module.exports = ProtoLoader;
+
+// proto-loader-gen-types.js
+const yargs = require('yargs');
+const protobuf = require('protobufjs');
+const fs = require('fs');
+const path = require('path');
+
+function generateTypeScriptDefinitions(protoFile, options) {
+    const root = new protobuf.Root();
+    
+    if (options.includeDirs) {
+        protobuf.util.path.resolvePath = (origin, target) => {
+            const searchPaths = [path.dirname(origin), ...options.includeDirs];
+            for (const dir of searchPaths) {
+                const potentialPath = path.join(dir, target);
+                if (fs.existsSync(potentialPath)) {
+                    return potentialPath;
+                }
+            }
+            return null;
+        };
+    }
+    
+    protobuf.loadSync(protoFile, root);
+    
+    const outputDir = options.outDir || 'types';
+    const outputFileName = path.basename(protoFile, path.extname(protoFile)) + '.d.ts';
+    const outputFilePath = path.join(outputDir, outputFileName);
+    
+    let typeScriptContent = `// Auto-generated TypeScript definitions for ${outputFileName}\n\n`;
+    
+    root.nestedArray.forEach(element => {
+        if (element instanceof protobuf.Type) {
+            typeScriptContent += element.toDescriptor(element).toString();
+        }
+    });
+
+    if (!fs.existsSync(outputDir)) fs.mkdirSync(outputDir, { recursive: true });
+    fs.writeFileSync(outputFilePath, typeScriptContent);
+}
+
+const args = yargs
+    .option('includeDirs', {
+        alias: 'I',
+        type: 'array',
+        description: 'Directories to include for protos',
+    })
+    .option('outDir', {
+        alias: 'O',
+        type: 'string',
+        default: 'types',
+        describe: 'Output directory for TypeScript definitions',
+    })
+    .argv;
+
+args._.forEach(protobufFile => generateTypeScriptDefinitions(protobufFile, args));
+```

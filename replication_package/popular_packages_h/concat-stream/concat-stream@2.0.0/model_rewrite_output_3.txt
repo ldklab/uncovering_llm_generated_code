@@ -1,0 +1,105 @@
+The provided Node.js code defines a custom writable stream called `ConcatStream` that accumulates incoming data chunks and concatenates them into a final result. The stream can operate in different encoding modes, such as buffers, strings, arrays, or Uint8Array, based on the options passed or inferred from the input data. Here’s a breakdown of the core functionalities:
+
+1. **Stream Initialization**:
+   - `ConcatStream` can be instantiated with options and a callback. The options may include an `encoding` to specify how to concatenate the input data.
+   - If the encoding is not provided, it attempts to infer it from the data.
+
+2. **Writable Stream Operations**:
+   - In the `_write` method, incoming chunks are accumulated in the `body` array.
+   - A callback can be invoked upon stream completion (`finish` event) to retrieve the concatenated result.
+
+3. **Encoding Inference**:
+   - The `inferEncoding` method determines the data type of the first chunk (e.g., Buffer, string, array) to set the appropriate encoding.
+
+4. **Data Concatenation**:
+   - The `getBody` method concatenates collected chunks based on the determined or provided encoding. It uses methods like `arrayConcat`, `stringConcat`, `bufferConcat`, and `u8Concat` to handle different data types.
+
+5. **Compatibility Handling**:
+   - The code accounts for environments where native `Uint8Array` may not be available.
+
+The rewritten version of the code below maintains the same functionality but with some improvements for readability and modern JavaScript practices.
+
+```javascript
+const { Writable } = require('readable-stream');
+const inherits = require('inherits');
+const bufferFrom = require('buffer-from');
+
+const U8 = typeof Uint8Array === 'undefined' ? require('typedarray').Uint8Array : Uint8Array;
+
+function ConcatStream(opts, cb) {
+  if (!(this instanceof ConcatStream)) return new ConcatStream(opts, cb);
+
+  if (typeof opts === 'function') {
+    cb = opts;
+    opts = {};
+  }
+
+  opts = opts || {};
+  this.encoding = opts.encoding ? String(opts.encoding).toLowerCase() : null;
+  this.shouldInferEncoding = !this.encoding;
+
+  if (this.encoding === 'u8' || this.encoding === 'uint8') {
+    this.encoding = 'uint8array';
+  }
+
+  Writable.call(this, { objectMode: true });
+  
+  if (cb) this.on('finish', () => { cb(this.getBody()) });
+  
+  this.body = [];
+}
+
+inherits(ConcatStream, Writable);
+
+ConcatStream.prototype._write = function(chunk, enc, next) {
+  this.body.push(chunk);
+  next();
+};
+
+ConcatStream.prototype.inferEncoding = function (buff) {
+  const firstBuffer = buff === undefined ? this.body[0] : buff;
+  if (Buffer.isBuffer(firstBuffer)) return 'buffer';
+  if (firstBuffer instanceof Uint8Array) return 'uint8array';
+  if (Array.isArray(firstBuffer)) return 'array';
+  if (typeof firstBuffer === 'string') return 'string';
+  if (Object.prototype.toString.call(firstBuffer) === "[object Object]") return 'object';
+  return 'buffer';
+};
+
+ConcatStream.prototype.getBody = function () {
+  if (this.body.length === 0 && !this.encoding) return [];
+  if (this.shouldInferEncoding) this.encoding = this.inferEncoding();
+  switch(this.encoding) {
+    case 'array': return arrayConcat(this.body);
+    case 'string': return stringConcat(this.body);
+    case 'buffer': return bufferConcat(this.body);
+    case 'uint8array': return u8Concat(this.body);
+    default: return this.body;
+  }
+};
+
+function stringConcat(parts) {
+  return parts.map(p => typeof p === 'string' ? p : bufferFrom(String(p)))
+              .join('');
+}
+
+function bufferConcat(parts) {
+  return Buffer.concat(parts.map(p => Buffer.isBuffer(p) ? p : bufferFrom(String(p))));
+}
+
+function arrayConcat(parts) {
+  return parts.reduce((res, part) => res.concat(part), []);
+}
+
+function u8Concat(parts) {
+  const len = parts.reduce((total, part) => total + part.length, 0);
+  const u8 = new U8(len);
+  parts.reduce((offset, part) => {
+    u8.set(part, offset);
+    return offset + part.length;
+  }, 0);
+  return u8;
+}
+
+module.exports = ConcatStream;
+```

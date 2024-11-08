@@ -1,0 +1,90 @@
+The Node.js package `process` described in the `README.md` provides a shim for the built-in Node.js `process` module to make it available in browser environments. The primary focus of the module is delivering the functionality of `process.nextTick`, a critical asynchronous callback invoker, along with exposing a minimal feature set tailored to browser compatibility. 
+
+### Key Features:
+1. **`process.nextTick`**: Mimics Node.js's `process.nextTick` function to queue a task to be executed in the next event loop cycle. This is helpful for managing asynchronous code in the browser.
+2. **`process.browser`**: This property is set to `true` in the browser-shim implementation, allowing code to check if it is running in a browser environment, facilitating environment-dependent logic.
+3. **Minimalistic Approach**: The package does not aim to replicate all Node.js `process` functionalities but encourages developers to monkey patch (manually add) other necessary `process` methods as needed.
+
+### For Bundlers:
+- Bundlers like `browserify` recognize the `browser` field in `package.json` to integrate this module effectively, ensuring that the code bundled for browsers has the intended behavior.
+
+Now, here is the code for the package:
+
+```javascript
+// process.js
+(function(global) {
+  var process = {};
+  var queue = [];
+  var draining = false;
+  var currentQueue;
+  var queueIndex = -1;
+
+  function cleanUpNextTick() {
+    if (!draining || !currentQueue) {
+      return;
+    }
+    draining = false;
+    if (currentQueue.length) {
+      queue = currentQueue.concat(queue);
+    } else {
+      queueIndex = -1;
+    }
+    if (queue.length) {
+      drainQueue();
+    }
+  }
+
+  function drainQueue() {
+    if (draining) {
+      return;
+    }
+    var timeout = setTimeout(cleanUpNextTick);
+    draining = true;
+
+    var len = queue.length;
+    while(len) {
+      currentQueue = queue;
+      queue = [];
+      while (++queueIndex < len) {
+        if (currentQueue) {
+          currentQueue[queueIndex].run();
+        }
+      }
+      queueIndex = -1;
+      len = queue.length;
+    }
+    currentQueue = null;
+    draining = false;
+    clearTimeout(timeout);
+  }
+
+  process.nextTick = function(func) {
+    var args = new Array(arguments.length - 1);
+    if (arguments.length > 1) {
+      for (var i = 1; i < arguments.length; i++) {
+        args[i - 1] = arguments[i];
+      }
+    }
+    queue.push(new Task(func, args));
+    if (queue.length === 1 && !draining) {
+      setTimeout(drainQueue, 0);
+    }
+  };
+
+  function Task(func, args) {
+    this.func = func;
+    this.args = args;
+  }
+  Task.prototype.run = function() {
+    this.func.apply(null, this.args);
+  };
+
+  process.browser = true;
+
+  if (typeof module !== 'undefined' && module.exports) {
+    module.exports = process;
+  } else {
+    global.process = process;
+  }
+})(typeof global !== 'undefined' ? global : typeof self !== 'undefined' ? self : this);
+```

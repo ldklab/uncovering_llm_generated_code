@@ -1,0 +1,120 @@
+The given Node.js code defines a module that exports a function `resolveDefaultsModeConfig`. This function is intended to manage the resolution of configuration settings related to AWS defaults. The code utilizes concepts from modularization and environmental configuration, specifically dealing with obtaining and resolving settings for the execution environment and region in which the application is running. Here is how the code works:
+
+1. **Utility Functions**: The code starts by defining utility functions for property and prototype manipulation, as well as for exporting and copying properties between objects. These utilities assist in managing object configurations and setting properties such as `name` for functions.
+
+2. **Constants**: Several environment variable names and option strings are declared. These constants are used to retrieve configurations from the environment and to denote different defaults mode options.
+
+3. **Configuration Objects**: The `NODE_DEFAULTS_MODE_CONFIG_OPTIONS` object defines how environment variables and configuration file fields should be selected for obtaining the `defaultsMode` setting.
+
+4. **resolveDefaultsModeConfig Function**: This is the primary function exported by the module. It uses the configurations to determine the operating mode of the AWS SDK, based on region and environment settings.
+
+5. **resolveNodeDefaultsModeAuto and inferPhysicalRegion Helpers**: These helper functions assist in determining the operational mode automatically by inspecting the physical and client-defined regions. They distinguish between different region settings such as `in-region` or `cross-region`.
+
+6. **Module Exports**: The module is exported in a way that supports both CommonJS and ES Modules syntaxes.
+
+Here is a possible rewrite of the code according to the above explanation:
+
+```js
+const { create, defineProperty, getOwnPropertyDescriptor, getOwnPropertyNames, getPrototypeOf } = Object;
+const { hasOwnProperty } = Object.prototype;
+
+const defineName = (target, value) => defineProperty(target, "name", { value, configurable: true });
+
+const exportModule = (target, all) => {
+  for (const name in all) {
+    defineProperty(target, name, { get: all[name], enumerable: true });
+  }
+};
+
+const copyProperties = (to, from, except, desc) => {
+  if (from && (typeof from === "object" || typeof from === "function")) {
+    for (let key of getOwnPropertyNames(from)) {
+      if (!hasOwnProperty.call(to, key) && key !== except) {
+        defineProperty(to, key, { 
+          get: () => from[key], 
+          enumerable: !(desc = getOwnPropertyDescriptor(from, key)) || desc.enumerable 
+        });
+      }
+    }
+  }
+  return to;
+};
+
+const toESM = (mod, isNodeMode, target) => (
+  target = mod != null ? create(getPrototypeOf(mod)) : {}, 
+  copyProperties(isNodeMode || !mod || !mod.__esModule ? defineProperty(target, "default", { value: mod, enumerable: true }) : target, mod)
+);
+
+const toCommonJS = (mod) => copyProperties(defineProperty({}, "__esModule", { value: true }), mod);
+
+// Define constants
+const AWS_EXECUTION_ENV = "AWS_EXECUTION_ENV";
+const AWS_REGION_ENV = "AWS_REGION";
+const AWS_DEFAULT_REGION_ENV = "AWS_DEFAULT_REGION";
+const ENV_IMDS_DISABLED = "AWS_EC2_METADATA_DISABLED";
+const DEFAULTS_MODE_OPTIONS = ["in-region", "cross-region", "mobile", "standard", "legacy"];
+const IMDS_REGION_PATH = "/latest/meta-data/placement/region";
+
+const AWS_DEFAULTS_MODE_ENV = "AWS_DEFAULTS_MODE";
+const AWS_DEFAULTS_MODE_CONFIG = "defaults_mode";
+
+const NODE_DEFAULTS_MODE_CONFIG_OPTIONS = {
+  environmentVariableSelector: (env) => env[AWS_DEFAULTS_MODE_ENV],
+  configFileSelector: (profile) => profile[AWS_DEFAULTS_MODE_CONFIG],
+  default: "legacy"
+};
+
+// Import necessary modules
+const { NODE_REGION_CONFIG_OPTIONS } = require("@smithy/config-resolver");
+const { loadConfig } = require("@smithy/node-config-provider");
+const { memoize } = require("@smithy/property-provider");
+
+// Resolve Defaults Mode Config function
+const resolveDefaultsModeConfig = /* @__PURE__ */ defineName(({
+  region = loadConfig(NODE_REGION_CONFIG_OPTIONS),
+  defaultsMode = loadConfig(NODE_DEFAULTS_MODE_CONFIG_OPTIONS)
+} = {}) => memoize(async () => {
+  const mode = typeof defaultsMode === "function" ? await defaultsMode() : defaultsMode;
+  switch (mode?.toLowerCase()) {
+    case "auto":
+      return resolveNodeDefaultsModeAuto(region);
+    case "in-region":
+    case "cross-region":
+    case "mobile":
+    case "standard":
+    case "legacy":
+      return Promise.resolve(mode?.toLowerCase());
+    default:
+      throw new Error(`Invalid parameter for "defaultsMode", expect ${DEFAULTS_MODE_OPTIONS.join(", ")}, got ${mode}`);
+  }
+}), "resolveDefaultsModeConfig");
+
+const resolveNodeDefaultsModeAuto = /* @__PURE__ */ defineName(async (clientRegion) => {
+  if (clientRegion) {
+    const resolvedRegion = typeof clientRegion === "function" ? await clientRegion() : clientRegion;
+    const inferredRegion = await inferPhysicalRegion();
+    return resolvedRegion === inferredRegion ? "in-region" : "cross-region";
+  }
+  return "standard";
+}, "resolveNodeDefaultsModeAuto");
+
+const inferPhysicalRegion = /* @__PURE__ */ defineName(async () => {
+  if (process.env[AWS_EXECUTION_ENV] && (process.env[AWS_REGION_ENV] || process.env[AWS_DEFAULT_REGION_ENV])) {
+    return process.env[AWS_REGION_ENV] ?? process.env[AWS_DEFAULT_REGION_ENV];
+  }
+  if (!process.env[ENV_IMDS_DISABLED]) {
+    try {
+      const { getInstanceMetadataEndpoint, httpRequest } = await import("@smithy/credential-provider-imds");
+      const endpoint = await getInstanceMetadataEndpoint();
+      return (await httpRequest({ ...endpoint, path: IMDS_REGION_PATH })).toString();
+    } catch (e) {}
+  }
+}, "inferPhysicalRegion");
+
+// Export module
+const src_exports = {};
+exportModule(src_exports, {
+  resolveDefaultsModeConfig: () => resolveDefaultsModeConfig
+});
+module.exports = toCommonJS(src_exports);
+```

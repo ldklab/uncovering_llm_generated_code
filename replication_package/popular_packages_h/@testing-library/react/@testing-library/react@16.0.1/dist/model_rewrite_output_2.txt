@@ -1,0 +1,47 @@
+The given Node.js code is a module that imports two other modules: `act-compat` and `pure`. It re-exports the components of the `pure` module except for default exports and the `__esModule` property. The code also provides automatic cleanup functionalities for test environments. If `afterEach` or `teardown` functions are available, it sets them up to automatically run the cleanup function from the `pure` module after each test. Additionally, if the `beforeAll` and `afterAll` functions are present, the code handles mocking the React Act environment properly, ensuring tests are executed in an isolated manner. This behavior can be bypassed by setting the environment variable `RTL_SKIP_AUTO_CLEANUP` to 'true'.
+
+Here's a rewritten version of this code:
+```javascript
+"use strict";
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+
+const _actCompat = require("./act-compat");
+const _pure = require("./pure");
+
+Object.keys(_pure).forEach(key => {
+  if (key !== "default" && key !== "__esModule" && !(key in exports && exports[key] === _pure[key])) {
+    Object.defineProperty(exports, key, {
+      enumerable: true,
+      get: () => _pure[key]
+    });
+  }
+});
+
+const shouldAutoCleanup = typeof process !== 'undefined' && process.env?.RTL_SKIP_AUTO_CLEANUP !== 'true';
+
+if (shouldAutoCleanup) {
+  if (typeof afterEach === 'function') {
+    afterEach(() => {
+      _pure.cleanup();
+    });
+  } else if (typeof teardown === 'function') {
+    teardown(() => {
+      _pure.cleanup();
+    });
+  }
+
+  if (typeof beforeAll === 'function' && typeof afterAll === 'function') {
+    let previousIsReactActEnv = _actCompat.getIsReactActEnvironment();
+    beforeAll(() => {
+      previousIsReactActEnv = _actCompat.getIsReactActEnvironment();
+      _actCompat.setReactActEnvironment(true);
+    });
+    afterAll(() => {
+      _actCompat.setReactActEnvironment(previousIsReactActEnv);
+    });
+  }
+}
+```

@@ -1,0 +1,65 @@
+The provided Node.js code defines a small asynchronous task scheduler, which allows scheduling tasks to be executed as soon as possible but outside of the current call stack. 
+
+### Explanation:
+- **Queue System:** It uses a queue to manage tasks that need to be executed. This queue (`queue`) holds tasks, and an `index` keeps track of which task is currently being executed.
+- **Flushing Control:** A `flushing` boolean flag is used to check if the queue is currently being processed, ensuring tasks are only processed once per scheduling.
+- **Request Flush:** The `requestFlush` function utilizes different browser mechanisms (`MutationObserver`, `MessageChannel`, or `setTimeout`) to queue up the `flush` function asynchronously.
+- **Task Scheduling:** Tasks are added to the queue using the `asap` or `rawAsap` functions. The first time a task is added when the queue is not flushing, the `requestFlush` is called to begin processing tasks.
+- **Task Execution:** The `flush` function goes through the queue, executing each task. If an error occurs during task execution, it's caught and rethrown asynchronously.
+
+Here's how you might rewrite the Node.js code to reflect the same logic:
+
+```javascript
+// asap.js
+let taskQueue = [];
+let isFlushing = false;
+let currentIndex = 0;
+
+function asap(task) {
+  scheduleTask(task);
+}
+
+function rawAsap(task) {
+  scheduleTask(task);
+}
+
+function scheduleTask(task) {
+  taskQueue.push(task);
+  if (!isFlushing) {
+    isFlushing = true;
+    initiateFlush();
+  }
+}
+
+function flushQueue() {
+  while (currentIndex < taskQueue.length) {
+    let currentTask = taskQueue[currentIndex++];
+    try {
+      currentTask();
+    } catch (error) {
+      setTimeout(() => { throw error; }, 0);
+    }
+  }
+  currentIndex = 0;
+  taskQueue.length = 0;
+  isFlushing = false;
+}
+
+function initiateFlush() {
+  if (typeof MutationObserver !== 'undefined') {
+    let observerCounter = 0;
+    let observerNode = document.createTextNode('');
+    new MutationObserver(flushQueue).observe(observerNode, { characterData: true });
+    observerNode.data = (++observerCounter % 2).toString();
+  } else if (typeof MessageChannel !== 'undefined') {
+    let messageChannel = new MessageChannel();
+    messageChannel.port1.onmessage = flushQueue;
+    messageChannel.port2.postMessage(0);
+  } else {
+    setTimeout(flushQueue, 0);
+  }
+}
+
+module.exports = asap;
+module.exports.raw = rawAsap;
+```

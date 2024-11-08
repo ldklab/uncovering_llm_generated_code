@@ -1,0 +1,65 @@
+The provided Node.js code defines a class `SerdeMiddleware` that handles the serialization and deserialization of request and response bodies. By default, the class uses `JSON.stringify` for serialization and `JSON.parse` for deserialization, but these methods can be customized via options during instantiation. This middleware can be used in an HTTP client to automatically convert JavaScript objects to JSON strings when sending a request and parse JSON strings back into objects upon receiving a response.
+
+The `SerdeMiddleware` is applied to a mock HTTP client that simulates sending a request and receiving a response. The client maintains a list of middlewares that are executed in sequence. When a request is sent, it is passed through each middleware, and the response is processed in reverse order. The `mockHttpCall` function simulates an actual HTTP call that returns a mock response.
+
+Below is the rewritten code with the same functionality:
+
+```javascript
+// index.js
+class SerdeMiddleware {
+  constructor(options = {}) {
+    this.serialize = options.serialize || JSON.stringify;
+    this.deserialize = options.deserialize || JSON.parse;
+  }
+
+  applyMiddleware(request, next) {
+    if (request.body) {
+      request.body = this.serialize(request.body);
+    }
+    
+    return next(request).then((response) => {
+      if (response.body) {
+        response.body = this.deserialize(response.body);
+      }
+      return response;
+    });
+  }
+}
+
+module.exports = SerdeMiddleware;
+
+// Example of HTTP request and response handling
+function mockHttpClient() {
+  const middlewares = [];
+
+  return {
+    addMiddleware(middleware) {
+      middlewares.push(middleware);
+    },
+    send(request) {
+      let promiseChain = Promise.resolve(request);
+
+      middlewares.forEach(middleware => {
+        promiseChain = promiseChain.then(req => middleware(req, mockHttpCall));
+      });
+
+      return promiseChain.then(response => response);
+    }
+  };
+}
+
+function mockHttpCall(request) {
+  return Promise.resolve({
+    statusCode: 200,
+    body: '{"message":"ok"}' // Mock response
+  });
+}
+
+// Example usage
+const httpClient = mockHttpClient();
+httpClient.addMiddleware((req, next) => new SerdeMiddleware().applyMiddleware(req, next));
+
+httpClient.send({ body: { data: 'test' } }).then(response => {
+  console.log(response.body); // should print: { message: 'ok' }
+});
+```

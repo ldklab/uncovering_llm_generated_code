@@ -1,0 +1,66 @@
+The given Node.js code is for configuring and exporting certain middleware features for use with HTTP requests, likely in the context of an HTTP client library. Here’s the functionality breakdown:
+
+- The code defines helper functions like `__defProp`, `__getOwnPropDesc`, `__getOwnPropNames`, `__hasOwnProp`, `__name`, `__export`, `__copyProps`, and `__toCommonJS`. These functions are utility functions to manage property descriptors, handle module exports, and manage object copying.
+
+- The core export object, `src_exports`, is set up to expose several middleware-related functions and constants.
+
+- The module exports the following functions and constants:
+  - `resolveHostHeaderConfig`: A function that takes an input and returns it directly, presumably for resolving configuration related to the host header.
+  - `hostHeaderMiddleware`: A middleware function to modify HTTP request objects, ensuring the "Host" or ":authority" headers are correctly set based on the protocol (HTTP/2 or otherwise).
+  - `hostHeaderMiddlewareOptions`: An object specifying the middleware's options, such as its step, priority, and other metadata.
+  - `getHostHeaderPlugin`: A function that applies the `hostHeaderMiddleware` to a client stack, using the provided options.
+
+This middleware is particularly focused on correctly setting HTTP headers for outbound requests based on whether HTTP/2 or another protocol is being used.
+
+```javascript
+"use strict";
+const { HttpRequest } = require("@smithy/protocol-http");
+
+// Resolve host header config
+function resolveHostHeaderConfig(input) {
+  return input;
+}
+
+// Middleware to modify request headers
+const hostHeaderMiddleware = (options) => (next) => async (args) => {
+  const { request } = args;
+  if (!HttpRequest.isInstance(request)) return next(args);
+
+  const { handlerProtocol = "" } = options.requestHandler.metadata || {};
+  
+  if (handlerProtocol.includes("h2") && !request.headers[":authority"]) {
+    delete request.headers["host"];
+    request.headers[":authority"] = request.hostname + (request.port ? `:${request.port}` : "");
+  } else if (!request.headers["host"]) {
+    let host = request.hostname;
+    if (request.port != null) host += `:${request.port}`;
+    request.headers["host"] = host;
+  }
+  
+  return next(args);
+};
+
+// Middleware options
+const hostHeaderMiddlewareOptions = {
+  name: "hostHeaderMiddleware",
+  step: "build",
+  priority: "low",
+  tags: ["HOST"],
+  override: true
+};
+
+// Plugin to apply the middleware
+const getHostHeaderPlugin = (options) => ({
+  applyToStack: (clientStack) => {
+    clientStack.add(hostHeaderMiddleware(options), hostHeaderMiddlewareOptions);
+  }
+});
+
+// Exporting the functionality
+module.exports = {
+  resolveHostHeaderConfig,
+  hostHeaderMiddleware,
+  hostHeaderMiddlewareOptions,
+  getHostHeaderPlugin
+};
+```

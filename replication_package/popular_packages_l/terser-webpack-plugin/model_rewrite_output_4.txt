@@ -1,0 +1,120 @@
+The code defines a Webpack plugin, `TerserPlugin`, which is used to minify JavaScript files in a Webpack build process using Terser. Here’s a breakdown of its functionality:
+
+1. **Initialization**: The plugin constructor accepts an options object allowing configuration of certain parameters: which files to test, if processing should be parallel, how to handle extracted comments, and specific Terser options.
+
+2. **Webpack Plugin Lifecycle**:
+   - The `apply` method hooks into Webpack's compilation process.
+   - During the `optimizeChunkAssets` phase, the plugin ascertains which files should be minified based on the test, include, and exclude options.
+
+3. **File Processing**:
+   - It maintains a list of tasks to minify each eligible file.
+   - It employs a default minification function from Terser, or another function if provided by options.
+
+4. **Parallel Processing**:
+   - The plugin attempts to run minification tasks in parallel, up to a number specified in options or equal to the number of CPU cores minus one (by default).
+
+5. **Handling Minified Output**:
+   - After minification, it updates the Webpack assets with the minified content.
+   - If comments are extracted during minification and the option is enabled, it creates a separate asset file with those comments.
+
+6. **Utility Methods**:
+   - `isFile`: Determines if a file should be processed according to the specified include, exclude, and test criteria.
+   - `runTasksInParallel`: Facilitates executing tasks in parallel threads, recursively processing until all tasks are complete.
+
+Here's a potential rewrite of the code:
+
+```javascript
+const { cpus } = require('os');
+const { terserMinify } = require('terser');
+
+class TerserPlugin {
+  constructor(options = {}) {
+    this.options = { 
+      test: /\.m?js(\?.*)?$/i, 
+      parallel: true, 
+      extractComments: true, 
+      terserOptions: {}, 
+      ...options 
+    };
+  }
+
+  apply(compiler) {
+    compiler.hooks.compilation.tap('TerserPlugin', (compilation) => {
+      compilation.hooks.optimizeChunkAssets.tapPromise('TerserPlugin', async (chunks) => {
+        const filesToMinify = this.getFilesToMinify(chunks, compilation);
+        const tasks = this.createMinifyTasks(filesToMinify, compilation);
+
+        const parallelCount = this.calculateParallelCount();
+        await this.runTasksInParallel(tasks, parallelCount);
+      });
+    });
+  }
+
+  getFilesToMinify(chunks, compilation) {
+    const { test, include, exclude } = this.options;
+    const files = {};
+
+    for (const chunk of chunks) {
+      for (const file of chunk.files) {
+        if (this.isFile(file, test, include, exclude)) {
+          files[file] = compilation.assets[file];
+        }
+      }
+    }
+    return files;
+  }
+
+  createMinifyTasks(filesToMinify, compilation) {
+    const { minify, terserOptions, extractComments } = this.options;
+
+    return Object.entries(filesToMinify).map(([file, asset]) => async () => {
+      const source = asset.source();
+
+      try {
+        const minifyFunc = minify || terserMinify;
+        const result = await minifyFunc({ [file]: source }, null, terserOptions, extractComments);
+        
+        compilation.assets[file] = this.createAsset(result.code);
+
+        if (result.extractedComments && extractComments) {
+          const commentsFile = `${file}.LICENSE.txt`;
+          compilation.assets[commentsFile] = this.createAsset(result.extractedComments.join('\n\n'), true);
+        }
+      } catch (error) {
+        compilation.errors.push(error);
+      }
+    });
+  }
+
+  createAsset(content, isCommentFile = false) {
+    return {
+      source: () => content,
+      size: () => isCommentFile ? 
+        content.split('\n\n').reduce((sum, comment) => sum + comment.length + 2, 0) : 
+        Buffer.byteLength(content, 'utf8'),
+    };
+  }
+
+  isFile(filename, test, include, exclude) {
+    return (
+      (!test || new RegExp(test).test(filename)) &&
+      (!include || new RegExp(include).test(filename)) &&
+      (!exclude || !new RegExp(exclude).test(filename))
+    );
+  }
+
+  calculateParallelCount() {
+    return this.options.parallel === true ? cpus().length - 1 : this.options.parallel;
+  }
+
+  async runTasksInParallel(tasks, parallelCount) {
+    const activeTasks = tasks.splice(0, parallelCount);
+    await Promise.all(activeTasks.map((task) => task()));
+    if (tasks.length > 0) {
+      await this.runTasksInParallel(tasks, parallelCount);
+    }
+  }
+}
+
+module.exports = TerserPlugin;
+```

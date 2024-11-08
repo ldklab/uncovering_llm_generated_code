@@ -1,0 +1,55 @@
+The provided Node.js code defines a module that exports a function designed to require and load modules from a specified directory. The function can be used in two ways:
+
+1. **With Two Arguments (`dir`, `basenames`)**:
+   - The first argument, `dir`, is the directory path.
+   - The second argument, `basenames`, is an array of specific files' basenames which should be required from that directory.
+   - The function resolves each specified basename to its complete path, requires the file, and stores it in an object using the basename as the key.
+
+2. **With One Argument (`dir`)**:
+   - This case doesn't specify particular files to load. Instead, the function automatically loads all JavaScript-related files (with extensions `.js`, `.node`, `.json`) from the directory, except those starting with `_`, `.` or named `index.js`.
+   - It first reads all files from the directory, sorts them alphabetically, filters out the unwanted files, and requires the rest.
+   - Each loaded file is stored in the result object using its basename.
+
+3. **Error Handling**:
+   - Throws an error if no arguments are passed.
+
+Below is the rewritten code, simplifying the loading of modules as described:
+
+```javascript
+const fs = require('fs');
+const path = require('path');
+
+module.exports = function (dir, basenames = null) {
+  const requires = {};
+  
+  if (!dir) {
+    throw new Error("Must pass directory as first argument");
+  }
+
+  let filesToLoad;
+
+  // Determine files to load based on the presence of basenames
+  if (basenames) {
+    filesToLoad = basenames.map(basename => path.resolve(path.join(dir, basename)));
+  } else {
+    filesToLoad = fs.readdirSync(dir);
+    filesToLoad = filesToLoad
+      .filter(filename => !['index.js', '.', '_'].includes(filename[0]))
+      .sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()))
+      .map(filename => path.resolve(path.join(dir, filename)))
+      .filter(filepath => {
+        const stats = fs.statSync(filepath);
+        const ext = path.extname(filepath);
+        return stats.isDirectory() || ['.js', '.node', '.json'].includes(ext);
+      });
+  }
+
+  // Require the specified files and collect them
+  filesToLoad.forEach(filepath => {
+    const basename = path.basename(filepath, path.extname(filepath));
+    requires[basename] = require(filepath);
+  });
+
+  return requires;
+};
+```

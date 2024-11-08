@@ -1,0 +1,33 @@
+'use strict';
+
+const define = require('define-data-property');
+const hasDescriptors = require('has-property-descriptors')();
+const functionsHaveConfigurableNames = require('functions-have-names').functionsHaveConfigurableNames();
+const $TypeError = require('es-errors/type');
+
+/**
+ * Sets the name of a given function if possible.
+ * 
+ * @param {Function} fn - The function whose name is to be set.
+ * @param {string} name - The new name for the function.
+ * @param {boolean} [loose] - Optional boolean flag, if true, allows modification even if function names are not configurable.
+ * 
+ * @returns {Function} The function with the potentially new name.
+ * 
+ * @throws {$TypeError} Throws if the first argument is not a function.
+ */
+module.exports = function setFunctionName(fn, name, loose = false) {
+    if (typeof fn !== 'function') {
+        throw new $TypeError('`fn` is not a function');
+    }
+
+    if (!loose || functionsHaveConfigurableNames) {
+        if (hasDescriptors) {
+            define(fn, 'name', name, true, true);
+        } else {
+            define(fn, 'name', name);
+        }
+    }
+
+    return fn;
+};

@@ -1,0 +1,63 @@
+'use strict';
+
+// Load required modules
+var forEach = require('foreach');
+var availableTypedArrays = require('available-typed-arrays');
+var callBound = require('call-bind/callBound');
+var $toString = callBound('Object.prototype.toString');
+var hasSymbols = require('has-symbols')();
+var hasToStringTag = hasSymbols && typeof Symbol.toStringTag === 'symbol';
+
+// Get all available typed array types
+var typedArrays = availableTypedArrays();
+
+// Prepare to call native methods
+var $slice = callBound('String.prototype.slice');
+var toStrTags = {};
+var gOPD = require('es-abstract/helpers/getOwnPropertyDescriptor');
+var getPrototypeOf = Object.getPrototypeOf;
+
+// Check for existence of toStringTag and gather toStringTag getters for all typed arrays
+if (hasToStringTag && gOPD && getPrototypeOf) {
+    forEach(typedArrays, function (typedArray) {
+        if (typeof global[typedArray] === 'function') {
+            var arr = new global[typedArray]();
+            if (!(Symbol.toStringTag in arr)) {
+                throw new EvalError('This environment supports Symbol.toStringTag, but ' + typedArray + ' lacks the property! Please report this.');
+            }
+            var proto = getPrototypeOf(arr);
+            var descriptor = gOPD(proto, Symbol.toStringTag);
+            if (!descriptor) {
+                var superProto = getPrototypeOf(proto);
+                descriptor = gOPD(superProto, Symbol.toStringTag);
+            }
+            toStrTags[typedArray] = descriptor.get;
+        }
+    });
+}
+
+// Function to detect the typed array type via toStringTag
+var tryTypedArrays = function(value) {
+    var foundName = false;
+    forEach(toStrTags, function (getter, typedArray) {
+        if (!foundName) {
+            try {
+                var name = getter.call(value);
+                if (name === typedArray) {
+                    foundName = name;
+                }
+            } catch (e) {}
+        }
+    });
+    return foundName;
+};
+
+// Import function to check if value is a TypedArray
+var isTypedArray = require('is-typed-array');
+
+// Exported function to determine which typed array is being used
+module.exports = function whichTypedArray(value) {
+    if (!isTypedArray(value)) { return false; }
+    if (!hasToStringTag) { return $slice($toString(value), 8, -1); }
+    return tryTypedArrays(value);
+};

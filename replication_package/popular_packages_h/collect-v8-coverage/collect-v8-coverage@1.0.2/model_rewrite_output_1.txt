@@ -1,0 +1,62 @@
+The Node.js code defines a `CoverageInstrumenter` class that uses the `inspector` module to collect code coverage data from V8 JavaScript engine. Here's a breakdown of how it works:
+
+1. **Initialization**: The `CoverageInstrumenter` class creates an inspector `Session` to interact with the V8 debugger.
+
+2. **Promisify the Session**: The `post` method of the session is promisified to use async/await style for handling asynchronous operations.
+
+3. **Start Instrumentation**: 
+   - Connect the session to begin interactions.
+   - Enable the profiler to start collecting precise coverage data with both `callCount` and `detailed` parameters set to `true` using `Profiler.startPreciseCoverage`.
+
+4. **Stop Instrumentation**:
+   - Take a snapshot of the current precise coverage data.
+   - Stop collecting precise coverage and disable the profiler.
+   - Handle a Windows-specific issue where network file URLs might be malformed by adjusting the URL format.
+
+5. **Return Coverage Data**: Returns the collected coverage data which can be used for analysis.
+
+Here's a possible rewrite of the code:
+
+```javascript
+'use strict';
+
+const { Session } = require('inspector');
+const { promisify } = require('util');
+
+class CoverageInstrumenter {
+  constructor() {
+    this.session = new Session();
+    this.postSession = promisify(this.session.post.bind(this.session));
+  }
+
+  async startInstrumenting() {
+    this.session.connect();
+    
+    await this.postSession('Profiler.enable');
+    await this.postSession('Profiler.startPreciseCoverage', {
+      callCount: true,
+      detailed: true,
+    });
+  }
+
+  async stopInstrumenting() {
+    const { result } = await this.postSession('Profiler.takePreciseCoverage');
+    
+    await this.postSession('Profiler.stopPreciseCoverage');
+    await this.postSession('Profiler.disable');
+
+    if (process.platform === 'win32') {
+      result.forEach(res => {
+        const prefix = 'file:////';
+        if (res.url.startsWith(prefix)) {
+          res.url = 'file://' + res.url.slice(prefix.length);
+        }
+      });
+    }
+
+    return result;
+  }
+}
+
+module.exports.CoverageInstrumenter = CoverageInstrumenter;
+```

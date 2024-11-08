@@ -1,0 +1,80 @@
+The provided Node.js code implements simplified versions of the `sprintf` and `vsprintf` functions, similar to those in C and other programming languages, using the `sprintf-js` package as a reference. Here's a breakdown of the functionality:
+
+1. **sprintf Function**: Takes a format string and a set of arguments. It calls `formatString`, which handles the string formatting using the given arguments.
+
+2. **vsprintf Function**: Similar to `sprintf`, but it takes a format string and an array of arguments. It also calls `formatString` for string processing.
+
+3. **formatString Function**: Core of the string formatting logic. It uses a regular expression to parse format specifiers within the format string. It supports various specifiers such as:
+   - `%b`: Binary format.
+   - `%c`: Character format (converts an int to a character).
+   - `%d` or `%i`: Decimal integer format.
+   - `%e`: Exponential format.
+   - `%u`: Unsigned decimal integer format.
+   - `%f`: Floating-point number format.
+   - `%g` or `%G`: General format for floating-points.
+   - `%o`: Octal format.
+   - `%s`: String format.
+   - `%x` or `%X`: Hexadecimal format (lowercase and uppercase).
+   - `%j`: JSON format.
+   - `%t`: Boolean format.
+   - `%T`: Type format (returns the type of the argument).
+
+4. **getType Function**: Helper function that determines the type of the passed argument, returning it as a string. It distinguishes between null, arrays, dates, and other primitive types.
+
+5. **Regular Expression**: The regex in `formatString` identifies format specifiers and captures potential parameters like argument index, flags, padding, width, precision, and the format type.
+
+Here's a possible rewrite of the code, maintaining the same logic and functionality:
+
+```javascript
+function sprintf(format, ...args) {
+    return formatString(format, args);
+}
+
+function vsprintf(format, array) {
+    return formatString(format, array);
+}
+
+function formatString(format, args) {
+    let i = 0;
+    const regex = /%(\d+\$)?([-+])?(')?(\d+)?(\.\d+)?([bcdeEufFgGosxXjtTv%])/g;
+
+    return format.replace(regex, (match, index, flags, pad, width, precision, type) => {
+        if (type === '%') return '%';
+
+        let arg = args[i++];
+        if (index) arg = args[parseInt(index) - 1];
+
+        switch (type) {
+            case 'b': return parseInt(arg).toString(2);
+            case 'c': return String.fromCharCode(parseInt(arg));
+            case 'd':
+            case 'i': return parseInt(arg).toString(10);
+            case 'e': return parseFloat(arg).toExponential(precision ? parseInt(precision.substr(1)) : undefined);
+            case 'u': return Math.abs(parseInt(arg));
+            case 'f': return parseFloat(arg).toFixed(precision ? parseInt(precision.substr(1)) : 6);
+            case 'g':
+            case 'G': return parseFloat(arg).toPrecision(precision ? parseInt(precision.substr(1)) : undefined);
+            case 'o': return parseInt(arg).toString(8);
+            case 's': return String(arg);
+            case 'x': return parseInt(arg).toString(16);
+            case 'X': return parseInt(arg).toString(16).toUpperCase();
+            case 'j': return JSON.stringify(arg, null, width ? parseInt(width) : undefined);
+            case 't': return String(!!arg);
+            case 'T': return getType(arg);
+            default: throw Error('Unknown format type');
+        }
+    });
+}
+
+function getType(arg) {
+    if (arg === null) return 'null';
+    if (Array.isArray(arg)) return 'array';
+    if (arg instanceof Date) return 'date';
+    return typeof arg;
+}
+
+module.exports = {
+    sprintf,
+    vsprintf
+};
+```

@@ -1,0 +1,54 @@
+The provided Node.js code involves the configuration of a middleware for handling HTTP requests, specifically focusing on the manipulation of the 'host' and ':authority' headers. This is relevant in environments that support different HTTP protocols, such as HTTP/2 (h2). The middleware checks the type of HTTP request being made, and either sets or removes certain headers based on the protocol. It ensures the correct headers are used for requests, particularly emphasizing the management for HTTP/2 where ':authority' is preferred over 'host'.
+
+Below is a rewritten version of the same functionality:
+
+```javascript
+"use strict";
+
+Object.defineProperty(exports, "__esModule", { value: true });
+
+const { HttpRequest } = require("@aws-sdk/protocol-http");
+
+function resolveHostHeaderConfig(input) {
+    return input;
+}
+
+const hostHeaderMiddleware = (options) => (next) => async (args) => {
+    const { request } = args;
+    if (!HttpRequest.isInstance(request)) {
+        return next(args);
+    }
+
+    const handlerProtocol = options.requestHandler.metadata?.handlerProtocol || "";
+
+    // For HTTP/2, prefer ':authority' over 'host'
+    if (handlerProtocol.includes("h2") && !request.headers[":authority"]) {
+        delete request.headers["host"];
+        request.headers[":authority"] = "";
+    } else if (!request.headers["host"]) {
+        request.headers["host"] = request.hostname;
+    }
+
+    return next(args);
+};
+
+const hostHeaderMiddlewareOptions = {
+    name: "hostHeaderMiddleware",
+    step: "build",
+    priority: "low",
+    tags: ["HOST"],
+};
+
+const getHostHeaderPlugin = (options) => ({
+    applyToStack: (clientStack) => {
+        clientStack.add(hostHeaderMiddleware(options), hostHeaderMiddlewareOptions);
+    },
+});
+
+exports.resolveHostHeaderConfig = resolveHostHeaderConfig;
+exports.hostHeaderMiddleware = hostHeaderMiddleware;
+exports.hostHeaderMiddlewareOptions = hostHeaderMiddlewareOptions;
+exports.getHostHeaderPlugin = getHostHeaderPlugin;
+```
+
+This rewritten code maintains the same logic as the original code, focusing on managing the 'host' header for HTTP requests and ensuring its correct setup based on the HTTP protocol being used. The functionality remains unchanged but is reorganized for clarity and readability.

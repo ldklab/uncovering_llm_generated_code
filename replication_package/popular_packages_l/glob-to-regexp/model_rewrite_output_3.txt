@@ -1,0 +1,110 @@
+The given Node.js code defines a function `globToRegExp`, which converts a glob pattern to a regular expression. Here's how it works:
+
+- **Parameters:**
+  - `glob`: The glob pattern to convert.
+  - `options`: An object that may include:
+    - `extended`: A boolean indicating if extended glob features should be supported (like character sets `[]`, and groups `{}`).
+    - `globstar`: A boolean that allows `**` to match zero or more path segments.
+    - `flags`: A string of regex flags (e.g., `g`, `i`, `m`).
+
+- **Conversion Process:**
+  - The function iterates through each character in the glob pattern.
+  - Characters like `/` are added to the regex string directly.
+  - Special characters like `*`, `?`, `[`, `]`, `{`, `}` are processed differently based on the `extended` and `globstar` options:
+    - `*`: Matches any characters except `/`. If `globstar` and followed by another `*`, it matches any number of path segments.
+    - `?`: Matches any single character when `extended` is true.
+    - `[]`: Denotes a character set when `extended` is true.
+    - `{}`: Indicates groups/alternatives when `extended` is true.
+  - Other characters that have special meaning in regular expressions are escaped.
+
+- **Return Value:**
+  - The function returns a RegExp object representing the pattern.
+
+Here's a possible rewrite of this Node.js code:
+
+```javascript
+function globToRegExp(glob, options = {}) {
+  const { extended = false, globstar = false, flags = '' } = options;
+  
+  let regExpString = '^';
+  let inGroup = false;
+  let charSet = false;
+
+  for (let i = 0; i < glob.length; i++) {
+    const char = glob[i];
+
+    switch (char) {
+      case '/':
+        regExpString += '/';
+        break;
+      case '*':
+        if (glob[i + 1] === '*' && globstar) {
+          regExpString += '.*';
+          i++;
+        } else {
+          regExpString += '[^/]*';
+        }
+        break;
+      case '?':
+        regExpString += extended ? '.' : '\\?';
+        break;
+      case '[':
+        if (extended) {
+          charSet = true;
+          regExpString += char;
+        } else {
+          regExpString += '\\[';
+        }
+        break;
+      case ']':
+        if (extended && charSet) {
+          charSet = false;
+          regExpString += char;
+        } else {
+          regExpString += '\\]';
+        }
+        break;
+      case '{':
+        if (extended) {
+          inGroup = true;
+          regExpString += '(';
+        } else {
+          regExpString += '\\{';
+        }
+        break;
+      case '}':
+        if (extended && inGroup) {
+          inGroup = false;
+          regExpString += ')';
+        } else {
+          regExpString += '\\}';
+        }
+        break;
+      case ',':
+        if (extended && inGroup) {
+          regExpString += '|';
+        } else {
+          regExpString += '\\,';
+        }
+        break;
+      case '.':
+      case '+':
+      case '^':
+      case '$':
+      case '(':
+      case ')':
+      case '|':
+      case '\\':
+        regExpString += '\\' + char;
+        break;
+      default:
+        regExpString += char;
+    }
+  }
+
+  regExpString += '$';
+  return new RegExp(regExpString, flags);
+}
+
+module.exports = globToRegExp;
+```

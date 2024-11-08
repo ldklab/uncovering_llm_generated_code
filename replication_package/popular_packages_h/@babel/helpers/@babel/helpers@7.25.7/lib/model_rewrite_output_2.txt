@@ -1,0 +1,130 @@
+The given Node.js code is a module responsible for managing and manipulating JavaScript Abstract Syntax Tree (AST) helpers. Here's a breakdown of its functionality:
+
+1. **Exports**: The module exports several functions and properties including `get`, `getDependencies`, `minVersion`, `ensure`, `list`, and a default export.
+
+2. **Deep Function**: This function traverses a JavaScript object following a path and either retrieves or assigns a value at the path.
+
+3. **permuteHelperAST Function**: This function manipulates an AST based on metadata, potentially renaming identifiers to avoid conflicts, and applying transformations related to dependencies.
+
+4. **Helper Data Management**: The code loads AST helpers defined in an external module `_helpersGenerated`. It caches these helpers in `helperData` to avoid reloading.
+
+5. **Helper Operations**: It provides functionality to build the AST from a helper, retrieve the minimum Babel version a helper requires, and get a helper's dependencies.
+
+6. **list Export**: Generates a list of all helper names by removing any leading underscore from their keys in the `helpersGenerated` module.
+
+Here is the rewritten code:
+
+```javascript
+"use strict";
+
+const { cloneNode, identifier } = require("@babel/types");
+const _helpersGenerated = require("./helpers-generated.js");
+
+function deep(obj, path, value) {
+  try {
+    const parts = path.split(".");
+    let last = parts.shift();
+    while (parts.length > 0) {
+      obj = obj[last];
+      last = parts.shift();
+    }
+    if (arguments.length > 2) {
+      obj[last] = value;
+    } else {
+      return obj[last];
+    }
+  } catch (e) {
+    e.message += ` (when accessing ${path})`;
+    throw e;
+  }
+}
+
+function permuteHelperAST(ast, metadata, bindingName, localBindings, getDependency, adjustAst) {
+  const { locals, dependencies, exportBindingAssignments, exportName } = metadata;
+  const bindings = new Set(localBindings || []);
+  if (bindingName) bindings.add(bindingName);
+  
+  for (const [name, paths] of Object.entries(locals)) {
+    let newName = name;
+    if (bindingName && name === exportName) {
+      newName = bindingName;
+    } else {
+      while (bindings.has(newName)) newName = "_" + newName;
+    }
+    if (newName !== name) {
+      for (const path of paths) {
+        deep(ast, path, identifier(newName));
+      }
+    }
+  }
+  
+  for (const [name, paths] of Object.entries(dependencies)) {
+    const ref = typeof getDependency === "function" ? getDependency(name) : identifier(name);
+    for (const path of paths) {
+      deep(ast, path, cloneNode(ref));
+    }
+  }
+  
+  adjustAst?.(ast, exportName, map => {
+    exportBindingAssignments.forEach(p => deep(ast, p, map(deep(ast, p))));
+  });
+}
+
+const helperData = Object.create(null);
+
+function loadHelper(name) {
+  if (!helperData[name]) {
+    const helper = _helpersGenerated.default[name];
+    if (!helper) {
+      throw Object.assign(new ReferenceError(`Unknown helper ${name}`), {
+        code: "BABEL_HELPER_UNKNOWN",
+        helper: name
+      });
+    }
+    helperData[name] = {
+      minVersion: helper.minVersion,
+      build(getDependency, bindingName, localBindings, adjustAst) {
+        const ast = helper.ast();
+        permuteHelperAST(ast, helper.metadata, bindingName, localBindings, getDependency, adjustAst);
+        return {
+          nodes: ast.body,
+          globals: helper.metadata.globals
+        };
+      },
+      getDependencies() {
+        return Object.keys(helper.metadata.dependencies);
+      }
+    };
+  }
+  return helperData[name];
+}
+
+function get(name, getDependency, bindingName, localBindings, adjustAst) {
+  if (typeof bindingName === "object") {
+    const id = bindingName;
+    bindingName = id?.type === "Identifier" ? id.name : undefined;
+  }
+  return loadHelper(name).build(getDependency, bindingName, localBindings, adjustAst);
+}
+
+function minVersion(name) {
+  return loadHelper(name).minVersion;
+}
+
+function getDependencies(name) {
+  return loadHelper(name).getDependencies();
+}
+
+const ensure = name => {
+  loadHelper(name);
+};
+
+const list = Object.keys(_helpersGenerated.default).map(name => name.replace(/^_/, ""));
+
+exports.default = get;
+exports.get = get;
+exports.minVersion = minVersion;
+exports.getDependencies = getDependencies;
+exports.list = list;
+exports.ensure = ensure;
+```

@@ -1,0 +1,126 @@
+The `file-entry-cache` package provides a lightweight caching solution specifically designed to store metadata about files. This is particularly useful in scenarios where your application needs to process a set of files but only wants to reprocess files that have changed since the last run.
+
+### Main Functionality Explained:
+
+1. **Cache Creation and Management:**
+   - You can create a cache using `fileEntryCache.create()` by providing a unique cache ID. The cache can store metadata about files, typically using file paths as keys.
+
+2. **File Change Detection:**
+   - The primary feature is to detect file changes. This is performed by checking metadata like modification time (`mtime`) or checksum (hash of the file content).
+   - Use `getFileDescriptor(filePath)` to obtain a file descriptor that indicates whether the file content has changed since it was last cached.
+
+3. **Persisting Cache:**
+   - The cache can be saved to disk using `reconcile()`, which updates the cache file and removes metadata for files no longer found.
+
+4. **Checksum Use:**
+   - Optionally, the package supports checksums to determine changes in file content with higher accuracy (activated with `useCheckSum`).
+
+5. **Path Handling:**
+   - Supports both relative and absolute file paths to uniquely identify files in the cache. You can set a base directory for resolving relative paths.
+
+6. **Renaming Keys:**
+   - There’s functionality to rename keys in the cache, which is useful if directories are renamed and you need to update cached data without reanalyzing files.
+
+7. **File Metadata:**
+   - You can store additional metadata about files via a `meta` property in the file descriptor, allowing custom data associated with each cached file.
+
+8. **Typescript Support:**
+   - The module is compatible with both ESM and CommonJS, providing Typings for TypeScript support, enhancing type checking and IDE support.
+
+Below is a basic implementation of the `file-entry-cache` package with the described functionality:
+
+```javascript
+// file-entry-cache.js
+import fs from 'fs';
+import path from 'path';
+import crypto from 'crypto';
+
+class FileEntryCache {
+  constructor(options = {}) {
+    this.cache = {};
+    this.cacheId = options.cacheId || 'default-cache';
+    this.cacheDirectory = options.cacheDirectory || './cache';
+    this.useCheckSum = options.useCheckSum || false;
+    this.hashAlgorithm = options.hashAlgorithm || 'md5';
+    this.currentWorkingDirectory = options.currentWorkingDirectory || process.cwd();
+    this._loadCacheFromFile();
+  }
+
+  _loadCacheFromFile() {
+    try {
+      if (fs.existsSync(this._cacheFilePath())) {
+        this.cache = JSON.parse(fs.readFileSync(this._cacheFilePath(), 'utf-8'));
+      }
+    } catch (err) {
+      console.error('Failed to load cache from file:', err);
+    }
+  }
+
+  _cacheFilePath() {
+    return path.join(this.cacheDirectory, `${this.cacheId}.json`);
+  }
+
+  _saveCacheToFile() {
+    try {
+      if (!fs.existsSync(this.cacheDirectory)) {
+        fs.mkdirSync(this.cacheDirectory, { recursive: true });
+      }
+      fs.writeFileSync(this._cacheFilePath(), JSON.stringify(this.cache, null, 2));
+    } catch (err) {
+      console.error('Failed to save cache to file:', err);
+    }
+  }
+
+  getFileDescriptor(filePath, options = {}) {
+    const absolutePath = path.resolve(this.currentWorkingDirectory, filePath);
+    const useCheckSum = options.useCheckSum ?? this.useCheckSum;
+
+    if (!fs.existsSync(absolutePath)) {
+      return { key: absolutePath, notFound: true };
+    }
+
+    const stats = fs.statSync(absolutePath);
+    const mtime = stats.mtime.getTime();
+    const size = stats.size;
+    const fileHash = useCheckSum ? this._generateHash(fs.readFileSync(absolutePath)) : null;
+
+    const cacheEntry = this.cache[absolutePath] || {};
+    const changed = (
+      cacheEntry.mtime !== mtime ||
+      (useCheckSum && cacheEntry.hash !== fileHash)
+    );
+
+    this.cache[absolutePath] = { mtime, size, hash: fileHash, meta: cacheEntry.meta || {} };
+    return { key: absolutePath, changed, notFound: false, meta: this.cache[absolutePath].meta };
+  }
+
+  _generateHash(buffer) {
+    return crypto.createHash(this.hashAlgorithm).update(buffer).digest('hex');
+  }
+
+  reconcile() {
+    Object.keys(this.cache).forEach(filePath => {
+      if (!fs.existsSync(filePath)) {
+        delete this.cache[filePath];
+      }
+    });
+    this._saveCacheToFile();
+  }
+
+  static create(cacheId, cacheDirectory, useCheckSum = false, currentWorkingDirectory = '') {
+    return new FileEntryCache({ cacheId, cacheDirectory, useCheckSum, currentWorkingDirectory });
+  }
+
+  static createFromFile(cacheFilePath, useCheckSum = false, currentWorkingDirectory = '') {
+    const cacheOptions = {
+      cacheId: path.basename(cacheFilePath, '.json'),
+      cacheDirectory: path.dirname(cacheFilePath),
+      useCheckSum,
+      currentWorkingDirectory
+    };
+    return new FileEntryCache(cacheOptions);
+  }
+}
+
+export default FileEntryCache;
+```

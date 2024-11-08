@@ -1,0 +1,65 @@
+The Node.js package `wrappy` provides a utility function that allows you to wrap a function with additional logic while preserving the original function's properties and behavior. It can be particularly useful when you need to ensure that a callback function is called in a controlled manner (like only once).
+
+### Explanation
+
+- `wrappy(wrapperFunction)`: This is the main function exported by the package. You provide it with a `wrapperFunction`, which describes how you'd like to modify a given function (`fn`). The `wrapperFunction` should accept the original function as an argument and return a new function that wraps `fn`.
+
+- The common use case demonstrated in the README is ensuring a callback function (e.g., `printBoo`) is only executed once. This is accomplished by creating a `wrapperFunction` that tracks whether the callback has already been called using a boolean variable `called`. If `called` is `true`, the wrapper function does nothing; otherwise, it calls the original callback.
+
+- The `wrappy` function ensures that any properties of the original function (e.g., `printBoo.iAmBooPrinter`) are preserved in the wrapped function.
+
+Here is the implementation of the `wrappy` package:
+
+```javascript
+// wrappy.js
+function wrappy(wrapperFn) {
+  // Return a function that wraps the provided function 'fn'
+  return function(fn) {
+    // Create the 'wrapped' function by passing 'fn' through 'wrapperFn'
+    var wrapped = wrapperFn(fn);
+
+    // Copy properties from 'fn' to 'wrapped'
+    Object.keys(fn).forEach(function(prop) {
+      wrapped[prop] = fn[prop];
+    });
+
+    return wrapped;
+  };
+}
+
+module.exports = wrappy;
+
+// Example usage:
+
+// Require wrappy function from the module
+var wrappy = require("./wrappy");
+
+// Use wrappy to create `once`, a function that wraps a callback and ensures it is called only once
+var once = wrappy(function (cb) {
+  var called = false;
+  return function () {
+    if (called) return;
+    called = true;
+    return cb.apply(this, arguments);
+  };
+});
+
+// Example callback function
+function printBoo() {
+  console.log('boo');
+}
+
+// Add a custom property to the function
+printBoo.iAmBooPrinter = true;
+
+// Wrap the function with `once`
+var onlyPrintOnce = once(printBoo);
+
+onlyPrintOnce(); // Expected output: 'boo'
+onlyPrintOnce(); // Nothing happens
+
+// Verify that properties are retained
+console.assert(onlyPrintOnce.iAmBooPrinter === true, "Property not retained");
+```
+
+This code provides the functionality described in the `wrappy` README, including the ability to wrap functions while maintaining their properties and managing function behavior (such as ensuring a function is only called once).

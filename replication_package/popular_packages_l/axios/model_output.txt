@@ -1,0 +1,109 @@
+The functionality described in the README.md is for a Node.js HTTP client library called Axios. This library aims to make HTTP requests from the browser and Node.js more straightforward, leveraging JavaScript Promises for handling asynchronous operations. Axios provides several features to simplify the HTTP request process:
+
+1. **XMLHttpRequests and HTTP Requests**: Axios can make XMLHttpRequests in the browser and HTTP requests in Node.js environments.
+
+2. **Promise-based operations**: Axios supports Promises, allowing for easy use with `async/await` syntax for managing asynchronous processes without callback hell.
+
+3. **Request Interceptors**: These allow intercepting requests or responses before they are processed by `then` or `catch`.
+
+4. **Transform Request/Response**: Axios can transform request and response data, providing flexibility in handling data formats.
+
+5. **Automatic JSON Handling**: Axios automatically handles JSON transformation for request body and response data.
+
+6. **Cancel Requests**: Axios supports request cancellation using `CancelToken` (deprecated) or `(AbortController`.
+
+7. **Interceptors**: The library has support for request and response interceptors that can handle logic before requests are sent or responses are received.
+
+8. **Automatic Serialization**: Supports automatic object serialization to `multipart/form-data` and `application/x-www-form-urlencoded` formats.
+
+9. **File Uploads**: Axios helps in handling file uploads, including multiple file submissions.
+
+10. **Rate Limiting and Progress Tracking**: Progress events for uploads and downloads, as well as rate-limiting for requests, are supported in Node.js environments.
+
+11. **Error Handling**: Provides detailed information for various error scenarios like network errors, request cancellation, and response errors.
+
+12. **Instance Creation**: Allows creating instances with custom configurations, making it versatile for different scenarios.
+
+13. **AxiosHeaders Class**: A new API to handle HTTP headers efficiently using a Map-like interface.
+
+Here is the code for a simple Node.js package implementing a subset of this functionality:
+
+```js
+const http = require('http');
+const https = require('https');
+const url = require('url');
+
+class Axios {
+  constructor(config = {}) {
+    this.defaults = {
+      method: 'get',
+      timeout: 0,
+      headers: {},
+      ...config
+    };
+  }
+
+  request(config) {
+    const finalConfig = {...this.defaults, ...config};
+    const {method, data, timeout, headers} = finalConfig;
+    const parsedUrl = url.parse(finalConfig.url);
+    const options = {
+      method: method.toUpperCase(),
+      hostname: parsedUrl.hostname,
+      path: parsedUrl.path,
+      headers: headers,
+      timeout: timeout
+    };
+
+    const transport = parsedUrl.protocol === 'https:' ? https : http;
+
+    return new Promise((resolve, reject) => {
+      const req = transport.request(options, res => {
+        let response = '';
+
+        res.on('data', chunk => {
+          response += chunk;
+        });
+
+        res.on('end', () => {
+          try {
+            const data = JSON.parse(response);
+            resolve(data);
+          } catch {
+            resolve(response);
+          }
+        });
+      });
+
+      req.on('error', reject);
+      req.on('timeout', () => reject(new Error('Request timed out')));
+
+      if (data) {
+        req.write(typeof data === 'object' ? JSON.stringify(data) : data);
+      }
+      
+      req.end();
+    });
+  }
+
+  get(url, config) {
+    return this.request({...config, method: 'get', url});
+  }
+
+  post(url, data, config) {
+    return this.request({...config, method: 'post', url, data});
+  }
+}
+
+// Instantiate Axios
+const axios = new Axios();
+
+// Example usage
+axios.get('http://jsonplaceholder.typicode.com/posts/1')
+  .then(console.log)
+  .catch(console.error);
+
+module.exports = Axios;
+```
+
+This package provides basic functionalities like making HTTP requests, handling JSON responses, and allowing configuration defaults. You can expand on this code by adding more features such as interceptors, cancellation tokens, and more advanced configurations as described in the README.md.

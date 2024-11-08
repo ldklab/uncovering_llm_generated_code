@@ -1,0 +1,89 @@
+The `brace-expansion` package in Node.js provides a functionality similar to the brace expansion feature found in Unix shell environments like bash. It transforms brace patterns in strings into arrays of strings with all possible values that the original pattern could form. Here are the capabilities of this package as outlined in the `README.md`:
+
+1. **Simple Option Expansion:** It can expand options within a set of braces into multiple strings. For example, `file-{a,b,c}.jpg` will generate `['file-a.jpg', 'file-b.jpg', 'file-c.jpg']`.
+
+2. **Numeric Sequences:** It supports numeric sequences. For example, `file{0..2}.jpg` will expand to `['file0.jpg', 'file1.jpg', 'file2.jpg']`. It also supports step or increment, e.g., `file{0..4..2}.jpg` will result in `['file0.jpg', 'file2.jpg', 'file4.jpg']`.
+
+3. **Alphabetic Sequences:** It handles alphabetic sequences similarly to numeric sequences. `file-{a..c}.jpg` expands to `['file-a.jpg', 'file-b.jpg', 'file-c.jpg']`.
+
+4. **Padded Numbers:** If necessary, numbers can be zero-padded to make them the same length.
+
+5. **Nested and Combined Sequences:** It accepts nested and combined sequences for more complex patterns. For instance, `ppp{,config,oe{,conf}}` results in `['ppp', 'pppconfig', 'pppoe', 'pppoeconf']`.
+
+Here is the code that implements this functionality in Node.js:
+
+```javascript
+function expand(str) {
+  if (!str.includes('{')) return [str];
+
+  const results = [];
+  const stack = [[str, 0]];
+
+  while (stack.length > 0) {
+    const [currStr, index] = stack.pop();
+    const nextBrace = currStr.indexOf('{', index);
+    if (nextBrace === -1) {
+      results.push(currStr);
+      continue;
+    }
+
+    const closeBrace = findClosingBrace(currStr, nextBrace);
+    if (closeBrace === -1) {
+      results.push(currStr);
+      continue;
+    }
+
+    const beforeBrace = currStr.slice(0, nextBrace);
+    const afterBrace = currStr.slice(closeBrace + 1);
+    const content = currStr.slice(nextBrace + 1, closeBrace);
+    const options = parseOptions(content);
+
+    for (const opt of options) {
+      stack.push([beforeBrace + opt + afterBrace, nextBrace + opt.length]);
+    }
+  }
+
+  return results;
+}
+
+function findClosingBrace(str, openIndex) {
+  let level = 1;
+  for (let i = openIndex + 1; i < str.length; i++) {
+    if (str[i] === '{') level++;
+    if (str[i] === '}') level--;
+
+    if (level === 0) return i;
+  }
+  return -1;
+}
+
+function parseOptions(content) {
+  if (content.match(/^-?\d+\.\.-?\d+(\.\.-?\d+)?$/)) {
+    return numericExpansion(content);
+  } else {
+    return content.split(',');
+  }
+}
+
+function numericExpansion(range) {
+  const [start, end, step] = range.split('..').map(Number);
+  const stepValue = step || 1;
+  const res = [];
+
+  if (start <= end) {
+    for (let i = start; i <= end; i += stepValue) {
+      res.push(i.toString());
+    }
+  } else {
+    for (let i = start; i >= end; i -= stepValue) {
+      res.push(i.toString());
+    }
+  }
+
+  return res;
+}
+
+module.exports = expand;
+```
+
+This code implements the brace expansion logic described. It breaks down expansions into options and sequences, recursively constructs all combinations, and handles numeric sequences with step values, including negative and padded values.

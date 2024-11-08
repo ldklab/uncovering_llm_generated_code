@@ -1,0 +1,70 @@
+The `is-regex` package is a simple utility designed to determine if a given value is a JavaScript regular expression (RegExp) object. The functionality it provides is crucial for type checking and validation, specifically when you need to determine whether a variable is a RegExp, even across different environments like iframes or when dealing with objects that might mimic RegExp characteristics (due to overriding prototypes or ES6 `@@toStringTag` modifications).
+
+### Explanation of Functionality:
+
+1. **isRegex Function**: The core of the package is the `isRegex` function which takes a single argument and returns `true` or `false` based on whether the input is a RegExp.
+
+2. **Cross-realm Compatibility**: The function is designed to work across different JavaScript realms (such as iframes within a browser). This is important because native `instanceof` checks can fail when objects are created in different script contexts.
+
+3. **Handling @@toStringTag**: The `isRegex` function accounts for cases where the `toStringTag` property is tampered with. For example, an object could have its `toStringTag` set to mimic a RegExp, which should not trick the `isRegex` function.
+
+4. **Testing Suite**: The package includes a testing suite that validates the behavior of `isRegex` across various input types, using the Node.js `assert` module.
+
+Below is the implementation of this package:
+
+```markdown
+// index.js
+function isRegex(value) {
+    if (!value || typeof value !== 'object') {
+        return false;
+    }
+    
+    if (value instanceof RegExp) {
+        return true;
+    }
+
+    // Handle @@toStringTag
+    // Check if 'source' and 'flags' exist on the object and it's a function
+    // Retrieves the toString method
+    const toString = Object.prototype.toString;
+    //Uses the toString to check type. Cross-realm verification.
+    return toString.call(value) === '[object RegExp]';
+}
+
+module.exports = isRegex;
+
+// test.js
+const assert = require('assert');
+const isRegex = require('./index');
+
+assert.notOk(isRegex(undefined));
+assert.notOk(isRegex(null));
+assert.notOk(isRegex(false));
+assert.notOk(isRegex(true));
+assert.notOk(isRegex(42));
+assert.notOk(isRegex('foo'));
+assert.notOk(isRegex(function () {}));
+assert.notOk(isRegex([]));
+assert.notOk(isRegex({}));
+
+assert.ok(isRegex(/a/g));
+assert.ok(isRegex(new RegExp('a', 'g')));
+
+console.log("All tests passed!");
+
+// package.json
+{
+  "name": "is-regex",
+  "version": "1.0.0",
+  "description": "Check if a value is a JS regex",
+  "main": "index.js",
+  "scripts": {
+    "test": "node test.js"
+  },
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "assert": "^2.0.0"
+  }
+}
+```

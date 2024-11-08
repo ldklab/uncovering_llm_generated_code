@@ -1,0 +1,97 @@
+The provided code defines a Node.js module for handling source map support in error stack traces. The code primarily consists of a `SourceMapSupport` class and an `install` function. Here's a breakdown of its functionality:
+
+1. **Dependencies**: The Node.js `fs` module is used for file system operations, `path` for handling file paths, and `source-map` for parsing and working with source maps.
+
+2. **SourceMapSupport Class**: 
+   - **Constructor**: Initializes an empty object `sourceMaps` to store source map consumers keyed by file paths.
+   - **loadSourceMap**: Reads a source map from a given file path, creates a `SourceMapConsumer`, and stores it in the `sourceMaps` object.
+   - **mapTrace**: Takes a stack trace, attempts to find source information using loaded source maps, and maps the corresponding trace lines back to their original sources. It returns a modified stack trace with original source information if available.
+   - **install**: Overrides `Error.prepareStackTrace` to modify the stack trace using original source positions computed via source maps before returning it.
+
+3. **Install Function**: Configures and installs the `SourceMapSupport`:
+   - Sets options with default values and allows overriding them.
+   - Replaces the `loadSourceMap` method if `retrieveSourceMap` is specified in options.
+   - Calls the `SourceMapSupport.install` method to set up the modified stack trace preparation.
+   - Handles unhandled exceptions by logging their stack traces and exiting the process if `handleUncaughtExceptions` is true.
+
+4. **Exports**: The module exports the `install` function and `SourceMapSupport` class.
+
+Below is the rewritten Node.js code:
+
+```javascript
+const fs = require('fs');
+const path = require('path');
+const sourceMap = require('source-map');
+
+class SourceMapSupport {
+  constructor() {
+    this.sourceMaps = {};
+  }
+
+  loadSourceMap(filePath, mapPath) {
+    const mapContent = fs.readFileSync(mapPath, 'utf8');
+    const consumer = new sourceMap.SourceMapConsumer(JSON.parse(mapContent));
+    this.sourceMaps[filePath] = consumer;
+  }
+
+  mapTrace(stack) {
+    return stack.split('\n').map((line) => {
+      const match = line.match(/\((.*):(\d+):(\d+)\)$/);
+      if (!match) return line;
+      const [_, file, lineNum, colNum] = match;
+      const consumer = this.sourceMaps[file];
+      if (!consumer) return line;
+      const pos = consumer.originalPositionFor({
+        line: parseInt(lineNum, 10),
+        column: parseInt(colNum, 10)
+      });
+      if (!pos.source) return line;
+      return line.replace(path.basename(file) + `:${lineNum}:${colNum}`, pos.source + `:${pos.line}:${pos.column}`);
+    }).join('\n');
+  }
+
+  install() {
+    const originalPrepareStackTrace = Error.prepareStackTrace;
+    Error.prepareStackTrace = (err, structuredStackTrace) => {
+      const stack = originalPrepareStackTrace
+        ? originalPrepareStackTrace(err, structuredStackTrace)
+        : structuredStackTrace.map((callSite) => {
+          return `    at ${callSite}`;
+        }).join('\n');
+
+      return this.mapTrace(stack);
+    };
+  }
+}
+
+const sourceMapSupport = new SourceMapSupport();
+
+function install(options = {}) {
+  const defaultOptions = {
+    handleUncaughtExceptions: true,
+    retrieveSourceMap: null,
+    environment: 'auto',
+    hookRequire: false
+  };
+
+  const finalOptions = Object.assign({}, defaultOptions, options);
+
+  if (finalOptions.retrieveSourceMap) {
+    sourceMapSupport.loadSourceMap = finalOptions.retrieveSourceMap;
+  }
+
+  sourceMapSupport.install();
+
+  if (finalOptions.handleUncaughtExceptions) {
+    process.on('uncaughtException', (err) => {
+      console.error(err.stack);
+      process.exit(1);
+    });
+  }
+}
+
+module.exports = {
+  install,
+  SourceMapSupport
+};
+```

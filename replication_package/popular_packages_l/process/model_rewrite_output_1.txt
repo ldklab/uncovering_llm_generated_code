@@ -1,0 +1,81 @@
+The Node.js code provided simulates a simplified version of the `process.nextTick` functionality typically found in Node.js. It defines a `process` object with a `nextTick` function, which allows deferring the execution of a callback function until the next event loop cycle. Here's how it works:
+
+1. **Queue System**: The code maintains a queue (`queue`) to hold functions submitted via `process.nextTick`.
+2. **Draining State**: The `draining` variable indicates whether the queue is currently being processed.
+3. **Task Management**: Each function submitted is wrapped in a `Task` object which stores the function and its arguments.
+4. **Execution**: The `drainQueue` function is responsible for calling each `Task`'s `run` method, executing the stored functions with their respective arguments.
+5. **Loop Management**: An auxiliary function, `cleanUpNextTick`, manages the state reset after processing the queue.
+6. **Check Browser Context**: The script checks if it is running in a browser environment, indicated by setting `process.browser` to `true`.
+
+The functionality ensures that functions are executed in the same order they are added, once the current operations complete, emulating part of Node.js's asynchronous execution behavior.
+
+Here's the rewritten code:
+
+```javascript
+// simplifiedProcess.js
+(function(global) {
+  const process = {};
+  let queue = [];
+  let draining = false;
+  let currentQueue;
+  let queueIndex = -1;
+
+  function cleanUpNextTick() {
+    if (!draining || !currentQueue) return;
+    draining = false;
+    if (currentQueue.length) {
+      queue = currentQueue.concat(queue);
+    } else {
+      queueIndex = -1;
+    }
+    if (queue.length) drainQueue();
+  }
+
+  function drainQueue() {
+    if (draining) return;
+    const timeout = setTimeout(cleanUpNextTick);
+    draining = true;
+
+    let len = queue.length;
+    while (len) {
+      currentQueue = queue;
+      queue = [];
+      while (++queueIndex < len) {
+        if (currentQueue) {
+          currentQueue[queueIndex].run();
+        }
+      }
+      queueIndex = -1;
+      len = queue.length;
+    }
+    currentQueue = null;
+    draining = false;
+    clearTimeout(timeout);
+  }
+
+  process.nextTick = function(func, ...args) {
+    queue.push(new Task(func, args));
+    if (queue.length === 1 && !draining) {
+      setTimeout(drainQueue, 0);
+    }
+  };
+
+  class Task {
+    constructor(func, args) {
+      this.func = func;
+      this.args = args;
+    }
+    run() {
+      this.func.apply(null, this.args);
+    }
+  };
+
+  process.browser = true;
+
+  if (typeof module !== 'undefined' && module.exports) {
+    module.exports = process;
+  } else {
+    global.process = process;
+  }
+})(typeof global !== 'undefined' ? global : typeof self !== 'undefined' ? self : this);
+```

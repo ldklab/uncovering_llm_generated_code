@@ -1,0 +1,189 @@
+The given Node.js code provides functionalities to traverse a directory structure in three different ways: synchronously, asynchronously via callback, and using a stream. It additionally supports configuration through the `Settings` class that allows configuration options for filtering entries, error handling, symbolic links, and file statistics.
+
+The key components are as follows:
+
+1. **Entry Class**: Represents a directory entry, which includes properties like name, path, `dirent` (from `fs.Dirent`), and file stats if requested.
+
+2. **Settings Class**: Configures options for the traversal:
+   - Base path, concurrency level, deep and entry filters for directories and files.
+   - Error handling through filters.
+   - Whether to include stats and follow symbolic links.
+   - File system module to use, which defaults to `fs` but can be overridden.
+
+3. **walkSync function**: Performs a synchronous traversal of the directory, collecting entries in an array and filtering them based on the provided settings.
+
+4. **walk function**: Performs an asynchronous traversal using a callback. It keeps track of pending directory reads to determine when traversal is complete.
+
+5. **walkStream function**: Uses a `Readable` stream to provide directory entries in a streaming fashion. Errors during traversal emit error events on the stream.
+
+Here's a possible rewrite of the Node.js code:
+
+```javascript
+const fs = require('fs');
+const path = require('path');
+const { Readable } = require('stream');
+
+class Entry {
+    constructor(name, path, dirent, stats = null) {
+        this.name = name;
+        this.path = path;
+        this.dirent = dirent;
+        this.stats = stats;
+    }
+}
+
+class Settings {
+    constructor(options = {}) {
+        this.basePath = options.basePath || undefined;
+        this.concurrency = options.concurrency || Infinity;
+        this.deepFilter = options.deepFilter || null;
+        this.entryFilter = options.entryFilter || null;
+        this.errorFilter = options.errorFilter || null;
+        this.stats = options.stats || false;
+        this.followSymbolicLinks = options.followSymbolicLinks || false;
+        this.throwErrorOnBrokenSymbolicLink = options.throwErrorOnBrokenSymbolicLink || true;
+        this.pathSegmentSeparator = options.pathSegmentSeparator || path.sep;
+        this.fs = options.fs || fs;
+    }
+}
+
+function walkSync(directory, optionsOrSettings) {
+    const settings = optionsOrSettings instanceof Settings ? optionsOrSettings : new Settings(optionsOrSettings);
+    const result = [];
+
+    function read(dir, basePath) {
+        try {
+            const entries = settings.fs.readdirSync(dir, { withFileTypes: true });
+            entries.forEach(entry => {
+                const fullPath = path.join(dir, entry.name);
+                const relativePath = path.join(basePath || '', entry.name);
+
+                if (settings.entryFilter && !settings.entryFilter(new Entry(entry.name, relativePath, entry))) return;
+
+                let stats = null;
+                if (settings.stats) {
+                    stats = settings.followSymbolicLinks ? settings.fs.statSync(fullPath) : settings.fs.lstatSync(fullPath);
+                }
+
+                result.push(new Entry(entry.name, relativePath, entry, stats));
+
+                if (entry.isDirectory() && (!settings.deepFilter || settings.deepFilter(new Entry(entry.name, relativePath, entry)))) {
+                    read(fullPath, relativePath);
+                }
+            });
+        } catch (error) {
+            if (!settings.errorFilter || !settings.errorFilter(error)) {
+                throw error;
+            }
+        }
+    }
+
+    read(directory, settings.basePath);
+    return result;
+}
+
+function walk(directory, optionsOrSettings, callback) {
+    const settings = optionsOrSettings instanceof Settings ? optionsOrSettings : new Settings(optionsOrSettings);
+    const result = [];
+    let pending = 1;
+    let errorDetected = false;
+
+    function read(dir, basePath) {
+        settings.fs.readdir(dir, { withFileTypes: true }, (error, entries) => {
+            if (error) {
+                if (!settings.errorFilter || !settings.errorFilter(error)) {
+                    errorDetected = true;
+                    return callback(error);
+                }
+                return checkPending();
+            }
+
+            pending += entries.length;
+            entries.forEach(entry => {
+                const fullPath = path.join(dir, entry.name);
+                const relativePath = path.join(basePath || '', entry.name);
+
+                if (settings.entryFilter && !settings.entryFilter(new Entry(entry.name, relativePath, entry))) {
+                    checkPending();
+                    return;
+                }
+
+                function processEntry(stats) {
+                    result.push(new Entry(entry.name, relativePath, entry, stats));
+                    if (entry.isDirectory() && (!settings.deepFilter || settings.deepFilter(new Entry(entry.name, relativePath, entry)))) {
+                        read(fullPath, relativePath);
+                    }
+                    checkPending();
+                }
+
+                if (settings.stats) {
+                    (settings.followSymbolicLinks ? settings.fs.stat : settings.fs.lstat)(fullPath, (err, stats) => {
+                        if (err) return callback(err);
+                        processEntry(stats);
+                    });
+                } else {
+                    processEntry(null);
+                }
+            });
+            checkPending();
+        });
+    }
+
+    function checkPending() {
+        if (--pending === 0 && !errorDetected) {
+            callback(null, result);
+        }
+    }
+
+    read(directory, settings.basePath);
+}
+
+function walkStream(directory, optionsOrSettings) {
+    const settings = optionsOrSettings instanceof Settings ? optionsOrSettings : new Settings(optionsOrSettings);
+    const stream = new Readable({ objectMode: true, read() {} });
+
+    function read(dir, basePath) {
+        settings.fs.readdir(dir, { withFileTypes: true }, (error, entries) => {
+            if (error) {
+                if (!settings.errorFilter || !settings.errorFilter(error)) {
+                    return stream.emit('error', error);
+                }
+            } else {
+                entries.forEach(entry => {
+                    const fullPath = path.join(dir, entry.name);
+                    const relativePath = path.join(basePath || '', entry.name);
+
+                    if (settings.entryFilter && !settings.entryFilter(new Entry(entry.name, relativePath, entry))) return;
+
+                    function processEntry(stats) {
+                        const newEntry = new Entry(entry.name, relativePath, entry, stats);
+                        stream.push(newEntry);
+                        if (entry.isDirectory() && (!settings.deepFilter || settings.deepFilter(newEntry))) {
+                            read(fullPath, relativePath);
+                        }
+                    }
+
+                    if (settings.stats) {
+                        (settings.followSymbolicLinks ? settings.fs.stat : settings.fs.lstat)(fullPath, (err, stats) => {
+                            if (!err) processEntry(stats);
+                        });
+                    } else {
+                        processEntry(null);
+                    }
+                });
+            }
+        });
+    }
+
+    read(directory, settings.basePath);
+    stream.push(null);
+    return stream;
+}
+
+module.exports = {
+    walkSync,
+    walk,
+    walkStream,
+    Settings
+};
+```

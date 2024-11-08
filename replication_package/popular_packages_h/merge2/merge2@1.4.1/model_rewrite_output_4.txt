@@ -1,0 +1,124 @@
+The provided Node.js code defines a module named `merge2`, which is a utility function for merging multiple streams into a single stream. The main features of the `merge2` function include:
+
+1. **Arguments Handling**: It accepts multiple stream sources and optional configuration options. If the last argument is not an object with a pipe method, it assumes it's the configuration options and separates it from the stream sources.
+
+2. **Option Defaults**: It sets default options for merging, such as enabling `objectMode` and setting a `highWaterMark` for buffering data.
+
+3. **PassThrough Stream**: Utilizes Node.js's `PassThrough` stream as the merged output stream.
+
+4. **Stream Queue**: Maintains a queue of streams to be merged. It allows streams to be added to the queue through the `addStream` method.
+
+5. **Merging Mechanism**: The actual merging is handled by the `mergeStream` function, which pipes streams from the queue into the merged stream asynchronously.
+
+6. **Error Handling**: It optionally propagates errors from individual streams to the merged stream.
+
+7. **Lifecycle Control**: Manages stream lifecycle events like 'end' and custom 'merge2UnpipeEnd' to handle unpiping logic. It emits a 'queueDrain' event when all streams are merged, and optionally ends the merged stream.
+
+8. **Backward Compatibility**: Supports old-style streams by wrapping them in a `PassThrough` stream if needed.
+
+Here is a possible rewrite of the code with the same functionality:
+
+```javascript
+'use strict';
+
+const { PassThrough } = require('stream');
+
+module.exports = merge2;
+
+function merge2(...args) {
+  const streamsQueue = [];
+  let merging = false;
+  let options = args[args.length - 1];
+
+  if (options && typeof options === 'object' && !Array.isArray(options) && !(options instanceof PassThrough)) {
+    args.pop();
+  } else {
+    options = {};
+  }
+
+  const { end = true, pipeError = false, objectMode = true, highWaterMark = 64 * 1024 } = options;
+  const mergedStream = new PassThrough({ objectMode, highWaterMark });
+
+  mergedStream.setMaxListeners(0);
+  mergedStream.add = (...streams) => {
+    streams.forEach(stream => streamsQueue.push(pauseStream(stream, { objectMode, highWaterMark })));
+    mergeNext();
+    return mergedStream;
+  };
+
+  if (args.length) {
+    mergedStream.add(...args);
+  }
+
+  mergedStream.on('unpipe', (source) => {
+    source.emit('merge2UnpipeEnd');
+  });
+
+  function mergeNext() {
+    if (merging) return;
+    merging = true;
+
+    const streams = streamsQueue.shift();
+    if (!streams) return process.nextTick(finishMerge);
+
+    const activeStreams = Array.isArray(streams) ? streams : [streams];
+    let remaining = activeStreams.length;
+
+    activeStreams.forEach(stream => pipeStream(stream, () => {
+      if (--remaining === 0) {
+        merging = false;
+        mergeNext();
+      }
+    }));
+  }
+
+  function pipeStream(stream, done) {
+    if (stream._readableState?.endEmitted) return done();
+
+    const onEnd = () => {
+      cleanup();
+      done();
+    };
+
+    const onError = (err) => {
+      mergedStream.emit('error', err);
+    };
+
+    const cleanup = () => {
+      stream.off('end', onEnd);
+      stream.off('merge2UnpipeEnd', onEnd);
+      if (pipeError) stream.off('error', onError);
+    };
+
+    stream.on('end', onEnd);
+    stream.on('merge2UnpipeEnd', onEnd);
+    if (pipeError) stream.on('error', onError);
+
+    stream.pipe(mergedStream, { end: false });
+    stream.resume();
+  }
+
+  function pauseStream(stream, options) {
+    if (!Array.isArray(stream)) {
+      if (!stream._readableState && stream.pipe) {
+        stream = stream.pipe(new PassThrough(options));
+      }
+      if (!stream.pause || !stream.pipe) {
+        throw new Error('Only readable stream can be merged.');
+      }
+      stream.pause();
+    } else {
+      return stream.map(s => pauseStream(s, options));
+    }
+    return stream;
+  }
+
+  function finishMerge() {
+    merging = false;
+    mergedStream.emit('queueDrain');
+    if (end) mergedStream.end();
+  }
+
+  return mergedStream;
+}
+```

@@ -1,0 +1,105 @@
+The `node-gyp` package is a cross-platform build tool used primarily to compile native add-ons for Node.js. It wraps the `gyp-next` project, which was originally used by the Chromium project and extends it to support Node.js native add-ons. It supports all current and long-term support (LTS) versions of Node.js and automatically downloads necessary development files for the version installed on the system. 
+
+### Features include:
+
+1. Cross-platform compatibility, meaning the build commands function similarly across various operating systems.
+2. The ability to target different Node.js versions.
+
+### Installation:
+
+`node-gyp` can be installed via npm. Depending on the operating system, there are additional dependencies like Python, `make`, and a C/C++ compiler toolchain on Unix; `Xcode Command Line Tools` on macOS; and Python alongside Visual Studio tools on Windows.
+
+### Usage:
+
+To use `node-gyp`, navigate to the directory containing the native add-on:
+1. Generate build files using `node-gyp configure`.
+2. Build the add-on with `node-gyp build`.
+3. Post-build, the `.node` bindings can be loaded into Node.js projects.
+
+### Key Commands:
+
+- `help`: Displays help instructions.
+- `build`: Compiles the native add-on.
+- `clean`: Removes the build directory.
+- `configure`: Generates build files specific to the platform.
+- `rebuild`: Runs `clean`, `configure`, and `build` sequentially.
+- `install`: Installs Node.js header files for a specific version.
+- `list`: Lists installed Node.js header versions.
+- `remove`: Deletes the Node.js headers for a version specified.
+
+### Configuration:
+
+Use `binding.gyp` files to configure your project. This file defines how the module is built, similar to a `Makefile` or `project` file. You can pass various command-line options to `node-gyp` to customize builds, like setting target Node.js versions, choosing debug or release builds, configuring parallel jobs, or specifying download directories.
+
+Here's a simplified implementation of the core functionalities in a Node.js package:
+
+```javascript
+// index.js
+
+const { execSync } = require('child_process');
+const fs = require('fs');
+const path = require('path');
+
+const NODE_VERSION = process.version;
+
+function configure() {
+  const bindingGyp = path.join(process.cwd(), 'binding.gyp');
+  if (!fs.existsSync(bindingGyp)) {
+    throw new Error("binding.gyp not found in current directory.");
+  }
+  console.log('Configuring project...');
+  execSync('node-gyp configure', { stdio: 'inherit' });
+}
+
+function build() {
+  console.log('Building project...');
+  execSync('node-gyp build', { stdio: 'inherit' });
+}
+
+function clean() {
+  console.log('Cleaning up build directory...');
+  execSync('node-gyp clean', { stdio: 'inherit' });
+}
+
+function rebuild() {
+  console.log('Rebuilding project...');
+  clean();
+  configure();
+  build();
+}
+
+function help() {
+  console.log(`
+    node-gyp commands:
+    - configure: Generate configuration files for the current platform.
+    - build: Compile the native addon.
+    - clean: Remove the build files.
+    - rebuild: Perform clean, configure, and build operations.
+  `);
+}
+
+function runCommand(command) {
+  switch (command) {
+    case 'configure':
+      configure();
+      break;
+    case 'build':
+      build();
+      break;
+    case 'clean':
+      clean();
+      break;
+    case 'rebuild':
+      rebuild();
+      break;
+    case 'help':
+    default:
+      help();
+  }
+}
+
+const command = process.argv[2] || 'help';
+runCommand(command);
+```
+
+To use this script, create a `binding.gyp` file in your Node.js addon's directory and execute commands like `node index.js configure`, `node index.js build`, etc. This implementation assumes `node-gyp` is available globally or in the project's `node_modules/.bin/` directory.

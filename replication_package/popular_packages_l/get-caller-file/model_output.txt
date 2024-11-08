@@ -1,0 +1,51 @@
+The `get-caller-file` package is a utility for determining the file that invoked a specific function. It does this by examining the stack trace produced by V8, which is the JavaScript engine underlying Node.js. This can be useful for debugging or for functions that need special handling based on where they're called from.
+
+### Functionality:
+- **Primary Function**: `getCallerFile(position = 2)`
+  - It returns the file name of the caller from the stack trace.
+  - The `position` parameter determines which stack frame to look at. By default, the function examines the second stack frame (`position = 2`), assuming the first is `getCallerFile` itself, and the second is the immediate caller.
+
+### Example Usage:
+- A module (`foo.js`) uses `getCallerFile` to identify which file called it. Another file (e.g., `index.js`) calls the function from `foo.js`, and `getCallerFile` returns the full path of `index.js`, indicating that it was the caller.
+
+Here is a Node.js package implementing this functionality:
+
+```js
+// get-caller-file.js
+module.exports = function getCallerFile(position = 2) {
+  if (isNaN(position) || position < 0) {
+    throw new TypeError("Position must be a non-negative number");
+  }
+
+  const oldPrepareStackTrace = Error.prepareStackTrace;
+  try {
+    const err = new Error();
+    Error.prepareStackTrace = (err, stack) => stack;
+    const stack = err.stack;
+
+    if (stack && stack.length > position) {
+      return stack[position].getFileName();
+    }
+  } catch (err) {
+    // Handle possible errors reading the stack
+  } finally {
+    Error.prepareStackTrace = oldPrepareStackTrace;
+  }
+  
+  return undefined;
+};
+
+// foo.js
+const getCallerFile = require('./get-caller-file');
+
+module.exports = function() {
+  return getCallerFile(); // Figures out who called this function
+};
+
+// index.js
+const foo = require('./foo');
+
+console.log(foo()); // Prints the full path of 'index.js'
+```
+
+To use this package, you would place `get-caller-file` code in a file (e.g., `get-caller-file.js`), and then you could use it in modules to detect which file invoked the module's function as shown in `foo.js` and `index.js`.

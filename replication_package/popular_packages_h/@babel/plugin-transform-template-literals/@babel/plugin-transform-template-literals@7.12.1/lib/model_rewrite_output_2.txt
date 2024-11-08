@@ -1,0 +1,129 @@
+The provided Node.js code defines a Babel plugin to transform template literals in JavaScript code. Here's a summary of its functionality:
+
+1. **Initial Setup**: The plugin uses Babel's helper utilities and core functionalities to manipulate AST nodes. When the module is imported, it defines and exports a default Babel plugin.
+
+2. **Babel Plugin Declaration**: The plugin is declared with the `declare` function from `@babel/helper-plugin-utils`. It verifies that the API version is 7 or higher.
+
+3. **Helper Selection**: Depending on whether the `loose` option is provided in the plugin options, the plugin uses either `taggedTemplateLiteral` or `taggedTemplateLiteralLoose` helper.
+
+4. **Utility Function**: It includes a utility function `buildConcatCallExpressions` that consolidates an array of expressions into a single concatenated expression using `+.concat()`.
+
+5. **Visitor Methods**:
+   - **`TaggedTemplateExpression`**: Converts tagged template expressions into a form that utilizes the chosen helper. It dynamically generates a function (lazy-loaded) to handle the template object creation and caches the result.
+   - **`TemplateLiteral`**: Transforms template literals into a series of concatenated string and expression nodes. Depending on the `loose` option, it either uses concatenation with `+` or `.concat()` for assembling string segments and expressions.
+
+Here's a possible rewrite of the provided Node.js code:
+
+```javascript
+"use strict";
+
+import { declare } from "@babel/helper-plugin-utils";
+import * as t from "@babel/core";
+
+export default declare((api, options) => {
+  api.assertVersion(7);
+  const { loose } = options;
+  let helperName = loose ? "taggedTemplateLiteralLoose" : "taggedTemplateLiteral";
+
+  function buildConcatCallExpressions(items) {
+    let avail = true;
+    return items.reduce((left, right) => {
+      let canBeInserted = t.types.isLiteral(right);
+
+      if (!canBeInserted && avail) {
+        canBeInserted = true;
+        avail = false;
+      }
+
+      if (canBeInserted && t.types.isCallExpression(left)) {
+        left.arguments.push(right);
+        return left;
+      }
+
+      return t.types.callExpression(t.types.memberExpression(left, t.types.identifier("concat")), [right]);
+    });
+  }
+
+  return {
+    name: "transform-template-literals",
+    visitor: {
+      TaggedTemplateExpression(path) {
+        const { node } = path;
+        const { quasi } = node;
+        const strings = [];
+        const raws = [];
+        let isStringsRawEqual = true;
+
+        for (const elem of quasi.quasis) {
+          const { raw, cooked } = elem.value;
+          const value = cooked == null ? path.scope.buildUndefinedNode() : t.types.stringLiteral(cooked);
+          strings.push(value);
+          raws.push(t.types.stringLiteral(raw));
+
+          if (raw !== cooked) {
+            isStringsRawEqual = false;
+          }
+        }
+
+        const scope = path.scope.getProgramParent();
+        const templateObject = scope.generateUidIdentifier("templateObject");
+        const helperId = this.addHelper(helperName);
+        const callExpressionInput = [t.types.arrayExpression(strings)];
+
+        if (!isStringsRawEqual) {
+          callExpressionInput.push(t.types.arrayExpression(raws));
+        }
+
+        const lazyLoad = t.template.ast`
+          function ${templateObject}() {
+            const data = ${t.types.callExpression(helperId, callExpressionInput)};
+            ${t.types.cloneNode(templateObject)} = function() { return data };
+            return data;
+          }
+        `;
+        scope.path.unshiftContainer("body", lazyLoad);
+        path.replaceWith(t.types.callExpression(node.tag, [t.types.callExpression(t.types.cloneNode(templateObject), []), ...quasi.expressions]));
+      },
+
+      TemplateLiteral(path) {
+        const nodes = [];
+        const expressions = path.get("expressions");
+        let index = 0;
+
+        for (const elem of path.node.quasis) {
+          if (elem.value.cooked) {
+            nodes.push(t.types.stringLiteral(elem.value.cooked));
+          }
+
+          if (index < expressions.length) {
+            const expr = expressions[index++];
+            const node = expr.node;
+
+            if (!t.types.isStringLiteral(node, { value: "" })) {
+              nodes.push(node);
+            }
+          }
+        }
+
+        const considerSecondNode = !loose || !t.types.isStringLiteral(nodes[1]);
+
+        if (!t.types.isStringLiteral(nodes[0]) && considerSecondNode) {
+          nodes.unshift(t.types.stringLiteral(""));
+        }
+
+        let root = nodes[0];
+
+        if (loose) {
+          for (let i = 1; i < nodes.length; i++) {
+            root = t.types.binaryExpression("+", root, nodes[i]);
+          }
+        } else if (nodes.length > 1) {
+          root = buildConcatCallExpressions(nodes);
+        }
+
+        path.replaceWith(root);
+      }
+    }
+  };
+});
+```

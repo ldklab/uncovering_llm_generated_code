@@ -1,0 +1,113 @@
+This Node.js code serves as a middleware utility for webpack, providing development features such as automatic recompilation and enhanced file handling. Here's a breakdown of what the code does:
+
+1. **Import Modules**: It imports required modules, including `mime` for handling file types, utilities for middleware interactions, filesystem operations, and various helper functions.
+
+2. **Default Options**: It establishes a default configuration (`defaults`) that includes settings like logging level, output customization, watch options, and file writing preferences.
+
+3. **Main Export Function (`wdm`)**: 
+   - This function initializes the middleware with a `compiler` and optional custom `options`.
+   - **Custom MIME Types**: If custom MIME types are provided, they get defined via the `mime` module.
+   - **Create Context**: The code creates a context object using the provided `compiler` and the resolved options.
+   - **Watching Mode**: If not running in a lazy mode, it starts watching for changes via the compiler's watch method, logs errors if they occur.
+   - **Lazy Mode**: In lazy mode, it prepares a regex for file name handling and sets the context state.
+   - **Writing to Disk**: If `writeToDisk` is enabled, it handles writing the build outputs to disk.
+   - **Set Up Filesystem**: It sets up the virtual file system within the context.
+   
+4. **Middleware Methods**:
+   - `close`: Stops watching for changes and calls a callback function.
+   - `fileSystem`, `getFilenameFromUrl`: Exposes methods for filesystem access and resolving filenames from URLs.
+   - `invalidate`: Allows manual recompilation by invalidating the current watch state.
+   - `waitUntilValid`: Provides a callback mechanism that holds until the current compilation is valid.
+
+Here is the rewritten code based on the explanation:
+
+```javascript
+'use strict';
+
+const mime = require('mime');
+
+const createContext = require('./lib/context');
+const middleware = require('./lib/middleware');
+const reporter = require('./lib/reporter');
+const { setFs, toDisk } = require('./lib/fs');
+const { getFilenameFromUrl, noop, ready } = require('./lib/util');
+
+const defaults = {
+  logLevel: 'info',
+  logTime: false,
+  logger: null,
+  mimeTypes: null,
+  reporter,
+  stats: {
+    colors: true,
+    context: process.cwd(),
+  },
+  watchOptions: {
+    aggregateTimeout: 200,
+  },
+  writeToDisk: false,
+};
+
+function wdm(compiler, opts) {
+  const options = { ...defaults, ...opts };
+
+  if (options.mimeTypes) {
+    const { typeMap = options.mimeTypes, force = false } = options.mimeTypes;
+    mime.define(typeMap, force);
+  }
+
+  const context = createContext(compiler, options);
+
+  if (!options.lazy) {
+    context.watching = compiler.watch(options.watchOptions, (err) => {
+      if (err) {
+        context.log.error(err.stack || err);
+        if (err.details) {
+          context.log.error(err.details);
+        }
+      }
+    });
+  } else {
+    if (typeof options.filename === 'string') {
+      const escapedFilename = options.filename.replace(/[\-\[\]\/\{\}\(\)\*\+\?\.\\\^\$\|]/g, '\\$&')
+        .replace(/\\\[[a-z]+\\\]/gi, '.+');
+      options.filename = new RegExp(`^/?${escapedFilename}$`);
+    }
+
+    context.state = true;
+  }
+
+  if (options.writeToDisk) {
+    toDisk(context);
+  }
+
+  setFs(context, compiler);
+
+  return {
+    ...middleware(context),
+    close(callback = noop) {
+      if (context.watching) {
+        context.watching.close(callback);
+      } else {
+        callback();
+      }
+    },
+    context,
+    fileSystem: context.fs,
+    getFilenameFromUrl: getFilenameFromUrl.bind(this, context.options.publicPath, context.compiler),
+    invalidate(callback = noop) {
+      if (context.watching) {
+        ready(context, callback, {});
+        context.watching.invalidate();
+      } else {
+        callback();
+      }
+    },
+    waitUntilValid(callback = noop) {
+      ready(context, callback, {});
+    },
+  };
+}
+
+module.exports = wdm;
+```

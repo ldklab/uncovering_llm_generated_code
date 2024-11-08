@@ -1,0 +1,102 @@
+The README.md for the EJS package provides a comprehensive guide to understanding and using EJS, a templating language for embedding JavaScript into HTML templates. Here's a summary of its key functionalities and examples illustrating their usage:
+
+1. **Security Warning**: Prioritize security by validating inputs to prevent vulnerabilities when rendering templates. An example of insecure code is provided, which should be avoided to prevent executing arbitrary code.
+
+2. **Installation**: The package can be installed via npm using the command `npm install ejs`.
+
+3. **Main Features**:
+   - Control flow is supported via scriptlet tags, allowing developers to conditionally render parts of their template.
+   - Allows both escaped and unescaped output, facilitating safe insertion or raw inclusion of data.
+   - Supports custom delimiters for different syntactical needs and includes mechanisms for adding other templates into the current one.
+
+4. **Basic Usage**:
+   - Templates can be compiled and rendered either inline using `ejs.render()` or `ejs.renderFile()` for rendering templates from a file.
+   - EJS supports client-side rendering by providing a minified script that can be included in the browser environment.
+
+5. **Options**: Offers a wide range of options to customize behavior such as caching, debugging, delimiters, etc., to enhance the flexibility and efficiency of template rendering.
+
+6. **Tags**: EJS uses a variety of tags for scripting, including scriptlet tags, output tags, and commenting tags. Examples include `<% %>` for code execution, `<%= %>` for escaped value outputs, and `<%- %>` for raw HTML outputs.
+
+7. **Includes**: Supports template includes which can be used to modularize templates by including parts from other templates, such as headers or footers.
+
+8. **Custom Delimiters**: Change default delimiters globally or for individual templates, useful for integrating with different systems that might use conflicting characters.
+
+9. **Caching**: EJS includes an in-process cache for templates to improve performance, and custom file loaders can be defined as needed.
+
+10. **Client-side support**: Allows rendering templates directly in the browser by compiling JavaScript functions through EJS.
+
+Here's the code implementing these functionalities:
+
+```markdown
+const fs = require('fs');
+const path = require('path');
+
+class EJS {
+  constructor() {
+    this.cache = new Map();
+    this.delimiter = '%';
+    this.openDelimiter = '<';
+    this.closeDelimiter = '>';
+  }
+
+  compile(str, options = {}) {
+    let delimiter = options.delimiter || this.delimiter;
+    let open = options.openDelimiter || this.openDelimiter;
+    let close = options.closeDelimiter || this.closeDelimiter;
+
+    let regex = new RegExp(`${open}${delimiter}(.*?)${delimiter}${close}`, 'g');
+
+    let compiled = str.replace(regex, (_, code) => {
+      let escapeCode = code.trim().startsWith('=') ? 'echo(' : code.trim().startsWith('-') ? 'unescape(' : '';
+      code = escapeCode ? code.trim().slice(1).trim() : code.trim();
+      return escapeCode ? `\${${escapeCode}${code})}` : `; ${code}; __output += \``;
+    });
+
+    let renderFunc = new Function('data', 'echo', 'unescape', `
+      let __output = '';
+      with(data || {}) {
+        __output += \`${compiled}\`;
+      }
+      return __output;
+    `);
+    return renderFunc;
+  }
+
+  render(str, data, options) {
+    let template = this.compile(str, options);
+    return template(data, data => data, data => data);
+  }
+
+  renderFile(filename, data, options = {}, callback) {
+    fs.readFile(filename, 'utf8', (err, content) => {
+      if (err) return callback(err);
+      try {
+        let result = this.render(content, data, options);
+        callback(null, result);
+      } catch (e) {
+        callback(e);
+      }
+    });
+  }
+
+  renderFileSync(filename, data, options = {}) {
+    let content = fs.readFileSync(filename, 'utf8');
+    return this.render(content, data, options);
+  }
+
+  include(filePath, data) {
+    let templatePath = path.resolve(filePath);
+    if (this.cache.has(templatePath)) {
+      return this.cache.get(templatePath)(data);
+    }
+    let content = fs.readFileSync(templatePath, 'utf8');
+    let renderTemplate = this.compile(content);
+    this.cache.set(templatePath, renderTemplate);
+    return renderTemplate(data);
+  }
+}
+
+module.exports = new EJS();
+```
+
+This code forms the backbone of an EJS-like rendering engine in Node.js, supporting basic templating features, including compiling templates into renderable functions, file rendering, caching, and includes.

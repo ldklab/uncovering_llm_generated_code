@@ -1,0 +1,56 @@
+The provided Node.js code defines a module that exports a function for dynamically requiring files from a given directory. It builds an object where each key is the basename of the file (without extension), and the value is the required module from that file. The function handles the following scenarios:
+
+1. If two arguments (`dir` and `basenames`) are provided:
+   - It treats `basenames` as a list of specific file names (with extensions) to require from the directory `dir`.
+   - Each file in `basenames` is required, and the result is stored in the `requires` object.
+
+2. If only one argument (`dir`) is provided:
+   - It reads all files in the directory excluding `index.js` and those prefixed with `_` or `.`.
+   - It only requires files with `.js`, `.node`, or `.json` extensions, as well as directories.
+   - Each file (or directory) is required, and its result is stored in the `requires` object, using the basename (filename without extension) as the key.
+
+3. If no arguments are passed, it throws an error.
+
+The function returns the `requires` object which contains all the required modules.
+
+```javascript
+const fs = require('fs');
+const path = require('path');
+
+module.exports = function (dir, basenames) {
+  const requires = {};
+
+  if (typeof dir !== 'string') {
+    throw new Error("Must pass directory as first argument");
+  }
+
+  const isSpecificFilesMode = Array.isArray(basenames);
+
+  const includesFile = (filename) => {
+    if (filename === 'index.js' || filename.startsWith('_') || filename.startsWith('.')) {
+      return false;
+    }
+    const ext = path.extname(filename);
+    const allowedExts = ['.js', '.node', '.json'];
+    return allowedExts.includes(ext) || fs.statSync(path.join(dir, filename)).isDirectory();
+  };
+
+  const processFile = (filename) => {
+    const filepath = path.resolve(dir, filename);
+    const ext = path.extname(filename);
+    const basename = path.basename(filename, ext);
+    requires[basename] = require(filepath);
+  };
+
+  if (isSpecificFilesMode) {
+    basenames.forEach((basename) => processFile(basename));
+  } else {
+    fs.readdirSync(dir)
+      .sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()))
+      .filter(includesFile)
+      .forEach(processFile);
+  }
+
+  return requires;
+};
+```

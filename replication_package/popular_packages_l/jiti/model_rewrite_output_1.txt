@@ -1,0 +1,71 @@
+The provided Node.js code implements a function `createJiti` which allows dynamic module loading and transformation of JavaScript/TypeScript files using Babel, with support for caching and additional configuration options. The function constructs a custom require-like function (`jitiRequire`) that reads and compiles source files based on given options, such as enabling JSX transformations and source maps. This custom require function supports ES module-like dynamic imports through its `import` method and resolves file paths relative to a starting file. The use of caching ensures efficient performance by avoiding redundant file transformations.
+
+Here's a possible rewrite of the given code:
+
+```javascript
+const fs = require('fs');
+const { transformSync } = require('@babel/core');
+const path = require('path');
+
+function createJiti(filename, options = {}) {
+  // Set default options and merge with user-provided options
+  options = {
+    debug: false,
+    fsCache: true,
+    moduleCache: true,
+    sourceMaps: false,
+    interopDefault: true,
+    alias: {},
+    jsx: false,
+    ...options,
+  };
+
+  const cache = {}; // Cache for modules
+
+  function jitiRequire(filePath) {
+    // Return cached module if available
+    if (cache[filePath]) {
+      return cache[filePath].exports;
+    }
+
+    // Resolve full path and read file content
+    const absPath = path.resolve(path.dirname(filename), filePath);
+    const code = fs.readFileSync(absPath, 'utf-8');
+
+    // Transform code with Babel
+    const transformed = transformSync(code, {
+      filename: absPath,
+      presets: [
+        options.jsx ? ['@babel/preset-react'] : '',
+        '@babel/preset-typescript',
+      ].filter(Boolean),
+      sourceMaps: options.sourceMaps,
+    });
+
+    // Compile and execute transformed code in a module context
+    const module = { exports: {} };
+    const functionWrapper = new Function('require', 'exports', 'module', transformed.code);
+    functionWrapper(jitiRequire, module.exports, module);
+
+    // Cache the module exports
+    cache[filePath] = module;
+    return module.exports;
+  }
+
+  // Asynchronous import method
+  jitiRequire.import = async function(filePath) {
+    return jitiRequire(filePath);
+  };
+
+  // Resolve method for ESM and normalization
+  jitiRequire.esmResolve = function(filePath) {
+    return path.resolve(path.dirname(filename), filePath);
+  };
+
+  jitiRequire.resolve = jitiRequire.esmResolve;
+
+  return jitiRequire; // Return customized require function
+}
+
+module.exports = { createJiti };
+```

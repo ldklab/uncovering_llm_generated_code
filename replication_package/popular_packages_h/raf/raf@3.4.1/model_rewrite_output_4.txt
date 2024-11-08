@@ -1,0 +1,87 @@
+The provided Node.js code is a polyfill for the `requestAnimationFrame` and `cancelAnimationFrame` functions. The `requestAnimationFrame` function is used to efficiently perform animations by updating the frame before the next repaint. This code ensures compatibility across different environments and browsers (including ones with vendor-prefixed implementations and those without native support). Here's a breakdown of its functionality:
+
+1. **Detection of window/global object**: The code differentiates whether it is running in a browser or a Node.js environment by checking for `window`. If not present, it falls back to `global`.
+
+2. **Vendor Prefix Handling**: It checks for vendor-prefixed implementations (`moz` for Mozilla and `webkit` for WebKit) and assigns the appropriate `requestAnimationFrame` and `cancelAnimationFrame` functions.
+
+3. **Fallback Implementation**: If neither native nor vendor-prefixed methods are available, it creates a polyfill using `setTimeout` that simulates the `requestAnimationFrame` behavior by maintaining a queue of callbacks that are executed at around 60 frames per second.
+
+4. **Module Exports**: The main functionality and the cancellation method are exported for use, along with a `polyfill` method that allows attaching these functions to a specified object (or the root if none specified).
+
+Here is a possible rewrite of the Node.js code:
+
+```javascript
+var now = require('performance-now');
+var root = typeof window === 'undefined' ? global : window;
+var vendors = ['moz', 'webkit'];
+var suffix = 'AnimationFrame';
+
+function getVendorMethod(prefix, method) {
+  return root[prefix + method + suffix];
+}
+
+var raf = root['request' + suffix];
+var caf = root['cancel' + suffix] || root['cancelRequest' + suffix];
+
+for (var i = 0; !raf && i < vendors.length; i++) {
+  raf = getVendorMethod(vendors[i], 'Request');
+  caf = getVendorMethod(vendors[i], 'Cancel') || getVendorMethod(vendors[i], 'CancelRequest');
+}
+
+if (!raf || !caf) {
+  var last = 0;
+  var id = 0;
+  var queue = [];
+  var frameDuration = 1000 / 60;
+
+  raf = function(callback) {
+    if (queue.length === 0) {
+      var _now = now();
+      var next = Math.max(0, frameDuration - (_now - last));
+      last = next + _now;
+
+      setTimeout(function() {
+        var cp = queue.slice(0);
+        queue.length = 0;
+        cp.forEach(function(item) {
+          if (!item.cancelled) {
+            try {
+              item.callback(last);
+            } catch (e) {
+              setTimeout(function() { throw e; }, 0);
+            }
+          }
+        });
+      }, Math.round(next));
+    }
+    queue.push({
+      handle: ++id,
+      callback: callback,
+      cancelled: false
+    });
+    return id;
+  };
+
+  caf = function(handle) {
+    queue.forEach(function(item) {
+      if (item.handle === handle) {
+        item.cancelled = true;
+      }
+    });
+  };
+}
+
+module.exports = function(fn) {
+  return raf.call(root, fn);
+};
+
+module.exports.cancel = function() {
+  caf.apply(root, arguments);
+};
+
+module.exports.polyfill = function(object) {
+  object = object || root;
+  object.requestAnimationFrame = raf;
+  object.cancelAnimationFrame = caf;
+};
+```

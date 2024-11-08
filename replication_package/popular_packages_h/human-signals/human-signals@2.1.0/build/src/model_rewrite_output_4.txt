@@ -1,0 +1,68 @@
+This Node.js code is managing and organizing signals data by names and numbers. It imports signal data, processes it to be easily accessible by both the signal names and their respective numbers, and exports these organized data structures. Here's a breakdown of the functionality:
+
+1. **Imports:**
+   - Signals data is imported from a module `./signals.js`.
+   - Real-time signal maximum (`SIGRTMAX`) is imported from `./realtime.js`.
+   - Signal constants are imported from the `os` module.
+
+2. **Functions:**
+   - `getSignalsByName`: Retrieves all signals and reduces them into an object indexed by signal names.
+   - `getSignalByName`: A helper function for `getSignalsByName` that constructs the individual signal objects.
+   - `getSignalsByNumber`: Retrieves all signals and constructs an object indexed by signal numbers, including real-time signals.
+   - `getSignalByNumber`: A helper function for `getSignalsByNumber` that constructs individual signal objects by number.
+   - `findSignalByNumber`: Finds a signal by verifying either with the name number from `os.constants.signals` or the number directly.
+
+3. **Exports:**
+   - `signalsByName`: An object where each key is a signal's name and the value contains its information.
+   - `signalsByNumber`: An object where each key is a signal's number, and the values contain its information.
+
+Here is a possible rewritten version of the original Node.js code:
+
+```javascript
+"use strict";
+
+// Imports
+const { constants: { signals: OS_SIGNALS } } = require("os");
+const { getSignals } = require("./signals.js");
+const { SIGRTMAX } = require("./realtime.js");
+
+// Generate a map of signals indexed by their name
+const getSignalsByName = function() {
+  const signals = getSignals();
+  return signals.reduce((signalByNameMemo, { name, number, description, supported, action, forced, standard }) => {
+    return {
+      ...signalByNameMemo,
+      [name]: { name, number, description, supported, action, forced, standard }
+    };
+  }, {});
+};
+
+const signalsByName = getSignalsByName();
+exports.signalsByName = signalsByName;
+
+// Generate a map of signals indexed by their number, include real-time signals
+const getSignalsByNumber = function() {
+  const signals = getSignals();
+  const length = SIGRTMAX + 1;
+  const signalsArray = Array.from({ length }, (_, number) => getSignalByNumber(number, signals));
+  return Object.assign({}, ...signalsArray);
+};
+
+const getSignalByNumber = function(number, signals) {
+  const signal = findSignalByNumber(number, signals);
+  if (!signal) return {};
+  
+  const { name, description, supported, action, forced, standard } = signal;
+  return {
+    [number]: { name, number, description, supported, action, forced, standard }
+  };
+};
+
+const findSignalByNumber = function(number, signals) {
+  return signals.find(({ name }) => OS_SIGNALS[name] === number) ||
+         signals.find(signal => signal.number === number);
+};
+
+const signalsByNumber = getSignalsByNumber();
+exports.signalsByNumber = signalsByNumber;
+```

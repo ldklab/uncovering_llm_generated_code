@@ -1,0 +1,80 @@
+The `dequal` package provides a utility to check for deep equality between two JavaScript values. This package can compare all types of JavaScript values, including complex ones like Objects, Arrays, Functions, and more. The module offers two versions: the full version which handles a comprehensive range of JavaScript data types, and a lite version with a reduced feature set for environments like IE9+ or for applications that don't require support for Sets, Maps, and other advanced structures.
+
+Key functionalities include:
+- Recursively comparing nested structures like Objects and Arrays.
+- Treating `null` and `undefined` as distinct.
+- Considering `NaN` values as equal.
+- Using value equality within Sets and Maps, meaning each value is checked for equality instead of reference.
+- Ignoring key order for Objects but respecting the order of Arrays.
+- Comparing functions by reference.
+- Handling of primitive data types like numbers and strings directly.
+
+The package's API consists of a single function, `dequal`, which returns a boolean indicating whether the two inputs are deeply equal.
+
+Here's the implementation of the `dequal` package:
+
+```js
+// dequal.js
+function dequal(foo, bar) {
+  if (foo === bar) return true;
+
+  if (foo && bar && typeof foo == 'object' && typeof bar == 'object') {
+    if (foo.constructor !== bar.constructor) return false;
+
+    let length, i, keys;
+    if (Array.isArray(foo)) {
+      length = foo.length;
+      if (length != bar.length) return false;
+      for (i = length; i-- !== 0;)
+        if (!dequal(foo[i], bar[i])) return false;
+      return true;
+    }
+
+    if ((foo.constructor === RegExp || foo.constructor === Date) && ('' + foo !== '' + bar))
+      return false;
+
+    if (foo.constructor === Set || foo.constructor === Map) {
+      if (foo.size !== bar.size) return false;
+      for (i of foo.entries())
+        if (!bar.has(i[0])) return false;
+      for (i of bar.entries())
+        if (!foo.has(i[0])) return false;
+      return true;
+    }
+
+    if (ArrayBuffer.isView(foo) && ArrayBuffer.isView(bar)) {
+      length = foo.byteLength;
+      if (length != bar.byteLength) return false;
+      for (i = length; i-- !== 0;)
+        if (foo[i] !== bar[i]) return false;
+      return true;
+    }
+
+    keys = Object.keys(foo);
+    length = keys.length;
+    if (length !== Object.keys(bar).length)
+      return false;
+
+    for (i = length; i-- !== 0;)
+      if (!bar.hasOwnProperty(keys[i])) return false;
+
+    for (i = length; i-- !== 0;) {
+      const key = keys[i];
+      if (!dequal(foo[key], bar[key])) return false;
+    }
+
+    return true;
+  }
+
+  return foo !== foo && bar !== bar; // NaN case
+}
+
+module.exports = { dequal };
+
+// Example usage:
+// const { dequal } = require('./dequal');
+// console.log(dequal({ a: 1 }, { a: 1 })); // true
+// console.log(dequal(new Date('2020-01-01'), new Date('2020-01-01'))); // true
+// console.log(dequal([1, 2, 3], [1, 2, 3])); // true
+// console.log(dequal([1, 2], [2, 1])); // false
+```

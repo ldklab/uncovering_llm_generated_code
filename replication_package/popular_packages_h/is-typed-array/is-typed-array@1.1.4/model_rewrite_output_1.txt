@@ -1,0 +1,77 @@
+The provided Node.js code checks if a given value is a typed array. It leverages native JS methods and ES6 features like Symbol.toStringTag for determining whether a value is of a typed array. The code performs the following major functions:
+
+1. **Import Dependencies**: It imports various dependencies like `foreach` for looping, `available-typed-arrays` to obtain typed array names, and utilities for call binding and symbol checking.
+
+2. **Setup Call Bounds**: It sets up function bindings for `Object.prototype.toString`, `Array.prototype.indexOf`, and `String.prototype.slice`.
+
+3. **Typed Array Preparation**: Using the imported `available-typed-arrays`, it creates and iterates over each typed array type, establishing getter methods for their `Symbol.toStringTag` properties. This preparation step ensures compatibility and extraction of the type string tag.
+
+4. **Typed Array Verification Function**: `tryTypedArrays` function which attempts to call the toStringTag getters on `value`, checking if it matches any of the known typed arrays.
+
+5. **Exported Function**: The core function `isTypedArray(value)` checks if the value is a typed array. It first checks for trivial non-object values, then falls back to checking `Object.prototype.toString` tags if `Symbol.toStringTag` isn't available. If toStringTag is present, it uses getter methods to optionally confirm the type.
+
+Here's a rewritten version of the code:
+
+```javascript
+'use strict';
+
+const forEach = require('foreach');
+const availableTypedArrays = require('available-typed-arrays');
+const callBound = require('call-bind/callBound');
+const hasSymbols = require('has-symbols')();
+const getOwnPropertyDescriptor = require('es-abstract/helpers/getOwnPropertyDescriptor');
+const { getPrototypeOf } = Object;
+
+const $toString = callBound('Object.prototype.toString');
+const $indexOf = callBound('Array.prototype.indexOf', true) || function(array, value) {
+	for (let i = 0; i < array.length; i++) {
+		if (array[i] === value) {
+			return i;
+		}
+	}
+	return -1;
+};
+const $slice = callBound('String.prototype.slice');
+const hasToStringTag = hasSymbols && typeof Symbol.toStringTag === 'symbol';
+
+const typedArrays = availableTypedArrays();
+let toStrTags = {};
+
+if (hasToStringTag && getOwnPropertyDescriptor && getPrototypeOf) {
+	forEach(typedArrays, (typedArray) => {
+		const arr = new global[typedArray]();
+		if (!(Symbol.toStringTag in arr)) {
+			throw new EvalError(`${typedArray} is missing Symbol.toStringTag!`);
+		}
+		let proto = getPrototypeOf(arr);
+		let descriptor = getOwnPropertyDescriptor(proto, Symbol.toStringTag);
+		if (!descriptor) {
+			const superProto = getPrototypeOf(proto);
+			descriptor = getOwnPropertyDescriptor(superProto, Symbol.toStringTag);
+		}
+		toStrTags[typedArray] = descriptor.get;
+	});
+}
+
+const tryTypedArrays = (value) => {
+	let isTypedArray = false;
+	forEach(toStrTags, (getter, typedArray) => {
+		if (!isTypedArray) {
+			try {
+				isTypedArray = getter.call(value) === typedArray;
+			} catch {}
+		}
+	});
+	return isTypedArray;
+};
+
+module.exports = function isTypedArray(value) {
+	if (!value || typeof value !== 'object') return false;
+	if (!hasToStringTag) {
+		const tag = $slice($toString(value), 8, -1);
+		return $indexOf(typedArrays, tag) > -1;
+	}
+	if (!getOwnPropertyDescriptor) return false;
+	return tryTypedArrays(value);
+};
+```

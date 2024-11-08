@@ -1,0 +1,63 @@
+The provided Node.js code defines a module that processes content types and return instances based on configuration. Here's a breakdown of its functionality:
+
+1. **Content Type Parsing**: It uses a utility function, `parseContentType`, to extract and verify the content type from the HTTP headers.
+
+2. **Configuration Handling**: It takes in a configuration object (`cfg`) which may include headers, limits, highWaterMark values, and charset options. It checks if these configurations are appropriately set before proceeding.
+
+3. **Type Detection**: The code looks through a list of predefined types (`TYPES`) which it tries to match against the parsed content type. Each type has a `detect` method that checks if the content type is supported.
+
+4. **Instance Creation**: If a match is found, an instance is created using the matched type constructor with the relevant configuration. The highWaterMark and charset options are only added if they are provided in the configuration.
+
+5. **Error Handling**: If no valid content type is detected or provided, errors are thrown to indicate malformed content types or unsupported types.
+
+6. **Exported Function**: The module exports a function that processes the input configuration, ensuring it contains valid headers with a content type, and then attempts to create the appropriate instance using `getInstance`.
+
+Here is the code rewritten while maintaining the described functionality:
+
+```javascript
+'use strict';
+
+const { parseContentType } = require('./utils.js');
+const TYPES = [
+  require('./types/multipart'),
+  require('./types/urlencoded'),
+].filter(type => typeof type.detect === 'function');
+
+function getInstance(cfg) {
+  const headers = cfg.headers;
+  const conType = parseContentType(headers['content-type']);
+  
+  if (!conType) throw new Error('Malformed content type');
+
+  for (const type of TYPES) {
+    if (!type.detect(conType)) continue;
+
+    const instanceCfg = {
+      limits: cfg.limits,
+      headers,
+      conType,
+      highWaterMark: cfg.highWaterMark,
+      fileHwm: cfg.fileHwm,
+      defCharset: cfg.defCharset,
+      defParamCharset: cfg.defParamCharset,
+      preservePath: cfg.preservePath ?? false,
+    };
+
+    return new type(instanceCfg);
+  }
+
+  throw new Error(`Unsupported content type: ${headers['content-type']}`);
+}
+
+module.exports = (cfg) => {
+  if (typeof cfg !== 'object' || !cfg) cfg = {};
+
+  const headers = cfg.headers;
+
+  if (typeof headers !== 'object' || !headers || typeof headers['content-type'] !== 'string') {
+    throw new Error('Missing Content-Type');
+  }
+
+  return getInstance(cfg);
+};
+```

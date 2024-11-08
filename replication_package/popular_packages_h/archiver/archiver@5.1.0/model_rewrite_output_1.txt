@@ -1,0 +1,61 @@
+The provided Node.js code defines a "vending" module that dispenses instances of an "Archiver" class. The main functionality of this code can be summarized as follows:
+
+1. **Archiver Instantiation**: The code provides a function `vending` that creates new instances of the `Archiver` class using different archive formats.
+
+2. **Format Registration**: It allows registration of archive formats using the `vending.registerFormat` function. This assigns specific modules to formats which can then be used by the `Archiver` instances.
+
+3. **Instance Creation**: The method `vending.create` creates an instance of `Archiver` with the desired format, provided the format has been registered using `registerFormat`.
+
+4. **Format Checking**: The function `vending.isRegisteredFormat` checks if a particular format is already registered.
+
+5. **Pre-Registered Formats**: The code pre-registers three formats: 'zip', 'tar', and 'json', by requiring respective modules.
+
+Below is the possible rewrite for this Node.js code:
+
+```javascript
+const Archiver = require('./lib/core');
+
+const formats = {};
+
+function vending(format, options) {
+  return vending.create(format, options);
+}
+
+vending.create = function(format, options) {
+  if (!formats[format]) {
+    throw new Error(`create(${format}): format not registered`);
+  }
+
+  const instance = new Archiver(format, options);
+  instance.setFormat(format);
+  instance.setModule(new formats[format](options));
+
+  return instance;
+};
+
+vending.registerFormat = function(format, module) {
+  if (formats[format]) {
+    throw new Error(`register(${format}): format already registered`);
+  }
+
+  if (typeof module !== 'function') {
+    throw new Error(`register(${format}): format module invalid`);
+  }
+
+  if (typeof module.prototype.append !== 'function' || typeof module.prototype.finalize !== 'function') {
+    throw new Error(`register(${format}): format module missing methods`);
+  }
+
+  formats[format] = module;
+};
+
+vending.isRegisteredFormat = function(format) {
+  return !!formats[format];
+};
+
+vending.registerFormat('zip', require('./lib/plugins/zip'));
+vending.registerFormat('tar', require('./lib/plugins/tar'));
+vending.registerFormat('json', require('./lib/plugins/json'));
+
+module.exports = vending;
+```

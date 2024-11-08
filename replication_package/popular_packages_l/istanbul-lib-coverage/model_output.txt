@@ -1,0 +1,132 @@
+The `istanbul-lib-coverage` package provides a set of tools to handle coverage data. Its primary functionality is to read, merge, and summarize code coverage information. This package allows users to work with coverage data in a consistent API, even enabling the merging of multiple coverage sources into a single coverage map.
+
+Here are the main components and functions described in the README:
+
+1. **Coverage Map Creation**: 
+   - `createCoverageMap(coverageData)` - This function creates a `CoverageMap` object from coverage data, which is typically collected globally.
+
+2. **Coverage Map Merging**: 
+   - `map.merge(otherCoverageMap)` - Allows merging another coverage map into the existing map. This is useful when combining results from different test runs or environments.
+
+3. **Summary Creation and Merging**:
+   - `createCoverageSummary()` - Creates an empty `CoverageSummary` object that can accumulate summarized coverage data.
+   - `summary.merge(s)` - Merges a file-specific summary into the overall summary.
+
+4. **Inspection**:
+   - `map.files()` - Returns an array of file paths for which coverage data is present in the map.
+   - `map.fileCoverageFor(file)` - Retrieves coverage information for a specific file.
+   - `fc.toSummary()` - Converts file coverage data to a summary format.
+
+5. **Output**:
+   - Finally, the global coverage summary is logged, providing a consolidated overview of the code coverage.
+
+Now, let's write the code for this package:
+
+```javascript
+// istanbul-lib-coverage.js
+
+class CoverageSummary {
+    constructor() {
+        this.total = 0;
+        this.covered = 0;
+        this.skipped = 0;
+        this.pct = 0;
+    }
+
+    merge(summary) {
+        this.total += summary.total;
+        this.covered += summary.covered;
+        this.skipped += summary.skipped;
+        this.pct = (this.total > 0) ? (this.covered / this.total) * 100 : 0;
+    }
+}
+
+class CoverageData {
+    constructor(data) {
+        this.data = data;
+    }
+
+    toSummary() {
+        const summary = new CoverageSummary();
+        const { lines } = this.data;
+
+        summary.total = Object.keys(lines).length;
+        summary.covered = Object.values(lines).filter(n => n > 0).length;
+        summary.skipped = summary.total - summary.covered;
+        summary.pct = (summary.covered / summary.total) * 100 || 0;
+
+        return summary;
+    }
+}
+
+class CoverageMap {
+    constructor(globalCoverageVar) {
+        this.coverageMap = globalCoverageVar || {};
+    }
+
+    merge(otherCoverageMap) {
+        Object.keys(otherCoverageMap.coverageMap).forEach(file => {
+            if (this.coverageMap[file]) {
+                // Merging logic if file exists in both maps.
+                const data = this.coverageMap[file].data;
+                const otherData = otherCoverageMap.coverageMap[file].data;
+
+                Object.keys(otherData.lines).forEach(line => {
+                    data.lines[line] = (data.lines[line] || 0) + otherData.lines[line];
+                });
+            } else {
+                this.coverageMap[file] = otherCoverageMap.coverageMap[file];
+            }
+        });
+    }
+
+    files() {
+        return Object.keys(this.coverageMap);
+    }
+
+    fileCoverageFor(file) {
+        return this.coverageMap[file];
+    }
+}
+
+function createCoverageMap(globalCoverageVar) {
+    const map = new CoverageMap(globalCoverageVar);
+    for (const file in globalCoverageVar) {
+        map.coverageMap[file] = new CoverageData(globalCoverageVar[file]);
+    }
+    return map;
+}
+
+function createCoverageSummary() {
+    return new CoverageSummary();
+}
+
+module.exports = {
+    createCoverageMap,
+    createCoverageSummary
+};
+
+// Example usage
+var libCoverage = require('./istanbul-lib-coverage');
+var globalCoverageVar = {
+    'file1.js': { lines: { 1: 1, 2: 0, 3: 1 } },
+    'file2.js': { lines: { 1: 0, 2: 1 } }
+};
+
+var otherCoverageMap = {
+    'file1.js': { lines: { 1: 0, 2: 1 } }
+};
+
+var map = libCoverage.createCoverageMap(globalCoverageVar);
+var summary = libCoverage.createCoverageSummary();
+
+map.merge(libCoverage.createCoverageMap(otherCoverageMap));
+
+map.files().forEach(function(f) {
+    var fc = map.fileCoverageFor(f),
+        s = fc.toSummary();
+    summary.merge(s);
+});
+
+console.log('Global summary', summary);
+```

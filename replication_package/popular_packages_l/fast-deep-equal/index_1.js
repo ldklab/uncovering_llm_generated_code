@@ -1,0 +1,110 @@
+// Helper functions for object and array checks
+function isObject(obj) {
+  return obj !== null && typeof obj === 'object';
+}
+
+function areDatesEqual(a, b) {
+  return a.getTime() === b.getTime();
+}
+
+function areRegExpsEqual(a, b) {
+  return a.toString() === b.toString();
+}
+
+function areArraysEqual(a, b, equalityFunc) {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (!equalityFunc(a[i], b[i])) return false;
+  }
+  return true;
+}
+
+function areObjectsEqual(a, b, equalityFunc) {
+  const keysA = Object.keys(a);
+  const keysB = Object.keys(b);
+  if (keysA.length !== keysB.length) return false;
+  for (let key of keysA) {
+    if (!equalityFunc(a[key], b[key])) return false;
+  }
+  return true;
+}
+
+// Standard Deep Equal
+function deepEqual(a, b) {
+  if (a === b) return true;
+  if (!isObject(a) || !isObject(b)) return false;
+
+  if (a instanceof Date && b instanceof Date) {
+    return areDatesEqual(a, b);
+  }
+  if (a instanceof RegExp && b instanceof RegExp) {
+    return areRegExpsEqual(a, b);
+  }
+  if (Array.isArray(a) && Array.isArray(b)) {
+    return areArraysEqual(a, b, deepEqual);
+  }
+  return areObjectsEqual(a, b, deepEqual);
+}
+
+module.exports.deepEqual = deepEqual;
+
+// ES6 Deep Equal
+function deepEqualES6(a, b) {
+  if (a === b) return true;
+  if (!isObject(a) || !isObject(b)) return false;
+
+  if (a instanceof Date && b instanceof Date) {
+    return areDatesEqual(a, b);
+  }
+  if (a instanceof RegExp && b instanceof RegExp) {
+    return areRegExpsEqual(a, b);
+  }
+  if (Array.isArray(a) && Array.isArray(b)) {
+    return areArraysEqual(a, b, deepEqualES6);
+  }
+  if (a instanceof Map && b instanceof Map) {
+    if (a.size !== b.size) return false;
+    for (let [key, value] of a) {
+      if (!b.has(key) || !deepEqualES6(value, b.get(key))) return false;
+    }
+    return true;
+  }
+  if (a instanceof Set && b instanceof Set) {
+    if (a.size !== b.size) return false;
+    for (let value of a) {
+      if (!b.has(value)) return false;
+    }
+    return true;
+  }
+  if (ArrayBuffer.isView(a) && ArrayBuffer.isView(b)) {
+    return a.byteLength === b.byteLength && a.every((val, i) => val === b[i]);
+  }
+  return areObjectsEqual(a, b, deepEqualES6);
+}
+
+module.exports.deepEqualES6 = deepEqualES6;
+
+// React-Specific Deep Equal
+function reactEqual(a, b) {
+  return deepEqualReact(a, b, new Set());
+}
+
+function deepEqualReact(a, b, visited) {
+  if (a === b) return true;
+  if (!isObject(a) || !isObject(b)) return false;
+
+  if (Array.isArray(a) && Array.isArray(b)) {
+    return areArraysEqual(a, b, (x, y) => deepEqualReact(x, y, visited));
+  }
+
+  const keysA = Object.keys(a).filter(key => key !== '_owner');
+  const keysB = Object.keys(b).filter(key => key !== '_owner');
+  if (keysA.length !== keysB.length) return false;
+
+  for (let key of keysA) {
+    if (!deepEqualReact(a[key], b[key], visited)) return false;
+  }
+  return true;
+}
+
+module.exports.reactEqual = reactEqual;

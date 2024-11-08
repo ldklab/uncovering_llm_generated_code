@@ -1,0 +1,67 @@
+The Node.js code is a Babel preset for transforming TypeScript code. The preset uses Babel plugins to modify the Babel toolchain, converting TypeScript into regular JavaScript. The `@babel/plugin-transform-typescript` plugin is used for this transformation.
+
+Here's a detailed explanation:
+
+- The code imports some utilities such as `@babel/helper-plugin-utils` for creating a Babel plugin and `@babel/helper-validator-option` for validating options passed to the preset.
+- It defines an option validator `v` using `OptionValidator` from `@babel/helper-validator-option`. This is used to validate configuration options passed to the preset.
+- The default export is a function declared using `declare` from `@babel/helper-plugin-utils`. This function sets up the Babel preset.
+- The function receives two parameters: `api` and `opts`. These represent the Babel API and options provided by the user, respectively.
+- The function asserts that the Babel version is 7.
+- It destructures several options from `opts`, such as `allowDeclareFields`, `allowNamespaces`, `jsxPragma`, and `onlyRemoveTypeImports`.
+- The options `jsxPragmaFrag`, `allExtensions`, and `isTSX` are validated and assigned default values if not provided by the user.
+- If `isTSX` is true, it validates that `allExtensions` is also true.
+- It creates a configuration object `pluginOptions` for the TypeScript transformation plugin, based on the given options and whether the file is TypeScript or TSX.
+- It then returns an object with an `overrides` array, specifying different configurations for `.ts` and `.tsx` files if `allExtensions` is false, otherwise applying a single configuration to all files if `allExtensions` is true.
+
+```javascript
+"use strict";
+
+import { declare } from "@babel/helper-plugin-utils";
+import transformTypescript from "@babel/plugin-transform-typescript";
+import { OptionValidator } from "@babel/helper-validator-option";
+
+const v = new OptionValidator("@babel/preset-typescript");
+
+export default declare((api, opts) => {
+  api.assertVersion(7);
+
+  const {
+    allowDeclareFields,
+    allowNamespaces,
+    jsxPragma,
+    onlyRemoveTypeImports
+  } = opts;
+
+  const jsxPragmaFrag = v.validateStringOption("jsxPragmaFrag", opts.jsxPragmaFrag, "React.Fragment");
+  const allExtensions = v.validateBooleanOption("allExtensions", opts.allExtensions, false);
+  const isTSX = v.validateBooleanOption("isTSX", opts.isTSX, false);
+
+  if (isTSX) {
+    v.invariant(allExtensions, "isTSX:true requires allExtensions:true");
+  }
+
+  const pluginOptions = (isTSX) => ({
+    allowDeclareFields,
+    allowNamespaces,
+    isTSX,
+    jsxPragma,
+    jsxPragmaFrag,
+    onlyRemoveTypeImports
+  });
+
+  return {
+    overrides: allExtensions
+      ? [{ plugins: [[transformTypescript, pluginOptions(isTSX)]] }]
+      : [
+          {
+            test: /\.ts$/,
+            plugins: [[transformTypescript, pluginOptions(false)]]
+          },
+          {
+            test: /\.tsx$/,
+            plugins: [[transformTypescript, pluginOptions(true)]]
+          }
+        ]
+  };
+});
+```

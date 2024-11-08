@@ -1,0 +1,91 @@
+The `cors` package is a middleware for Node.js applications using Express (or Connect) to enable Cross-Origin Resource Sharing (CORS) with flexible configuration options. CORS is a mechanism that enables web applications running at one origin (domain) to request resources from a different origin. This is essential for enabling resources like APIs to be shared across different web servers or clients.
+
+Here's the functionality as described in the README.md:
+
+1. **Basic Middleware Setup**: The middleware can be added globally to an Express application to allow CORS for all routes by using `app.use(cors())`.
+
+2. **Single Route Middleware**: CORS can be enabled for individual routes by adding `cors()` middleware directly to route handlers.
+
+3. **Customizable Options**: Provides various configuration options such as specifying allowed origins (single, multiple, or regex), methods, headers, credentials, and more. These configurations can be static or dynamic based on each request.
+
+4. **Dynamic Configuration**: CORS options can be set dynamically for each request by providing a function that determines the allowed origins or other CORS options conditionally.
+
+5. **Pre-Flight Support**: Automatically handles CORS pre-flight requests for complex HTTP methods by responding to `OPTIONS` requests. This can be configured specifically or handled across all routes.
+
+6. **Async Configuration**: Supports asynchronous configuration of CORS permissions by using a function that provides permissions via a callback.
+
+Here's how the package might be implemented:
+
+```javascript
+// cors.js
+
+'use strict';
+
+module.exports = function cors(options) {
+  return function(req, res, next) {
+    const defaultOptions = {
+      origin: '*',
+      methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
+      preflightContinue: false,
+      optionsSuccessStatus: 204
+    };
+
+    // Merge the provided options with defaults
+    const corsOptions = { ...defaultOptions, ...options };
+    
+    // Determine origin
+    const origin = typeof corsOptions.origin === 'function' ?
+      corsOptions.origin(req.header('Origin'), createOriginHandler(res, next, corsOptions)) :
+      corsOptions.origin;
+    
+    if (corsOptions.origin === true || origin === req.header('Origin')) {
+      setCorsHeaders(res, req, corsOptions);
+    }
+
+    if (req.method === 'OPTIONS') {
+      if (corsOptions.preflightContinue) {
+        return next();
+      } else {
+        res.sendStatus(corsOptions.optionsSuccessStatus);
+      }
+    } else {
+      next();
+    }
+  };
+};
+
+function setCorsHeaders(res, req, options) {
+  // Set CORS headers
+  res.header('Access-Control-Allow-Origin', options.origin || '*');
+  res.header('Access-Control-Allow-Methods', options.methods);
+  if (options.credentials) {
+    res.header('Access-Control-Allow-Credentials', 'true');
+  }
+  if (options.allowedHeaders) {
+    res.header('Access-Control-Allow-Headers', Array.isArray(options.allowedHeaders) ? options.allowedHeaders.join(',') : options.allowedHeaders);
+  } else {
+    res.header('Access-Control-Allow-Headers', req.header('Access-Control-Request-Headers'));
+  }
+  if (options.exposedHeaders) {
+    res.header('Access-Control-Expose-Headers', Array.isArray(options.exposedHeaders) ? options.exposedHeaders.join(',') : options.exposedHeaders);
+  }
+  if (options.maxAge) {
+    res.header('Access-Control-Max-Age', options.maxAge.toString());
+  }
+}
+
+function createOriginHandler(res, next, options) {
+  return function (err, allow) {
+    if (err) {
+      next(err);
+    } else if (allow) {
+      setCorsHeaders(res, {}, options);
+      next();
+    } else {
+      res.sendStatus(403);
+    }
+  };
+}
+```
+
+This code provides a basic implementation of CORS middleware for Express.js to showcase how the described functionalities could be structured. It includes handling of origin, configuring CORS headers, and managing pre-flight requests, mimicking typical behavior described in the package's documentation.

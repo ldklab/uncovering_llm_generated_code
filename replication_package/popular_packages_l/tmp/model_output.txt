@@ -1,0 +1,120 @@
+The `Tmp` package provides functionality for creating temporary files and directories in a Node.js environment. It offers both asynchronous and synchronous APIs, with all parameters optional. The library uses `crypto` for generating random names and includes fallback mechanisms. It allows setting options for cleaning up temporary files on process exit, and users can specify custom temporary directory paths.
+
+Key features include:
+
+1. **Temporary File Creation**: 
+   - Asynchronous file creation with a callback providing error, path, file descriptor, and a cleanup callback.
+   - Synchronous file creation returns an object with file path, descriptor, and a cleanup callback.
+
+2. **Temporary Directory Creation**:
+   - Asynchronous directory creation with callback.
+   - Synchronous version provides directory path and cleanup callback.
+   - Supports `unsafeCleanup` to remove non-empty directories.
+
+3. **Filename Generation**:
+   - Asynchronous and synchronous temporary filename generation.
+
+4. **Options Parameter**:
+   - Allows customization like specifying name, prefix, postfix, mode, directory, and behavior on cleanup.
+
+5. **Graceful Cleanup**:
+   - A method to set automatic cleanup of temporary files/directories on process exit.
+
+6. **Advanced Usage**:
+   - Supports options for creating files with specific prefixes, postfixes, modes, controlling descriptors, etc.
+
+Here’s how such a package might be implemented in Node.js:
+
+```javascript
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
+const crypto = require('crypto');
+
+const tempFiles = [];
+const optionsDefaults = {
+  dir: os.tmpdir(),
+  mode: 0o600,
+  prefix: 'tmp-',
+  postfix: '',
+  keep: false,
+  tries: 3,
+};
+
+function randomChars() {
+  return crypto.randomBytes(3).toString('hex');
+}
+
+function tmpNameSync(options = {}) {
+  const opts = { ...optionsDefaults, ...options };
+  for (let i = 0; i < opts.tries; i++) {
+    const name = path.join(opts.dir, opts.prefix + randomChars() + opts.postfix);
+    if (!fs.existsSync(name)) {
+      return name;
+    }
+  }
+  throw new Error('Could not generate a unique tmp filename');
+}
+
+function fileSync(options = {}) {
+  const name = tmpNameSync(options);
+  const fd = fs.openSync(name, 'w', options.mode || 0o600);
+  const cleanupCallback = () => {
+    try {
+      fs.closeSync(fd);
+    } catch (err) {}
+    try {
+      if (!options.keep) fs.unlinkSync(name);
+    } catch (err) {}
+  };
+
+  if (!options.keep) {
+    tempFiles.push(cleanupCallback);
+  }
+
+  return { name, fd, cleanupCallback };
+}
+
+function dirSync(options = {}) {
+  const name = tmpNameSync(options);
+  fs.mkdirSync(name, options.mode || 0o700);
+  const cleanupCallback = () => {
+    try {
+      fs.rmdirSync(name, { recursive: options.unsafeCleanup || false });
+    } catch (err) {}
+  };
+
+  if (!options.keep) {
+    tempFiles.push(cleanupCallback);
+  }
+
+  return { name, cleanupCallback };
+}
+
+function setGracefulCleanup() {
+  process.on('exit', () => {
+    tempFiles.forEach(callback => callback());
+  });
+}
+
+module.exports = {
+  fileSync,
+  dirSync,
+  tmpNameSync,
+  setGracefulCleanup,
+};
+
+// Example usage
+const tmp = require('./tmp'); // Require the module
+tmp.setGracefulCleanup();
+
+const tmpfile = tmp.fileSync();
+console.log('Temp file created at:', tmpfile.name);
+tmpfile.cleanupCallback();
+
+const tmpdir = tmp.dirSync();
+console.log('Temp directory created at:', tmpdir.name);
+tmpdir.cleanupCallback();
+```
+
+This code defines a simple Node.js module for creating temporary files and directories, with options for customization and cleanup on exit. It makes use of Node.js core modules like `fs`, `os`, and `crypto` for file operations, path handling, and generating random filenames.

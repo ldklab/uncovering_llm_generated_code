@@ -1,0 +1,67 @@
+The given Node.js code is a script designed to obtain AWS credentials via two primary methods: environment variables and a shared credentials file. If neither of these methods yield credentials, it logs an error. It simulates loading credentials from different sources and organizes this logic into functions.
+
+**Functionality**:
+1. **Constants**: Define paths for the default AWS credentials and config files based on the user's home directory.
+2. **`loadFromEnv` Function**: Tries to load AWS credentials from environment variables (`AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`). Returns credentials if available, otherwise returns `null`.
+3. **`loadFromCredentialsFile` Function**: Reads the credentials from a file if it exists. It parses the file to extract `aws_access_key_id` and `aws_secret_access_key`, assuming that the file contents are correctly formatted. Returns the credentials if found, otherwise `null`.
+4. **`defaultProvider` Function**: A wrapper function that first attempts to load credentials from environment variables. If unsuccessful, it attempts to load them from a specified file. Further loading strategies like SSO or EC2 metadata are hinted at, but not implemented.
+5. **Usage Example**: Demonstrates calling the `defaultProvider` function and handling success or failure cases with Promises.
+
+Here is the rewritten code:
+
+```javascript
+const fs = require('fs');
+const path = require('path');
+
+// Constants for Default File Paths
+const DEFAULT_CREDENTIALS_FILEPATH = path.join(process.env.HOME || process.env.USERPROFILE, '.aws', 'credentials');
+const DEFAULT_CONFIG_FILEPATH = path.join(process.env.HOME || process.env.USERPROFILE, '.aws', 'config');
+
+// Function to load from environment variables
+function loadFromEnv() {
+    return { 
+        accessKeyId: process.env.AWS_ACCESS_KEY_ID, 
+        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY 
+    }.accessKeyId && { 
+        accessKeyId: process.env.AWS_ACCESS_KEY_ID, 
+        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY 
+    } || null;
+}
+
+// Function to load from shared credentials file
+function loadFromCredentialsFile(filepath) {
+    if (fs.existsSync(filepath)) {
+        const contents = fs.readFileSync(filepath, 'utf-8');
+        const accessKeyId = contents.match(/aws_access_key_id\s*=\s*(.*)/)?.[1];
+        const secretAccessKey = contents.match(/aws_secret_access_key\s*=\s*(.*)/)?.[1];
+        return accessKeyId && secretAccessKey ? { accessKeyId, secretAccessKey } : null;
+    }
+    return null;
+}
+
+// Simplified version of the defaultProvider function
+function defaultProvider({ filepath = DEFAULT_CREDENTIALS_FILEPATH } = {}) {
+    return new Promise((resolve, reject) => {
+        let credentials = loadFromEnv();
+        if (credentials) {
+            return resolve(credentials);
+        }
+
+        credentials = loadFromCredentialsFile(filepath);
+        if (credentials) {
+            return resolve(credentials);
+        }
+
+        return reject(new Error('No credentials found'));
+    });
+}
+
+// Usage example
+defaultProvider()
+    .then(credentials => {
+        console.log('Loaded credentials:', credentials);
+    })
+    .catch(error => {
+        console.error('Failed to load credentials:', error.message);
+    });
+```

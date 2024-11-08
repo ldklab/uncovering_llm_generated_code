@@ -1,0 +1,165 @@
+The provided Node.js code is a module for handling file cache with versioning based on file changes. It uses the `flat-cache` package for storing metadata of files like size, modified time, or checksums to determine if files have changed compared to a previous state. Key functionalities of the module include:
+
+1. `createFromFile`: Initializes the cache with file path and optional checksum use.
+2. `create`: Sets up a cache based on the ID and path, allowing for either checksum-based or size-and-time-based change detection.
+3. `hasFileChanged`: Checks if a file has changed using metadata.
+4. `analyzeFiles`: Analyzes an array of files to categorize them as changed, not changed, or not found.
+5. `getUpdatedFiles`: Returns the list of files that have been updated compared to the cached state.
+6. `normalizeEntries`: Gathers file descriptors for given files to understand their cache status.
+7. `removeEntry` and `deleteCacheFile`: Remove file entries from cache or delete the entire cache file.
+8. `destroy`: Clears the memory cache and destroys the disk cache.
+9. `reconcile`: Syncs and persists the current file states to the cache, with an option to prune deleted entries.
+
+Here is a rewritten version of the code, retaining the same functionality:
+
+```javascript
+const path = require('path');
+const crypto = require('crypto');
+const fs = require('fs');
+const flatCache = require('flat-cache');
+
+module.exports = {
+  createFromFile: function (filePath, useChecksum) {
+    const fname = path.basename(filePath);
+    const dir = path.dirname(filePath);
+    return this.create(fname, dir, useChecksum);
+  },
+
+  create: function (cacheId, _path, useChecksum) {
+    const cache = flatCache.load(cacheId, _path);
+    let normalizedEntries = {};
+
+    const removeNotFoundFiles = () => {
+      cache.keys().forEach(fPath => {
+        try {
+          fs.statSync(fPath);
+        } catch (err) {
+          if (err.code === 'ENOENT') {
+            cache.removeKey(fPath);
+          }
+        }
+      });
+    };
+
+    removeNotFoundFiles();
+
+    return {
+      cache,
+
+      getHash: buffer => crypto.createHash('md5').update(buffer).digest('hex'),
+
+      hasFileChanged(file) {
+        return this.getFileDescriptor(file).changed;
+      },
+
+      analyzeFiles(files = []) {
+        let me = this;
+        let res = { changedFiles: [], notFoundFiles: [], notChangedFiles: [] };
+
+        me.normalizeEntries(files).forEach(entry => {
+          if (entry.changed) res.changedFiles.push(entry.key);
+          else if (entry.notFound) res.notFoundFiles.push(entry.key);
+          else res.notChangedFiles.push(entry.key);
+        });
+
+        return res;
+      },
+
+      getFileDescriptor(file) {
+        let fstat;
+        try {
+          fstat = fs.statSync(file);
+        } catch (ex) {
+          this.removeEntry(file);
+          return { key: file, notFound: true, err: ex };
+        }
+
+        return useChecksum ? 
+          this._getFileDescriptorUsingChecksum(file) :
+          this._getFileDescriptorUsingMtimeAndSize(file, fstat);
+      },
+
+      _getFileDescriptorUsingMtimeAndSize(file, fstat) {
+        let meta = cache.getKey(file);
+        let cSize = fstat.size;
+        let cTime = fstat.mtime.getTime();
+        let isDifferent = !meta || cSize !== meta.size || cTime !== meta.mtime;
+
+        meta = meta || { size: cSize, mtime: cTime };
+        normalizedEntries[file] = { key: file, changed: isDifferent, meta };
+        return normalizedEntries[file];
+      },
+
+      _getFileDescriptorUsingChecksum(file) {
+        let meta = cache.getKey(file);
+        let contentBuffer = '';
+        try {
+          contentBuffer = fs.readFileSync(file);
+        } catch {}
+
+        const hash = this.getHash(contentBuffer);
+        const isDifferent = !meta || hash !== meta.hash;
+
+        meta = meta || { hash };
+        normalizedEntries[file] = { key: file, changed: isDifferent, meta };
+        return normalizedEntries[file];
+      },
+
+      getUpdatedFiles(files = []) {
+        return this.normalizeEntries(files)
+          .filter(entry => entry.changed)
+          .map(entry => entry.key);
+      },
+
+      normalizeEntries(files = []) {
+        return files.map(file => this.getFileDescriptor(file));
+      },
+
+      removeEntry(entryName) {
+        delete normalizedEntries[entryName];
+        cache.removeKey(entryName);
+      },
+
+      deleteCacheFile() {
+        cache.removeCacheFile();
+      },
+
+      destroy() {
+        normalizedEntries = {};
+        cache.destroy();
+      },
+
+      _getMetaForFileUsingCheckSum(cacheEntry) {
+        const contentBuffer = fs.readFileSync(cacheEntry.key);
+        const hash = this.getHash(contentBuffer);
+        return Object.assign(cacheEntry.meta, { hash });
+      },
+
+      _getMetaForFileUsingMtimeAndSize(cacheEntry) {
+        const stat = fs.statSync(cacheEntry.key);
+        return Object.assign(cacheEntry.meta, {
+          size: stat.size,
+          mtime: stat.mtime.getTime(),
+        });
+      },
+
+      reconcile(noPrune = true) {
+        removeNotFoundFiles();
+        const entries = normalizedEntries;
+        for (const entryName in entries) {
+          const cacheEntry = entries[entryName];
+          try {
+            const meta = useChecksum 
+              ? this._getMetaForFileUsingCheckSum(cacheEntry)
+              : this._getMetaForFileUsingMtimeAndSize(cacheEntry);
+            cache.setKey(entryName, meta);
+          } catch (err) {
+            if (err.code !== 'ENOENT') throw err;
+          }
+        }
+        cache.save(noPrune);
+      },
+    };
+  },
+};
+```

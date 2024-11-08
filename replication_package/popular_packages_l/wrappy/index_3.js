@@ -1,0 +1,51 @@
+// wrappy.js
+function wrappy(wrapperFn) {
+  // Returns a new function which takes 'fn' as argument and wraps it using 'wrapperFn'.
+  return function(fn) {
+    // Create a wrapped function by passing 'fn' into 'wrapperFn'.
+    const wrapped = wrapperFn(fn);
+
+    // Copy properties from the original function 'fn' to the newly wrapped function.
+    Object.keys(fn).forEach((prop) => {
+      wrapped[prop] = fn[prop];
+    });
+
+    return wrapped; // Return the wrapped function with copied properties.
+  };
+}
+
+// Export the wrappy function for use in other modules.
+module.exports = wrappy;
+
+// Example usage:
+
+// Import the wrappy function from the module
+const wrappy = require("./wrappy");
+
+// Use wrappy to create `once`, which is a function that modifies a callback 
+// so that it can only be invoked once, even if called multiple times.
+const once = wrappy((cb) => {
+  let called = false; // To track if the callback has been called already.
+  return function() {
+    if (called) return; // If already called, do nothing.
+    called = true; // Mark as called on first invocation.
+    return cb.apply(this, arguments); // Call the original callback with all arguments.
+  };
+});
+
+// Example callback function
+function printBoo() {
+  console.log('boo');
+}
+
+// Add a custom property to the function
+printBoo.iAmBooPrinter = true;
+
+// Wrap the function with `once` to ensure it's only invoked once
+const onlyPrintOnce = once(printBoo);
+
+onlyPrintOnce(); // Output: 'boo'
+onlyPrintOnce(); // No output
+
+// Confirm that function properties are preserved after wrapping
+console.assert(onlyPrintOnce.iAmBooPrinter === true, "Property not retained");

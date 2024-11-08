@@ -1,0 +1,70 @@
+The provided Node.js code defines a module that exports a class named `LeakDetector`. This class is utilized to detect potential memory leaks in non-primitive JavaScript values by utilizing the JavaScript garbage collector (GC).
+
+### Functionality Explanation:
+1. **Module Imports:** The code imports several modules using lazy loading functions. This includes `util`, `v8`, `vm`, `jest-get-type`, and `pretty-format`.
+
+2. **`LeakDetector` Class:** 
+   - **Constructor:** The constructor accepts a non-primitive value and registers it with the `FinalizationRegistry` to monitor if the value is garbage collected. If a primitive value is passed, it throws a `TypeError`.
+   - **`isLeaking` Method:** This asynchronous method checks whether the registered object is still being held in memory. It manually runs the garbage collector multiple times to allow any background tasks to complete, helping ensure that the garbage collector has had time to potentially collect the object.
+   - **`_runGarbageCollector` Method:** This method runs the garbage collector manually. It first ensures that the GC is exposed, invokes it, and then hides it again if it was initially hidden.
+
+3. **Garbage Collection:** The code uses V8 specific flags and methods to expose and run the garbage collector, which isn't typically directly accessible in Node.js environments.
+
+4. **Use Case:** The class is useful for testing purposes, particularly in scenarios where memory leak detection is crucial. It relies on advanced Node.js and V8 features to evaluate memory retention for non-primitive values.
+
+Here is the rewritten code as a single block:
+
+```javascript
+'use strict';
+
+const util = require('util');
+const v8 = require('v8');
+const vm = require('vm');
+const jestGetType = require('jest-get-type');
+const prettyFormat = require('pretty-format');
+
+const tick = util.promisify(setImmediate);
+
+class LeakDetector {
+  _isReferenceBeingHeld;
+  _finalizationRegistry;
+  
+  constructor(value) {
+    if (jestGetType.isPrimitive(value)) {
+      throw new TypeError(
+        `Primitives cannot leak memory. You passed a ${typeof value}: <${prettyFormat.format(value)}>`
+      );
+    }
+
+    this._finalizationRegistry = new FinalizationRegistry(() => {
+      this._isReferenceBeingHeld = false;
+    });
+    this._finalizationRegistry.register(value, undefined);
+    this._isReferenceBeingHeld = true;
+    value = null;
+  }
+  
+  async isLeaking() {
+    this._runGarbageCollector();
+
+    for (let i = 0; i < 10; i++) {
+      await tick();
+    }
+    
+    return this._isReferenceBeingHeld;
+  }
+
+  _runGarbageCollector() {
+    const isGarbageCollectorHidden = globalThis.gc == null;
+
+    v8.setFlagsFromString('--expose-gc');
+    vm.runInNewContext('gc')();
+
+    if (isGarbageCollectorHidden) {
+      v8.setFlagsFromString('--no-expose-gc');
+    }
+  }
+}
+
+module.exports = LeakDetector;
+```

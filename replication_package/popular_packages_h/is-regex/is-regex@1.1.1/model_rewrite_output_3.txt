@@ -1,0 +1,71 @@
+The Node.js code provided is a utility function to determine if a given value is a regular expression (RegExp) object. 
+
+Here's a step-by-step explanation of how it works:
+
+1. **Dependencies**: The code uses the `has-symbols` package to check if the environment supports symbols, specifically the `Symbol.toStringTag`.
+
+2. **Symbol Check**: It checks for the existence of `Symbol.toStringTag`. If it does exist (`hasToStringTag` is true), it sets up several functions and objects to aid in detecting RegExp objects more accurately, especially in environments where RegExp objects might not be straightforward to identify.
+
+3. **Function Binding**: A bound version of `hasOwnProperty` and `RegExp.prototype.exec` is set up to be used later for accurate method calling.
+
+4. **Bad Stringifier Object**: An object called `badStringifier` is created with custom `toString` and `valueOf` methods that will throw an error identified by `isRegexMarker`. This is used to test if `value` can behave like a RegExp object when certain operations are performed on it.
+
+5. **RegExp Detection Logic**:
+   - If `hasToStringTag` is true, the function first checks if `value` is an object and then looks for a data property descriptor for 'lastIndex'. It attempts to perform a mock execution using `regexExec` and `badStringifier`. If it throws an error equal to `isRegexMarker`, it confirms the object is a RegExp.
+   - If `hasToStringTag` is false, it relies on the default `Object.prototype.toString` method to verify if the value is a RegExp object by comparing the result to `[object RegExp]`.
+
+Below is a rewritten version of this Node.js code:
+
+```javascript
+'use strict';
+
+const hasSymbols = require('has-symbols')();
+const hasToStringTag = hasSymbols && typeof Symbol.toStringTag === 'symbol';
+
+const toStr = Object.prototype.toString;
+const gOPD = Object.getOwnPropertyDescriptor;
+const regexClass = '[object RegExp]';
+
+function isRegex(value) {
+    if (hasToStringTag) {
+        if (!value || typeof value !== 'object') {
+            return false;
+        }
+
+        const descriptor = gOPD(value, 'lastIndex');
+        const hasLastIndexDataProperty = descriptor && descriptor.hasOwnProperty('value');
+
+        if (!hasLastIndexDataProperty) {
+            return false;
+        }
+
+        const isRegexMarker = {};
+        const throwRegexMarker = function () {
+            throw isRegexMarker;
+        };
+
+        const badStringifier = {
+            toString: throwRegexMarker,
+            valueOf: throwRegexMarker
+        };
+
+        if (typeof Symbol.toPrimitive === 'symbol') {
+            badStringifier[Symbol.toPrimitive] = throwRegexMarker;
+        }
+
+        try {
+            RegExp.prototype.exec.call(value, badStringifier);
+        } catch (e) {
+            return e === isRegexMarker;
+        }
+    } else {
+        if (!value || (typeof value !== 'object' && typeof value !== 'function')) {
+            return false;
+        }
+
+        return toStr.call(value) === regexClass;
+    }
+}
+
+module.exports = isRegex;
+```

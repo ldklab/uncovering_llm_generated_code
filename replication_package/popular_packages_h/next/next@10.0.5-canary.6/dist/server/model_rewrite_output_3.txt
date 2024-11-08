@@ -1,0 +1,57 @@
+The Node.js code is creating a server for the Next.js framework. Here's a breakdown of its functionality:
+
+1. **Module Exports**: The code exports a `createServer` function using both CommonJS and ES module syntax, allowing it to be imported using either `require('next')` or `import next from 'next'`.
+
+2. **Imports**: 
+   - It imports `next-server` for use when creating a server instance.
+   - It imports constants from a local module, likely for logging purposes.
+   - It imports logging functions.
+
+3. **Helper Functions**:
+   - `_getRequireWildcardCache`, `_interopRequireWildcard`, and `_interopRequireDefault` are utility functions for managing module imports, especially to handle different module types like CommonJS and ES Modules.
+
+4. **createServer Function**:
+   - Accepts an `options` parameter for server configuration.
+   - Contains logic to throw an error if options are not provided.
+   - Validates environment (`NODE_ENV`) and logs a warning if a non-standard environment is detected.
+   - Checks if the server should run in development mode and provides appropriate console warnings for misconfiguration.
+   - Depending on whether `dev` is true or false, it either instantiates a `DevServer` or a production server (`_nextServer`).
+
+Here's a potential rewrite of the code:
+
+```javascript
+"use strict";
+
+const NextServer = require("../next-server/server/next-server").default;
+const { NON_STANDARD_NODE_ENV } = require("../lib/constants");
+const log = require("../build/output/log");
+
+function createServer(options) {
+    const standardEnvs = ['production', 'development', 'test'];
+
+    if (options == null) {
+        throw new Error('The server has not been instantiated properly. https://err.sh/next.js/invalid-server-options');
+    }
+
+    if (!options.isNextDevCommand && process.env.NODE_ENV && !standardEnvs.includes(process.env.NODE_ENV)) {
+        log.warn(NON_STANDARD_NODE_ENV);
+    }
+
+    if (options.dev) {
+        if (typeof options.dev !== 'boolean') {
+            console.warn("Warning: 'dev' is not a boolean which could introduce unexpected behavior. https://err.sh/next.js/invalid-server-options");
+        }
+        const DevServer = require('./next-dev-server').default;
+        return new DevServer(options);
+    }
+
+    return new NextServer(options);
+}
+
+// Export using CommonJS
+module.exports = createServer;
+exports = module.exports;
+
+// Default export for ES module imports
+exports.default = createServer;
+```

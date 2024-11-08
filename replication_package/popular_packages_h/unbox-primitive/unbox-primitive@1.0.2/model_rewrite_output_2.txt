@@ -1,0 +1,46 @@
+```javascript
+'use strict';
+
+// Import necessary modules and functionalities.
+const whichBoxedPrimitive = require('which-boxed-primitive');
+const callBound = require('call-bind/callBound');
+const hasSymbols = require('has-symbols')();
+const hasBigInts = require('has-bigints')();
+
+// Define specific 'callBound' functions for different primitive prototypes.
+const stringToString = callBound('String.prototype.toString');
+const numberValueOf = callBound('Number.prototype.valueOf');
+const booleanValueOf = callBound('Boolean.prototype.valueOf');
+const symbolValueOf = hasSymbols && callBound('Symbol.prototype.valueOf');
+const bigIntValueOf = hasBigInts && callBound('BigInt.prototype.valueOf');
+
+// Define the main module function that unboxes different boxed primitives.
+module.exports = function unboxPrimitive(value) {
+    // Determine the type of the provided boxed primitive.
+    const which = whichBoxedPrimitive(value);
+    
+    // If the type isn't a string, an error is thrown. Indicates either it's not boxed or isn't a known boxed type.
+    if (typeof which !== 'string') {
+        throw new TypeError(which === null ? 'value is an unboxed primitive' : 'value is a non-boxed-primitive object');
+    }
+
+    // Depending on the boxed type, use the appropriate method to unbox the primitive.
+    switch (which) {
+        case 'String':
+            return stringToString(value);
+        case 'Number':
+            return numberValueOf(value);
+        case 'Boolean':
+            return booleanValueOf(value);
+        case 'Symbol':
+            if (!hasSymbols) {
+                throw new EvalError('somehow this environment does not have Symbols, but you have a boxed Symbol value. Please report this!');
+            }
+            return symbolValueOf(value);
+        case 'BigInt':
+            return bigIntValueOf(value);
+        default:
+            throw new RangeError('unknown boxed primitive found: ' + which);
+    }
+};
+```

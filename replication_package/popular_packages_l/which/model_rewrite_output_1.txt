@@ -1,0 +1,90 @@
+The provided Node.js code implements a utility for finding executable files in system paths, similar to the Unix `which` command. The main functionality includes:
+
+1. **isExecutable**: Checks if a given file path is executable by verifying its extension against a list of allowed executable extensions (`pathExt`), and ensures the path exists and points to a file.
+2. **findExecutableInPath**: Searches through directories specified in system paths (or a provided path) for an executable file. It can return either the first found executable or all matching executables based on the 'all' option.
+3. **which**: Asynchronously finds the executable using a promise. It can either resolve with the path of the executable or reject with an error if not found, unless the 'nothrow' option is used.
+4. **which.sync**: Provides synchronous functionality for the `which` command, throwing an error if the executable is not found unless the 'nothrow' option is used.
+5. **CLI Usage**: When the script is executed directly, it functions as a command-line tool, accepting flags `-a` (to find all matches) and `-s` (to suppress errors) along with the names of programs to locate.
+
+Here is a rewritten version of the code:
+
+```javascript
+const fs = require('fs');
+const path = require('path');
+
+const isExecutable = (filePath, pathExt) => {
+  const extensions = pathExt.split(';');
+  return extensions.some(ext => filePath.endsWith(ext)) && fs.existsSync(filePath) && fs.statSync(filePath).isFile();
+};
+
+const findExecutable = (executable, options = {}) => {
+  const searchPaths = (options.path || process.env.PATH || '').split(path.delimiter);
+  const extensions = options.pathExt || process.env.PATHEXT || (process.platform === 'win32' ? '.EXE;.CMD;.BAT;.COM' : '');
+
+  const results = [];
+
+  for (const dir of searchPaths) {
+    const fullPath = path.join(dir, executable);
+    if (isExecutable(fullPath, extensions)) {
+      if (options.all) {
+        results.push(fullPath);
+      } else {
+        return fullPath;
+      }
+    }
+  }
+
+  return options.all ? results : null;
+};
+
+const which = async (executable, options = {}) => {
+  return new Promise((resolve, reject) => {
+    const found = findExecutable(executable, options);
+    if (found || options.nothrow) {
+      resolve(found);
+    } else {
+      reject(new Error(`not found: ${executable}`));
+    }
+  });
+};
+
+which.sync = (executable, options = {}) => {
+  const found = findExecutable(executable, options);
+  if (!found && !options.nothrow) {
+    throw new Error(`not found: ${executable}`);
+  }
+  return found;
+};
+
+module.exports = which;
+
+if (require.main === module) {
+  const args = process.argv.slice(2);
+  const options = {
+    all: args.includes('-a'),
+    nothrow: args.includes('-s')
+  };
+
+  const programs = args.filter(arg => !arg.startsWith('-'));
+  if (programs.length === 0) {
+    console.error('usage: node-which [-as] program ...');
+    process.exit(1);
+  }
+
+  programs.forEach(program => {
+    try {
+      const result = which.sync(program, options);
+      if (Array.isArray(result)) {
+        result.forEach(res => console.log(res));
+      } else if (result) {
+        console.log(result);
+      }
+    } catch (error) {
+      if (!options.nothrow) {
+        console.error(error.message);
+        process.exit(1);
+      }
+    }
+  });
+}
+```

@@ -1,0 +1,148 @@
+The provided Node.js code defines a `SymbolTree` class, which manages a tree-like data structure where nodes can have parent and child relationships. In this context, nodes are JavaScript objects, and their relationships are managed using the `WeakMap` named `nodeDataMap` to ensure that data about nodes (their parent and children) does not prevent garbage collection of the nodes themselves.
+
+### Functionality:
+1. **Initialization**: 
+   - `initialize(object)`: Initializes an object in the tree if it's not already in the `WeakMap`, setting its parent to `null` and children to an empty array.
+
+2. **Insertion**:
+   - `insertBefore(referenceObject, newObject)`: Inserts `newObject` before `referenceObject` within the same parent.
+   - `insertAfter(referenceObject, newObject)`: Inserts `newObject` after `referenceObject` within the same parent.
+   - `prependChild(parent, newObject)`: Adds `newObject` as the first child of the specified `parent`.
+   - `appendChild(parent, newObject)`: Adds `newObject` as the last child of the specified `parent`.
+
+3. **Removal**:
+   - `remove(object)`: Removes the `object` from its parent's children list and resets its parent to `null`.
+   
+4. **Hierarchy Queries**:
+   - `hasChildren(object)`: Checks if the `object` has any children.
+   - `firstChild(object)`: Gets the first child of the `object`.
+   - `lastChild(object)`: Gets the last child of the `object`.
+   - `previousSibling(object)`: Gets the previous sibling of the `object`.
+   - `nextSibling(object)`: Gets the next sibling of the `object`.
+   - `parent(object)`: Returns the parent of the `object`.
+
+5. **Internal Check**:
+   - `_checkNotPresent(object)`: Throws an error if the `object` is already inserted into the tree, i.e., it has a parent.
+
+Here's a possible rewrite of the code:
+
+```javascript
+'use strict';
+
+const nodeDataMap = new WeakMap();
+
+class SymbolTree {
+    constructor(description = 'SymbolTree data') {
+        this.symbol = Symbol(description);
+    }
+
+    initialize(object) {
+        if (!nodeDataMap.has(object)) {
+            nodeDataMap.set(object, { parent: null, children: [] });
+        }
+        return object;
+    }
+
+    insertBefore(referenceObject, newObject) {
+        this._checkNotPresent(newObject);
+        let { parent } = nodeDataMap.get(referenceObject);
+        let parentData = nodeDataMap.get(parent);
+        let index = parentData.children.indexOf(referenceObject);
+        parentData.children.splice(index, 0, newObject);
+        nodeDataMap.set(newObject, { parent, children: [] });
+        return newObject;
+    }
+
+    insertAfter(referenceObject, newObject) {
+        this._checkNotPresent(newObject);
+        let { parent } = nodeDataMap.get(referenceObject);
+        let parentData = nodeDataMap.get(parent);
+        let index = parentData.children.indexOf(referenceObject);
+        parentData.children.splice(index + 1, 0, newObject);
+        nodeDataMap.set(newObject, { parent, children: [] });
+        return newObject;
+    }
+
+    prependChild(parent, newObject) {
+        this._checkNotPresent(newObject);
+        let parentData = nodeDataMap.get(parent);
+        parentData.children.unshift(newObject);
+        nodeDataMap.set(newObject, { parent, children: [] });
+        return newObject;
+    }
+
+    appendChild(parent, newObject) {
+        this._checkNotPresent(newObject);
+        let parentData = nodeDataMap.get(parent);
+        parentData.children.push(newObject);
+        nodeDataMap.set(newObject, { parent, children: [] });
+        return newObject;
+    }
+
+    remove(object) {
+        let data = nodeDataMap.get(object);
+        if (data && data.parent) {
+            let parentData = nodeDataMap.get(data.parent);
+            let index = parentData.children.indexOf(object);
+            parentData.children.splice(index, 1);
+            nodeDataMap.set(object, { parent: null, children: [] });
+        }
+        return object;
+    }
+
+    hasChildren(object) {
+        let data = nodeDataMap.get(object);
+        return data ? data.children.length > 0 : false;
+    }
+
+    firstChild(object) {
+        let data = nodeDataMap.get(object);
+        return data ? data.children[0] : undefined;
+    }
+
+    lastChild(object) {
+        let data = nodeDataMap.get(object);
+        return data ? data.children[data.children.length - 1] : undefined;
+    }
+
+    previousSibling(object) {
+        let data = nodeDataMap.get(object);
+        if (data && data.parent) {
+            let parentData = nodeDataMap.get(data.parent);
+            let index = parentData.children.indexOf(object);
+            return parentData.children[index - 1] || null;
+        }
+        return null;
+    }
+
+    nextSibling(object) {
+        let data = nodeDataMap.get(object);
+        if (data && data.parent) {
+            let parentData = nodeDataMap.get(data.parent);
+            let index = parentData.children.indexOf(object);
+            return parentData.children[index + 1] || null;
+        }
+        return null;
+    }
+
+    parent(object) {
+        let data = nodeDataMap.get(object);
+        return data?.parent || null;
+    }
+
+    _checkNotPresent(object) {
+        if (nodeDataMap.has(object) && nodeDataMap.get(object).parent !== null) {
+            throw new Error('Object is already present in a SymbolTree');
+        }
+    }
+}
+
+module.exports = SymbolTree;
+
+// Usage example
+// const SymbolTree = require('./symbol-tree');
+// const tree = new SymbolTree();
+// let a = {foo: 'bar'};
+// let b = {foo: 'baz'};
+// tree.insertBefore(b, a);
+```

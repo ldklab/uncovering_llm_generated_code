@@ -1,0 +1,97 @@
+The provided Node.js code defines a class `Entities` which handles the encoding and decoding of HTML and XML entities. Here is a breakdown of its functionality:
+
+1. **Entity Maps**: 
+   - `htmlEntitiesMap`: Maps specific characters to their corresponding HTML entity representations.
+   - `xmlEntitiesMap`: Maps specific characters to their corresponding XML entity representations.
+
+2. **escapeUTF8()**: 
+   - Replaces the ampersand character '&' with its HTML representation `&amp;`.
+
+3. **encodeXML()**:
+   - Encodes a given string by replacing special characters ('&', '<', '>', '"', and '\') with their XML entity equivalents.
+
+4. **encodeHTML()**:
+   - Encodes a string by replacing special characters ('&', '<', '>', '"', '\', 'ü', and 'ÿ') with their HTML entity equivalents.
+
+5. **decodeXML()**:
+   - Decodes entities in a string back to their original characters using a mapped reverse lookup for XML entities and regular expressions to identify entity patterns.
+
+6. **decodeHTML()**:
+   - Decodes entities in a string back to their original characters using a mapped reverse lookup for HTML entities and regular expressions to identify entity patterns.
+
+7. **decodeEntities()**:
+   - Generic function used by `decodeXML` and `decodeHTML` to perform the actual string replacement with the help of reverse maps.
+
+8. **reverseMap()**:
+   - Generates a reverse lookup map from an entity map, swapping keys and values for decoding purposes.
+
+Finally, an instance of the `Entities` class is exported for use in other modules.
+
+Here is the complete rewritten code:
+
+```javascript
+// entities.js
+
+class Entities {
+  constructor() {
+    this.htmlEntitiesMap = {
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      '\'': '&apos;',
+      'ü': '&uuml;',
+      'ÿ': '&yuml;',
+    };
+    this.xmlEntitiesMap = {
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      '\'': '&apos;'
+    };
+  }
+
+  escapeUTF8(str) {
+    return str.replace(/[&]/g, this.htmlEntitiesMap['&']);
+  }
+
+  encodeXML(str) {
+    return str.replace(/[&<>"']/g, char => this.xmlEntitiesMap[char]);
+  }
+
+  encodeHTML(str) {
+    return str.replace(/[&<>"'üÿ]/g, char => this.htmlEntitiesMap[char] || char);
+  }
+
+  decodeXML(str) {
+    const xmlEntityRegex = /&(?:#(\d+)|#x([a-fA-F0-9]+)|(\w+));/g;
+    const xmlEntitiesReverseMap = this.reverseMap(this.xmlEntitiesMap);
+    return this.decodeEntities(str, xmlEntitiesReverseMap, xmlEntityRegex);
+  }
+
+  decodeHTML(str) {
+    const htmlEntityRegex = /&(?:#(\d+)|#x([a-fA-F0-9]+)|(\w+));/g;
+    const htmlEntitiesReverseMap = this.reverseMap(this.htmlEntitiesMap);
+    return this.decodeEntities(str, htmlEntitiesReverseMap, htmlEntityRegex);
+  }
+
+  decodeEntities(str, reverseMap, regex) {
+    return str.replace(regex, (match, dec, hex, named) => {
+      if (dec) return String.fromCharCode(dec);
+      if (hex) return String.fromCharCode(parseInt(hex, 16));
+      return reverseMap[named] || match;
+    });
+  }
+
+  reverseMap(map) {
+    const reverseMap = {};
+    for (const key in map) {
+      reverseMap[map[key].slice(1, -1)] = key;
+    }
+    return reverseMap;
+  }
+}
+
+module.exports = new Entities();
+```

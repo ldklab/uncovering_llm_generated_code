@@ -1,0 +1,60 @@
+The provided Node.js code consists of three files: `quote.js`, `parse.js`, and `index.js`. Here's a breakdown of their functionalities:
+
+1. **quote.js**: This file exports a function called `quote`, which is designed to process an array of strings. Each string in the array is checked for the presence of special characters (space, single quote, double quote, dollar sign, and backtick). If any of these characters are found, the string is enclosed within single quotes. Additionally, any existing single quotes within the string are escaped by replacing them with `'\''`. The resulting array of potentially quoted strings is then joined into a single string separated by spaces.
+
+2. **parse.js**: This module exports a `parse` function that processes a command string (`cmd`) and extracts its components based on specific rules, returning an array. The function can take in optional environment variables (`env`) and options (`opts`) with a default escape character of backslash (`\`). It uses a regular expression to identify quoted strings and whitespace-separated words. If a part includes an equal sign (`=`), it checks if the value starts with `$` and replaces it with the corresponding environment variable if it exists. It also handles standalone variables prefixed with `$`, replacing them with their values from `env`. The escape character from `opts` is used to physically remove escape sequences from matched parts.
+
+3. **index.js**: This serves as an entry point that imports the `quote` and `parse` functions from their respective files and exports both, allowing their use in other parts of an application.
+
+Here's a possible rewrite for the aforementioned Node.js code:
+
+```javascript
+// quote.js
+function quote(args) {
+    return args.map(arg => {
+        if (/[\s'"\$`]/.test(arg)) {
+            return "'" + arg.replace(/'/g, "'\\''") + "'";
+        }
+        return arg;
+    }).join(' ');
+}
+
+module.exports = quote;
+
+// parse.js
+function parse(cmd, env = {}, opts = { escape: '\\' }) {
+    const result = [];
+    const re = /'[^']*'|"[^"]*"|\S+/g;
+    let match;
+
+    while ((match = re.exec(cmd)) !== null) {
+        let part = match[0];
+        if (part[0] === '"' || part[0] === "'") {
+            part = part.slice(1, -1);
+        }
+        part = part.replace(new RegExp(`\\${opts.escape}`, 'g'), '');
+
+        if (part.includes('=')) {
+            let [key, value] = part.split('=');
+            if (value.startsWith("$") && env.hasOwnProperty(value.slice(1))) {
+                value = env[value.slice(1)];
+            }
+            result.push(`${key}=${value}`);
+        } else if (part.startsWith("$") && env.hasOwnProperty(part.slice(1))) {
+            result.push(env[part.slice(1)]);
+        } else {
+            result.push(part);
+        }
+    }
+
+    return result;
+}
+
+module.exports = parse;
+
+// index.js
+const quote = require('./quote');
+const parse = require('./parse');
+
+module.exports = { quote, parse };
+```

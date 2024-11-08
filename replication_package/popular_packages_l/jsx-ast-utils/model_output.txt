@@ -1,0 +1,150 @@
+The `jsx-ast-utils` package provides utility functions for statically analyzing JSX Abstract Syntax Trees (AST). It simplifies tasks involved in determining certain characteristics of JSX elements, which are often useful for writing ESLint rules and similar static analysis tools.
+
+Here's a breakdown of the capabilities provided by `jsx-ast-utils`:
+
+1. **hasProp**: Checks if a specific prop exists on a JSX element.
+   - **props**: The attributes of the JSX node.
+   - **prop**: The prop name to look for.
+   - **options**: Options for checking, including `ignoreCase` (case-insensitive check) and `spreadStrict` (ignores props in spread operators).
+
+2. **hasAnyProp**: Checks if any from a list of props exist on a JSX element.
+   - Similar parameters to `hasProp`, but `prop` is an array of prop names.
+
+3. **hasEveryProp**: Verifies if all given props exist on a JSX element.
+   - Parameters are similar to `hasAnyProp`.
+
+4. **getProp**: Retrieves the attribute object for a specified prop, or undefined if it doesn't exist.
+   - With parameters similar to `hasProp`.
+
+5. **elementType**: Returns the tag name of a JSX element.
+   - **node**: The JSX element node.
+
+6. **getPropValue**: Extracts the actual value set to a given prop.
+
+7. **getLiteralPropValue**: Fetches the literal value of a specified prop, only if the value is a literal type in JavaScript.
+
+8. **propName**: Provides the name of a prop from a JSXAttribute.
+
+9. **eventHandlers**: An array listing common event handler props for binding to DOM events.
+
+10. **eventHandlersByType**: An object where event handlers are grouped by event types like 'keyboard', 'mouse', etc.
+
+Below is the code implementing these functionalities:
+
+```js
+// utils.js
+
+// Utility function to check if a prop exists on a JSX element
+function hasProp(props, prop, options = { ignoreCase: true, spreadStrict: true }) {
+  return props.some(attribute => {
+    if (attribute.type === 'JSXAttribute') {
+      const attributeName = attribute.name.name;
+      return options.ignoreCase ? attributeName.toLowerCase() === prop.toLowerCase() : attributeName === prop;
+    }
+    return false;
+  });
+}
+
+// Utility function to check if any from a list of props exist on a JSX element
+function hasAnyProp(props, propList, options = { ignoreCase: true, spreadStrict: true }) {
+  return propList.some(prop => hasProp(props, prop, options));
+}
+
+// Utility function to check if all given props exist on a JSX element
+function hasEveryProp(props, propList, options = { ignoreCase: true, spreadStrict: true }) {
+  return propList.every(prop => hasProp(props, prop, options));
+}
+
+// Retrieve the prop as a JSXAttribute object if it exists
+function getProp(props, prop, options = { ignoreCase: true }) {
+  return props.find(attribute => {
+    if (attribute.type === 'JSXAttribute') {
+      const attributeName = attribute.name.name;
+      return options.ignoreCase ? attributeName.toLowerCase() === prop.toLowerCase() : attributeName === prop;
+    }
+    return false;
+  });
+}
+
+// Get the element type (tag name) of a JSX element
+function elementType(node) {
+  return node.openingElement.name.name;
+}
+
+// Get the value of a specific prop
+function getPropValue(prop) {
+  if (prop && prop.value) {
+    return prop.value.expression ? prop.value.expression.value : prop.value.value;
+  }
+  return undefined;
+}
+
+// Get literal value of a prop
+function getLiteralPropValue(prop) {
+  if (!prop || !prop.value) return undefined;
+  if (prop.value.type === 'Literal') return prop.value.value;
+  if (prop.value.type === 'JSXExpressionContainer' && prop.value.expression.type === 'Literal') {
+    return prop.value.expression.value;
+  }
+  return undefined;
+}
+
+// Get the name of a prop
+function propName(prop) {
+  return prop.name ? prop.name.name : undefined;
+}
+
+// Common event handler names used in JSX
+const eventHandlers = [
+  'onCopy', 'onCut', 'onPaste', 'onCompositionEnd', 'onCompositionStart', 'onCompositionUpdate',
+  'onKeyDown', 'onKeyPress', 'onKeyUp', 'onFocus', 'onBlur', 'onChange', 'onInput', 'onSubmit',
+  'onClick', 'onContextMenu', 'onDblClick', 'onDoubleClick', 'onDrag', 'onDragEnd', 'onDragEnter',
+  'onDragExit', 'onDragLeave', 'onDragOver', 'onDragStart', 'onDrop', 'onMouseDown', 'onMouseEnter',
+  'onMouseLeave', 'onMouseMove', 'onMouseOut', 'onMouseOver', 'onMouseUp', 'onSelect', 'onTouchCancel',
+  'onTouchEnd', 'onTouchMove', 'onTouchStart', 'onScroll', 'onWheel', 'onAbort', 'onCanPlay',
+  'onCanPlayThrough', 'onDurationChange', 'onEmptied', 'onEncrypted', 'onEnded', 'onError',
+  'onLoadedData', 'onLoadedMetadata', 'onLoadStart', 'onPause', 'onPlay', 'onPlaying',
+  'onProgress', 'onRateChange', 'onSeeked', 'onSeeking', 'onStalled', 'onSuspend', 'onTimeUpdate',
+  'onVolumeChange', 'onWaiting', 'onLoad', 'onError', 'onAnimationStart', 'onAnimationEnd',
+  'onAnimationIteration', 'onTransitionEnd'
+];
+
+const eventHandlersByType = {
+  clipboard: ['onCopy', 'onCut', 'onPaste'],
+  composition: ['onCompositionEnd', 'onCompositionStart', 'onCompositionUpdate'],
+  keyboard: ['onKeyDown', 'onKeyPress', 'onKeyUp'],
+  focus: ['onFocus', 'onBlur'],
+  form: ['onChange', 'onInput', 'onSubmit'],
+  mouse: [
+    'onClick', 'onContextMenu', 'onDblClick', 'onDoubleClick', 'onDrag', 'onDragEnd', 'onDragEnter',
+    'onDragExit', 'onDragLeave', 'onDragOver', 'onDragStart', 'onDrop', 'onMouseDown', 'onMouseEnter',
+    'onMouseLeave', 'onMouseMove', 'onMouseOut', 'onMouseOver', 'onMouseUp'
+  ],
+  selection: ['onSelect'],
+  touch: ['onTouchCancel', 'onTouchEnd', 'onTouchMove', 'onTouchStart'],
+  ui: ['onScroll'],
+  wheel: ['onWheel'],
+  media: [
+    'onAbort', 'onCanPlay', 'onCanPlayThrough', 'onDurationChange', 'onEmptied', 'onEncrypted',
+    'onEnded', 'onError', 'onLoadedData', 'onLoadedMetadata', 'onLoadStart', 'onPause', 'onPlay',
+    'onPlaying', 'onProgress', 'onRateChange', 'onSeeked', 'onSeeking', 'onStalled', 'onSuspend',
+    'onTimeUpdate', 'onVolumeChange', 'onWaiting'
+  ],
+  image: ['onLoad', 'onError'],
+  animation: ['onAnimationStart', 'onAnimationEnd', 'onAnimationIteration'],
+  transition: ['onTransitionEnd'],
+};
+
+module.exports = {
+  hasProp,
+  hasAnyProp,
+  hasEveryProp,
+  getProp,
+  elementType,
+  getPropValue,
+  getLiteralPropValue,
+  propName,
+  eventHandlers,
+  eventHandlersByType
+};
+```

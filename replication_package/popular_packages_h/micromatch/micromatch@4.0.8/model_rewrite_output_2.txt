@@ -1,0 +1,221 @@
+The Node.js code implements a module called `micromatch` that provides various utilities for working with glob patterns. Here's a breakdown of its functionality:
+
+1. **Glob Pattern Matching:** The main utility is the `micromatch` function, which takes a list of strings and matches them against one or more glob patterns. The function returns an array of strings that match the patterns. Options can be passed to customize the matching behavior.
+
+2. **Matcher Function:** The `matcher` method returns a function that can be used to test if strings match a specific glob pattern.
+
+3. **Pattern Checking:** The `isMatch` method checks if any provided patterns match a given string.
+
+4. **Negation Matching:** The `not` method returns strings from a list that do not match any given patterns.
+
+5. **String Containment:** The `contains` method checks if any part of a string matches a given pattern.
+
+6. **Object Key Matching:** The `matchKeys` function filters an object's keys based on a glob pattern.
+
+7. **Aggregate Matching:** The `some` and `every` methods check if some or every string in a list match given patterns, respectively.
+
+8. **All Pattern Matching:** The `all` method ensures all patterns match a string.
+
+9. **Capture Groups:** The `capture` method returns captured groups from a pattern if it matches a string.
+
+10. **Regex Conversion and Parsing:** `makeRe` converts glob patterns to regular expressions, `scan` scans patterns into segments for internal use, and `parse` creates regex sources from patterns.
+
+11. **Brace Expansion:** The `braces` method processes strings with brace patterns, converting them into expanded or regex patterns.
+
+12. **Backward Compatibility and Exposure:** It includes backward compatibility for older method names and exposes certain utilities for testing purposes.
+
+Below is the code rewritten and organized:
+
+```javascript
+'use strict';
+
+const util = require('util');
+const braces = require('braces');
+const picomatch = require('picomatch');
+const utils = require('picomatch/lib/utils');
+
+const isEmptyString = v => v === '' || v === './';
+const hasBraces = v => {
+  const index = v.indexOf('{');
+  return index > -1 && v.indexOf('}', index) > -1;
+};
+
+const micromatch = (list, patterns, options) => {
+  patterns = [].concat(patterns);
+  list = [].concat(list);
+
+  let omit = new Set();
+  let keep = new Set();
+  let items = new Set();
+  let negatives = 0;
+
+  let onResult = state => {
+    items.add(state.output);
+    if (options && options.onResult) {
+      options.onResult(state);
+    }
+  };
+
+  for (let i = 0; i < patterns.length; i++) {
+    let isMatch = picomatch(String(patterns[i]), { ...options, onResult }, true);
+    let negated = isMatch.state.negated || isMatch.state.negatedExtglob;
+    if (negated) negatives++;
+
+    for (let item of list) {
+      let matched = isMatch(item, true);
+      let match = negated ? !matched.isMatch : matched.isMatch;
+      if (!match) continue;
+
+      if (negated) {
+        omit.add(matched.output);
+      } else {
+        omit.delete(matched.output);
+        keep.add(matched.output);
+      }
+    }
+  }
+
+  let result = negatives === patterns.length ? [...items] : [...keep];
+  let matches = result.filter(item => !omit.has(item));
+
+  if (options && matches.length === 0) {
+    if (options.failglob === true) {
+      throw new Error(`No matches found for "${patterns.join(', ')}"`);
+    }
+    if (options.nonull === true || options.nullglob === true) {
+      return options.unescape ? patterns.map(p => p.replace(/\\/g, '')) : patterns;
+    }
+  }
+  return matches;
+};
+
+micromatch.match = micromatch;
+
+micromatch.matcher = (pattern, options) => picomatch(pattern, options);
+
+micromatch.isMatch = (str, patterns, options) => picomatch(patterns, options)(str);
+
+micromatch.any = micromatch.isMatch;
+
+micromatch.not = (list, patterns, options = {}) => {
+  patterns = [].concat(patterns).map(String);
+  let result = new Set();
+  let items = [];
+
+  let onResult = state => {
+    if (options.onResult) options.onResult(state);
+    items.push(state.output);
+  };
+
+  let matches = new Set(micromatch(list, patterns, { ...options, onResult }));
+
+  for (let item of items) {
+    if (!matches.has(item)) {
+      result.add(item);
+    }
+  }
+  return [...result];
+};
+
+micromatch.contains = (str, pattern, options) => {
+  if (typeof str !== 'string') {
+    throw new TypeError(`Expected a string: "${util.inspect(str)}"`);
+  }
+
+  if (Array.isArray(pattern)) {
+    return pattern.some(p => micromatch.contains(str, p, options));
+  }
+
+  if (typeof pattern === 'string') {
+    if (isEmptyString(str) || isEmptyString(pattern)) {
+      return false;
+    }
+    if (str.includes(pattern) || (str.startsWith('./') && str.slice(2).includes(pattern))) {
+      return true;
+    }
+  }
+  return micromatch.isMatch(str, pattern, { ...options, contains: true });
+};
+
+micromatch.matchKeys = (obj, patterns, options) => {
+  if (!utils.isObject(obj)) {
+    throw new TypeError('Expected the first argument to be an object');
+  }
+  let keys = micromatch(Object.keys(obj), patterns, options);
+  let res = {};
+  for (let key of keys) res[key] = obj[key];
+  return res;
+};
+
+micromatch.some = (list, patterns, options) => {
+  let items = [].concat(list);
+
+  for (let pattern of [].concat(patterns)) {
+    let isMatch = picomatch(String(pattern), options);
+    if (items.some(item => isMatch(item))) {
+      return true;
+    }
+  }
+  return false;
+};
+
+micromatch.every = (list, patterns, options) => {
+  let items = [].concat(list);
+
+  for (let pattern of [].concat(patterns)) {
+    let isMatch = picomatch(String(pattern), options);
+    if (!items.every(item => isMatch(item))) {
+      return false;
+    }
+  }
+  return true;
+};
+
+micromatch.all = (str, patterns, options) => {
+  if (typeof str !== 'string') {
+    throw new TypeError(`Expected a string: "${util.inspect(str)}"`);
+  }
+  return [].concat(patterns).every(p => picomatch(p, options)(str));
+};
+
+micromatch.capture = (glob, input, options) => {
+  let posix = utils.isWindows(options);
+  let regex = picomatch.makeRe(String(glob), { ...options, capture: true });
+  let match = regex.exec(posix ? utils.toPosixSlashes(input) : input);
+
+  if (match) {
+    return match.slice(1).map(v => v === void 0 ? '' : v);
+  }
+};
+
+micromatch.makeRe = (...args) => picomatch.makeRe(...args);
+
+micromatch.scan = (...args) => picomatch.scan(...args);
+
+micromatch.parse = (patterns, options) => {
+  let res = [];
+  for (let pattern of [].concat(patterns || [])) {
+    for (let str of braces(String(pattern), options)) {
+      res.push(picomatch.parse(str, options));
+    }
+  }
+  return res;
+};
+
+micromatch.braces = (pattern, options) => {
+  if (typeof pattern !== 'string') throw new TypeError('Expected a string');
+  if ((options && options.nobrace === true) || !hasBraces(pattern)) {
+    return [pattern];
+  }
+  return braces(pattern, options);
+};
+
+micromatch.braceExpand = (pattern, options) => {
+  if (typeof pattern !== 'string') throw new TypeError('Expected a string');
+  return micromatch.braces(pattern, { ...options, expand: true });
+};
+
+// exposed for tests
+micromatch.hasBraces = hasBraces;
+module.exports = micromatch;
+```

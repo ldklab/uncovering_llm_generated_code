@@ -1,0 +1,91 @@
+The `mkdirp` Node.js package is designed to replicate Unix's `mkdir -p` functionality, allowing for the recursive creation of directories. This package provides both asynchronous and synchronous methods to ensure seamless directory creation.
+
+## Functional Overview:
+
+1. **Asynchronous Creation (`mkdirp` function):**
+   - Returns a Promise that resolves to the first directory that was created (`made`) in the process. If all directories already exist, it resolves to `undefined`.
+   - A path and optional options can be provided, including permission modes, and custom `fs` implementations via the optional parameters.
+   - By default, if no mode is specified, it uses `0o777` for permissions.
+
+2. **Synchronous Creation (`mkdirp.sync` function):**
+   - Operates synchronously, returning the first directory created or `undefined` if all directories already exist.
+   - Like the async version, accepts path and optional options for custom `fs` implementations and permission modes.
+
+3. **Implementation Modes:**
+   - **Native (Node.js v10.12+):** Uses Node's native `fs.mkdir()` with `{ recursive: true }` for efficiency.
+   - **Manual:** Walks the path to find the first non-existent directory and creates all necessary directories individually. This is the default mode when `fs` is overridden or native support is not available.
+
+4. **Error Handling and Platform Differences:**
+   - Different behaviors based on platform (Windows vs. POSIX) are managed to maintain consistency.
+   - The package is designed to fall back to a manual implementation if certain systematic native errors (e.g., `ENOENT`) are encountered.
+
+5. **Command Line Interface (CLI):**
+   - Provides a simple CLI for creating directories recursively from the terminal.
+   - Supports options like permission setting, help display, and version information.
+
+Here's the code for implementing the described functionality:
+
+```js
+// mkdirp.js
+
+import fs from 'fs';
+import path from 'path';
+
+const DEFAULT_MODE = 0o777;
+
+// Asynchronous mkdirp
+async function mkdirp(dir, opts = {}) {
+  const mode = typeof opts === 'number' ? opts : (opts.mode || DEFAULT_MODE);
+  const fsImpl = opts.fs || fs;
+
+  try {
+    const made = await mkdirpNative(dir, { mode, fs: fsImpl });
+    return made;
+  } catch (err) {
+    if (err.code === 'ENOENT') {
+      const parentDir = path.dirname(dir);
+      const made = await mkdirp(parentDir, { mode, fs: fsImpl });
+      await mkdirpNative(dir, { mode, fs: fsImpl });
+      return made || dir;
+    }
+    throw err;
+  }
+}
+
+async function mkdirpNative(dir, opts) {
+  return new Promise((resolve, reject) => {
+    opts.fs.mkdir(dir, { recursive: true, mode: opts.mode }, (err) => {
+      if (err) {
+        if (err.code === 'EEXIST') return resolve();
+        return reject(err);
+      }
+      resolve(dir);
+    });
+  });
+}
+
+// Synchronous mkdirp
+function mkdirpSync(dir, opts = {}) {
+  const mode = typeof opts === 'number' ? opts : (opts.mode || DEFAULT_MODE);
+  const fsImpl = opts.fs || fs;
+
+  return mkdirpNativeSync(dir, { mode, fs: fsImpl });
+}
+
+function mkdirpNativeSync(dir, opts) {
+  try {
+    opts.fs.mkdirSync(dir, { recursive: true, mode: opts.mode });
+    return dir;
+  } catch (err) {
+    if (err.code === 'EEXIST') return;
+    const parentDir = path.dirname(dir);
+    mkdirpSync(parentDir, { mode: opts.mode, fs: opts.fs });
+    opts.fs.mkdirSync(dir, { mode: opts.mode });
+    return dir;
+  }
+}
+
+export { mkdirp, mkdirpSync };
+``` 
+
+This module uses modern JavaScript (ES6+) for simplicity and readability, while ensuring compatibility with Node.js v10.12 and above. It captures the functionality and error handling described in the package documentation.

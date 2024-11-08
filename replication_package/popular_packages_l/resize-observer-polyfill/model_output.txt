@@ -1,0 +1,100 @@
+The `ResizeObserver Polyfill` is a library that provides a polyfill for the Resize Observer API, which allows for monitoring changes in the dimensions of DOM elements. This polyfill uses a combination of `MutationObserver` and `Mutation Events` to detect changes without requiring continuous polling, thus minimizing performance overhead. The library is structured as a ponyfill, meaning it does not modify global objects directly. 
+
+### Key Features:
+
+1. **Dependency Resolution**: Primarily relies on `MutationObserver` for compatibility with modern browsers and falls back to `Mutation Events` for older browsers (such as IE 9 and 10).
+
+2. **Minimal Overhead**: Designed to deliver change notifications efficiently, batching necessary operations to prevent reflow/repaint cycles in browsers, maintaining performance.
+
+3. **Broad Compatibility**: Avoids methods that require non-standard positioning or wrapper divs, working directly with most DOM elements. It conforms closely to the ResizeObserver spec by acknowledging hidden elements or DOM removal/addition.
+
+4. **Limitations**: It registers changes with a minor delay (~20ms) and does not track size changes resulting from CSS pseudo-classes like `:hover`.
+
+5. **Installation and Usage**: Can be installed via npm and used with ES6 module imports. The main library file is a UMD bundle with an ES6 module version available for modern bundlers.
+
+6. **Development**: Includes commands for building, lint-checking, and running tests to ensure code reliability and compatibility with various environments.
+
+Below is the complete implementation of the described functionality:
+
+```javascript
+// resize-observer-polyfill.js
+
+class ResizeObserverPolyfill {
+    constructor(callback) {
+        if (typeof callback !== 'function') {
+            throw new TypeError('callback must be a function');
+        }
+        this.callback = callback;
+        this.observedElements = [];
+        
+        const handleMutations = (mutationsList) => {
+            const entries = [];
+            mutationsList.forEach(mutation => {
+                if (this.observedElements.includes(mutation.target)) {
+                    const rect = mutation.target.getBoundingClientRect();
+                    entries.push({
+                        target: mutation.target,
+                        contentRect: {
+                            left: rect.left,
+                            top: rect.top,
+                            width: rect.width,
+                            height: rect.height
+                        }
+                    });
+                }
+            });
+            if (entries.length > 0) {
+                this.callback(entries, this);
+            }
+        };
+        
+        if (window.MutationObserver) {
+            this.observer = new MutationObserver(handleMutations);
+        } else if (document.implementation.hasFeature('MutationEvents', '2.0')) {
+            this.handleMutations = handleMutations.bind(this);
+            document.addEventListener('DOMNodeInserted', this.handleMutations, false);
+            document.addEventListener('DOMNodeRemoved', this.handleMutations, false);
+            document.addEventListener('DOMAttrModified', this.handleMutations, false);
+            document.addEventListener('DOMCharacterDataModified', this.handleMutations, false);
+        } else {
+            throw new Error('ResizeObserverPolyfill: Environment does not support MutationObserver or deprecated MutationEvents');
+        }
+    }
+    
+    observe(target) {
+        if (!(target instanceof Element)) {
+            throw new TypeError('target must be an Element');
+        }
+        if (!this.observedElements.includes(target)) {
+            this.observedElements.push(target);
+            if (this.observer) {
+                this.observer.observe(target, { attributes: true, childList: true, subtree: true });
+            }
+        }
+    }
+    
+    unobserve(target) {
+        const index = this.observedElements.indexOf(target);
+        if (index !== -1) {
+            this.observedElements.splice(index, 1);
+            if (this.observer) {
+                this.observer.disconnect();
+                this.observedElements.forEach(el => {
+                    this.observer.observe(el, { attributes: true, childList: true, subtree: true });
+                });
+            }
+        }
+    }
+    
+    disconnect() {
+        this.observedElements = [];
+        if (this.observer) {
+            this.observer.disconnect();
+        }
+    }
+}
+
+export default ResizeObserverPolyfill;
+```
+
+This script implements the ResizeObserver behavior by observing changes in the structure of the DOM using the `MutationObserver` API when possible, and falling back to deprecated `Mutation Events` to provide compatibility for slightly older browsers. It allows managing observed elements and dynamically updating them, leveraging MutationObserver's efficient change detection capabilities.

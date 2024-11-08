@@ -1,0 +1,132 @@
+The provided Node.js code defines a module that exports a function, `split`, which creates a custom `Transform` stream. This stream splits input data into chunks based on a specified delimiter (defaulting to newline characters) and processes each chunk using a specified mapping function.
+
+### Explanation of Main Components:
+
+1. **Transform Function:** 
+   - Processes each chunk of data as it is written to the stream.
+   - Detects delimiter patterns to split the chunk into lines.
+   - Maps each line with the provided `mapper` function and pushes transformed lines to the readable side of the stream.
+   - Handles an 'overflow' scenario if a line exceeds `maxLength`.
+
+2. **Flush Function:**
+   - Called when there is no more data to be written.
+   - Ensures any remaining data in the buffer is processed.
+
+3. **Push Function:**
+   - Pushes non-undefined values to the readable side of the stream.
+
+4. **Noop Function:**
+   - Default function that returns the input unchanged, used when no mapper function is provided.
+
+5. **Split Function:**
+   - Accepts a delimiter `matcher`, a `mapper` function, and additional `options`.
+   - Configures the stream with specified arguments and defaults.
+   - Handles different types and numbers of arguments, assigning defaults accordingly.
+   - Returns a `Transform` stream configured to split and process data.
+
+```javascript
+'use strict';
+
+const { Transform } = require('stream');
+const { StringDecoder } = require('string_decoder');
+
+const kLast = Symbol('last');
+const kDecoder = Symbol('decoder');
+
+function transform(chunk, enc, cb) {
+  let list;
+  if (this.overflow) {
+    const buf = this[kDecoder].write(chunk);
+    list = buf.split(this.matcher);
+
+    if (list.length === 1) return cb();
+
+    list.shift();
+    this.overflow = false;
+  } else {
+    this[kLast] += this[kDecoder].write(chunk);
+    list = this[kLast].split(this.matcher);
+  }
+
+  this[kLast] = list.pop();
+
+  for (let i = 0; i < list.length; i++) {
+    try {
+      push(this, this.mapper(list[i]));
+    } catch (error) {
+      return cb(error);
+    }
+  }
+
+  this.overflow = this[kLast].length > this.maxLength;
+  if (this.overflow && !this.skipOverflow) {
+    cb(new Error('maximum buffer reached'));
+    return;
+  }
+
+  cb();
+}
+
+function flush(cb) {
+  this[kLast] += this[kDecoder].end();
+
+  if (this[kLast]) {
+    try {
+      push(this, this.mapper(this[kLast]));
+    } catch (error) {
+      return cb(error);
+    }
+  }
+
+  cb();
+}
+
+function push(self, val) {
+  if (val !== undefined) {
+    self.push(val);
+  }
+}
+
+function noop(incoming) {
+  return incoming;
+}
+
+function split(matcher, mapper, options) {
+  matcher = matcher || /\r?\n/;
+  mapper = typeof matcher === 'function' ? matcher : mapper || noop;
+  options = (typeof matcher === 'object' && !(matcher instanceof RegExp)) ? matcher : options || {};
+
+  if (typeof matcher === 'function') {
+    matcher = /\r?\n/;
+  }
+  
+  if (typeof mapper === 'object') {
+    options = mapper;
+    mapper = noop;
+  }
+
+  options = Object.assign({}, options, {
+    autoDestroy: true,
+    transform,
+    flush,
+    readableObjectMode: true
+  });
+
+  const stream = new Transform(options);
+  stream[kLast] = '';
+  stream[kDecoder] = new StringDecoder('utf8');
+  stream.matcher = matcher;
+  stream.mapper = mapper;
+  stream.maxLength = options.maxLength;
+  stream.skipOverflow = options.skipOverflow || false;
+  stream.overflow = false;
+  stream._destroy = function (err, cb) {
+    this._writableState.errorEmitted = false;
+    cb(err);
+  };
+
+  return stream;
+}
+
+module.exports = split;
+```

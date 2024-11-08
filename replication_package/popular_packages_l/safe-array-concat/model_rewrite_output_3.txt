@@ -1,0 +1,52 @@
+The Node.js code provided consists of two files: `safe-array-concat.js` and `test.js`. Here is what each file does:
+
+### `safe-array-concat.js`
+This module exports a single function, `safeConcat`, which takes any number of arguments. The function creates a new array, `result`, and iterates over each argument (`arg`). If the `arg` is an array, its elements are spread into `result`. If `arg` is not an array, it is added as a single element to `result`. Essentially, `safeConcat` concatenates arrays in a safe manner, always treating non-array arguments as single elements, unlike `Array.prototype.concat`, which can spread strings and other objects under certain conditions.
+
+### `test.js`
+This is a test script to verify the functionality of `safeConcat` with Node's `assert` module:
+
+1. It first imports `safeConcat` from `safe-array-concat.js`.
+
+2. The script checks the behavior of the standard `Array.prototype.concat` and `safeConcat`:
+   - Validates that normal `concat` and `safeConcat` yield the same results when dealing with typical arrays and primitive elements.
+   
+3. Modifies the behavior of strings using `Symbol.isConcatSpreadable`:
+   - Demonstrates that normally spreadable string objects are spread by `Array.prototype.concat` but not by `safeConcat`.
+
+4. Modifies the behavior of arrays using `Symbol.isConcatSpreadable`:
+   - Shows that `Array.prototype.concat` does not spread non-concat-spreadable arrays, while `safeConcat` still does.
+
+Here is the rewritten code:
+
+```javascript
+// safe-array-concat.js
+function safeConcat(...args) {
+  const result = [];
+  args.forEach(arg => {
+    if (Array.isArray(arg)) {
+      result.push(...arg);
+    } else {
+      result.push(arg);
+    }
+  });
+  return result;
+}
+module.exports = safeConcat;
+
+// test.js
+const assert = require('assert');
+const safeConcat = require('./safe-array-concat');
+
+// Tests
+assert.deepEqual([].concat([1, 2], 3, [[4]]), [1, 2, 3, [4]], 'arrays spread as expected with normal concat');
+assert.deepEqual(safeConcat([1, 2], 3, [[4]]), [1, 2, 3, [4]], 'arrays spread as expected with safe concat');
+
+String.prototype[Symbol.isConcatSpreadable] = true;
+assert.deepEqual([].concat('foo', Object('bar')), ['foo', 'b', 'a', 'r'], 'spreadable String objects are spread with normal concat!!!');
+assert.deepEqual(safeConcat('foo', Object('bar')), ['foo', Object('bar')], 'spreadable String objects are not spread with safe concat');
+
+Array.prototype[Symbol.isConcatSpreadable] = false;
+assert.deepEqual([].concat([1, 2], 3, [[4]]), [[], [1, 2], 3, [[4]]], 'non-concat-spreadable arrays do not spread with normal concat!!!');
+assert.deepEqual(safeConcat([1, 2], 3, [[4]]), [1, 2, 3, [4]], 'non-concat-spreadable arrays still spread with safe concat');
+```

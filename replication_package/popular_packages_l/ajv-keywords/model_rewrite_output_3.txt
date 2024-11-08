@@ -1,0 +1,75 @@
+The provided Node.js code uses the AJV library to validate JSON data against a schema with additional keyword functionalities. It utilizes custom keywords from the `ajv-keywords` library to enhance validation options. Here's an explanation of the functionality and a possible rewrite:
+
+1. **Imports and Setup**:
+   - The code imports the AJV and a local module `ajvKeywords` responsible for adding additional keywords for validation.
+   - It initializes an AJV instance and extends it with additional keywords by executing `addKeywords(ajv)`.
+
+2. **Schema Definition**:
+   - The schema specifies validation rules for JSON objects. It requires an object with a "kind" property (string) and optionally a "timestamp" (format: date-time).
+   - Custom dynamic defaults are used, where "timestamp" can automatically be set.
+   - A `select` keyword is used to choose between different validation cases (foo or bar) based on the value of the "kind" property.
+   - Each case has its own specific required properties: "fooProp" for "foo" and "barProp" for "bar".
+   - Disallows additional properties not specified in the schema.
+
+3. **Data Validation**:
+   - The code defines an example data object with a "kind" value of "foo" and a matching "fooProp".
+   - It compiles the schema into a validation function using `ajv.compile`.
+   - The data object is validated against the schema, and the result is logged.
+
+4. **Adding Keywords**:
+   - `ajvKeywords.js` module is a function that imports and applies custom keywords, like dynamic defaults, to the AJV instance.
+
+Here's a possible rewrite of this code:
+
+```javascript
+// index.js
+const Ajv = require("ajv");
+const addAjvKeywords = require("./addAjvKeywords");
+
+const ajv = new Ajv();
+addAjvKeywords(ajv);
+
+const schema = {
+  type: "object",
+  properties: {
+    kind: { type: "string" },
+    timestamp: { type: "string", format: "date-time" },
+  },
+  required: ["kind"],
+  dynamicDefaults: {
+    timestamp: "datetime",
+  },
+  select: { $data: "0/kind" },
+  selectCases: {
+    foo: {
+      properties: { fooProp: { type: "string" } },
+      required: ["fooProp"],
+    },
+    bar: {
+      properties: { barProp: { type: "number" } },
+      required: ["barProp"],
+    },
+  },
+  additionalProperties: false,
+};
+
+const data = {
+  kind: "foo",
+  fooProp: "example",
+};
+
+const validate = ajv.compile(schema);
+
+if (validate(data)) {
+  console.log("Valid data:", data);
+} else {
+  console.log("Validation errors:", validate.errors);
+}
+
+// addAjvKeywords.js
+module.exports = function addAjvKeywords(ajv) {
+  require("ajv-keywords")(ajv);
+  const dynamicDefaults = require("ajv-keywords/dist/definitions/dynamicDefaults");
+  ajv.addKeyword("dynamicDefaults", dynamicDefaults());
+};
+```

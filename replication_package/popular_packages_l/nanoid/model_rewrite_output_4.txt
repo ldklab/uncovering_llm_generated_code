@@ -1,0 +1,97 @@
+The provided Node.js code is a module for generating unique identifiers (IDs) of configurable length, using a specified alphabet of characters. The module includes both secure and non-secure methods for generating these IDs.
+
+### Functionality Explained:
+
+1. **urlAlphabet**: A default set of characters used for generating IDs, which is URL-friendly.
+
+2. **getRandomBytes**: A function returning a promise to securely obtain a buffer of random bytes, utilizing `crypto.randomBytes`.
+
+3. **nanoid**: An asynchronous function that generates a secure random ID of a specified length using a given or default alphabet. It employs the `getRandomBytes` function to acquire randomness, and uses bitmasking techniques to index into the alphabet.
+
+4. **nonSecureNanoid**: A function for generating a random ID using `Math.random`. It is faster but less secure compared to `nanoid`.
+
+5. **customAlphabet**: A factory function to create a non-secure ID generator function with a specified alphabet and size.
+
+6. **customRandom**: A factory function that returns a function to generate IDs using a custom random function and alphabet.
+
+7. **example function**: Demonstrates how to use `nanoid`, `nonSecureNanoid`, and `customAlphabet` by printing example IDs.
+
+8. **Exports**: The module exports the `nanoid`, `nonSecureNanoid`, `customAlphabet`, `customRandom`, and `urlAlphabet` to be used elsewhere.
+
+Here's a rewritten version of the code that maintains the same functionality:
+
+```javascript
+import crypto from 'crypto';
+
+const urlAlphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
+
+function getRandomBytes(size) {
+  return new Promise((resolve, reject) => {
+    crypto.randomBytes(size, (err, buf) => {
+      if (err) reject(err);
+      else resolve(buf);
+    });
+  });
+}
+
+async function nanoid(size = 21, alphabet = urlAlphabet) {
+  const bytes = await getRandomBytes(size);
+  const mask = (2 << Math.floor(Math.log2(alphabet.length - 1))) - 1;
+  const step = Math.ceil((1.6 * mask * size) / alphabet.length);
+  let id = '';
+
+  while (true) {
+    const random = await getRandomBytes(step);
+    for (let i = 0; i < step; i++) {
+      const byte = random[i] & mask;
+      if (alphabet[byte]) {
+        id += alphabet[byte];
+        if (id.length === size) return id;
+      }
+    }
+  }
+}
+
+function nonSecureNanoid(size = 21, alphabet = urlAlphabet) {
+  let id = '';
+  for (let i = 0; i < size; i++) {
+    id += alphabet[Math.floor(Math.random() * alphabet.length)];
+  }
+  return id;
+}
+
+function customAlphabet(alphabet, size = 21) {
+  return () => nonSecureNanoid(size, alphabet);
+}
+
+function customRandom(alphabet, size, random) {
+  return () => {
+    let id = '';
+    for (let i = 0; i < size; i++) {
+      id += alphabet[random(size)];
+    }
+    return id;
+  }
+}
+
+async function example() {
+  try {
+    console.log('Secure NanoID:', await nanoid());
+    console.log('Non-secure NanoID:', nonSecureNanoid());
+    const createCustomId = customAlphabet('abcdef', 10);
+    console.log('Custom Alphabet ID:', createCustomId());
+  } catch (error) {
+    console.error(error);
+  }
+}
+
+example();
+
+export {
+  nanoid,
+  nonSecureNanoid,
+  customAlphabet,
+  customRandom,
+  urlAlphabet
+};
+```

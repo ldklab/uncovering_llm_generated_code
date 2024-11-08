@@ -1,0 +1,170 @@
+The provided Node.js code implements a lightweight fetch-like functionality using the native `http` and `https` modules, as well as other utilities from Node.js such as `stream` and `util`. Below is a breakdown of the functionality:
+
+1. **Custom Error Classes**: 
+   - `FetchError`: Extends `Error` to handle errors related to the fetch process, capturing additional error information.
+   - `AbortError`: Extends `Error` to denote an operation that has been aborted.
+
+2. **Body Handling**:
+   - `Body`: A class representing the body of a request or response, with methods to consume and parse the body into text or JSON, while ensuring the body is used only once.
+
+3. **Headers Management**:
+   - `Headers`: A class to handle HTTP headers, allowing for retrieval and setting of header values in a case-insensitive manner.
+
+4. **Request Class**:
+   - Represents an HTTP request, inheriting from `Body` to support request bodies, and initializes with a URL, method, and headers.
+
+5. **Response Class**:
+   - Represents an HTTP response, inheriting from `Body` to support response bodies, and initializes with status code, status text, and headers.
+
+6. **fetch Function**:
+   - Provides an API to make HTTP(S) requests. It takes a URL and options, constructs a request, and returns a promise containing a `Response` object. The function includes error handling for request failures and respects optional body handling configurations.
+
+Here is the rewritten code following the explanation:
+
+```javascript
+// Revised Implementation of fetch-like functionality with Node.js core modules
+
+import http from 'node:http';
+import https from 'node:https';
+import { Readable } from 'node:stream';
+import { TextDecoder } from 'node:util';
+
+class FetchError extends Error {
+  constructor(message, type, systemError) {
+    super(message);
+    this.type = type;
+    if (systemError) {
+      this.code = this.errno = systemError.code;
+      this.erroredAt = systemError.erroredAt;
+    }
+  }
+}
+
+class AbortError extends Error {
+  constructor(message) {
+    super(message);
+    this.type = 'aborted';
+  }
+}
+
+class Body {
+  constructor(body) {
+    this.body = body;
+    this.bodyUsed = false;
+  }
+
+  async _consumeBody() {
+    if (this.bodyUsed) {
+      throw new TypeError('Body has already been used');
+    }
+    this.bodyUsed = true;
+    if (this.body instanceof Readable) {
+      return new Promise((resolve, reject) => {
+        const chunks = [];
+        this.body.on('data', (chunk) => chunks.push(chunk));
+        this.body.on('end', () => resolve(Buffer.concat(chunks)));
+        this.body.on('error', reject);
+      });
+    }
+    return this.body || Buffer.alloc(0);
+  }
+
+  async text() {
+    const buffer = await this._consumeBody();
+    return buffer.toString('utf-8');
+  }
+
+  async json() {
+    const text = await this.text();
+    return JSON.parse(text);
+  }
+}
+
+class Headers {
+  constructor(init = {}) {
+    this.map = {};
+    for (const [key, value] of Object.entries(init)) {
+      this.map[key.toLowerCase()] = [value.toString()];
+    }
+  }
+
+  get(name) {
+    const entries = this.map[name.toLowerCase()];
+    return entries ? entries.join(', ') : null;
+  }
+
+  set(name, value) {
+    this.map[name.toLowerCase()] = [value];
+  }
+
+  raw() {
+    return this.map;
+  }
+}
+
+class Request extends Body {
+  constructor(input, options = {}) {
+    super(options.body);
+    this.url = input;
+    this.method = options.method || 'GET';
+    this.headers = new Headers(options.headers);
+  }
+}
+
+class Response extends Body {
+  constructor(body, options = {}) {
+    super(body);
+    this.status = options.status || 200;
+    this.statusText = options.statusText || '';
+    this.headers = new Headers(options.headers);
+  }
+
+  get ok() {
+    return this.status >= 200 && this.status < 300;
+  }
+}
+
+function fetch(url, options = {}) {
+  return new Promise((resolve, reject) => {
+    const parsedURL = new URL(url);
+    const protocol = parsedURL.protocol === 'http:' ? http : https;
+
+    const headers = new Headers(options.headers);
+    const requestOptions = {
+      method: options.method || 'GET',
+      headers: headers.raw(),
+      agent: options.agent
+    };
+
+    const req = protocol.request(parsedURL, requestOptions, (res) => {
+      const responseBody = new Readable();
+      res.on('data', (chunk) => responseBody.push(chunk));
+      res.on('end', () => responseBody.push(null));
+
+      const responseOpts = {
+        status: res.statusCode,
+        statusText: res.statusMessage,
+        headers: new Headers(res.headers)
+      };
+
+      resolve(new Response(responseBody, responseOpts));
+    });
+
+    req.on('error', (err) => {
+      reject(new FetchError(`Fetch to ${url} failed: ${err.message}`, 'system', err));
+    });
+
+    if (options.body) {
+      if (options.body instanceof Readable) {
+        options.body.pipe(req);
+      } else {
+        req.write(options.body);
+      }
+    }
+
+    req.end();
+  });
+}
+
+export { fetch, Headers, Request, Response, FetchError, AbortError };
+```

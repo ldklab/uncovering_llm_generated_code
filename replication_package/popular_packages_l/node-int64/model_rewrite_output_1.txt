@@ -1,0 +1,82 @@
+The provided Node.js code defines a class `Int64` that can handle 64-bit integers. The functionality of this class includes:
+
+1. **Initialization**:
+    - The constructor can handle three types of inputs: 
+      - A number: Converts the number to its octet (byte) representation if it's within safe integer range.
+      - A string: Assumes a hexadecimal string representation of a number.
+      - A Buffer: Uses a buffer to represent the number. An optional offset can be provided.
+    - Based on the input type, the internal value (`_value`) and octet representation (`_octets`) are set.
+    - Defines a read-only property `value` that returns the integer value.
+
+2. **Methods**:
+    - `_numberToOctets(number)`: Converts a number to a Buffer of octets.
+    - `_stringToOctets(hexString)`: Converts a hexadecimal string into a Buffer of octets.
+    - `_octetsToNumber(buffer)`: Converts a Buffer of octets back to a numerical representation.
+    - `toString(base)`: Converts the integer value to a string with the specified base (default is 10).
+    - `toOctetString()`: Returns the hexadecimal representation of the octets.
+    - `toBuffer()`: Returns the octet Buffer.
+    - `copy(buffer, offset)`: Copies the octet Buffer into another buffer starting at a specified offset.
+
+Here is the rewritten code:
+
+```javascript
+// node-int64.js
+
+const isBuffer = (input) => input instanceof Buffer;
+
+class Int64 {
+  constructor(arg1, arg2) {
+    if (typeof arg1 === 'number') {
+      this._value = arg1 > Number.MAX_SAFE_INTEGER ? Infinity : arg1;
+      this._octets = this._numberToOctets(this._value);
+    } else if (typeof arg1 === 'string') {
+      this._octets = this._stringToOctets(arg1);
+      this._value = this._octetsToNumber(this._octets);
+    } else if (isBuffer(arg1)) {
+      const offset = arg2 || 0;
+      this._octets = arg1.slice(offset, offset + 8);
+      this._value = this._octetsToNumber(this._octets);
+    }
+
+    Object.defineProperty(this, 'value', {
+      get: () => this._value,
+    });
+  }
+
+  _numberToOctets(number) {
+    const buffer = Buffer.allocUnsafe(8);
+    buffer.writeUInt32BE(number >>> 32, 0);
+    buffer.writeUInt32BE(number & 0xFFFFFFFF, 4);
+    return buffer;
+  }
+
+  _stringToOctets(hexString) {
+    const buffer = Buffer.from(hexString, 'hex');
+    return buffer.length === 8 ? buffer : Buffer.concat([Buffer.alloc(8 - buffer.length), buffer], 8);
+  }
+
+  _octetsToNumber(buffer) {
+    const high = buffer.readUInt32BE(0) * 0x100000000;
+    const low = buffer.readUInt32BE(4);
+    return high + low;
+  }
+
+  toString(base = 10) {
+    return this._value === Infinity ? 'Infinity' : this._value.toString(base);
+  }
+
+  toOctetString() {
+    return this._octets.toString('hex');
+  }
+
+  toBuffer() {
+    return this._octets;
+  }
+
+  copy(buffer, offset = 0) {
+    this._octets.copy(buffer, offset);
+  }
+}
+
+module.exports = Int64;
+```

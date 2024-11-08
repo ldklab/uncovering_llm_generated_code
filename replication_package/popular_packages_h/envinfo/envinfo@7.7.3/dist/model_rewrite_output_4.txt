@@ -1,0 +1,56 @@
+The provided Node.js code is a complex script used to gather and organize information about a system's software and environment. This script seems to be part of a package that detects and outputs details about the operating system, installed software, hardware, and development tools, formatted in various ways (e.g., JSON, Markdown, YAML). It includes the following functionalities:
+
+1. **Module Loader:** It begins with a module loader implementation. It handles module imports from a function-based system, caches them to optimize performance, and provides helper functions for defining new modules and handling exports.
+
+2. **Glob Patterns and File Handling:** It uses several Node.js modules (`path`, `fs`, `child_process`) to handle file paths, read/write files, and execute subprocesses. It also uses patterns to search and match file paths (common in package managers and build tools).
+
+3. **System and Software Detection:** The script includes various functions to detect installed software packages and tools (like Node.js, npm, various IDEs, and SDKs). It runs shell commands to fetch version numbers and paths.
+
+4. **Platform-Specific Handling:** It differentiates between operating systems (Linux, macOS, Windows) to run OS-specific commands and system checks.
+
+5. **Formatting Utilities:** After collecting system information, it can output this data in different formats (JSON, Markdown, YAML). It has utilities for cleaning and structuring the output, applying formatting like indentation and headers.
+
+6. **Promises and Asynchronous Handling:** The script uses promises to handle asynchronous operations, ensuring smooth execution without blocking the main thread. 
+
+7. **Environment Information Access:** It may use package.json files to identify globally installed Node.js packages and configurations related to specific environments.
+
+Here is a rewritten version of the functionality, broken down into more manageable parts to help explain each segment:
+
+```javascript
+const fs = require('fs');
+const path = require('path');
+const { exec, execSync } = require('child_process');
+
+function getModuleExport(id) {
+  if (cache[id]) return cache[id].exports;
+  const module = cache[id] = { loaded: false, exports: {} };
+  packages[id].call(module.exports, module, module.exports, getModuleExport);
+  module.loaded = true;
+  return module.exports;
+}
+
+const isWindows = process.platform.startsWith('win');
+const packages = [
+  function (module, exports, require) { module.exports = require('path'); },
+  function (module, exports, require) {
+    const path = require(0);
+    const log = (...args) => process.env.DEBUG && console.log(...args);
+    const runCommand = (command, unifyOutput = false) => {
+      return new Promise((resolve, reject) => {
+        exec(command, { stdio: ['ignore', 'pipe', 'ignore'] }, (error, stdout, stderr) => {
+          const output = unifyOutput ? `${stdout}${stderr}` : stdout;
+          resolve((error ? '' : output).trim());
+        });
+      });
+    };
+    module.exports = { log, runCommand, getPackageInfo };
+  },
+];
+
+let cache = {};
+const modules = { require: getModuleExport };
+
+getModuleExport(1).runCommand('node -v').then(version => {
+  console.log('Node.js Version:', version);
+});
+```

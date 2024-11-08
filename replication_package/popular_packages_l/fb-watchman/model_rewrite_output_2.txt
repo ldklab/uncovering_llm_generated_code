@@ -1,0 +1,83 @@
+The given Node.js code utilizes the `fb-watchman` library to monitor changes in a specified directory. It performs a few key operations:
+
+1. **Initialize Watch:**
+   - The `initWatch` function establishes a "watch" on a specified directory. It uses capabilities of the `watchman` client to check if `relative_root` is supported.
+   - If the capability check is successful, it proceeds to set up a watch on the directory, resolving with the `client`, `watch`, and `relativePath` information.
+
+2. **Subscribe to Changes:**
+   - The `subscribeToChanges` function sets up a subscription to monitor file changes in the directory.
+   - It specifies which file changes to observe and how to handle them.
+   - It logs each change event for the files included in the subscription.
+
+3. **Usage:**
+   - Example usage of these functions is provided in an immediate-execution async function.
+   - It attempts to watch a specified path and subscribe to changes using a predefined subscription name.
+
+Here's a possible rewrite of the code with these functionalities intact:
+
+```javascript
+const watchman = require('fb-watchman');
+
+async function initWatch(path) {
+  return new Promise((resolve, reject) => {
+    const client = new watchman.Client();
+
+    client.capabilityCheck({optional: [], required: ['relative_root']}, (error, resp) => {
+      if (error) {
+        console.error(error);
+        client.end();
+        return reject(error);
+      }
+
+      client.command(['watch-project', path], (error, resp) => {
+        if (error) {
+          console.error('Error initiating watch:', error);
+          client.end();
+          return reject(error);
+        }
+
+        console.log(`Watch established on ${resp.watch}`);
+        resolve({
+          client,
+          watch: resp.watch,
+          relativePath: resp.relative_path || '',
+        });
+      });
+    });
+  });
+}
+
+function subscribeToChanges(watchInfo, subscriptionName) {
+  const {client, watch, relativePath} = watchInfo;
+  const subscription = {
+    expression: ['allof', ['match', '*.*']],
+    fields: ['name', 'size', 'mtime_ms', 'exists', 'type'],
+    relative_root: relativePath,
+  };
+
+  client.command(['subscribe', watch, subscriptionName, subscription], (error, resp) => {
+    if (error) {
+      console.error('Failed to subscribe:', error);
+      client.end();
+      return;
+    }
+
+    console.log(`Subscription ${subscriptionName} established.`);
+  });
+
+  client.on('subscription', (resp) => {
+    if (resp.subscription !== subscriptionName) return;
+    resp.files.forEach(file => console.log(`File ${file.name} changed.`));
+  });
+}
+
+(async () => {
+  const path = '/path/to/watch';
+  try {
+    const watchInfo = await initWatch(path);
+    subscribeToChanges(watchInfo, 'my-subscription');
+  } catch (error) {
+    console.error('Error setting up watch:', error);
+  }
+})();
+```

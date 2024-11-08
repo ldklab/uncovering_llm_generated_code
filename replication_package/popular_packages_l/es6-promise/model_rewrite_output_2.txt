@@ -1,0 +1,102 @@
+The Node.js code above is a simplified implementation of a basic Promise library, following the ES6 specification. Here's a breakdown of its functionality:
+
+1. **Promise Constructor**: Initializes the promise with a `pending` state and assigns an `executor` function which is immediately invoked with `resolve` and `reject` functions. This constructor is responsible for transitioning the promise state to `fulfilled` or `rejected`.
+
+2. **resolvePromise Function**: Handles the promise resolution logic by executing the `resolvingFunction`. It catches any exceptions, forwarding them to the `reject` function.
+
+3. **resolve and reject Functions**: Change the state of a promise to `fulfilled` or `rejected`, setting the appropriate value. They guard against changing states if it's already not `pending`.
+
+4. **then Method**: Provides a way to add fulfillment and rejection handlers to the promise, returning a new promise for chaining.
+
+5. **catch Method**: Convenience method for adding only a rejection handler.
+
+6. **finally Method**: Runs a given handler when the promise finishes, regardless of its outcome, mimicking the finalization of a promise chain.
+
+7. **polyfill Method**: Adds this custom `Promise` implementation to the global scope if native promises aren't available.
+
+8. **Auto-polyfill and Exporting**: Automatically applies the polyfill in a browser environment if necessary, while also exporting the Promise module in a Node.js environment.
+
+Here's a possible rewrite of the given code following the same logic:
+
+```javascript
+// es6-promise-rewrite.js
+
+(function (global) {
+  function noop() {}
+
+  function resolvePromise(promise, resolvingFn) {
+    try {
+      const result = resolvingFn();
+      fulfill(promise, result);
+    } catch (error) {
+      fail(promise, error);
+    }
+  }
+
+  function fulfill(promise, outcome) {
+    if (promise.state !== 'pending') return;
+    promise.state = 'fulfilled';
+    promise.value = outcome;
+  }
+  
+  function fail(promise, error) {
+    if (promise.state !== 'pending') return;
+    promise.state = 'rejected';
+    promise.value = error;
+  }
+  
+  function Promise(executor) {
+    this.state = 'pending';
+    this.value = undefined;
+    
+    const instance = this;
+    
+    function resolve(outcome) {
+      resolvePromise(instance, () => outcome);
+    }
+    
+    function reject(error) {
+      resolvePromise(instance, () => { throw error; });
+    }
+    
+    executor(resolve, reject);
+  }
+
+  Promise.prototype.then = function(onSuccess, onFailure) {
+    const instance = this;
+    return new Promise((resolve, reject) => {
+      if (instance.state === 'fulfilled') {
+        resolve(onSuccess(instance.value));
+      } else if (instance.state === 'rejected') {
+        reject(onFailure(instance.value));
+      }
+    });
+  };
+
+  Promise.prototype.catch = function(onFailure) {
+    return this.then(null, onFailure);
+  };
+
+  Promise.prototype.finally = function(onFinal) {
+    return this.then(
+      value => Promise.resolve(onFinal()).then(() => value),
+      reason => Promise.resolve(onFinal()).then(() => { throw reason; })
+    );
+  };
+
+  Promise.polyfill = function() {
+    if (!global.Promise) {
+      global.Promise = Promise;
+    }
+  };
+
+  if (typeof window !== 'undefined') {
+    Promise.polyfill();
+  }
+  
+  if (typeof module !== 'undefined') {
+    module.exports = { Promise };
+  }
+
+}(typeof window !== 'undefined' ? window : global));
+```

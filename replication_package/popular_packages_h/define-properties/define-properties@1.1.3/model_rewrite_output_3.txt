@@ -1,0 +1,69 @@
+The given Node.js code is a utility for defining properties on objects. It includes the following functionalities:
+
+1. **Keys Module**: It uses the `object-keys` module to extract keys from an object, likely providing a consistent way to do so across different environments.
+2. **Symbol Check**: It checks if the environment supports ES6 symbols.
+3. **Function Check**: It defines a utility `isFunction` to check if a given value is a function.
+4. **Property Descriptor Support Check**: It defines `arePropertyDescriptorsSupported` to check if the environment supports property descriptors.
+5. **Define Property**: It uses `defineProperty` to conditionally define a property on an object. If property descriptors are supported, it uses `Object.defineProperty` to make the property non-enumerable; otherwise, it directly assigns it.
+6. **Define Multiple Properties**: `defineProperties` iterates over a map of properties and uses `defineProperty` to add them to an object. It also handles symbol properties if they exist.
+7. **Exports**: The main functionality, `defineProperties`, is exported for use in other modules.
+
+Here's the rewritten code:
+
+```javascript
+'use strict';
+
+const keys = require('object-keys');
+const hasSymbols = typeof Symbol === 'function' && typeof Symbol('foo') === 'symbol';
+
+const toStr = Object.prototype.toString;
+const concat = Array.prototype.concat;
+const origDefineProperty = Object.defineProperty;
+
+const isFunction = (fn) => typeof fn === 'function' && toStr.call(fn) === '[object Function]';
+
+const arePropertyDescriptorsSupported = () => {
+    const obj = {};
+    try {
+        origDefineProperty(obj, 'x', { enumerable: false, value: obj });
+        for (let _ in obj) {
+            return false;
+        }
+        return obj.x === obj;
+    } catch (e) {
+        return false;
+    }
+};
+
+const supportsDescriptors = origDefineProperty && arePropertyDescriptorsSupported();
+
+const defineProperty = (object, name, value, predicate) => {
+    if (name in object && (!isFunction(predicate) || !predicate())) {
+        return;
+    }
+    if (supportsDescriptors) {
+        origDefineProperty(object, name, {
+            configurable: true,
+            enumerable: false,
+            value: value,
+            writable: true
+        });
+    } else {
+        object[name] = value;
+    }
+};
+
+const defineProperties = (object, map, predicates = {}) => {
+    let props = keys(map);
+    if (hasSymbols) {
+        props = concat.call(props, Object.getOwnPropertySymbols(map));
+    }
+    for (let i = 0; i < props.length; i += 1) {
+        defineProperty(object, props[i], map[props[i]], predicates[props[i]]);
+    }
+};
+
+defineProperties.supportsDescriptors = !!supportsDescriptors;
+
+module.exports = defineProperties;
+```

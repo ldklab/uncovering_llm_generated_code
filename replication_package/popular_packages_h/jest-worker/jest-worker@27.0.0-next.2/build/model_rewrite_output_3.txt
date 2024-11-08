@@ -1,0 +1,123 @@
+The Node.js code provided defines a module for handling parallel processing using child processes, specifically for the Jest testing framework. Here's a breakdown of its functionality:
+
+1. **Module and Function Imports**: The code imports the `os` module and several other modules/functions from local files: `Farm`, `WorkerPool`, and `messageParent`. It uses `require` for these imports.
+
+2. **Helper Functions**:
+   - `_interopRequireDefault` is used to handle default imports, allowing compatibility between ES6 and CommonJS module systems.
+   - `_defineProperty` is used to define or override properties on objects, ensuring properties are set correctly with optional configuration settings.
+
+3. **getExposedMethods Function**: This function retrieves a list of methods to be exposed from a worker module. If the list isn't provided in options, it attempts to infer it by loading the module and returning function names.
+
+4. **Worker Class**:
+   - The `Worker` class facilitates managing multiple child processes for parallel task execution.
+   - Its constructor initializes several options from the provided `options` object, such as `numWorkers`, which defaults to the number of CPU cores minus one.
+   - It supports both 'standard' and 'sticky' method execution strategies.
+   - The constructor creates a worker pool (`_workerPool`) and a farm (`_farm`) to manage and distribute tasks across workers.
+   - `_bindExposedWorkerMethods` dynamically binds methods from the worker path to the `Worker` instance, while ensuring no conflicts with existing method names.
+
+5. **Public Methods**:
+   - `getStderr` and `getStdout`: These methods retrieve the standard error and output streams from the worker pool, respectively.
+   - `end`: Gracefully terminates the worker pool, ensuring no additional calls can be made after invoking it.
+
+Here is the rewritten code:
+
+```javascript
+'use strict';
+
+const os = require('os');
+const Farm = require('./Farm').default;
+const WorkerPool = require('./WorkerPool').default;
+const messageParent = require('./workers/messageParent').default;
+
+Object.defineProperty(exports, 'messageParent', {
+  enumerable: true,
+  get: () => messageParent
+});
+
+function _interopRequireDefault(obj) {
+  return obj && obj.__esModule ? obj : { default: obj };
+}
+
+function _defineProperty(obj, key, value) {
+  if (key in obj) {
+    Object.defineProperty(obj, key, {
+      value,
+      enumerable: true,
+      configurable: true,
+      writable: true
+    });
+  } else {
+    obj[key] = value;
+  }
+  return obj;
+}
+
+function getExposedMethods(workerPath, options) {
+  if (!options.exposedMethods) {
+    const module = require(workerPath);
+    const methodNames = Object.keys(module);
+    options.exposedMethods = methodNames.filter(name => typeof module[name] === 'function');
+
+    if (typeof module === 'function') {
+      options.exposedMethods.push('default');
+    }
+  }
+  return options.exposedMethods;
+}
+
+class Worker {
+  constructor(workerPath, options) {
+    this._options = { ...options };
+    this._ending = false;
+
+    const workerPoolOptions = {
+      enableWorkerThreads: options.enableWorkerThreads || false,
+      forkOptions: options.forkOptions || {},
+      maxRetries: options.maxRetries || 3,
+      numWorkers: options.numWorkers || Math.max(os.cpus().length - 1, 1),
+      resourceLimits: options.resourceLimits || {},
+      setupArgs: options.setupArgs || []
+    };
+
+    this._workerPool = this._options.WorkerPool
+      ? new this._options.WorkerPool(workerPath, workerPoolOptions)
+      : new WorkerPool(workerPath, workerPoolOptions);
+
+    this._farm = new Farm(workerPoolOptions.numWorkers, this._workerPool.send.bind(this._workerPool), this._options.computeWorkerKey);
+    this._bindExposedWorkerMethods(workerPath, this._options);
+  }
+
+  _bindExposedWorkerMethods(workerPath, options) {
+    getExposedMethods(workerPath, options).forEach(name => {
+      if (!name.startsWith('_') && !this.constructor.prototype.hasOwnProperty(name)) {
+        this[name] = this._callFunctionWithArgs.bind(this, name);
+      }
+    });
+  }
+
+  _callFunctionWithArgs(method, ...args) {
+    if (this._ending) {
+      throw new Error('Farm is ended, no more calls can be done to it');
+    }
+    return this._farm.doWork(method, ...args);
+  }
+
+  getStderr() {
+    return this._workerPool.getStderr();
+  }
+
+  getStdout() {
+    return this._workerPool.getStdout();
+  }
+
+  async end() {
+    if (this._ending) {
+      throw new Error('Farm is ended, no more calls can be done to it');
+    }
+    this._ending = true;
+    return this._workerPool.end();
+  }
+}
+
+exports.Worker = Worker;
+```

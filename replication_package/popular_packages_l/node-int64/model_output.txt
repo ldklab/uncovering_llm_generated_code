@@ -1,0 +1,79 @@
+The Node.js package described in the README provides an `Int64` class to handle 64-bit integers in JavaScript, which typically cannot handle integers with full precision beyond 53 bits due to its IEEE 754 double-precision floating-point format. The `Int64` class allows for the creation and manipulation of 64-bit integers using octet string representations, and aims to behave much like native JavaScript numbers for ease of use, while maintaining accurate internal storage.
+
+### Key Features
+
+- **Construction**: You can create `Int64` instances using numbers, strings representing hexadecimal values, arrays representing an octet sequence, or `Buffer` objects. You can also specify an offset within a `Buffer`.
+
+- **Arithmetic and String Operations**: `Int64` instances can participate in arithmetic expressions, returning results similar to native JavaScript numbers (e.g., `Infinity` for values outside JS's safe integer range). They can also be concatenated into strings and converted into different numeric base representations using methods like `toString()`.
+
+- **Octet Representation**: The class provides methods to convert the stored `Int64` value back into octet string format, as well as methods to output the internal representation as a `Buffer`.
+
+- **Interoperability**: Despite the internal differences, instances of `Int64` can behave like native numbers as much as possible, facilitating mixed operations without special handling.
+
+Here's the implementation for this functionality:
+
+```javascript
+// node-int64.js
+
+const isBuffer = (input) => input instanceof Buffer;
+
+class Int64 {
+  constructor(arg1, arg2) {
+    if (typeof arg1 === 'number') {
+      this._value = arg1 > Number.MAX_SAFE_INTEGER ? Infinity : arg1;
+      this._octets = this._numberToOctets(this._value);
+    } else if (typeof arg1 === 'string') {
+      this._octets = this._stringToOctets(arg1);
+      this._value = this._octetsToNumber(this._octets);
+    } else if (isBuffer(arg1)) {
+      const offset = arg2 || 0;
+      this._octets = arg1.slice(offset, offset + 8);
+      this._value = this._octetsToNumber(this._octets);
+    }
+
+    Object.defineProperty(this, 'value', {
+      get: function () {
+        return this._value;
+      }
+    });
+  }
+
+  _numberToOctets(number) {
+    let buffer = Buffer.allocUnsafe(8);
+    buffer.writeUInt32BE(number >>> 32, 0);
+    buffer.writeUInt32BE(number & 0xFFFFFFFF, 4);
+    return buffer;
+  }
+
+  _stringToOctets(hexString) {
+    let buffer = Buffer.from(hexString, 'hex');
+    return buffer.length === 8 ? buffer : Buffer.concat([Buffer.alloc(8 - buffer.length), buffer], 8);
+  }
+
+  _octetsToNumber(buffer) {
+    const high = buffer.readUInt32BE(0) * 0x100000000;
+    const low = buffer.readUInt32BE(4);
+    return high + low;
+  }
+
+  toString(base = 10) {
+    return this._value === Infinity ? 'Infinity' : this._value.toString(base);
+  }
+
+  toOctetString() {
+    return this._octets.toString('hex');
+  }
+
+  toBuffer() {
+    return this._octets;
+  }
+
+  copy(buffer, offset = 0) {
+    this._octets.copy(buffer, offset);
+  }
+}
+
+module.exports = Int64;
+```
+
+To use this package, you would require the `node-int64` module and instantiate `Int64` objects with different data types (number, string, buffer) and perform operations on them as shown in the example provided in the README. This implementation provides the foundation for dealing with 64-bit integers beyond JavaScript’s usual constraints.

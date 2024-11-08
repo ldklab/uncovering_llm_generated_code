@@ -1,0 +1,60 @@
+The provided Node.js code consists of two utility functions `quote` and `parse` which are organized into separate modules and then exported as a single module.
+
+1. **quote.js**: The `quote` function takes an array `args` of string arguments and processes each argument to ensure it can be safely interpreted in a shell environment. If an argument contains special shell characters such as spaces, quotes, back quotes, or dollar signs, it wraps the argument in single quotes and escapes any existing single quotes within those arguments. It then returns a single string where all arguments are joined by a space.
+
+2. **parse.js**: The `parse` function processes a shell command string `cmd` and converts it into an array of appropriate components, considering shell-like behavior. It uses a regex to split the command string into quoted or space-separated tokens. It offers basic handling of shell variables, substituting matching environment variables `env`, and optionally allows configuring character escape through `opts`. This function identifies environment-style assignments (key=value) and resolves values starting with `$` by substituting them with corresponding entries from `env`.
+
+3. **index.js**: This file imports the `quote` and `parse` functions and exports them as part of a single module, allowing them to be utilized elsewhere in the application.
+
+Below is the rewritten code, functionally equivalent to the original:
+
+```javascript
+// quote.js
+function quote(args) {
+    return args.map(arg => {
+        if (/[\s'"\$`]/.test(arg)) {
+            return `'${arg.replace(/'/g, "'\\''")}'`;
+        }
+        return arg;
+    }).join(' ');
+}
+
+module.exports = quote;
+
+// parse.js
+function parse(cmd, env = {}, opts = { escape: '\\' }) {
+    const result = [];
+    const tokenPattern = /'[^']*'|"[^"]*"|\S+/g;
+    let match;
+
+    while ((match = tokenPattern.exec(cmd)) !== null) {
+        let token = match[0];
+        if (token.startsWith('"') || token.startsWith("'")) {
+            token = token.slice(1, -1);
+        }
+        token = token.replace(new RegExp(`\\${opts.escape}`, 'g'), '');
+
+        if (token.includes('=')) {
+            let [key, value] = token.split('=');
+            if (value.startsWith("$") && env.hasOwnProperty(value.slice(1))) {
+                value = env[value.slice(1)];
+            }
+            result.push(`${key}=${value}`);
+        } else if (token.startsWith("$") && env.hasOwnProperty(token.slice(1))) {
+            result.push(env[token.slice(1)]);
+        } else {
+            result.push(token);
+        }
+    }
+
+    return result;
+}
+
+module.exports = parse;
+
+// index.js
+const quote = require('./quote');
+const parse = require('./parse');
+
+module.exports = { quote, parse };
+```

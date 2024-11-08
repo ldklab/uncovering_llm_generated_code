@@ -1,0 +1,119 @@
+The code provides functions for parsing JSON strings with enhanced error handling and formatting capabilities. It defines a custom error class `JSONParseError` to provide detailed error messages when JSON parsing fails. Additionally, it offers utilities to strip byte order markers from strings, and to preserve and reapply indentation and newline formats when parsing JSON.
+
+1. **hexify function**: Converts a single character to its hexadecimal Unicode value, prefixed with `0x`. Ensures two-digit representation.
+
+2. **parseError function**: Constructs a detailed error message and identifies the position of parsing errors in a JSON string. It highlights unexpected characters and surrounding context when a parsing error occurs.
+
+3. **JSONParseError class**: Extends `SyntaxError` to encapsulate additional metadata about JSON parse errors, such as the custom error message and error position.
+
+4. **parseJson function**: Parses a JSON string, handling BOMs, and maintains original indentation and newlines. It throws a `JSONParseError` on failure, with specific handling for non-string and empty buffer inputs.
+
+5. **stripBOM function**: Strips Byte Order Marks from input text, ensuring accurate JSON parsing.
+
+6. **parseJson.noExceptions**: Similar to `parseJson`, but suppresses parsing errors, returning `undefined` in case of failure.
+
+The main export is the `parseJson` function, which is equipped with the `JSONParseError` and `noExceptions` utilities.
+
+```javascript
+'use strict';
+
+const hexify = char => {
+  const hex = char.charCodeAt(0).toString(16).toUpperCase();
+  return '0x' + (hex.length % 2 ? '0' : '') + hex;
+};
+
+const parseError = (error, text, context) => {
+  if (!text) {
+    return {
+      message: error.message + ' while parsing empty string',
+      position: 0,
+    };
+  }
+
+  const badToken = error.message.match(/^Unexpected token (.) .*position\s+(\d+)/i);
+  const errorIndex = badToken ? +badToken[2]
+    : error.message.match(/^Unexpected end of JSON.*/i) ? text.length - 1
+    : null;
+
+  const message = badToken ? error.message.replace(/^Unexpected token ./, `Unexpected token ${
+      JSON.stringify(badToken[1])
+    } (${hexify(badToken[1])})`)
+    : error.message;
+
+  if (errorIndex !== null) {
+    const start = Math.max(0, errorIndex - context);
+    const end = Math.min(text.length, errorIndex + context);
+    const slice = (start === 0 ? '' : '...') +
+      text.slice(start, end) +
+      (end === text.length ? '' : '...');
+    const near = text === slice ? '' : 'near ';
+
+    return {
+      message: message + ` while parsing ${near}${JSON.stringify(slice)}`,
+      position: errorIndex,
+    };
+  } else {
+    return {
+      message: message + ` while parsing '${text.slice(0, context * 2)}'`,
+      position: 0,
+    };
+  }
+};
+
+class JSONParseError extends SyntaxError {
+  constructor(error, text, context = 20, caller) {
+    const metadata = parseError(error, text, context);
+    super(metadata.message);
+    Object.assign(this, metadata);
+    this.code = 'EJSONPARSE';
+    this.systemError = error;
+    Error.captureStackTrace(this, caller || this.constructor);
+  }
+  
+  get name() { return this.constructor.name; }
+  set name(_) {}
+  get [Symbol.toStringTag]() { return this.constructor.name; }
+}
+
+const kIndent = Symbol.for('indent');
+const kNewline = Symbol.for('newline');
+const formatRE = /^\s*[{\[]((?:\r?\n)+)([\s\t]*)/;
+const emptyRE = /^(?:\{\}|\[\])((?:\r?\n)+)?$/;
+
+const parseJson = (text, reviver, context = 20) => {
+  const parseText = stripBOM(text);
+  try {
+    const [, newline = '\n', indent = '  '] = parseText.match(emptyRE) ||
+      parseText.match(formatRE) || [, '', ''];
+    
+    const result = JSON.parse(parseText, reviver);
+    if (result && typeof result === 'object') {
+      result[kNewline] = newline;
+      result[kIndent] = indent;
+    }
+    return result;
+  } catch (error) {
+    if (typeof text !== 'string' && !Buffer.isBuffer(text)) {
+      const isEmptyArray = Array.isArray(text) && text.length === 0;
+      throw Object.assign(new TypeError(
+        `Cannot parse ${isEmptyArray ? 'an empty array' : String(text)}`
+      ), {
+        code: 'EJSONPARSE',
+        systemError: error,
+      });
+    }
+    throw new JSONParseError(error, parseText, context, parseJson);
+  }
+};
+
+const stripBOM = text => String(text).replace(/^\uFEFF/, '');
+
+module.exports = parseJson;
+parseJson.JSONParseError = JSONParseError;
+
+parseJson.noExceptions = (text, reviver) => {
+  try {
+    return JSON.parse(stripBOM(text), reviver);
+  } catch (error) {}
+};
+```

@@ -1,0 +1,32 @@
+This Node.js code exports two functions, `sign` and `unsign`, which are used to create and verify a signed string using HMAC (Hash-based Message Authentication Code) with the SHA-256 hashing algorithm.
+
+1. `sign(val, secret)`: This function takes a string value `val` and a `secret` (string, ArrayBufferView, or crypto.KeyObject) as input. It generates a signature by creating an HMAC using SHA-256 with the given `secret`, updates it with the `val`, digests it to a base64 string, and appends it to the `val` separated by a dot. This results in a signed value in the form `val.signature`.
+
+2. `unsign(input, secret)`: This function takes a signed string `input` and a `secret` as input. It attempts to verify the signature. It splits the input string to separate the original value and its signature. It then generates an expected signed value using the `sign` function with the extracted value and `secret`. If the length of both the expected and provided buffers match and using a timing-safe comparison indicate equality, it returns the original value; otherwise, it returns `false`, indicating an invalid signature.
+
+```javascript
+const crypto = require('crypto');
+
+exports.sign = function(val, secret) {
+  if (typeof val !== 'string') throw new TypeError("Cookie value must be provided as a string.");
+  if (secret == null) throw new TypeError("Secret key must be provided.");
+  const signature = crypto.createHmac('sha256', secret)
+                          .update(val)
+                          .digest('base64')
+                          .replace(/=+$/, '');
+  return `${val}.${signature}`;
+};
+
+exports.unsign = function(input, secret) {
+  if (typeof input !== 'string') throw new TypeError("Signed cookie string must be provided.");
+  if (secret == null) throw new TypeError("Secret key must be provided.");
+  const index = input.lastIndexOf('.');
+  const tentativeValue = input.slice(0, index);
+  const expectedInput = exports.sign(tentativeValue, secret);
+  const expectedBuffer = Buffer.from(expectedInput);
+  const inputBuffer = Buffer.from(input);
+  const isValid = expectedBuffer.length === inputBuffer.length &&
+                  crypto.timingSafeEqual(expectedBuffer, inputBuffer);
+  return isValid ? tentativeValue : false;
+};
+```

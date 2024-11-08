@@ -1,0 +1,122 @@
+The provided Node.js script is designed to identify the type of a JavaScript "Typed Array" (e.g., Int8Array, Uint8Array, etc.). Here's an explanation of its functionality:
+
+1. **Initialization and Dependencies:** 
+   - The script requires several modules to handle typed arrays and method bindings.
+   - It sets up a global reference and lists the available typed arrays.
+
+2. **Utility Functions:**
+   - `$toString`: A bound function for getting the `[object Type]` string representation of objects.
+   - `$indexOf`: A bound `Array.prototype.indexOf` method used to find the index of a value in an array.
+   - `getPrototypeOf`: A shortcut to `Object.getPrototypeOf`.
+
+3. **Typed Array Detection Logic:**
+   - The script creates a `cache` object to store getters for the `Symbol.toStringTag` property for different typed arrays.
+   - If the environment supports `Symbol.toStringTag`, the code uses `getOwnPropertyDescriptor` to get the descriptor of `Symbol.toStringTag` and creates a bound function to cache it.
+   - For environments not supporting `Symbol.toStringTag`, it uses the `slice` or `set` methods available on typed array prototypes.
+
+4. **Typed Array Detection Functions:**
+   - `tryTypedArrays`: Attempts to detect the typed array type using the cached getters.
+   - `trySlices`: A fallback for earlier Node.js versions without `Symbol.toStringTag`, using `slice` or `set`.
+
+5. **Exported Functionality:**
+   - The main function exported is `whichTypedArray`, which:
+     - Checks if the value is a non-null object.
+     - Handles environments without `Symbol.toStringTag`.
+     - Uses either `tryTypedArrays` or `trySlices` to determine and return the type of the typed array.
+
+Here's a possible rewrite of this code, preserving its functionality:
+
+```javascript
+'use strict';
+
+const forEach = require('for-each');
+const availableTypedArrays = require('available-typed-arrays');
+const callBind = require('call-bind');
+const callBound = require('call-bind/callBound');
+const gOPD = require('gopd');
+
+const $toString = callBound('Object.prototype.toString');
+const hasToStringTag = require('has-tostringtag/shams')();
+
+const globalRef = typeof globalThis === 'undefined' ? global : globalThis;
+const typedArraysList = availableTypedArrays();
+
+const $slice = callBound('String.prototype.slice');
+const getPrototypeOf = Object.getPrototypeOf;
+
+const $indexOf = callBound('Array.prototype.indexOf', true) || function(array, value) {
+  for (let i = 0; i < array.length; i++) {
+    if (array[i] === value) {
+      return i;
+    }
+  }
+  return -1;
+};
+
+const cache = { __proto__: null };
+if (hasToStringTag && gOPD && getPrototypeOf) {
+  forEach(typedArraysList, function(typedArray) {
+    const arr = new globalRef[typedArray]();
+    if (Symbol.toStringTag in arr) {
+      let proto = getPrototypeOf(arr);
+      let descriptor = gOPD(proto, Symbol.toStringTag);
+      if (!descriptor) {
+        proto = getPrototypeOf(proto);
+        descriptor = gOPD(proto, Symbol.toStringTag);
+      }
+      cache['$' + typedArray] = callBind(descriptor.get);
+    }
+  });
+} else {
+  forEach(typedArraysList, function(typedArray) {
+    const arr = new globalRef[typedArray]();
+    const fn = arr.slice || arr.set;
+    if (fn) {
+      cache['$' + typedArray] = callBind(fn);
+    }
+  });
+}
+
+function tryTypedArrays(value) {
+  let found = false;
+  forEach(cache, function(getter, typedArray) {
+    if (!found) {
+      try {
+        if ('$' + getter(value) === typedArray) {
+          found = $slice(typedArray, 1);
+        }
+      } catch (e) {}
+    }
+  });
+  return found;
+}
+
+function trySlices(value) {
+  let found = false;
+  forEach(cache, function(getter, name) {
+    if (!found) {
+      try {
+        getter(value);
+        found = $slice(name, 1);
+      } catch (e) {}
+    }
+  });
+  return found;
+}
+
+module.exports = function whichTypedArray(value) {
+  if (!value || typeof value !== 'object') return false;
+  if (!hasToStringTag) {
+    const tag = $slice($toString(value), 8, -1);
+    if ($indexOf(typedArraysList, tag) > -1) {
+      return tag;
+    }
+    if (tag !== 'Object') {
+      return false;
+    }
+    return trySlices(value);
+  }
+  if (!gOPD) return null;
+  return tryTypedArrays(value);
+};
+```

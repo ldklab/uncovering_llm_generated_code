@@ -1,0 +1,98 @@
+The provided Node.js code defines a module that exports a `generate` function, which is used to generate code from an Abstract Syntax Tree (AST) considering various formatting options. The code performs the following functionalities:
+
+1. **Imports**: It imports two modules, `_sourceMap` and `_printer`, which are presumably used for managing source maps and printing the generated code, respectively.
+
+2. **Normalize Options**: The `normalizeOptions` function takes the input code and options (`opts`), and normalizes the options for generating code. It sets different formatting rules based on options like comments, compact mode, and indentation styles. The function also adjusts the comment printing logic based on whether the code is minified and the length of the input code.
+
+3. **Conditional Logic for Compact Mode**: If the `compact` option is set to `"auto"`, and the code length exceeds 500,000 characters, it logs an optimization message and sets the compact mode to true.
+
+4. **The `CodeGenerator` Class**: This is a class that is defined to encapsulate the code generation logic. It initializes with an AST, options, and the original code. It uses the `normalizeOptions` and potentially includes source mapping functionality.
+
+5. **Generate Method**: Both the `generate` method of the `CodeGenerator` class and the standalone `generate` function create a `printer` instance that generates code from the given AST using the specified options.
+
+Here is a possible rewrite of the provided code:
+
+```javascript
+"use strict";
+
+import SourceMap from "./source-map.js";
+import Printer from "./printer.js";
+
+function normalizeOptions(code, opts) {
+  const format = {
+    auxiliaryCommentBefore: opts.auxiliaryCommentBefore,
+    auxiliaryCommentAfter: opts.auxiliaryCommentAfter,
+    shouldPrintComment: opts.shouldPrintComment,
+    retainLines: opts.retainLines,
+    retainFunctionParens: opts.retainFunctionParens,
+    comments: opts.comments == null || opts.comments,
+    compact: opts.compact,
+    minified: opts.minified,
+    concise: opts.concise,
+    indent: {
+      adjustMultilineComment: true,
+      style: "  "
+    },
+    jsescOption: {
+      quotes: "double",
+      wrap: true,
+      minimal: false,
+      ...opts.jsescOption
+    },
+    topicToken: opts.topicToken,
+    importAttributesKeyword: opts.importAttributesKeyword,
+    decoratorsBeforeExport: opts.decoratorsBeforeExport,
+    recordAndTupleSyntaxType: opts.recordAndTupleSyntaxType || "hash"
+  };
+
+  format.jsescOption.json = opts.jsonCompatibleStrings;
+
+  if (format.minified) {
+    format.compact = true;
+    format.shouldPrintComment = format.shouldPrintComment || (() => format.comments);
+  } else {
+    format.shouldPrintComment = format.shouldPrintComment || (value => format.comments || value.includes("@license") || value.includes("@preserve"));
+  }
+
+  if (format.compact === "auto") {
+    format.compact = typeof code === "string" && code.length > 500000;
+    if (format.compact) {
+      console.error(`[BABEL] Note: The code generator has deoptimised the styling of ${opts.filename} as it exceeds the max of 500KB.`);
+    }
+  }
+
+  if (format.compact) {
+    format.indent.adjustMultilineComment = false;
+  }
+
+  const { auxiliaryCommentBefore, auxiliaryCommentAfter, shouldPrintComment } = format;
+  if (auxiliaryCommentBefore && !shouldPrintComment(auxiliaryCommentBefore)) {
+    format.auxiliaryCommentBefore = undefined;
+  }
+  if (auxiliaryCommentAfter && !shouldPrintComment(auxiliaryCommentAfter)) {
+    format.auxiliaryCommentAfter = undefined;
+  }
+
+  return format;
+}
+
+export default function generate(ast, opts = {}, code) {
+  const format = normalizeOptions(code, opts);
+  const map = opts.sourceMaps ? new SourceMap(opts, code) : null;
+  const printer = new Printer(format, map);
+  return printer.generate(ast);
+}
+
+export class CodeGenerator {
+  constructor(ast, opts = {}, code) {
+    this._ast = ast;
+    this._format = normalizeOptions(code, opts);
+    this._map = opts.sourceMaps ? new SourceMap(opts, code) : null;
+  }
+
+  generate() {
+    const printer = new Printer(this._format, this._map);
+    return printer.generate(this._ast);
+  }
+}
+```

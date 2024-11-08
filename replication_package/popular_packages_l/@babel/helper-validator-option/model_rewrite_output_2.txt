@@ -1,0 +1,78 @@
+The provided Node.js code defines an `OptionValidator` class that helps validate an options object against a predefined schema. The schema specifies the type, requirement status (whether a field is required), and allowed values for each option. The validator checks each option against these rules and accumulates errors, if any, during validation:
+
+1. **Constructor (`constructor`)**: Initializes the validator with a schema.
+
+2. **Validate Method (`validate`)**: 
+   - Takes an options object to be validated.
+   - Iterates over each entry in the schema and corresponding entry in the options.
+   - Checks if a required option is missing.
+   - Ensures an option has the correct type if the type rule is specified.
+   - Verifies the option is one of the allowed values if such values are specified.
+   - Returns an object with a boolean indicating if the options are valid, and an array of error messages, if any are present.
+
+3. **Example Usage**: 
+   - Defines a schema for expected options.
+   - Creates an instance of `OptionValidator` with the schema.
+   - Defines a set of user options to be validated.
+   - Validates the options and logs the result, showing errors if validation fails.
+
+```javascript
+// lib/index.js
+
+class OptionValidator {
+  constructor(schema) {
+    this.schema = schema;
+  }
+
+  validate(options) {
+    const errors = [];
+
+    for (const [key, rule] of Object.entries(this.schema)) {
+      const option = options[key];
+
+      if (rule.required && (option === undefined || option === null)) {
+        errors.push(`Option '${key}' is required.`);
+        continue;
+      }
+
+      if (option === undefined) {
+        continue;
+      }
+
+      if (rule.type && typeof option !== rule.type) {
+        errors.push(`Option '${key}' must be of type ${rule.type}.`);
+      }
+
+      if (rule.allowedValues && !rule.allowedValues.includes(option)) {
+        errors.push(`Option '${key}' must be one of: ${rule.allowedValues.join(', ')}.`);
+      }
+    }
+
+    return {
+      isValid: errors.length === 0,
+      errors
+    };
+  }
+}
+
+// Example usage
+const schema = {
+  debug: { type: 'boolean', required: false },
+  env: { type: 'string', required: true, allowedValues: ['development', 'production', 'test'] },
+};
+
+const validator = new OptionValidator(schema);
+
+const userOptions = {
+  debug: true,
+  env: 'production'
+};
+
+const validationResult = validator.validate(userOptions);
+
+if (!validationResult.isValid) {
+  console.error("Validation failed with errors:", validationResult.errors);
+} else {
+  console.log("Validation succeeded");
+}
+```

@@ -1,0 +1,246 @@
+The provided Node.js code implements a set of classes that model source code processing and manipulation. Here's a brief overview of their primary functionalities:
+
+1. **Source (Base Class):** 
+   - Abstract base class that cannot be directly instantiated.
+   - Defines `source()`, `buffer()`, `size()`, `map()`, `sourceAndMap()`, and `updateHash()` methods.
+   - `source()` should be implemented by derived classes.
+   - `buffer()` converts the source to a Buffer.
+   - `size()` provides the length of the buffer.
+   - `map()` deals with source mapping, providing a generic behavior to be overridden.
+   - `sourceAndMap()` returns the source and its map.
+   - `updateHash()` updates a hash with the source content.
+
+2. **RawSource:**
+   - Derived from `Source`.
+   - Holds raw source code as a string and implements the `source()` method.
+
+3. **OriginalSource:**
+   - Extends `RawSource`.
+   - Represents source code with an optional name and overrides `map()` to provide a simple source map.
+
+4. **SourceMapSource:**
+   - Extends `Source`.
+   - Takes a source code, its name, and a source map, providing a way to handle source maps.
+
+5. **CachedSource:**
+   - Wraps another source to cache its processed data like source, map, buffer, and size for efficiency.
+
+6. **PrefixSource:**
+   - Extends `Source`.
+   - Adds a prefix to each line of the source content.
+
+7. **ConcatSource:**
+   - Extends `Source`.
+   - Concatenates multiple source items into a single source.
+
+8. **ReplaceSource:**
+   - Extends `Source`.
+   - Allows replacements within the source at specified positions.
+
+9. **CompatSource:**
+   - Provides a static method `from()` to convert different types of source-like inputs into a `Source` instance.
+
+Each class implements `source()` uniquely based on its responsibility. The `map()` method allows handling basic source map functionality, which is essential in source transformation and debugging practices.
+
+```javascript
+class Source {
+  constructor() {
+    if (new.target === Source) {
+      throw new TypeError("Cannot construct Source instances directly");
+    }
+  }
+
+  source() {
+    throw new Error("Method 'source()' must be implemented.");
+  }
+
+  buffer() {
+    const src = this.source();
+    return Buffer.isBuffer(src) ? src : Buffer.from(src, 'utf-8');
+  }
+
+  size() {
+    return this.buffer().length;
+  }
+
+  map(options = { columns: true }) {
+    return null;
+  }
+
+  sourceAndMap(options = { columns: true }) {
+    return {
+      source: this.source(),
+      map: this.map(options),
+    };
+  }
+
+  updateHash(hash) {
+    hash.update(this.source());
+  }
+}
+
+class RawSource extends Source {
+  constructor(sourceCode) {
+    super();
+    this.sourceCode = sourceCode;
+  }
+
+  source() {
+    return this.sourceCode;
+  }
+}
+
+class OriginalSource extends Source {
+  constructor(sourceCode, name) {
+    super();
+    this.sourceCode = sourceCode;
+    this.name = name;
+  }
+
+  source() {
+    return this.sourceCode;
+  }
+
+  map(options = { columns: true }) {
+    return { version: 3, sources: [this.name], names: [], mappings: '' };
+  }
+}
+
+class SourceMapSource extends Source {
+  constructor(sourceCode, name, sourceMap, originalSource = null, innerSourceMap = null, removeOriginalSource = false) {
+    super();
+    this.sourceCode = sourceCode;
+    this.name = name;
+    this.sourceMap = typeof sourceMap === 'string' ? JSON.parse(sourceMap) : sourceMap;
+    this.originalSource = originalSource;
+    this.innerSourceMap = innerSourceMap;
+    this.removeOriginalSource = removeOriginalSource;
+  }
+
+  source() {
+    return this.sourceCode;
+  }
+
+  map(options = { columns: true }) {
+    return this.sourceMap;
+  }
+}
+
+class CachedSource extends Source {
+  constructor(source, cachedData = null) {
+    super();
+    this.cachedData = cachedData || {};
+    this.source = typeof source === 'function' ? source() : source;
+  }
+
+  source() {
+    if (!this.cachedData.source) this.cachedData.source = this.source.source();
+    return this.cachedData.source;
+  }
+
+  map(options = { columns: true }) {
+    if (!this.cachedData.map) this.cachedData.map = this.source.map(options);
+    return this.cachedData.map;
+  }
+
+  buffer() {
+    if (!this.cachedData.buffer) this.cachedData.buffer = this.source.buffer();
+    return this.cachedData.buffer;
+  }
+
+  size() {
+    if (!this.cachedData.size) this.cachedData.size = this.source.size();
+    return this.cachedData.size;
+  }
+
+  sourceAndMap(options = { columns: true }) {
+    return {
+      source: this.source(),
+      map: this.map(options),
+    };
+  }
+
+  updateHash(hash) {
+    this.source.updateHash(hash);
+  }
+}
+
+class PrefixSource extends Source {
+  constructor(prefix, source) {
+    super();
+    this.prefix = prefix;
+    this.source = typeof source === 'string' || Buffer.isBuffer(source)
+      ? new RawSource(source)
+      : source;
+  }
+
+  source() {
+    const src = this.source.source();
+    return src.split('\n').map(line => this.prefix + line).join('\n');
+  }
+}
+
+class ConcatSource extends Source {
+  constructor(...items) {
+    super();
+    this.items = items;
+  }
+
+  add(item) {
+    this.items.push(item);
+  }
+
+  source() {
+    return this.items.map(item => (typeof item === 'string' ? item : item.source())).join('');
+  }
+}
+
+class ReplaceSource extends Source {
+  constructor(source) {
+    super();
+    this.sourceObj = source;
+    this.replacements = [];
+  }
+
+  source() {
+    let src = this.sourceObj.source();
+    for (const { start, end, replacement } of this.replacements) {
+      src = src.slice(0, start) + replacement + src.slice(end + 1);
+    }
+    return src;
+  }
+
+  replace(start, end, replacement) {
+    this.replacements.push({ start, end, replacement });
+  }
+
+  insert(pos, insertion) {
+    this.replacements.push({ start: pos, end: pos - 1, replacement: insertion });
+  }
+
+  original() {
+    return this.sourceObj;
+  }
+}
+
+class CompatSource extends Source {
+  static from(sourceLike) {
+    if (sourceLike instanceof Source) {
+      return sourceLike;
+    }
+    return new RawSource(sourceLike);
+  }
+}
+
+module.exports = {
+  Source,
+  RawSource,
+  OriginalSource,
+  SourceMapSource,
+  CachedSource,
+  PrefixSource,
+  ConcatSource,
+  ReplaceSource,
+  CompatSource,
+};
+```

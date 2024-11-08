@@ -1,0 +1,57 @@
+The functionality of the given Node.js code is to retrieve the description of a Symbol object. If the intrinsic method `Symbol.prototype.description` is unavailable or unsupported by the environment, the function manually extracts the description of a symbol or a symbol wrapper object. The code also handles possible errors by throwing a `SyntaxError` if symbols are not supported in the environment.
+
+Here's a step-by-step explanation of the code:
+
+1. Import necessary modules and functions using `require`.
+2. Assign various functions to variables such as `thisSymbolValue`, `symToStr`, and `$strSlice`, which point to specific intrinsic functions related to Symbol and String prototypes.
+3. Define `getSymbolDescription`, which checks if the `Symbol.prototype.description` intrinsic is available. If not, it uses a custom logic to derive the description.
+4. Inside `getSymbolDescription`:
+   - First, check if the `thisSymbolValue` feature is unavailable, throw an error.
+   - Convert the input using `thisSymbolValue` to ensure it is a Symbol or symbol-like.
+   - Attempt to retrieve the inferred name using `getInferredName`. If available, extract and return the name, trimming certain characters.
+   - If unable to retrieve an inferred name, use `getGlobalSymbolDescription` for global symbol registry names.
+   - If all else fails, use `symToStr` and string slicing on the symbol's string representation to extract its description.
+
+Here's the rewritten code:
+
+```javascript
+'use strict';
+
+const GetIntrinsic = require('get-intrinsic');
+const callBound = require('call-bind/callBound');
+const $SyntaxError = require('es-errors/syntax');
+
+const getGlobalSymbolDescription = GetIntrinsic('%Symbol.keyFor%', true);
+const thisSymbolValue = callBound('%Symbol.prototype.valueOf%', true);
+const symToStr = callBound('Symbol.prototype.toString', true);
+const $strSlice = callBound('String.prototype.slice');
+const getInferredName = require('./getInferredName');
+
+module.exports = callBound('%Symbol.prototype.description%', true) || function getSymbolDescription(symbol) {
+	if (!thisSymbolValue) {
+		throw new $SyntaxError('Symbols are not supported in this environment');
+	}
+
+	const sym = thisSymbolValue(symbol);
+
+	if (getInferredName) {
+		const name = getInferredName(sym);
+		if (name !== '') {
+			return name.slice(1, -1);
+		}
+	}
+
+	let desc;
+	if (getGlobalSymbolDescription) {
+		desc = getGlobalSymbolDescription(sym);
+		if (typeof desc === 'string') {
+			return desc;
+		}
+	}
+
+	desc = $strSlice(symToStr(sym), 7, -1);
+	if (desc) {
+		return desc;
+	}
+};
+```

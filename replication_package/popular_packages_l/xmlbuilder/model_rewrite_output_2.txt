@@ -1,0 +1,110 @@
+The provided Node.js code is an implementation of a simple XML builder. It defines a class `XMLElement` that allows for creating XML elements, setting attributes, adding child elements, adding comments, and generating the final XML string while optionally formatting it with pretty indentation. Here's a breakdown of its features:
+
+1. **XMLElement Class**: This class represents an XML element.
+   - **Constructor**: Initializes the XML element with a name, an attributes object, a children array, and a text content.
+   - **Methods**:
+     - `att(name, value)`: Sets an attribute for the element.
+     - `ele(name, attrs, text)`: Creates and adds a child XML element, optionally with attributes and text content.
+     - `com(text)`: Adds a comment to the XML structure.
+     - `end(options)`: Generates the XML string for the element and all its children. It uses optional pretty formatting by adding indentation and newlines.
+     - `create(obj)`: A static method to create an XML structure from an object, supporting a specific format where keys like `#text` specify text content, and `@attrName` specifies attributes.
+
+2. **Example Usage**:
+   - The `builder` object provides a `create` method to initialize root XML elements.
+
+3. **Export**:
+   - The `builder` is exported for external use, allowing other modules to use the XML building functionality.
+
+Here's a possible rewrite of the original Node.js code:
+
+```javascript
+// xmlbuilder.js: Simple XML builder implementation
+
+class XMLElement {
+  constructor(name) {
+    this.name = name;
+    this.attributes = {};
+    this.children = [];
+    this.text = null;
+  }
+
+  att(name, value) {
+    this.attributes[name] = value;
+    return this;
+  }
+
+  ele(name, attrs, text) {
+    const child = new XMLElement(name);
+    if (attrs && typeof attrs === 'object') {
+      Object.entries(attrs).forEach(([key, value]) => child.att(key, value));
+    }
+    if (typeof text === 'string') {
+      child.text = text;
+    }
+    this.children.push(child);
+    return child;
+  }
+
+  com(text) {
+    this.children.push({ comment: text });
+    return this;
+  }
+
+  end(options = {}) {
+    const { pretty } = options;
+    const indentation = pretty ? '  ' : '';
+    const newLine = pretty ? '\n' : '';
+
+    const buildXMLString = (node, level = 0) => {
+      if ('comment' in node) {
+        return `${indentation.repeat(level)}<!-- ${node.comment} -->${newLine}`;
+      }
+
+      let attrs = Object.entries(node.attributes)
+                        .map(([key, value]) => ` ${key}="${value}"`)
+                        .join('');
+
+      let xmlString = `${indentation.repeat(level)}<${node.name}${attrs}`;
+
+      if (node.text) {
+        xmlString += `>${node.text}</${node.name}>${newLine}`;
+      } else if (node.children.length > 0) {
+        xmlString += `>${newLine}${node.children.map(child => buildXMLString(child, level + 1)).join('')}${indentation.repeat(level)}</${node.name}>${newLine}`;
+      } else {
+        xmlString += `/>${newLine}`;
+      }
+
+      return xmlString;
+    };
+
+    return `<?xml version="1.0"?>${newLine}` + buildXMLString(this);
+  }
+
+  static create(obj) {
+    const createFromObject = (obj, name) => {
+      const element = new XMLElement(name);
+      Object.entries(obj).forEach(([key, value]) => {
+        if (key === '#text') {
+          element.text = value;
+        } else if (key.startsWith('@')) {
+          element.att(key.slice(1), value);
+        } else if (typeof value === 'object') {
+          element.children.push(createFromObject(value, key));
+        }
+      });
+      return element;
+    };
+
+    const rootName = Object.keys(obj)[0];
+    return createFromObject(obj[rootName], rootName);
+  }
+}
+
+// Example usage
+const builder = {
+  create: (name) => new XMLElement(name),
+};
+
+// Exporting for use
+module.exports = builder;
+```

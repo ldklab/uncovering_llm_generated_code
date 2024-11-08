@@ -1,0 +1,94 @@
+The `object.assign` package provides a polyfill for the ES2015 `Object.assign` method. It offers a shim method that allows you to add `Object.assign` functionality in environments where it is not natively available. The polyfill works according to the ECMAScript 2015 specification and is compatible with environments that support ES3 and higher versions. Also, it respects ES6 features such as `Symbol` when available.
+
+### Features:
+
+- **Object.assign polyfill**: The main functionality provided by this package is `Object.assign`, which copies properties from one or more source objects to a target object.
+- **Shim method**: This method introduces `Object.assign` in environments where it might be missing, effectively providing a fallback implementation.
+- **TypeError for invalid target**: If the target object is `null` or `undefined`, a `TypeError` will be thrown as per the specification.
+- **Works with multiple sources**: Simultaneously merge properties from multiple source objects into a single target object.
+- **Returns the target object**: The `assign` function returns the modified target object, allowing for chaining or simple reference.
+- **Compliant with ECMAScript 2015**: Ensures compatibility with ES6 features where available.
+
+### Usage:
+
+- **Get Polyfill**: You can retrieve the polyfill using `require('object.assign').getPolyfill()`.
+- **Direct Polyfill Import**: The polyfill can also be accessed directly via `require('object.assign/polyfill')()`.
+- **Shim Implementation**: Use `require('object.assign').shim()` to apply the polyfill in environments lacking `Object.assign`.
+
+### Example Implementation:
+
+```js
+// object.assign/index.js
+function assign(target, ...sources) {
+    if (target === null || target === undefined) {
+        throw new TypeError('Cannot convert undefined or null to object');
+    }
+
+    const to = Object(target);
+
+    for (const source of sources) {
+        if (source !== null && source !== undefined) {
+            for (const key in source) {
+                if (Object.prototype.hasOwnProperty.call(source, key)) {
+                    to[key] = source[key];
+                }
+            }
+
+            if (Object.getOwnPropertySymbols) {
+                const symbols = Object.getOwnPropertySymbols(source);
+                for (const symbol of symbols) {
+                    if (Object.prototype.propertyIsEnumerable.call(source, symbol)) {
+                        to[symbol] = source[symbol];
+                    }
+                }
+            }
+        }
+    }
+    return to;
+}
+
+function getPolyfill() {
+    return typeof Object.assign === 'function' ? Object.assign : assign;
+}
+
+function shim() {
+    const polyfill = getPolyfill();
+    if (polyfill !== Object.assign) {
+        Object.defineProperty(Object, 'assign', {
+            value: polyfill,
+            configurable: true,
+            writable: true
+        });
+    }
+    return polyfill;
+}
+
+module.exports = {
+    assign,
+    getPolyfill,
+    shim
+};
+
+// object.assign/polyfill.js
+module.exports = require('./index').getPolyfill;
+
+// object.assign/shim.js
+module.exports = require('./index').shim;
+
+// test.js (basic illustration of how tests would be run)
+const assert = require('assert');
+const { assign } = require('./object.assign');
+
+const target = { a: true };
+const source1 = { b: true };
+const source2 = { c: true };
+
+assign(target, source1, source2);
+assert.deepEqual(target, { a: true, b: true, c: true });
+
+console.log('All tests passed');
+```
+
+### Notes:
+- To run tests, clone the repo, run `npm install`, and execute `npm test`.
+- This implementation ensures compatibility across environments without the native `Object.assign`.

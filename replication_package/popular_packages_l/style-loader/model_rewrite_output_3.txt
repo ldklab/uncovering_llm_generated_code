@@ -1,0 +1,81 @@
+The Node.js code provided is a simple implementation of a custom Webpack loader called `style-loader`, which is used to inject CSS styles into the DOM. Here's how it works:
+
+1. **Loader Functionality**:
+   - The `style-loader` module exports a function that processes the CSS source code.
+   - It retrieves options using `loader-utils.getOptions`.
+   - It determines if the module should be exported as an ES module or not using the `esModule` option.
+   - It returns JavaScript code that:
+     - Stringifies the CSS source.
+     - Invokes the `insertStyleIntoDOM` function to insert CSS into the DOM. This function creates a `<style>` tag, applies any specified attributes, adds the CSS, and appends it to a target DOM element (defaulting to `<head>` if not specified).
+     - Exports the CSS so it can be imported into other modules.
+
+2. **Webpack Configuration**:
+   - In development mode, it uses the custom `style-loader` for injecting CSS directly into the DOM.
+   - In production, it uses `MiniCssExtractPlugin` to extract CSS into separate files.
+   - Also sets up `css-loader` with source maps and CSS modules support.
+
+Here is a rewritten version of the code:
+
+```javascript
+// style-loader/index.js
+const path = require('path');
+const { getOptions } = require('loader-utils');
+
+// This function inserts a given CSS string into the DOM as a <style> element.
+function insertStyleIntoDOM(css, options) {
+  const styleElement = document.createElement('style');
+  styleElement.type = 'text/css';
+
+  if (options.attributes) {
+    for (const [key, value] of Object.entries(options.attributes)) {
+      styleElement.setAttribute(key, value);
+    }
+  }
+
+  styleElement.appendChild(document.createTextNode(css));
+  const targetElement = document.querySelector(options.insert || 'head');
+  targetElement.appendChild(styleElement);
+}
+
+module.exports = function(source) {
+  const options = getOptions(this) || {};
+  const isEsModule = options.esModule !== false;
+
+  const cssString = JSON.stringify(source);
+  const insertFunctionString = insertStyleIntoDOM.toString();
+  const optionsString = JSON.stringify(options);
+
+  return `${isEsModule ? 'const' : 'var'} css = ${cssString};
+    (${insertFunctionString})(css, ${optionsString});
+    export default css;`;
+};
+
+// webpack.config.js example
+const MiniCssExtractPlugin = require('mini-css-extract-plugin');
+
+const isDevMode = process.env.NODE_ENV !== 'production';
+
+module.exports = {
+  module: {
+    rules: [
+      {
+        test: /\.css$/i,
+        use: [
+          isDevMode ? path.resolve(__dirname, './style-loader') : MiniCssExtractPlugin.loader,
+          {
+            loader: 'css-loader',
+            options: {
+              sourceMap: true,
+              modules: {
+                namedExport: true,
+                localIdentName: '[name]__[local]--[hash:base64:5]'
+              }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  plugins: isDevMode ? [] : [new MiniCssExtractPlugin()],
+};
+```

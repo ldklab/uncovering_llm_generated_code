@@ -1,0 +1,82 @@
+The `@babel/plugin-transform-spread` is a Babel plugin that converts ES2015 (ES6) spread syntax into equivalent ES5 code. The spread syntax in JavaScript allows an iterable, such as an array or string, to be expanded in places where zero or more arguments or elements are expected. This transformation is necessary for making modern JavaScript code compatible with older environments that do not natively support the spread operator.
+
+For instance, in ES6 you might use the spread syntax as follows:
+
+```javascript
+function sum(x, y, z) {
+  return x + y + z;
+}
+
+const numbers = [1, 2, 3];
+console.log(sum(...numbers)); // This will be converted
+```
+
+The plugin will transform the spread syntax into ES5 equivalent code that does the same operation. The transformation might convert the code into something like this:
+
+```javascript
+function sum(x, y, z) {
+  return x + y + z;
+}
+
+var numbers = [1, 2, 3];
+console.log(sum.apply(null, numbers)); // ES5 equivalent
+```
+
+This is critical for developers who want to ensure their code runs on older JavaScript engines or in environments where ES6 features are not supported by default.
+
+Below is a simplified Node.js package implementation that simulates the transformation of ES2015 spread syntax to ES5:
+
+```javascript
+// babel-plugin-transform-spread.js
+
+module.exports = function() {
+  return {
+    visitor: {
+      CallExpression(path) {
+        const { node } = path;
+        if (node.arguments.some(arg => arg.type === 'SpreadElement')) {
+          const spreadIndex = node.arguments.findIndex(arg => arg.type === 'SpreadElement');
+          const spreadArg = node.arguments[spreadIndex].argument;
+
+          // Create an apply call
+          const newCall = {
+            type: 'CallExpression',
+            callee: {
+              type: 'MemberExpression',
+              object: node.callee,
+              property: { type: 'Identifier', name: 'apply' }
+            },
+            arguments: [
+              { type: 'NullLiteral' },
+              spreadArg
+            ]
+          };
+
+          // Replace the original call with the transformed apply call
+          path.replaceWith(newCall);
+        }
+      }
+    }
+  };
+};
+
+// Usage with Babel
+const babel = require('@babel/core');
+
+const code = `
+function sum(x, y, z) {
+  return x + y + z;
+}
+
+const numbers = [1, 2, 3];
+console.log(sum(...numbers)); 
+`;
+
+babel.transform(code, {
+  plugins: [require('./babel-plugin-transform-spread')]
+}, function(err, result) {
+  console.log(result.code);
+});
+```
+
+This package detects function calls that include the spread operator and transforms them into function calls using `.apply(null, argsArray)` which is a common way in ES5 to pass an array of arguments to a function. This ensures compatibility with older JavaScript versions while preserving the intended functionality of the spread operator.

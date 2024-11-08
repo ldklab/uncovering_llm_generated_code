@@ -1,0 +1,102 @@
+The provided Node.js code is a module implementing an XML serializer. The central class, `XMLSerializer`, manages converting a DOM node into a string representation in XML format. It provides several methods for serialization:
+
+1. **serializeToString(node, options)**: Takes a DOM node and optional configuration. It checks if the node should be well-formed and serializes it accordingly.
+   
+2. **serializeNode(node)**: Handles the serialization of different types of nodes such as element nodes, text nodes, and comment nodes, with a switch case for node types.
+
+3. **serializeElement(element)**: Serializes an element node, including its tag, namespace, attributes, and child nodes.
+   
+4. **escapeXML(value)**: Escapes special XML characters in text nodes to ensure the XML is valid.
+   
+5. **escapeAttributeValue(value)**: Specifically escapes quotes within attribute values.
+
+6. **isWellFormed(node)**: Checks if the node is well-formed by inspecting tag names and attribute names against a regular expression.
+
+Finally, the module exports a function that instantiates the `XMLSerializer` class to serialize a given node with specified options.
+
+```javascript
+// xml-serializer.js
+
+class XMLSerializer {
+  serializeToString(node, options = {}) {
+    const requireWellFormed = !!options.requireWellFormed;
+    if (requireWellFormed && !this.isWellFormed(node)) {
+      throw new Error("Node is not well-formed");
+    }
+    return this.serializeNode(node);
+  }
+
+  serializeNode(node) {
+    switch (node.nodeType) {
+      case node.ELEMENT_NODE:
+        return this.serializeElement(node);
+      case node.TEXT_NODE:
+        return this.escapeXML(node.nodeValue);
+      case node.COMMENT_NODE:
+        return `<!--${node.nodeValue}-->`;
+      default:
+        return '';
+    }
+  }
+
+  serializeElement(element) {
+    let tagOpen = `<${element.tagName.toLowerCase()}`;
+    if (!element.hasAttribute('xmlns')) {
+      tagOpen += ` xmlns="http://www.w3.org/1999/xhtml"`;
+    }
+    for (let attr of Array.from(element.attributes)) {
+      tagOpen += ` ${attr.name}="${this.escapeAttributeValue(attr.value)}"`;
+    }
+    if (element.childNodes.length === 0) {
+      return `${tagOpen}></${element.tagName.toLowerCase()}>`;
+    }
+    let tagContent = '';
+    for (let child of Array.from(element.childNodes)) {
+      tagContent += this.serializeNode(child);
+    }
+    return `${tagOpen}>${tagContent}</${element.tagName.toLowerCase()}>`;
+  }
+
+  escapeXML(value) {
+    return value.replace(/[<>&'"]/g, char => {
+      switch (char) {
+        case '<': return '&lt;';
+        case '>': return '&gt;';
+        case '&': return '&amp;';
+        case "'": return '&apos;';
+        case '"': return '&quot;';
+        default: return char;
+      }
+    });
+  }
+
+  escapeAttributeValue(value) {
+    return this.escapeXML(value.replace(/"/g, '&quot;'));
+  }
+
+  isWellFormed(node) {
+    const nameRegex = /^[A-Za-z_][\w.-]*$/;
+    if (node.nodeType === node.ELEMENT_NODE) {
+      if (!nameRegex.test(node.tagName)) {
+        return false;
+      }
+      for (let attr of Array.from(node.attributes)) {
+        if (!nameRegex.test(attr.name)) {
+          return false;
+        }
+      }
+    }
+    for (let child of Array.from(node.childNodes)) {
+      if (!this.isWellFormed(child)) {
+        return false;
+      }
+    }
+    return true;
+  }
+}
+
+module.exports = function(node, options) {
+  const serializer = new XMLSerializer();
+  return serializer.serializeToString(node, options);
+};
+```

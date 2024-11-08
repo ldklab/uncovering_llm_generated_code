@@ -1,0 +1,71 @@
+The package described in the README.md provides a function to parse `data:` URLs according to the WHATWG Fetch Standard. The main functionality involves extracting and interpreting the MIME type and body content from a `data:` URL. Here's an explanation of key components:
+
+1. **Parsing `data:` URLs:** The package exports a function that can parse a given `data:` URL string and return an object containing two properties: `mimeType` and `body`. If the string cannot be parsed as a `data:` URL, it returns `null`.
+
+2. **MIME Type Extraction:** The `mimeType` is an instance of the `MIMEType` class from the `whatwg-mimetype` package. It provides a `toString()` method to convert the MIME type to a string representation.
+
+3. **Body Extraction:** The `body` is extracted as a `Uint8Array` instance, allowing for binary data extraction.
+
+4. **Body Decoding:** The decoded body can be obtained using the charset parameter of the MIME type, with the help of the `whatwg-encoding` package. This package allows you to determine the correct character encoding and decode the body bytes to obtain the original data.
+
+5. **Advanced Functionality:** The package also provides a method to work with "URL record" objects from the `whatwg-url` package, converting them into data URLs directly.
+
+Here is the implementation code for the described functionality:
+
+```js
+const { MIMEType } = require('whatwg-mimetype');
+const { labelToName, decode: whatwgDecode } = require('whatwg-encoding');
+const { parseURL } = require('whatwg-url');
+
+function parseDataURL(dataURLString) {
+  if (!dataURLString.startsWith('data:')) {
+    return null;
+  }
+
+  try {
+    const dataURL = decodeURIComponent(dataURLString.slice(5));
+    const [mimeTypeString, data] = dataURL.split(',');
+
+    const mimeType = new MIMEType(mimeTypeString);
+    const isBase64 = mimeTypeString.includes(';base64');
+    const body = isBase64 ? Buffer.from(data, 'base64') : new TextEncoder().encode(data);
+
+    return { mimeType, body: new Uint8Array(body) };
+  } catch {
+    return null;
+  }
+}
+
+function fromURLRecord(urlRecord) {
+  const dataURLString = `data:${urlRecord.schemeData}`;
+  return parseDataURL(dataURLString);
+}
+
+function decodeBody(dataURL) {
+  const charset = dataURL.mimeType.parameters.get('charset') || 'utf-8';
+  const encodingName = labelToName(charset);
+  return whatwgDecode(dataURL.body, encodingName);
+}
+
+module.exports = parseDataURL;
+
+// Example usage of the functions exported
+const dataURLExample = parseDataURL('data:,Hello%2C%20World!');
+if (dataURLExample) {
+  console.log(dataURLExample.mimeType.toString()); // text/plain;charset=US-ASCII
+  console.log(dataURLExample.body); // Uint8Array containing bytes representing "Hello, World!"
+}
+
+// Using fromURLRecord example
+const urlRecord = parseURL('data:,Hello%2C%20World!');
+const dataURLFromRecord = fromURLRecord(urlRecord);
+if (dataURLFromRecord) {
+  console.log(dataURLFromRecord.mimeType.toString()); // "text/plain;charset=US-ASCII"
+}
+
+// Decoding the body example
+const decodedBody = decodeBody(dataURLExample);
+console.log(decodedBody); // "Hello, World!"
+```
+
+This code fulfills the functionality described in the README.md by providing mechanisms to parse `data:` URLs, interpret their MIME types, extract body content, and correctly decode the content based on character encoding.

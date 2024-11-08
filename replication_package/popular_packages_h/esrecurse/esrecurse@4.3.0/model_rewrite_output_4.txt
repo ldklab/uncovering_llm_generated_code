@@ -1,0 +1,97 @@
+The provided Node.js code defines a module that offers functionality for traversing and visiting nodes within an abstract syntax tree (AST). It uses the `estraverse` library to manage the traversal. The main components are:
+
+1. **isNode function**: It checks if a given object is a valid node in an AST by verifying that it is not null, is an object, and has a `type` property that is a string.
+
+2. **isProperty function**: It determines if a given node type and key correspond to an `ObjectExpression` or `ObjectPattern`, specifically if the key is 'properties'. 
+
+3. **Visitor class**: This is designed to traverse the AST. It takes a set of visitor functions and options as parameters. It provides methods to visit nodes and their children:
+   - `visitChildren(node)`: Used to recursively visit all child nodes of a given node. It determines which children to visit based on the `childVisitorKeys` provided or falls back to a specified method.
+   - `visit(node)`: It dispatches the node to the appropriate visitor function or uses `visitChildren` to traverse.
+
+4. **Exports**: It exports the `Visitor` class, a `visit` function to facilitate creating a `Visitor` instance and executing visits, and the version of the package from `package.json`.
+
+Here's the rewritten code:
+
+```javascript
+/*
+  Copyright (C) 2014 Yusuke Suzuki <utatane.tea@gmail.com>
+
+  Redistribution and use in source and binary forms, with or without
+  modification, are permitted provided that the following conditions are met:
+
+    * Redistributions of source code must retain the above copyright
+      notice, this list of conditions and the following disclaimer.
+    * Redistributions in binary form must reproduce the above copyright
+      notice, this list of conditions and the following disclaimer in the
+      documentation and/or other materials provided with the distribution.
+
+  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+  AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+  IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+  ARE DISCLAIMED. IN NO EVENT SHALL <COPYRIGHT HOLDER> BE LIABLE FOR ANY
+  DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+  (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+  LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
+  ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+  (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
+  THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+*/
+(() => {
+    'use strict';
+
+    const estraverse = require('estraverse');
+
+    const isNode = (node) => node != null && typeof node === 'object' && typeof node.type === 'string';
+    
+    const isProperty = (nodeType, key) =>
+        (nodeType === estraverse.Syntax.ObjectExpression || nodeType === estraverse.Syntax.ObjectPattern) && key === 'properties';
+
+    class Visitor {
+        constructor(visitor, options = {}) {
+            this.__visitor = visitor || this;
+            this.__childVisitorKeys = options.childVisitorKeys
+                ? Object.assign({}, estraverse.VisitorKeys, options.childVisitorKeys)
+                : estraverse.VisitorKeys;
+            this.__fallback = 
+                options.fallback === 'iteration' ? Object.keys : 
+                typeof options.fallback === 'function' ? options.fallback : null;
+        }
+
+        visitChildren(node) {
+            if (node == null) return;
+
+            const type = node.type || estraverse.Syntax.Property;
+            let children = this.__childVisitorKeys[type] || (this.__fallback && this.__fallback(node));
+
+            if (!children) throw new Error(`Unknown node type ${type}.`);
+
+            children.forEach((key) => {
+                const child = node[key];
+                if (Array.isArray(child)) {
+                    child.forEach((c) => {
+                        if (c && (isNode(c) || isProperty(type, key))) this.visit(c);
+                    });
+                } else if (isNode(child)) {
+                    this.visit(child);
+                }
+            });
+        }
+
+        visit(node) {
+            if (node == null) return;
+
+            const type = node.type || estraverse.Syntax.Property;
+            if (this.__visitor[type]) {
+                this.__visitor[type].call(this, node);
+            } else {
+                this.visitChildren(node);
+            }
+        }
+    }
+
+    exports.version = require('./package.json').version;
+    exports.Visitor = Visitor;
+    exports.visit = (node, visitor, options) => new Visitor(visitor, options).visit(node);
+
+})();
+```

@@ -1,0 +1,61 @@
+The provided Node.js code is a module that deals with character encoding detection and conversion. It includes functionality to convert a label (string) to an official encoding name, decode a buffer using a specified or detected encoding, detect the Byte Order Mark (BOM) in a buffer, and check if an encoding is supported. Here's a breakdown of the functionalities:
+
+1. **labelToName**: Converts a given encoding label into a canonical encoding name by looking it up in a `labelsToNames` mapping. If the label is not found, it returns `null`.
+
+2. **decode**: Takes a buffer and a fallback encoding name. It determines the actual encoding using either the BOM in the buffer or the given fallback. If the encoding is not supported, it throws an error. It uses `iconv-lite` for decoding the buffer.
+
+3. **getBOMEncoding**: Inspects the beginning of a buffer to detect a BOM, returning the corresponding encoding name if a BOM is detected. These may be for "UTF-16BE", "UTF-16LE", or "UTF-8".
+
+4. **isSupported**: Checks if a provided encoding name is part of the `supportedNames` set, which contains officially supported encoding names.
+
+The rewritten code organizes the same functionality into a single block:
+
+```javascript
+"use strict";
+const iconvLite = require("iconv-lite");
+const supportedNames = require("./supported-names.json");
+const labelsToNames = require("./labels-to-names.json");
+
+const supportedNamesSet = new Set(supportedNames);
+
+function labelToName(label) {
+  label = String(label).trim().toLowerCase();
+  return labelsToNames[label] || null;
+}
+
+function decode(buffer, fallbackEncodingName) {
+  let encoding = fallbackEncodingName;
+  if (!isSupported(encoding)) {
+    throw new RangeError(`"${encoding}" is not a supported encoding name`);
+  }
+
+  const bomEncoding = getBOMEncoding(buffer);
+  if (bomEncoding !== null) {
+    encoding = bomEncoding;
+  }
+
+  return iconvLite.decode(buffer, encoding);
+}
+
+function getBOMEncoding(buffer) {
+  if (buffer[0] === 0xFE && buffer[1] === 0xFF) {
+    return "UTF-16BE";
+  } else if (buffer[0] === 0xFF && buffer[1] === 0xFE) {
+    return "UTF-16LE";
+  } else if (buffer[0] === 0xEF && buffer[1] === 0xBB && buffer[2] === 0xBF) {
+    return "UTF-8";
+  }
+  return null;
+}
+
+function isSupported(name) {
+  return supportedNamesSet.has(String(name));
+}
+
+module.exports = {
+  labelToName,
+  decode,
+  getBOMEncoding,
+  isSupported
+};
+```

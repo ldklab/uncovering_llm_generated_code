@@ -1,0 +1,67 @@
+"use strict";
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports.addHook = addHook;
+
+var _module = _interopRequireDefault(require("module"));
+var _path = _interopRequireDefault(require("path"));
+var _nodeModulesRegexp = _interopRequireDefault(require("node-modules-regexp"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
+
+const Module = module.constructor.length > 1 ? module.constructor : _module.default;
+const HOOK_ERROR_MSG = [
+  '[Pirates] A hook returned a non-string, or nothing at all! This is a violation of intergalactic law!',
+  'If you have no idea what this means or what Pirates is, let me explain:',
+  "Pirates is a module that makes it easy to implement require hooks. A require hook you're using didn't return",
+  "anything from its handler, so we don't know what to do. Consider debugging this."
+].join(' ');
+
+function shouldCompile(filename, exts, matcher, ignoreNodeModules) {
+  if (typeof filename !== 'string') return false;
+  if (!exts.includes(_path.default.extname(filename))) return false;
+  const resolvedFilename = _path.default.resolve(filename);
+  if (ignoreNodeModules && _nodeModulesRegexp.default.test(resolvedFilename)) return false;
+  return typeof matcher === 'function' ? matcher(resolvedFilename) : true;
+}
+
+function addHook(hook, opts = {}) {
+  let reverted = false;
+  const loaders = [];
+  const oldLoaders = [];
+  const originalJSLoader = Module._extensions['.js'];
+  const matcher = opts.matcher || null;
+  const ignoreNodeModules = opts.ignoreNodeModules !== false;
+  const exts = Array.isArray(opts.exts || ['.js']) ? opts.exts : [opts.exts];
+
+  exts.forEach(ext => {
+    if (typeof ext !== 'string') throw new TypeError(`Invalid Extension: ${ext}`);
+    const oldLoader = Module._extensions[ext] || originalJSLoader;
+    oldLoaders[ext] = oldLoader;
+
+    loaders[ext] = Module._extensions[ext] = function newLoader(mod, filename) {
+      if (!reverted && shouldCompile(filename, exts, matcher, ignoreNodeModules)) {
+        const compile = mod._compile;
+        mod._compile = function _compile(code) {
+          mod._compile = compile; // Reset immediately
+          const newCode = hook(code, filename);
+          if (typeof newCode !== 'string') throw new Error(HOOK_ERROR_MSG);
+          return mod._compile(newCode, filename);
+        };
+      }
+      oldLoader(mod, filename);
+    };
+  });
+
+  return function revert() {
+    if (reverted) return;
+    reverted = true;
+    exts.forEach(ext => {
+      if (Module._extensions[ext] === loaders[ext]) {
+        Module._extensions[ext] = oldLoaders[ext];
+      }
+    });
+  };
+}

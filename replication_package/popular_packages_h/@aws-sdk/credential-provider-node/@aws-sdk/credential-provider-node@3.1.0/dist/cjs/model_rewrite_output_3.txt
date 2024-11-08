@@ -1,0 +1,65 @@
+The given Node.js code provides a function for generating AWS credentials by trying multiple sources in a specific order of precedence. The function `defaultProvider` aims to retrieve AWS credentials by checking the environment variables, shared config/credentials files, and EC2/ECS instance metadata. The order of checking is:
+
+1. Environment Variables: Provided by the `@aws-sdk/credential-provider-env` package.
+2. INI Config Files: Accessed with `@aws-sdk/credential-provider-ini`.
+3. Process: Sourced from credentials stored with a process, handled by `@aws-sdk/credential-provider-process` package.
+4. EC2/ECS Metadata: Accessed if the other sources fail and are enabled, controlled by the `@aws-sdk/credential-provider-imds` package.
+
+It uses lazy evaluation to retrieve credentials and stops searching once it finds valid credentials. The function checks environment variables and configuration options to disable the instance metadata service if needed.
+
+Here is the revised version of the code:
+
+```javascript
+"use strict";
+const { fromEnv } = require("@aws-sdk/credential-provider-env");
+const { ENV_CMDS_FULL_URI, ENV_CMDS_RELATIVE_URI, fromContainerMetadata, fromInstanceMetadata, RemoteProviderInit } = require("@aws-sdk/credential-provider-imds");
+const { ENV_PROFILE, fromIni, FromIniInit } = require("@aws-sdk/credential-provider-ini");
+const { fromProcess, FromProcessInit } = require("@aws-sdk/credential-provider-process");
+const { chain, memoize, ProviderError } = require("@aws-sdk/property-provider");
+const { CredentialProvider } = require("@aws-sdk/types");
+
+exports.ENV_IMDS_DISABLED = "AWS_EC2_METADATA_DISABLED";
+
+/**
+ * Creates and returns a default chain of AWS credential providers.
+ * The providers are checked in order of priority:
+ *   1. Environment variables
+ *   2. Shared credentials and config ini files
+ *   3. EC2/ECS Instance Metadata Service
+ *
+ * @param {FromIniInit & RemoteProviderInit & FromProcessInit} [init={}]
+ * @return {CredentialProvider} Credential provider
+ */
+function defaultProvider(init = {}) {
+  const { profile = process.env[ENV_PROFILE] } = init;
+
+  const providerChain = profile
+    ? chain(fromIni(init), fromProcess(init))
+    : chain(fromEnv(), fromIni(init), fromProcess(init), remoteProvider(init));
+
+  return memoize(
+    providerChain,
+    (credentials) =>
+      credentials.expiration !== undefined &&
+      credentials.expiration.getTime() - Date.now() < 300000,
+    (credentials) => credentials.expiration !== undefined
+  );
+}
+exports.defaultProvider = defaultProvider;
+
+/**
+ * Returns a remote AWS credential provider.
+ *
+ * @param {RemoteProviderInit} init
+ * @return {CredentialProvider} Provider instance
+ */
+function remoteProvider(init) {
+  if (process.env[ENV_CMDS_RELATIVE_URI] || process.env[ENV_CMDS_FULL_URI]) {
+    return fromContainerMetadata(init);
+  }
+  if (process.env[exports.ENV_IMDS_DISABLED]) {
+    return () => Promise.reject(new ProviderError("EC2 Instance Metadata Service access disabled"));
+  }
+  return fromInstanceMetadata(init);
+}
+```

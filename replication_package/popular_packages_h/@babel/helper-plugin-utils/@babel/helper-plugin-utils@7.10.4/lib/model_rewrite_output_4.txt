@@ -1,0 +1,94 @@
+The Node.js code provided defines functionalities related to the Babel API's versioning and validation. Here’s a breakdown of how the code works:
+
+1. **Exported Function**: The `declare` function is exported. It takes a function (`builder`) as an argument and returns another function that accepts three parameters: `api`, `options`, and `dirname`.
+
+2. **API Version Check**: Inside the returned function, there's a check to determine if the `api` object has a method `assertVersion`. If it doesn’t, a new `api` object is created by copying the existing one (using `copyApiObject`) and adding an `assertVersion` method to it. This method throws an error if an incorrect API version is used.
+
+3. **Builder Execution**: The `builder` function is executed with the modified or original `api`, `options`, and `dirname`.
+
+4. **Copying API Object**: The function `copyApiObject` creates a shallow copy of the `api` object, potentially using its prototype if certain conditions about Babel version and properties (`version`, `transform`, `template`, `types`) are satisfied.
+
+5. **Property Checker**: The function `has` is a utility that checks if an object has a particular property, abstracted using `Object.prototype.hasOwnProperty`.
+
+6. **Error Handling**: The function `throwVersionError` is used to throw structured error messages if the API version requirements are not met. This function constructs error messages based on the expected and actual versions, and it modifies the stack trace limit to increase visibility into how the error occurred.
+
+Here is the content of the rewritten code with managed code flow and improved readability:
+
+```javascript
+"use strict";
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports.declare = declare;
+
+function declare(builder) {
+  return (api, options, dirname) => {
+    if (!api.assertVersion) {
+      api = Object.assign(copyApiObject(api), {
+        assertVersion(range) {
+          throwVersionError(range, api.version);
+        }
+      });
+    }
+    return builder(api, options || {}, dirname);
+  };
+}
+
+function copyApiObject(api) {
+  let proto = null;
+
+  if (typeof api.version === "string" && /^7\./.test(api.version)) {
+    proto = Object.getPrototypeOf(api);
+
+    if (proto && (!objectHasKey(proto, "version") || !objectHasKey(proto, "transform") || !objectHasKey(proto, "template") || !objectHasKey(proto, "types"))) {
+      proto = null;
+    }
+  }
+
+  return Object.assign({}, proto, api);
+}
+
+function objectHasKey(obj, key) {
+  return Object.prototype.hasOwnProperty.call(obj, key);
+}
+
+function throwVersionError(range, version) {
+  if (typeof range === "number") {
+    if (!Number.isInteger(range)) {
+      throw new Error("Expected string or integer value.");
+    }
+    range = `^${range}.0.0-0`;
+  }
+
+  if (typeof range !== "string") {
+    throw new Error("Expected string or integer value.");
+  }
+
+  const originalStackTraceLimit = Error.stackTraceLimit;
+
+  if (typeof originalStackTraceLimit === "number" && originalStackTraceLimit < 25) {
+    Error.stackTraceLimit = 25;
+  }
+
+  let errorMessage;
+
+  if (version.startsWith("7.")) {
+    errorMessage = `Requires Babel "^7.0.0-beta.41", but was loaded with "${version}". You'll need to update your @babel/core version.`;
+  } else {
+    errorMessage = `Requires Babel "${range}", but was loaded with "${version}". If you are sure you have a compatible version of @babel/core, it is likely that something in your build process is loading the wrong version. Inspect the stack trace of this error to look for the first entry that doesn't mention "@babel/core" or "babel-core" to see what is calling Babel.`;
+  }
+
+  if (typeof originalStackTraceLimit === "number") {
+    Error.stackTraceLimit = originalStackTraceLimit;
+  }
+
+  const error = new Error(errorMessage);
+
+  throw Object.assign(error, {
+    code: "BABEL_VERSION_UNSUPPORTED",
+    version,
+    range
+  });
+}
+```

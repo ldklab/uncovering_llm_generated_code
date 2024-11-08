@@ -1,0 +1,102 @@
+The Node.js package "envinfo" is designed to generate a comprehensive report of various system details that are often required when troubleshooting software issues. It provides details about the operating system, binary versions (like Node, npm), browsers, installed languages, and more. Here's an overview of its functionality:
+
+### Key Functionalities:
+1. **System Information Gathering**: It gathers information about:
+   - Operating System
+   - CPU
+   - Memory
+   - Shell
+
+2. **Binary Versions**: It collects version information for:
+   - Node.js
+   - Yarn
+   - npm
+   - Other developer-relevant binaries
+
+3. **Developer Tools**: Information on SDKs, IDEs, programming languages, package managers, and utilities.
+
+4. **Browsers**: Version details for installed browsers such as Chrome, Firefox, Safari, etc.
+
+5. **Package Information**: It can provide details on both globally and locally installed npm packages.
+
+6. **CLI Options**: Allows filtering of information via flags for specific categories (e.g., `--browsers`, `--system`), output formats (e.g., JSON, markdown), and other specific requirements.
+
+7. **Programmatic Usage**: It can be integrated into other Node.js applications to collect system environment information through a configuration object. It supports async operations and returns promises.
+
+8. **CLI Usage**: Can be run directly from the command line after installation via npm, or even without installation using `npx`.
+
+Below is an implementation in Node.js based on the described functionality:
+
+```markdown
+// envinfo.js
+const { execSync } = require('child_process');
+const os = require('os');
+
+function gatherSystemInfo() {
+  return {
+    OS: `${os.type()} ${os.release()}`,
+    CPU: os.cpus()[0].model,
+    Memory: `${(os.totalmem() / (1024 ** 3)).toFixed(2)} GB`,
+    Shell: process.env.SHELL || 'N/A',
+  };
+}
+
+function runCommand(cmd) {
+  try {
+    return execSync(cmd, { encoding: 'utf8' }).trim();
+  } catch (error) {
+    return 'Not Found';
+  }
+}
+
+function gatherBinaryInfo() {
+  return {
+    Node: runCommand('node -v'),
+    npm: runCommand('npm -v'),
+    Yarn: runCommand('yarn -v'),
+  };
+}
+
+function gatherBrowserInfo() {
+  return {
+    Chrome: runCommand("google-chrome --version || chrome --version"),
+    Firefox: runCommand("firefox --version"),
+    Safari: runCommand("safaridriver --version"),
+  };
+}
+
+function formatAsJson(info) {
+  return JSON.stringify(info, null, 2);
+}
+
+async function run(config, options = {}) {
+  const info = {};
+
+  if (config.System) {
+    info.System = gatherSystemInfo();
+  }
+
+  if (config.Binaries) {
+    info.Binaries = gatherBinaryInfo();
+  }
+
+  if (config.Browsers) {
+    info.Browsers = gatherBrowserInfo();
+  }
+  
+  return options.json ? formatAsJson(info) : info;
+}
+
+function displayInfo() {
+  const config = { System: true, Binaries: true, Browsers: true };
+  run(config, { json: true }).then(info => console.log(info));
+}
+
+if (require.main === module) {
+  displayInfo();
+}
+
+module.exports = { run };
+```
+
+To make use of this package, users can either execute it directly from the CLI to see a summary of their system info or they can import the `run` function programmatically into their Node.js applications to get detailed system information.

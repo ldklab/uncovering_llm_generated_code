@@ -1,0 +1,92 @@
+The `glob-parent` Node.js package is designed to extract the non-magic parent path from a given glob pattern. A glob pattern can include wildcard characters commonly used for file pattern matching. This package determines and returns the prefix path before such wildcard characters (referred to as "magic characters") begin.
+
+### Core Functionalities:
+1. **Non-Glob Path Handling**: If the input is a normal file path without any wildcard characters, it returns the parent directory of the file.
+2. **Basic Glob Handling**: For simple globs like `*.js` or `path/to/*.js`, it strips the wildcard and returns the base path.
+3. **Complex Patterns**: For patterns with curly braces, pipes, or other advanced glob features, the path up to the first occurrence of these constructs is returned.
+4. **Windows Path Handling**: By default, it converts backslashes to forward slashes (as forward slashes are valid path separators on Windows as well). This behavior can be modified with an option.
+5. **Escaping**: Users can escape special characters if they want them treated as literal parts of the path rather than as glob characters.
+
+### Usage
+- The function is invoked with a glob string and an optional configuration object.
+- The `flipBackslashes` option in the configuration can be set to prevent conversion of backslashes to forward slashes on Windows paths.
+
+### Example Cases:
+- For glob strings like `'path/to/*.js'`, it returns `'path/to'`.
+- For complex patterns such as `'path/{to,from}'`, it returns `'path'`.
+- Handles escaped characters to distinguish between literal components and special glob characters.
+
+Below is a code implementation for `glob-parent`:
+
+```js
+const path = require('path');
+
+/**
+ * Determines if the given character is a magic character used in glob patterns.
+ * @param {string} char 
+ * @returns {boolean}
+ */
+const isMagicChar = (char) => '?*+|(){}[]!'.includes(char);
+
+/**
+ * Extracts the non-magic parent path from a glob string.
+ * @param {string} maybeGlobString - The glob pattern or path.
+ * @param {object} [options={}] - Optional settings.
+ * @param {boolean} [options.flipBackslashes=true] - Flip backslashes in paths (typically for Windows).
+ * @returns {string} - The non-magic parent path.
+ */
+function globParent(maybeGlobString, options = {}) {
+  const { flipBackslashes = true } = options;
+
+  if (flipBackslashes) {
+    maybeGlobString = maybeGlobString.replace(/\\/g, '/');
+  }
+
+  let inEscape = false;
+  let inBrackets = 0;
+  let prev = '';
+  let i = 0;
+
+  for (i = 0; i < maybeGlobString.length; i++) {
+    const char = maybeGlobString[i];
+
+    if (char === '/' && !inBrackets && !inEscape) {
+      prev = char;
+      continue;
+    }
+
+    if (char === '\\' && !inEscape) {
+      inEscape = true;
+      continue;
+    }
+
+    if (inEscape) {
+      inEscape = false;
+    } else if (char === '{') {
+      while (i < maybeGlobString.length && maybeGlobString[i] !== '}') i++;
+    } else if (char === '[') {
+      inBrackets++;
+    } else if (char === ']') {
+      inBrackets--;
+      if (inBrackets < 0) inBrackets = 0;
+    } else if (!inBrackets && isMagicChar(char)) {
+      break;
+    }
+
+    prev = char;
+  }
+
+  const stripIndex = i < maybeGlobString.length ? i : undefined;
+  const basePath = stripIndex ? maybeGlobString.slice(0, stripIndex) : maybeGlobString;
+  const normalizedPath = path.posix.normalize(basePath);
+
+  if (!normalizedPath || normalizedPath.startsWith('.')) {
+    return '.';
+  }
+
+  return path.dirname(normalizedPath);
+}
+
+module.exports = globParent;
+```
+This implementation provides support for detecting magic characters and properly extracting the static path portion of a given glob pattern. Note, the example handles specific escaping scenarios and supports an optional configuration to modify behavior as needed for Windows paths.

@@ -1,0 +1,58 @@
+The `nth-check` package is designed to parse and compile CSS `nth-child` and `nth-last-of-type` formulas, optimizing these into functions for determining whether a given index matches an nth-rule. The functionalities provided by this package allow users to:
+
+1. **Parse and Compile (nthCheck)**: This function combines both parsing and compiling of an nth-child formula. It returns a function that takes an index and checks if it matches the nth-rule. If the formula matches no elements, it provides a function that always returns `false`.
+
+2. **Parse**: This function parses an nth-child formula and returns an array containing two integers, which represent the step size and offset of the nth-rule.
+
+3. **Compile**: Given an array with two integers (step size and offset), this function returns a function optimized to check indices against the nth-rule derived from these numbers.
+
+4. **Generate**: This function returns a sequence generator function based on the nth-rule. The generator yields indices that satisfy the nth-rule, continuing monotonically until the end of the sequence or indefinitely if unbounded.
+
+5. **Sequence**: Similar to `nthCheck`, but instead of returning a boolean-checking function, it returns a generator function to produce the sequence of indices.
+
+Here’s the code implementing the functionalities described above:
+
+```javascript
+// nth-check.js
+
+function parse(formula) {
+  const match = formula.match(/^((?:-?\d*)?n)?\s*(?:\+?\s*(\d+))?$/);
+  if (!match) throw new Error("Invalid formula");
+
+  let a = parseInt(match[1], 10) || 0;
+  const b = parseInt(match[2], 10) || 0;
+
+  if (a === 0 && b === 0) throw new Error("Invalid formula");
+
+  return [a, b];
+}
+
+function compile([a, b]) {
+  return function(index) {
+    if (a === 0) return index === b - 1;
+    return (index - (b - 1)) % a === 0 && (index - (b - 1)) / a >= 0;
+  };
+}
+
+function nthCheck(formula) {
+  return compile(parse(formula));
+}
+
+function generate([a, b]) {
+  let current = b - 1;
+  return function() {
+    if (a === 0) return current++ === current ? null : current;
+    const result = current;
+    current += a;
+    return (a > 0 && result >= 0) || (a < 0 && result > 0) ? result : null;
+  };
+}
+
+function sequence(formula) {
+  return generate(parse(formula));
+}
+
+export { nthCheck, parse, compile, generate, sequence };
+```
+
+This code provides all the functions described in the README, enabling users to parse, compile, and generate index sequences from `nth-check` CSS formulas.

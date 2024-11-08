@@ -1,0 +1,77 @@
+The provided Node.js code demonstrates a basic setup to transform JSX syntax into `React.createElement` calls using Babel. The code consists of the following parts:
+
+1. **Babel Plugin Setup**: A custom Babel plugin called `jsxTransformPlugin` is defined, which mimics the transformation of JSX syntax into `React.createElement()` calls. The plugin traverses an abstract syntax tree (AST) of the JSX code and replaces each JSX element with a corresponding `React.createElement` call.
+
+2. **JSX Transformation Function**: The function `createElementFromJSX` takes a JSX node and constructs a Babel AST representation of a `React.createElement` call. It extracts properties from the JSX element and any children, recursively converting each one into a call to `createElement`.
+
+3. **Example Code Transformation**: A small JSX code snippet is provided, demonstrating JSX elements like `<div>` and `<strong>`. The transformation is applied to this code using the custom Babel plugin.
+
+4. **Output**: The transformed JavaScript code is logged to the console.
+
+Here's the rewritten code:
+
+```javascript
+// index.js
+const babel = require('@babel/core');
+
+// Babel plugin to transform JSX to React.createElement
+function jsxTransformPlugin() {
+  return {
+    visitor: {
+      JSXElement(path) {
+        const reactCreateElement = createElementFromJSX(path.node);
+        path.replaceWith(reactCreateElement);
+      },
+    },
+  };
+}
+
+// Function to construct React.createElement call from JSX
+function createElementFromJSX(jsxNode) {
+  const type = jsxNode.openingElement.name.name;
+  const props = jsxNode.openingElement.attributes.reduce((acc, attr) => {
+    acc[attr.name.name] = attr.value.type === 'JSXExpressionContainer' ? attr.value.expression : attr.value;
+    return acc;
+  }, {});
+  const children = jsxNode.children.map(child => {
+    if (child.type === 'JSXText') {
+      return child.value;
+    }
+    return createElementFromJSX(child);
+  });
+
+  return {
+    type: 'CallExpression',
+    callee: {
+      type: 'MemberExpression',
+      object: { type: 'Identifier', name: 'React' },
+      property: { type: 'Identifier', name: 'createElement' },
+    },
+    arguments: [
+      { type: 'StringLiteral', value: type },
+      { type: 'ObjectExpression', properties: Object.entries(props).map(([key, value]) => ({
+          type: 'ObjectProperty',
+          key: { type: 'Identifier', name: key },
+          value: value.type ? value : { type: 'StringLiteral', value },
+        })),
+      },
+      ...children,
+    ],
+  };
+}
+
+// Example usage
+const code = `
+  const element = (
+    <div className="container">
+      Hello, <strong>world!</strong>
+    </div>
+  );
+`;
+
+const output = babel.transformSync(code, {
+  plugins: [jsxTransformPlugin],
+});
+
+console.log(output.code);
+```

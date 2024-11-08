@@ -1,0 +1,66 @@
+The provided Node.js code is a module designed to detect the character encoding of an HTML document from its byte representation. It checks for the presence of a Byte Order Mark (BOM), scans the document for a `<meta charset>` declaration, and optionally considers a transport layer encoding label. If none of these are found, it defaults to "windows-1252" encoding.
+
+1. `detectBOM`: This function examines the byte array to detect a BOM, which can specify encodings like UTF-8, UTF-16BE, or UTF-16LE.
+2. `searchMetaCharset`: It reads up to the first 1024 bytes of the document, seeking a `<meta charset>` tag to determine the character encoding.
+3. `htmlEncodingSniffer`: This is the main function. It determines the encoding by:
+   - Checking for a BOM.
+   - Searching for a `<meta charset>` tag.
+   - Using a transport layer encoding, if provided.
+   - Falling back to "windows-1252" if no other encoding is found.
+
+Here's a rewritten version of the code:
+
+```javascript
+const supportedEncodings = require("whatwg-encoding");
+
+function detectBOM(bytes) {
+  const bomSignatures = {
+    UTF_8: [0xEF, 0xBB, 0xBF],
+    UTF_16BE: [0xFE, 0xFF],
+    UTF_16LE: [0xFF, 0xFE]
+  };
+
+  if (bytes.slice(0, 3).toString("hex") === bomSignatures.UTF_8.map(byte => byte.toString(16)).join('')) {
+    return "UTF-8";
+  }
+  if (bytes.slice(0, 2).toString("hex") === bomSignatures.UTF_16BE.map(byte => byte.toString(16)).join('')) {
+    return "UTF-16BE";
+  }
+  if (bytes.slice(0, 2).toString("hex") === bomSignatures.UTF_16LE.map(byte => byte.toString(16)).join('')) {
+    return "UTF-16LE";
+  }
+  return null;
+}
+
+function searchMetaCharset(bytes) {
+  const str = bytes.toString('binary', 0, 1024).toLowerCase();
+  const metaCharsetPattern = /<meta\s+[^>]*charset\s*=\s*["']?([^"';\s]*)/i;
+  const match = metaCharsetPattern.exec(str);
+  return match ? match[1] : null;
+}
+
+function htmlEncodingSniffer(htmlBytes, options = {}) {
+  const { transportLayerEncodingLabel, defaultEncoding = "windows-1252" } = options;
+
+  let encoding = detectBOM(htmlBytes);
+  if (encoding) {
+    return supportedEncodings.labelToName(encoding);
+  }
+
+  encoding = searchMetaCharset(htmlBytes);
+  if (encoding) {
+    return supportedEncodings.labelToName(encoding);
+  }
+
+  if (transportLayerEncodingLabel) {
+    encoding = supportedEncodings.labelToName(transportLayerEncodingLabel);
+    if (encoding) {
+      return encoding;
+    }
+  }
+
+  return supportedEncodings.labelToName(defaultEncoding);
+}
+
+module.exports = htmlEncodingSniffer;
+```

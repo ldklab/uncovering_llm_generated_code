@@ -1,0 +1,100 @@
+The provided Node.js code is a utility module that determines the proxy server to use for a given URL. Here's how it works:
+
+1. **URL Parsing and Initialization**: It uses the `url` module to parse a given URL string if it hasn't been parsed already. It extracts the protocol, hostname, and port from this URL.
+
+2. **Proxy Determination**: For a specific URL, the code checks environment variables to determine the appropriate proxy to use:
+   - It first checks for protocol-specific environment variables like `http_proxy` or `https_proxy`.
+   - If a protocol-specific proxy isn't found, fallback variables like `npm_config_proxy` or `all_proxy` are checked.
+   - If the proxy URL is missing a scheme, it defaults to the protocol of the target URL.
+
+3. **Port and Hostname Handling**: It ensures the hostname does not include the port number and defaults the port if unspecified.
+
+4. **No Proxy Handling**: The `shouldProxy` function determines if the URL should bypass the proxy using the `no_proxy` environment variable. It compares the hostname and port against entries in `no_proxy`, handling wildcards and specific entries.
+
+5. **Environment Variable Handling**: The `getEnv` function simplifies retrieving environment variables irrespective of their case.
+
+Below is a rewritten version of this Node.js code:
+
+```js
+'use strict';
+
+const { parse } = require('url');
+
+const DEFAULT_PORTS = {
+  ftp: 21,
+  gopher: 70,
+  http: 80,
+  https: 443,
+  ws: 80,
+  wss: 443,
+};
+
+const stringEndsWith = String.prototype.endsWith || function(s) {
+  return s.length <= this.length &&
+    this.indexOf(s, this.length - s.length) !== -1;
+};
+
+/**
+ * Determines the appropriate proxy URL for the given target URL.
+ * @param {string|object} url - The URL or parsed URL object.
+ * @return {string} The proxy URL or an empty string if no proxy is applicable.
+ */
+function getProxyForUrl(url) {
+  const parsedUrl = typeof url === 'string' ? parse(url) : url || {};
+  let { protocol, host: hostname, port } = parsedUrl;
+  if (!hostname || !protocol) {
+    return ''; // Return empty if URL lacks valid proto or host
+  }
+
+  protocol = protocol.split(':')[0];
+  hostname = hostname.replace(/:\d*$/, '');
+  port = parseInt(port, 10) || DEFAULT_PORTS[protocol] || 0;
+
+  return shouldProxy(hostname, port) ? determineProxy(protocol) : '';
+}
+
+/**
+ * Checks if the URL should bypass proxy based on NO_PROXY settings.
+ * @param {string} hostname - Hostname of the URL.
+ * @param {number} port - Port number of the URL.
+ * @return {boolean} Whether the host should be proxied.
+ * @private
+ */
+function shouldProxy(hostname, port) {
+  const NO_PROXY = (getEnv('npm_config_no_proxy') || getEnv('no_proxy')).toLowerCase();
+  if (!NO_PROXY) return true; // Lack of NO_PROXY implies always proxy
+
+  return NO_PROXY.split(/[,\s]/).every(function(proxy) {
+    if (!proxy) return true; // Ignore empty entries
+    const [parsedHost, parsedPort] = proxy.split(':');
+    if (parsedPort && parseInt(parsedPort, 10) !== port) return true;
+
+    const cleanedHost = parsedHost.startsWith('*') ? parsedHost.slice(1) : parsedHost;
+    return !stringEndsWith.call(hostname, cleanedHost);
+  });
+}
+
+/**
+ * Retrieve environment variable for proxy based on protocol.
+ * @param {string} protocol - Protocol of the URL (http, https, etc.)
+ * @return {string} Proxy URL.
+ */
+function determineProxy(protocol) {
+  const proxy = getEnv(`npm_config_${protocol}_proxy`) ||
+                getEnv(`${protocol}_proxy`) ||
+                getEnv('npm_config_proxy') ||
+                getEnv('all_proxy');
+  return proxy && proxy.includes('://') ? proxy : `${protocol}://${proxy}`;
+}
+
+/**
+ * Retrieves the value of an environment variable by key.
+ * @param {string} key - Environment variable key.
+ * @return {string} Value of the environment variable or an empty string.
+ */
+function getEnv(key) {
+  return process.env[key.toLowerCase()] || process.env[key.toUpperCase()] || '';
+}
+
+exports.getProxyForUrl = getProxyForUrl;
+```

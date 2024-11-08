@@ -1,0 +1,109 @@
+The `filesize.js` package provides a utility to convert file sizes from numbers (either float or integer) into human-readable strings, with several configurable options to customize the output. Users can import the `filesize` function from the package and pass in a numeric value representing the file size in bytes. The function returns a string in a format that is easy to read and understand (e.g., "259.1 KB").
+
+Key optional settings include the ability to:
+
+- Choose between different measurement standards (`iec`, `jedec`, `si`).
+- Specify whether to display sizes in bits instead of bytes.
+- Include the full name of the size unit (e.g., "kilobytes" instead of "KB").
+- Adjust decimal precision and rounding.
+- Use different symbols or languages for localization.
+- Output the result not only as a string, but also as an array, object, or exponent.
+
+Additionally, the package offers a `partial()` function to create a configuration that can be reused without recreating the configuration object.
+
+Here's the implementation:
+
+```javascript
+export function filesize(bytes, options = {}) {
+    options = {
+        base: 10,
+        bits: false,
+        fullform: false,
+        fullforms: [],
+        locale: '',
+        localeOptions: {},
+        output: 'string',
+        pad: false,
+        precision: 0,
+        round: 2,
+        roundingMethod: 'round',
+        separator: '',
+        spacer: ' ',
+        standard: 'si',
+        symbols: {},
+        ...options
+    };
+
+    const base = options.base === 2 ? 1024 : 1000;
+    const bits = options.bits;
+    const standard = options.standard;
+    const fullform = options.fullform;
+    const fullforms = options.fullforms;
+    const spacer = options.spacer;
+    let locale = options.locale;
+    const roundingMethod = options.roundingMethod;
+
+    let e = -1;
+    let num = Number(bytes);
+    if (isNaN(num)) {
+        throw new TypeError('Invalid number');
+    }
+
+    const ceil = num < 0 ? Math.ceil : Math.floor;
+    
+    while (num >= base && e < 8) {
+        num /= base;
+        e++;
+    }
+
+    const exponent = options.exponent !== -1 ? options.exponent : e;
+
+    if (exponent !== e) {
+        num *= Math.pow(base, e - exponent);
+        e = exponent;
+    }
+
+    if (bits) {
+        num *= 8;
+    }
+
+    // Apply rounding method
+    if (roundingMethod === 'floor') {
+        num = Math.floor(num);
+    } else if (roundingMethod === 'ceil') {
+        num = Math.ceil(num);
+    } else {
+        num = Math[roundingMethod](num);
+    }
+
+    const precPower = Math.pow(10, options.precision);
+    num = Math.round(num * precPower) / precPower;
+
+    const symbol = options.symbols[
+        bits ? ['b', 'Kibit', 'Mibit', 'Gibit', 'Tibit', 'Pibit', 'Eibit', 'Zibit', 'Yibit'][e] : ['B', 'KiB', 'MiB', 'GiB', 'TiB', 'PiB', 'EiB', 'ZiB', 'YiB'][e]
+    ] || (bits ? 'bit' : 'B');
+
+    const full = fullform ? fullforms[e] || (bits ? ['bits', 'kilobits', 'megabits', 'gigabits', 'terabits', 'petabits', 'exabits', 'zettabits', 'yottabits'][e] : ['bytes', 'kilobytes', 'megabytes', 'gigabytes', 'terabytes', 'petabytes', 'exabytes', 'zettabytes', 'yottabytes'][e]) : '';
+
+    let result;
+    if (locale) {
+        result = num.toLocaleString(locale, { minimumFractionDigits: options.pad ? options.round : 0, maximumFractionDigits: options.round, ...options.localeOptions });
+    } else {
+        result = num.toFixed(options.precision);
+    }
+
+    if (options.output === 'array') {
+        return [result, symbol];
+    } else if (options.output === 'object') {
+        return {value: result, symbol, exponent: e, unit: symbol};
+    } else if (options.output === 'exponent') {
+        return e;
+    } else {
+        return result + spacer + (full || symbol);
+    }
+}
+
+export function partial(descriptor) {
+    return (bytes) => filesize(bytes, descriptor);
+}
+```

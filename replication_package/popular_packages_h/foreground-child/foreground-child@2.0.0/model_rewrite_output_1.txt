@@ -1,0 +1,102 @@
+The provided Node.js code defines a function named `foregroundChild`, which is a utility for executing a child process and managing the interaction between the process' signals and the node application. Here's a breakdown of its functionality:
+
+1. **Dependencies**: The code imports a `signal-exit` module to manage process signals and a spawning module, switching between `cross-spawn` and Node's native `child_process` based on the operating system.
+
+2. **normalizeFgArgs Function**: This function normalizes the arguments passed to `foregroundChild`. The arguments can have various forms, such as a single array containing the program and arguments, or separate strings for the program and arguments.
+
+3. **foregroundChild Function**: 
+   - It uses `normalizeFgArgs` to decode the input parameters.
+   - A child process is spawned using these arguments and is configured to share the standard input, output, and error with the parent process.
+   - It handles signals and process lifecycle:
+     - It proxies signals from the parent to the child process.
+     - It sets up a listener for the `exit` event to manage how the parent process responds when it closes.
+   - It provides IPC (Inter-Process Communication) support if applicable.
+   - When the child process closes, a callback function `cb` is invoked, allowing inspection and modification of the child’s exit code.
+   - It ensures proper resource cleanup and signal handling, which can influence how the application exits.
+
+4. **proxySignals Function**: This function forwards signals to the child process. It listens for exit-related signals in the parent process, creating listeners that forward the signals to the child. Upon calling `unproxy`, these listeners are removed.
+
+Here is the rewritten version of the code:
+
+```javascript
+const signalExit = require('signal-exit');
+const spawn = process.platform === 'win32' ? require('cross-spawn') : require('child_process').spawn;
+
+// Normalize inputs for the `foregroundChild` function
+function normalizeFgArgs(fgArgs) {
+  let program, args, cb = (done) => done();
+  let processArgsEnd = fgArgs.length;
+
+  if (typeof fgArgs[fgArgs.length - 1] === "function") {
+    cb = fgArgs[--processArgsEnd];
+  }
+
+  if (Array.isArray(fgArgs[0])) {
+    [program, ...args] = fgArgs[0];
+  } else {
+    program = fgArgs[0];
+    args = Array.isArray(fgArgs[1]) ? fgArgs[1] : fgArgs.slice(1, processArgsEnd);
+  }
+
+  return { program, args, cb };
+}
+
+// Launch child process in foreground
+function foregroundChild(...fgArgs) {
+  const { program, args, cb } = normalizeFgArgs(fgArgs);
+  const spawnOpts = { stdio: [0, 1, 2, process.send ? 'ipc' : undefined].filter(Boolean) };
+  const child = spawn(program, args, spawnOpts);
+
+  const unproxySignals = proxySignals(process, child);
+  process.on('exit', childHangup);
+  function childHangup() { child.kill('SIGHUP'); }
+
+  child.on('close', (code, signal) => {
+    process.exitCode = signal ? 128 + signal : code;
+
+    let done = false;
+    const doneCB = () => {
+      if (done) return;
+      done = true;
+      unproxySignals();
+      process.removeListener('exit', childHangup);
+      if (signal) {
+        setTimeout(() => {}, 200);
+        process.kill(process.pid, signal);
+      } else {
+        process.exit(process.exitCode);
+      }
+    };
+
+    const result = cb(doneCB);
+    if (result && result.then) result.then(doneCB);
+  });
+
+  if (process.send) {
+    process.removeAllListeners('message');
+    child.on('message', process.send.bind(process));
+    process.on('message', child.send.bind(child));
+  }
+
+  return child;
+}
+
+// Handle signal forwarding from parent to child
+function proxySignals(parent, child) {
+  const listeners = new Map();
+
+  for (const sig of signalExit.signals()) {
+    const listener = () => child.kill(sig);
+    listeners.set(sig, listener);
+    parent.on(sig, listener);
+  }
+
+  return function unproxySignals() {
+    for (const [sig, listener] of listeners) {
+      parent.removeListener(sig, listener);
+    }
+  };
+}
+
+module.exports = foregroundChild;
+```

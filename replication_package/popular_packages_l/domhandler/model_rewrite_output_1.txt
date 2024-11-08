@@ -1,0 +1,70 @@
+The provided Node.js code defines functionality for parsing HTML content to build a representation of the Document Object Model (DOM). The key component is the `DomHandler` class, which constructs a structured DOM tree from HTML data, triggering various methods (such as `ontext`, `onopentag`, `oncomment`, and `onend`) during the parsing process. Notable features include handling text data, opening tags, comments, and marking the start and end indices of different nodes if specified in the options. The `onend` method calls a callback once parsing is complete.
+
+The code also provides an example of how to utilize the `DomHandler` with the `htmlparser2` library to parse a string of HTML data, logging the resulting DOM structure to the console.
+
+Here's the rewritten code:
+
+```javascript
+// domhandler.js
+class DomHandler {
+    constructor(callback, options = {}) {
+        this.callback = callback;
+        this.options = options;
+        this.dom = [];
+        this.root = { children: this.dom };
+    }
+
+    _addIndices(node, start, end) {
+        if (this.options.withStartIndices) node.startIndex = start;
+        if (this.options.withEndIndices) node.endIndex = end;
+    }
+
+    ontext(data, start, end) {
+        const node = { type: 'text', data };
+        this._addIndices(node, start, end);
+        this.dom.push(node);
+    }
+
+    onopentag(name, attribs, start, end) {
+        const node = {
+            type: name,
+            name,
+            attribs,
+            children: []
+        };
+        this._addIndices(node, start, end);
+        this.dom.push(node);
+    }
+
+    oncomment(data, start, end) {
+        const node = { type: 'comment', data };
+        this._addIndices(node, start, end);
+        this.dom.push(node);
+    }
+
+    onend() {
+        if (typeof this.callback === 'function') {
+            this.callback(null, this.dom);
+        }
+    }
+}
+
+module.exports = { DomHandler };
+
+// Usage example
+const { Parser } = require('htmlparser2');
+const { DomHandler } = require('./domhandler.js');
+
+const rawHtml = "Xyz <script language=javascript>var foo = '<<bar>>';</script><!--<!-- Waah! -- -->";
+const handler = new DomHandler((error, dom) => {
+    if (error) {
+        console.error('Parsing error:', error);
+    } else {
+        console.log('Parsed DOM:', dom);
+    }
+}, { withStartIndices: true, withEndIndices: true });
+
+const parser = new Parser(handler);
+parser.write(rawHtml);
+parser.end();
+```

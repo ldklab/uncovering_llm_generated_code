@@ -1,0 +1,94 @@
+The provided Node.js code implements an atomic file writing utility. The main functionality is to write data to a file in such a way that the write operation appears atomic to other processes. This is achieved by first writing the data to a temporary file and then atomically renaming this temporary file to the intended filename. This ensures that if a failure occurs during writing, it does not corrupt the target file.
+
+Key functions and operations include:
+
+1. `murmurhex`: Generates a unique name for a temporary file based on the target filename, process ID, and current timestamp, using an MD5 hash.
+
+2. `writeFileAtomic`: An asynchronous function that writes data to a temporary file, performs optional fsync operations to ensure data is flushed to the disk, applies optional ownership changes, and atomically renames the temporary file to the target filename. It also supports a callback to handle completion or errors.
+
+3. `writeFileAtomicSync`: Synchronously performs the same operations as `writeFileAtomic` without using Promises or asynchronous callbacks.
+
+Both functions have options for specifying encoding, file mode, fsync behavior, and ownership (chown). They handle errors gracefully by attempting to remove the temporary file on failure.
+
+Here is the rewritten code:
+
+```javascript
+const fs = require('fs');
+const path = require('path');
+const crypto = require('crypto');
+const { promisify } = require('util');
+
+const writeFileAsync = promisify(fs.writeFile);
+const renameAsync = promisify(fs.rename);
+const unlinkAsync = promisify(fs.unlink);
+const fdatasyncAsync = promisify(fs.fdatasync || fs.fsync);
+
+function generateTempFilename(target) {
+  const hash = crypto.createHash('md5');
+  hash.update(`${target},${process.pid},${Date.now()}`);
+  return `${target}.${hash.digest('hex')}`;
+}
+
+async function writeFileAtomic(filename, data, options = {}, callback) {
+  const opts = {
+    encoding: 'utf8',
+    fsync: true,
+    ...typeof options === 'string' ? { encoding: options } : options
+  };
+
+  const tmpFilename = generateTempFilename(filename);
+
+  try {
+    await writeFileAsync(tmpFilename, data, { encoding: opts.encoding, mode: opts.mode });
+
+    if (opts.fsync) {
+      const fd = fs.openSync(tmpFilename, 'r');
+      await fdatasyncAsync(fd);
+      fs.closeSync(fd);
+    }
+
+    if (opts.chown) {
+      await promisify(fs.chown)(tmpFilename, opts.chown.uid, opts.chown.gid);
+    }
+
+    await renameAsync(tmpFilename, filename);
+    if (callback) callback(null);
+  } catch (error) {
+    await unlinkAsync(tmpFilename).catch(() => {});
+    if (callback) callback(error);
+    else throw error;
+  }
+}
+
+function writeFileAtomicSync(filename, data, options = {}) {
+  const opts = {
+    encoding: 'utf8',
+    fsync: true,
+    ...typeof options === 'string' ? { encoding: options } : options
+  };
+
+  const tmpFilename = generateTempFilename(filename);
+
+  try {
+    fs.writeFileSync(tmpFilename, data, { encoding: opts.encoding, mode: opts.mode });
+
+    if (opts.fsync) {
+      const fd = fs.openSync(tmpFilename, 'r');
+      fs.fdatasyncSync ? fs.fdatasyncSync(fd) : fs.fsyncSync(fd);
+      fs.closeSync(fd);
+    }
+
+    if (opts.chown) {
+      fs.chownSync(tmpFilename, opts.chown.uid, opts.chown.gid);
+    }
+
+    fs.renameSync(tmpFilename, filename);
+  } catch (error) {
+    fs.unlinkSync(tmpFilename);
+    throw error;
+  }
+}
+
+module.exports = writeFileAtomic;
+module.exports.sync = writeFileAtomicSync;
+```

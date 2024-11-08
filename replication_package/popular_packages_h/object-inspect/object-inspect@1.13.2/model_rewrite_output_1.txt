@@ -1,0 +1,298 @@
+The provided Node.js code is a custom inspection utility designed to format and serialize JavaScript objects into string representations. It supports data structures like `Object`, `Array`, `Map`, `Set`, `WeakMap`, `WeakSet`, `WeakRef`, and primitives like `String`, `Number`, `Boolean`, `Symbol`, and `BigInt`. It takes various customization options for the output format including quoting style, maximum string length, custom inspection, indentation, and numeric separators. Here's a breakdown of key functionalities:
+
+1. **Environment Checks:** It first checks for the existence and functionality of `Map`, `Set`, `WeakMap`, `WeakSet`, `WeakRef`, and other JavaScript standard objects to determine their availability and bind certain methods.
+  
+2. **Input Validation:** It validates options to ensure they are provided in the expected format. For example, options like `quoteStyle`, `maxStringLength`, and `indent` are validated.
+
+3. **Object Type Handling:** The utility identifies the type of the object being inspected. It checks if the object is a `boolean`, `number`, `bigint`, `function`, `symbol`, `element`, `array`, `error`, `map`, `set`, etc., and processes each type accordingly.
+
+4. **Custom Inspection Logic:** It allows custom inspection using symbols or user-defined `inspect` functions if applicable.
+
+5. **Support for Circular References:** It detects circular references in objects and returns a `[Circular]` placeholder to avoid infinite loops.
+
+6. **String Manipulation Tools:** Wraps strings with chosen quote styles and processes strings to escape special characters.
+
+7. **Recursive Inspection:** It recursively inspects nested objects up to a maximum depth, which can be configured.
+
+8. **Formatting and Output:** Finally, it returns a formatted string based on the inspection rules and settings. It uses helpers like `wrapQuotes`, `addNumericSeparator`, and `collectionOf` to format various data types into human-readable strings.
+
+Below is a possible rewrite of the code, encapsulating these functionalities.
+
+```javascript
+const utilInspect = require('./util.inspect');
+const { custom: inspectCustom } = utilInspect;
+const booleanValueOf = Boolean.prototype.valueOf;
+const objectToString = Object.prototype.toString;
+const functionToString = Function.prototype.toString;
+
+/**
+ * Helper to add numeric separators for readability.
+ * 
+ * @param {number} num - The number to format.
+ * @param {string} str - The numerical string representation.
+ * @returns {string} - Formatted string with numeric separators.
+ */
+function addNumericSeparator(num, str) {
+    if (num === Infinity || num === -Infinity || num !== num || (num && num > -1000 && num < 1000) || /e/.test(str)) {
+        return str;
+    }
+    const sepRegex = /[0-9](?=(?:[0-9]{3})+(?![0-9]))/g;
+    if (typeof num === 'number') {
+        const int = num < 0 ? -Math.floor(-num) : Math.floor(num);
+        if (int !== num) {
+            const intStr = String(int);
+            const dec = str.slice(intStr.length + 1);
+            return intStr.replace(sepRegex, '$&_') + '.' + dec.replace(/([0-9]{3})/g, '$&_').replace(/_$/, '');
+        }
+    }
+    return str.replace(sepRegex, '$&_');
+}
+
+/**
+ * Main inspection function to format and serialize objects.
+ * 
+ * @param {object} obj - The object to inspect.
+ * @param {object} options - Formatting options.
+ * @param {number} depth - Current recursion depth.
+ * @param {Array} seen - Track seen objects for circular reference.
+ * @returns {string} - The string representation of the object.
+ */
+module.exports = function inspect_(obj, options = {}, depth = 0, seen = []) {
+    const opts = {
+        depth: options.depth ?? 5,
+        quoteStyle: options.quoteStyle || 'single',
+        customInspect: options.customInspect ?? true,
+        indent: options.indent || null,
+        numericSeparator: options.numericSeparator || false,
+        maxStringLength: options.maxStringLength,
+    };
+
+    // Validate options
+    if (opts.quoteStyle !== 'single' && opts.quoteStyle !== 'double') throw new TypeError('option "quoteStyle" must be "single" or "double"');
+    if (typeof opts.maxStringLength === 'number' && opts.maxStringLength < 0 && opts.maxStringLength !== Infinity) throw new TypeError('option "maxStringLength", must be positive, Infinity, or null');
+    if (typeof opts.customInspect !== 'boolean' && opts.customInspect !== 'symbol') throw new TypeError('option "customInspect", must be boolean or "symbol"');
+    if (opts.indent !== null && opts.indent !== '\t' && !(parseInt(opts.indent, 10) === opts.indent && opts.indent > 0)) throw new TypeError('option "indent" must be "\\t", integer > 0, or null');
+    if (typeof opts.numericSeparator !== 'boolean') throw new TypeError('option "numericSeparator", must be boolean');
+
+    // Basic types
+    if (typeof obj === 'undefined') return 'undefined';
+    if (obj === null) return 'null';
+    if (typeof obj === 'boolean') return obj ? 'true' : 'false';
+    if (typeof obj === 'string') return inspectString(obj, opts);
+    if (typeof obj === 'number') {
+        if (obj === 0) return 1 / obj > 0 ? '0' : '-0';
+        const str = String(obj);
+        return opts.numericSeparator ? addNumericSeparator(obj, str) : str;
+    }
+    if (typeof obj === 'bigint') {
+        const bigIntStr = String(obj) + 'n';
+        return opts.numericSeparator ? addNumericSeparator(obj, bigIntStr) : bigIntStr;
+    }
+
+    // Handle depth and circular references
+    if (depth >= opts.depth && opts.depth > 0 && typeof obj === 'object') return Array.isArray(obj) ? '[Array]' : '[Object]';
+    if (seen.includes(obj)) return '[Circular]';
+
+    const indent = getIndent(opts, depth);
+
+    // Helper for recursive inspection
+    function inspect(value, from, noIndent) {
+        const newSeen = seen.slice();
+        if (from) newSeen.push(from);
+        const newOpts = noIndent ? { depth: opts.depth, quoteStyle: opts.quoteStyle } : opts;
+        return inspect_(value, newOpts, depth + 1, newSeen);
+    }
+
+    // Data type specific handling
+    switch (true) {
+        case typeof obj === 'function' && !isRegExp(obj):
+            const name = obj.name || (/^function\s*([\w$]+)/.exec(functionToString.call(obj)) || [])[1] || null;
+            const keys = arrObjKeys(obj, inspect);
+            return `[Function${name ? ': ' + name : ' (anonymous)'}]${keys.length ? ' { ' + keys.join(', ') + ' }' : ''}`;
+        case typeof obj === 'symbol':
+            return inspectSymbol(obj);
+        case Array.isArray(obj):
+            return inspectArray(obj, opts, depth, seen, inspect, indent);
+        case obj instanceof Map:
+            return formatCollection('Map', obj.size, obj, opts, depth, seen, indent, inspect);
+        case obj instanceof Set:
+            return formatCollection('Set', obj.size, obj, opts, depth, seen, indent, inspect);
+        case obj instanceof WeakMap:
+            return 'WeakMap { ? }';
+        case obj instanceof WeakSet:
+            return 'WeakSet { ? }';
+        case obj instanceof Error:
+            return formatError(obj, opts, depth, inspect);
+        default:
+            return inspectDefault(obj, opts, depth, seen, inspect, indent);
+    }
+}
+
+/**
+ * Inspect string with quote style wrapping and character escaping.
+ * 
+ * @param {string} str - String to inspect.
+ * @param {object} opts - Inspection options.
+ * @returns {string} - Inspected string.
+ */
+function inspectString(str, opts) {
+    const maxStringLength = opts.maxStringLength === undefined ? str.length : opts.maxStringLength;
+    if (str.length > maxStringLength) {
+        return wrapQuotes(str.slice(0, maxStringLength) + '... (truncated)', 'single', opts);
+    }
+    const escapedString = str.replace(/(['\\])/g, '\\$1').replace(/[\x00-\x1f]/g, c => `\\x${c.charCodeAt(0).toString(16)}`);
+    return wrapQuotes(escapedString, 'single', opts);
+}
+
+/**
+ * Form a collection of type with entries indentation.
+ * 
+ * @param {string} type - The type of the collection.
+ * @param {number} size - Size of the collection.
+ * @param {Iterable} collection - Collection to iterate.
+ * @param {object} options - Formatting options.
+ * @param {number} depth - Current recursive depth.
+ * @param {Array} seen - Array of seen elements.
+ * @param {object} indent - Indentation options.
+ * @param {function} inspect - Inspection function.
+ * @returns {string} - Formatted string description of the collection.
+ */
+function formatCollection(type, size, collection, options, depth, seen, indent, inspect) {
+    const entries = [];
+    if (collection instanceof Map) {
+        collection.forEach((value, key) => {
+            entries.push(inspect(key, null, true) + ' => ' + inspect(value, null));
+        });
+    } else if (collection instanceof Set) {
+        collection.forEach(value => {
+            entries.push(inspect(value, null));
+        });
+    }
+    const joinedEntries = indent ? indentedJoin(entries, indent) : entries.join(', ');
+    return `${type} (${size}) { ${joinedEntries} }`;
+}
+
+/**
+ * Format error object representation.
+ * 
+ * @param {Error} obj - Error object to inspect.
+ * @param {object} opts - Formatting options.
+ * @param {number} depth - Current recursive depth.
+ * @param {function} inspect - Inspection function.
+ * @returns {string} - Formatted error string.
+ */
+function formatError(obj, opts, depth, inspect) {
+    const parts = arrObjKeys(obj, inspect);
+    if (!('cause' in Error.prototype) && 'cause' in obj && !Object.prototype.propertyIsEnumerable.call(obj, 'cause')) {
+        parts.unshift('[cause]: ' + inspect(obj.cause));
+    }
+    return '{ [Error: ' + (obj.message || '') + '] ' + parts.join(', ') + ' }';
+}
+
+/**
+ * Inspect default object representation.
+ * 
+ * @param {object} obj - Object to inspect.
+ * @param {object} opts - Formatting options.
+ * @param {number} depth - Current recursive depth.
+ * @param {Array} seen - Array of seen elements.
+ * @param {function} inspect - Inspection function.
+ * @param {object} indent - Indentation options.
+ * @returns {string} - Inspected default object.
+ */
+function inspectDefault(obj, opts, depth, seen, inspect, indent) {
+    let rep = '{ ' + arrObjKeys(obj, inspect).join(', ') + ' }';
+    if (opts.indent) {
+        rep = '{\n' + arrObjKeys(obj, inspect).map(key => '  ' + key).join(',\n') + '\n}';
+    }
+    return `${rep}`;
+}
+
+/**
+ * Inspect array with optional line break indentation.
+ * 
+ * @param {Array} arr - Array to inspect.
+ * @param {object} opts - Formatting options.
+ * @param {number} depth - Current recursive depth.
+ * @param {Array} seen - Array of seen elements.
+ * @param {function} inspect - Inspection function.
+ * @param {object} indent - Indentation options.
+ * @returns {string} - Inspected array.
+ */
+function inspectArray(arr, opts, depth, seen, inspect, indent) {
+    if (!arr.length) return '[]';
+    const items = arr.map(item => inspect(item, null, true));
+    const singleLine = items.join(', ');
+    if (!opts.indent || items.every(item => !item.includes('\n'))) {
+        return `[ ${singleLine} ]`;
+    }
+    const multiLine = items.map(item => indent.base + indent.prev + item).join(',\n');
+    return `[\n${multiLine}\n${indent.prev}]`;
+}
+
+/**
+ * Inspect symbol object and optionally format boxed representation.
+ * 
+ * @param {symbol} obj - Symbol to inspect.
+ * @returns {string} - Inspected symbol.
+ */
+function inspectSymbol(obj) {
+    return String(obj).replace(/^(Symbol\(.*\))_[^)]*$/, '$1');
+}
+
+/**
+ * Get indentation string for formatting.
+ * 
+ * @param {object} opts - Formatting options.
+ * @param {number} depth - Current recursion depth.
+ * @returns {object} - Base and previous indentation strings.
+ */
+function getIndent(opts, depth) {
+    const base = opts.indent === '\t' ? '\t' : ' '.repeat(opts.indent || 0);
+    return {
+        base,
+        prev: base.repeat(depth)
+    };
+}
+
+/**
+ * Concatenate element array with indentation.
+ * 
+ * @param {Array} xs - Elements to concatenate.
+ * @param {object} indent - Indentation options.
+ * @returns {string} - String with joined elements.
+ */
+function indentedJoin(xs, indent) {
+    return xs.map(x => indent.base + indent.prev + x).join(',\n') + ',\n';
+}
+
+/**
+ * Get array and object keys as strings.
+ * 
+ * @param {object} obj - Object for keys.
+ * @param {function} inspect - Inspection function.
+ * @returns {Array} - Key value pair strings.
+ */
+function arrObjKeys(obj, inspect) {
+    const keys = [];
+    for (const key in obj) {
+        if (Object.prototype.hasOwnProperty.call(obj, key)) {
+            keys.push(`${key}: ${inspect(obj[key], obj)}`);
+        }
+    }
+    return keys;
+}
+
+/**
+ * Wrap with quotes based on option.
+ * 
+ * @param {string} s - String to wrap.
+ * @param {string} defaultStyle - Default quote style.
+ * @param {object} opts - Formatting options.
+ * @returns {string} - Wrapped string.
+ */
+function wrapQuotes(s, defaultStyle, opts) {
+    const quoteChar = (opts.quoteStyle || defaultStyle) === 'double' ? '"' : "'";
+    return `${quoteChar}${s}${quoteChar}`;
+}
+```

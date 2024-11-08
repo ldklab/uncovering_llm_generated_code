@@ -1,0 +1,74 @@
+The given Node.js code is designed to identify the Continuous Integration (CI) environment your code is running in, using a list of potential CI vendors defined in a `vendors.json` file. This is particularly useful when you want to tailor behavior or configuration specific to a CI service.
+
+**Functionality Overview:**
+1. **Loading Configuration**: It imports a list of CI vendors from a JSON file (`vendors.json`).
+2. **Environment Checks**: 
+   - It checks environment variables against those expected by each CI vendor to determine if the code is running in that specific CI environment.
+   - If the environment matches a vendor, it sets `exports` properties for the environment name and PR status.
+3. **PR Detection**: 
+   - Determines if the build is for a pull request using vendor-specific environment variable configurations.
+4. **General CI Detection**: 
+   - Uses common CI environment variables to set a global `isCI` flag, indicating if any recognized CI environment conditions are met.
+5. **Utility Function**: 
+   - `checkEnv()`: Helper function to check whether specific environment variables match expected values for a CI vendor.
+
+The following is a rewritten version of the above code with similar functionality:
+
+```javascript
+'use strict';
+
+const vendors = require('./vendors.json');
+const env = process.env;
+
+// Exporting an array of vendor names used for testing purposes
+Object.defineProperty(exports, '_vendors', {
+  value: vendors.map(vendor => vendor.constant)
+});
+
+exports.name = null;
+exports.isPR = null;
+
+// Iterate through each CI vendor to determine if the code is running within one of them
+vendors.forEach(vendor => {
+  const envs = Array.isArray(vendor.env) ? vendor.env : [vendor.env];
+  
+  const matchesCI = envs.every(envVar => checkEnv(envVar));
+  
+  exports[vendor.constant] = matchesCI;
+
+  if (matchesCI) {
+    exports.name = vendor.name;
+    
+    if (typeof vendor.pr === 'string') {
+      exports.isPR = !!env[vendor.pr];
+    } else if (typeof vendor.pr === 'object') {
+      if (vendor.pr.env) {
+        exports.isPR = vendor.pr.env in env && env[vendor.pr.env] !== vendor.pr.ne;
+      } else if (vendor.pr.any) {
+        exports.isPR = vendor.pr.any.some(prVar => !!env[prVar]);
+      } else {
+        exports.isPR = checkEnv(vendor.pr);
+      }
+    } else {
+      exports.isPR = null; // Unsupported PR detection
+    }
+  }
+});
+
+// Determines if the script is running in a CI environment using common CI indicators
+exports.isCI = Boolean(
+  env.CI ||
+  env.CONTINUOUS_INTEGRATION ||
+  env.BUILD_NUMBER ||
+  env.RUN_ID ||
+  exports.name
+);
+
+// Helper function to verify if specific environment variables match expected conditions
+function checkEnv(settings) {
+  if (typeof settings === 'string') {
+    return !!env[settings];
+  }
+  return Object.keys(settings).every(key => env[key] === settings[key]);
+}
+```

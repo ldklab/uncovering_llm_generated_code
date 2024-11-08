@@ -1,0 +1,126 @@
+The provided Node.js code defines a `CombinedStream` class that extends the Node.js `Stream` module to combine multiple streams into a single readable stream. This class supports stream pausing, resuming, and ensures the total data size does not exceed a specified limit. Here's a breakdown of the key functionalities:
+
+1. **Constructor**: Initializes a `CombinedStream` with configurable options like `pauseStreams` for automatically pausing streams and `maxDataSize` to limit the total data that can be read. It initializes internal properties for managing streams and data flow.
+
+2. **Append Method**: Adds a new stream or a stream factory function to `_streams`. If `pauseStreams` is true, it pauses the stream to control flow explicitly later.
+
+3. **_getNextStream Method**: Retrieves the next stream from the `_streams` queue and sets up handlers for `data`, `end`, and `error` events. It automatically handles the transition between streams by invoking this method in the `end` event.
+
+4. **_onData Method**: Handles incoming data, checks if the cumulative data size exceeds `maxDataSize`, and emits a `data` event to propagate the data to any consumers.
+
+5. **_onEnd Method**: Invoked when the current stream ends, it moves to the next stream by calling `_getNextStream`.
+
+6. **Pipe and Controls**: The `pipe` method allows streaming the combined output to another destination. `resume` and `pause` manage stream flow control, ensuring data is processed smoothly and efficiently.
+
+7. **End and Destroy**: Gracefully terminates the stream processing by emitting an `end` event and cleaning up resources.
+
+The rewritten version of the code based on this explanation is below:
+
+```javascript
+const { Stream } = require('stream');
+const fs = require('fs');
+
+class CombinedStream extends Stream {
+  constructor(options = {}) {
+    super();
+    this.pauseStreams = options.pauseStreams !== false;
+    this.maxDataSize = options.maxDataSize || 2 * 1024 * 1024; // 2 MB default
+    this.dataSize = 0;
+    this._streams = [];
+    this._currentStream = null;
+    this.writable = true;
+    this.readable = true;
+  }
+
+  append(stream) {
+    this._streams.push(typeof stream === 'function' ? stream : () => stream);
+    if (this.pauseStreams && typeof stream.pause === 'function') {
+      stream.pause();
+    }
+    return this;
+  }
+
+  _getNextStream() {
+    if (this._streams.length === 0) {
+      this.emit('end');
+      this.writable = false;
+      return;
+    }
+
+    const streamFactory = this._streams.shift();
+    streamFactory((stream) => {
+      stream.on('data', (data) => this._onData(data));
+      stream.on('end', () => this._onEnd());
+      stream.on('error', (err) => this.emit('error', err));
+
+      this._currentStream = stream;
+
+      if (!this.pauseStreams) {
+        stream.resume();
+      }
+    });
+  }
+
+  _onData(data) {
+    this.dataSize += data.length;
+    if (this.dataSize > this.maxDataSize) {
+      return this.emit('error', new Error('maxDataSize exceeded'));
+    }
+    this.emit('data', data);
+  }
+
+  _onEnd() {
+    this._getNextStream();
+  }
+
+  pipe(dest, options) {
+    super.pipe(dest, options);
+    this.resume();
+    return dest;
+  }
+
+  resume() {
+    if (!this._currentStream) {
+      this._getNextStream();
+    } else if (this._currentStream.resume) {
+      this._currentStream.resume();
+    }
+    this.emit('resume');
+  }
+
+  pause() {
+    if (this._currentStream && this._currentStream.pause) {
+      this._currentStream.pause();
+    }
+    this.emit('pause');
+  }
+
+  end() {
+    this.emit('end');
+    this.writable = false;
+    this.readable = false;
+    this._streams = [];
+  }
+
+  destroy() {
+    this.end();
+    this.emit('close');
+  }
+
+  static create(options) {
+    return new CombinedStream(options);
+  }
+}
+
+module.exports = CombinedStream;
+
+// Usage example:
+// const CombinedStream = require('./combined-stream');
+// const fs = require('fs');
+
+// const combinedStream = CombinedStream.create();
+// combinedStream.append(fs.createReadStream('file1.txt'));
+// combinedStream.append(fs.createReadStream('file2.txt'));
+
+// combinedStream.pipe(fs.createWriteStream('combined.txt'));
+```

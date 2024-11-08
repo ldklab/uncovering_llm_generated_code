@@ -1,0 +1,237 @@
+The code provided is a Node.js module designed to write files safely and reliably by ensuring that temporary files are used until writing and potential file operations are complete. This creates atomic file writes, reducing the risk of incomplete or corrupted files if the process crashes or is interrupted. Here's a breakdown of its functionality:
+
+1. **Functions Defined:**
+   - `writeFile()` and `writeFileSync()` are the main functions for writing files, available asynchronously and synchronously, respectively.
+   - `getTmpname()` generates a unique temporary filename based on the original file name, using the current process ID, thread ID, and invocation count for uniqueness.
+   - `cleanupOnExit()` creates a function that deletes a given temporary file when called.
+   - `serializeActiveFile()` ensures operations writing to the same file are serialized (executed one after another) to prevent simultaneous access conflicts.
+   - `isChownErrOk()` determines whether it's acceptable to ignore specific `chown` errors based on error codes and user permissions.
+
+2. **Usage of external modules/libraries:**
+   - Utilizes libraries such as `fs` for file operations, `path` for file path handling, and `util` for promisifying callback-based functions.
+   - `imurmurhash` is used to generate hash values for generating unique filenames.
+   - `signal-exit` is employed to ensure cleanup operations are triggered on process exit.
+   - `is-typedarray` and `typedarray-to-buffer` help with type-checking of input data.
+
+3. **Atomic Write Strategy:**
+   - File writing first occurs on a temporary file, which is then renamed to the target name after successfully writing and syncing, ensuring that the original file remains untouched until the new one is completely written.
+
+4. **Error Handling and Cleanup:**
+   - Automatic cleanup of temporary files ensures that leftovers are not cluttering the file system in case of errors.
+   - On process exit, registered handlers ensure the unlinking of temporary files to maintain file system hygiene.
+
+Below is the possible rewrite of this Node.js code using ES6 features and simplification:
+
+```javascript
+'use strict';
+
+const fs = require('fs');
+const path = require('path');
+const MurmurHash3 = require('imurmurhash');
+const onExit = require('signal-exit');
+const { promisify } = require('util');
+const isTypedArray = require('is-typedarray');
+const typedArrayToBuffer = require('typedarray-to-buffer');
+
+// Promisified fs functions
+const realpath = promisify(fs.realpath);
+const stat = promisify(fs.stat);
+const open = promisify(fs.open);
+const write = promisify(fs.write);
+const fsync = promisify(fs.fsync);
+const close = promisify(fs.close);
+const rename = promisify(fs.rename);
+const unlink = promisify(fs.unlink);
+const chown = promisify(fs.chown);
+const chmod = promisify(fs.chmod);
+
+const activeFiles = {};
+
+const threadId = (() => {
+  try {
+    const { threadId } = require('worker_threads');
+    return threadId || 0;
+  } catch {
+    return 0;
+  }
+})();
+
+let invocations = 0;
+
+function getTmpname(filename) {
+  const hash = MurmurHash3(__filename)
+    .hash(String(process.pid))
+    .hash(String(threadId))
+    .hash(String(++invocations))
+    .result();
+  return `${filename}.${hash}`;
+}
+
+function cleanupOnExit(tmpfile) {
+  return () => {
+    try {
+      fs.unlinkSync(typeof tmpfile === 'function' ? tmpfile() : tmpfile);
+    } catch {}
+  };
+}
+
+function serializeActiveFile(absoluteName) {
+  if (!activeFiles[absoluteName]) activeFiles[absoluteName] = [];
+  return new Promise((resolve) => {
+    activeFiles[absoluteName].push(resolve);
+    if (activeFiles[absoluteName].length === 1) resolve();
+  });
+}
+
+function isChownErrOk(err) {
+  const nonroot = !process.getuid || process.getuid() !== 0;
+  return err.code === 'ENOSYS' || (nonroot && (err.code === 'EINVAL' || err.code === 'EPERM'));
+}
+
+async function writeFileAsync(filename, data, options = {}) {
+  if (typeof options === 'string') options = { encoding: options };
+
+  const absoluteName = path.resolve(filename);
+  let fd;
+  let tmpfile;
+  const removeOnExitHandler = onExit(cleanupOnExit(() => tmpfile));
+
+  try {
+    await serializeActiveFile(absoluteName);
+
+    const truename = await realpath(filename).catch(() => filename);
+    tmpfile = getTmpname(truename);
+
+    let { mode, chown, encoding, fsync = true, tmpfileCreated } = options;
+
+    const stats = await stat(truename).catch(() => null);
+    if (stats) {
+      if (mode == null) mode = stats.mode;
+      if (chown == null && process.getuid) {
+        chown = { uid: stats.uid, gid: stats.gid };
+      }
+    }
+
+    fd = await open(tmpfile, 'w', mode);
+
+    if (tmpfileCreated) await tmpfileCreated(tmpfile);
+    if (isTypedArray(data)) data = typedArrayToBuffer(data);
+
+    if (Buffer.isBuffer(data)) {
+      await write(fd, data, 0, data.length, 0);
+    } else if (data != null) {
+      await write(fd, String(data), 0, encoding || 'utf8');
+    }
+
+    if (fsync !== false) await fsync(fd);
+    await close(fd);
+    fd = null;
+
+    if (chown) {
+      await chown(tmpfile, chown.uid, chown.gid).catch((err) => {
+        if (!isChownErrOk(err)) throw err;
+      });
+    }
+
+    if (mode) {
+      await chmod(tmpfile, mode).catch((err) => {
+        if (!isChownErrOk(err)) throw err;
+      });
+    }
+
+    await rename(tmpfile, truename);
+  } finally {
+    if (fd) await close(fd).catch(() => {});
+
+    removeOnExitHandler();
+    await unlink(tmpfile).catch(() => {});
+    activeFiles[absoluteName].shift();
+    if (activeFiles[absoluteName].length > 0) activeFiles[absoluteName][0]();
+    else delete activeFiles[absoluteName];
+  }
+}
+
+function writeFile(filename, data, options, callback) {
+  if (typeof options === 'function') {
+    callback = options;
+    options = {};
+  }
+
+  const promise = writeFileAsync(filename, data, options);
+  if (callback) promise.then(() => callback(null), callback);
+  return promise;
+}
+
+function writeFileSync(filename, data, options = {}) {
+  if (typeof options === 'string') options = { encoding: options };
+
+  filename = fs.realpathSync(filename);
+  const tmpfile = getTmpname(filename);
+
+  let stats;
+  try {
+    stats = fs.statSync(filename);
+  } catch {}
+
+  options = { ...options };
+  const { mode, chown, encoding = 'utf8', fsync = true, tmpfileCreated } = options;
+
+  if (stats) {
+    if (!mode) options.mode = stats.mode;
+    if (!chown && process.getuid) {
+      options.chown = { uid: stats.uid, gid: stats.gid };
+    }
+  }
+
+  let fd;
+  const cleanup = cleanupOnExit(tmpfile);
+  const removeOnExitHandler = onExit(cleanup);
+
+  try {
+    fd = fs.openSync(tmpfile, 'w', mode || 0o666);
+    if (tmpfileCreated) tmpfileCreated(tmpfile);
+
+    if (isTypedArray(data)) data = typedArrayToBuffer(data);
+    if (Buffer.isBuffer(data)) {
+      fs.writeSync(fd, data, 0, data.length, 0);
+    } else if (data) {
+      fs.writeSync(fd, String(data), 0, encoding);
+    }
+
+    if (fsync) fs.fsyncSync(fd);
+    fs.closeSync(fd);
+    fd = null;
+
+    if (chown) {
+      try {
+        fs.chownSync(tmpfile, chown.uid, chown.gid);
+      } catch (err) {
+        if (!isChownErrOk(err)) throw err;
+      }
+    }
+
+    if (mode) {
+      try {
+        fs.chmodSync(tmpfile, mode);
+      } catch (err) {
+        if (!isChownErrOk(err)) throw err;
+      }
+    }
+
+    fs.renameSync(tmpfile, filename);
+  } finally {
+    if (fd) {
+      try {
+        fs.closeSync(fd);
+      } catch {}
+    }
+    removeOnExitHandler();
+    cleanup();
+  }
+}
+
+module.exports = writeFile;
+module.exports.sync = writeFileSync;
+module.exports._getTmpname = getTmpname; // for testing
+module.exports._cleanupOnExit = cleanupOnExit;
+```

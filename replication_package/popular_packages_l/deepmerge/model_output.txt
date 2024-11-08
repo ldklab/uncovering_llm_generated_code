@@ -1,0 +1,77 @@
+The `deepmerge` package provides functionality to deeply merge the enumerable properties of two or more objects. Here's a breakdown of its core features:
+
+- **Basic Deep Merge**: It can merge two objects, combining their properties into a new object without modifying the original objects. If both objects have a property with the same key, the value from the second object will be used in the result.
+  
+- **Array Merging**: By default, arrays are merged by concatenating them. However, you can define custom array merge behavior using the `arrayMerge` option.
+
+- **Multiple Object Merge**: The `merge.all` function allows merging any number of objects into a single resultant object.
+
+- **Custom Merging Options**:
+  - **`arrayMerge`**: Custom function to define how arrays should be merged.
+  - **`isMergeableObject`**: Function to determine if an object is mergeable, allowing customization of what kind of objects get deeply merged.
+  - **`customMerge`**: Customizes merge behavior for specific object properties.
+  - **`clone`**: Deprecated option that controlled whether objects should be cloned or copied directly.
+
+Here's a Node.js package implementation of the `deepmerge` functionality:
+
+```js
+function merge(x, y, { arrayMerge = defaultArrayMerge, isMergeableObject = defaultIsMergeableObject, customMerge } = {}) {
+    if (!isMergeableObject(x) || !isMergeableObject(y)) {
+        return cloneUnlessOtherwiseSpecified(y, { clone: true });
+    }
+    
+    const target = {};
+    for (const key in x) {
+        target[key] = cloneUnlessOtherwiseSpecified(x[key], { clone: true });
+    }
+    
+    for (const key in y) {
+        if (customMerge && customMerge(key)) {
+            target[key] = customMerge(key)(x[key], y[key]);
+        } else if (isMergeableObject(y[key])) {
+            target[key] = merge(x[key], y[key], { arrayMerge, isMergeableObject, customMerge });
+        } else {
+            target[key] = cloneUnlessOtherwiseSpecified(y[key], { clone: true });
+        }
+    }
+    
+    return target;
+}
+
+function mergeAll(arrayOfObjects, options) {
+    if (!Array.isArray(arrayOfObjects)) {
+        throw new Error('merge.all expects an array');
+    }
+    
+    return arrayOfObjects.reduce((prev, obj) => merge(prev, obj, options), {});
+}
+
+function defaultArrayMerge(target, source) {
+    return target.concat(source);
+}
+
+function defaultIsMergeableObject(value) {
+    return value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function cloneUnlessOtherwiseSpecified(value, options) {
+    return options.clone ? deepClone(value) : value;
+}
+
+function deepClone(value) {
+    if (Array.isArray(value)) {
+        return value.map(item => deepClone(item));
+    } else if (typeof value === 'object' && value !== null) {
+        return merge({}, value);
+    } else {
+        return value;
+    }
+}
+
+module.exports = {
+    merge,
+    mergeAll,
+};
+```
+
+This code creates a utility (`deepmerge`) to deeply merge objects, preserving the core functionalities described in the README. Default implementations are provided with hooks for custom behavior.

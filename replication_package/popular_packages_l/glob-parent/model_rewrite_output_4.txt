@@ -1,0 +1,87 @@
+The provided Node.js function is designed to extract the non-magic (non-glob) parent path from a given string that may contain glob patterns. It processes a given path or pattern and removes the portion that contains glob-specific characters, returning a cleaner path that doesn't have these glob patterns. Here's a breakdown of how the function works:
+
+1. **Magic character detection**: A helper function `isMagicChar` checks if a character is a glob-pattern magic character (`?`, `*`, `+`, `|`, etc.).
+   
+2. **Backslashes replacement option**: It optionally replaces backslashes with forward slashes, which is useful for Windows path compatibility.
+
+3. **Pattern parsing**: The function iterates over the input string to identify the first occurrence of a magic character while ensuring it's outside of escape sequences and brackets. It considers:
+   - Escape sequences (preceded by a backslash).
+   - Bracket sequences (`{}`, `[]`) to avoid parsing errors within non-magic portions.
+   
+4. **Base path extraction**: Upon finding a magic character, it slices the string up to that point to get the base path. If the entire string is non-magic, it uses the whole string.
+
+5. **Normalization and directory extraction**: It normalizes the extracted path and then determines the parent directory using `path.dirname`. If the result is empty or starts with a dot (indicating a potential current directory), it returns `'.'`.
+
+The following is a rewritten version of the given Node.js code, incorporating the explanation:
+
+```javascript
+const path = require('path');
+
+/**
+ * Checks if a character is a glob magic character.
+ * @param {string} char - Character to check.
+ * @returns {boolean}
+ */
+const isMagicChar = (char) => '?*+|(){}[]!'.includes(char);
+
+/**
+ * Extracts the base path from a glob pattern, removing magic parts.
+ * @param {string} maybeGlobString - The input string which may include glob patterns.
+ * @param {object} [options={}] - Configuration options.
+ * @param {boolean} [options.flipBackslashes=true] - Convert backslashes to forward slashes.
+ * @returns {string} - Non-magic parent path.
+ */
+function globParent(maybeGlobString, options = {}) {
+  const { flipBackslashes = true } = options;
+
+  if (flipBackslashes) {
+    maybeGlobString = maybeGlobString.replace(/\\/g, '/');
+  }
+
+  let inEscape = false;
+  let inBrackets = 0;
+  let prevChar = '';
+  let i = 0;
+
+  for (i = 0; i < maybeGlobString.length; i++) {
+    const char = maybeGlobString[i];
+
+    if (char === '/' && !inBrackets && !inEscape) {
+      prevChar = char;
+      continue;
+    }
+
+    if (char === '\\' && !inEscape) {
+      inEscape = true;
+      continue;
+    }
+
+    if (inEscape) {
+      inEscape = false;
+    } else if (char === '{') {
+      while (i < maybeGlobString.length && maybeGlobString[i] !== '}') i++;
+    } else if (char === '[') {
+      inBrackets++;
+    } else if (char === ']') {
+      inBrackets--;
+      if (inBrackets < 0) inBrackets = 0;
+    } else if (!inBrackets && isMagicChar(char)) {
+      break;
+    }
+
+    prevChar = char;
+  }
+
+  const stripIndex = i < maybeGlobString.length ? i : undefined;
+  const basePath = stripIndex ? maybeGlobString.slice(0, stripIndex) : maybeGlobString;
+  const normalizedPath = path.posix.normalize(basePath);
+
+  if (!normalizedPath || normalizedPath.startsWith('.')) {
+    return '.';
+  }
+
+  return path.dirname(normalizedPath);
+}
+
+module.exports = globParent;
+```

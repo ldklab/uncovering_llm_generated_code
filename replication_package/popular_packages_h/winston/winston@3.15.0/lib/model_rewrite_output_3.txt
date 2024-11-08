@@ -1,0 +1,93 @@
+The functionality of this Node.js code is to define and export the main API surface for the Winston logging library. Below is an explanation of each part of the code and the simplified restructured version:
+
+### Explanation
+
+1. **Version, Transports, and Config**
+   - `exports.version` exposes the Winston package version.
+   - `exports.transports` and `exports.config` expose the default logging transports and configuration options.
+
+2. **Logform Utilities**
+   - `exports.addColors` and `exports.format` provide access to commonly used utilities from the `logform` module for formatting logs.
+
+3. **Core Prototypes and Handlers**
+   - Functions and objects like `createLogger`, `Logger`, `ExceptionHandler`, `RejectionHandler`, `Container`, and `Transport` are exported for creating and managing logging functionalities, handling exceptions and rejections, and other logging-related operations.
+
+4. **Default Logger and Method Proxying**
+   - A default logger instance is created using `createLogger`. Common logging methods (like `log`, `query`, `stream`, etc.) are proxied to this default logger, allowing for easy logging without needing to manually create a logger instance.
+
+5. **Property Getters and Setters**
+   - Properties like `level`, `exceptions`, `rejections`, and `exitOnError` are defined to control aspects of the default logger.
+
+6. **Default Logger Configuration**
+   - Default transports and handler configurations (`exceptionHandlers`, `rejectionHandlers`, `transports`) are exposed via a `default` property.
+
+7. **Deprecation Warnings**
+   - Warnings are issued for deprecated functions and properties, guiding users towards the current API usage.
+
+### Rewritten Code
+
+```javascript
+'use strict';
+
+const logform = require('logform');
+const { warn } = require('./winston/common');
+
+exports.version = require('../package.json').version;
+exports.transports = require('./winston/transports');
+exports.config = require('./winston/config');
+exports.addColors = logform.levels;
+exports.format = logform.format;
+exports.createLogger = require('./winston/create-logger');
+exports.Logger = require('./winston/logger');
+exports.ExceptionHandler = require('./winston/exception-handler');
+exports.RejectionHandler = require('./winston/rejection-handler');
+exports.Container = require('./winston/container');
+exports.Transport = require('winston-transport');
+exports.loggers = new exports.Container();
+
+const defaultLogger = exports.createLogger();
+
+Object.keys(exports.config.npm.levels)
+  .concat([
+    'log', 'query', 'stream', 'add', 'remove', 'clear', 'profile', 'startTimer',
+    'handleExceptions', 'unhandleExceptions', 'handleRejections',
+    'unhandleRejections', 'configure', 'child'
+  ])
+  .forEach(method => exports[method] = (...args) => defaultLogger[method](...args));
+
+Object.defineProperty(exports, 'level', {
+  get() { return defaultLogger.level; },
+  set(val) { defaultLogger.level = val; }
+});
+
+Object.defineProperty(exports, 'exceptions', {
+  get() { return defaultLogger.exceptions; }
+});
+
+Object.defineProperty(exports, 'rejections', {
+  get() { return defaultLogger.rejections; }
+});
+
+['exitOnError'].forEach(prop => {
+  Object.defineProperty(exports, prop, {
+    get() { return defaultLogger[prop]; },
+    set(val) { defaultLogger[prop] = val; }
+  });
+});
+
+Object.defineProperty(exports, 'default', {
+  get() {
+    return {
+      exceptionHandlers: defaultLogger.exceptionHandlers,
+      rejectionHandlers: defaultLogger.rejectionHandlers,
+      transports: defaultLogger.transports
+    };
+  }
+});
+
+warn.deprecated(exports, 'setLevels');
+warn.forFunctions(exports, 'useFormat', ['cli']);
+warn.forProperties(exports, 'useFormat', ['padLevels', 'stripColors']);
+warn.forFunctions(exports, 'deprecated', ['addRewriter', 'addFilter', 'clone', 'extend']);
+warn.forProperties(exports, 'deprecated', ['emitErrs', 'levelLength']);
+```

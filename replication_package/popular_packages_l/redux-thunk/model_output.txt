@@ -1,0 +1,63 @@
+The functionality described in the README for the Redux Thunk package is to enable writing functions, known as thunks, that contain logic capable of interacting with a Redux store's `dispatch` and `getState` methods. Thunks can be asynchronous or conditional action creators within Redux applications. This middleware allows Redux to handle side effects by allowing actions to be functions rather than just plain objects. A typical use case of thunks is to delay the execution of an action or to perform async operations like API calls, while still able to dispatch other actions as necessary. It also supports the injection of custom arguments, which can be particularly useful for testing or using interchangeable services like APIs.
+
+Here is the implementation of a basic Node.js Redux Thunk middleware:
+
+```javascript
+// Import necessary functions from Redux
+import { createStore, applyMiddleware } from 'redux';
+
+// Define the thunk middleware
+const thunk = ({ dispatch, getState }) => next => action => {
+  // If the action is a function, call it with dispatch and getState
+  if (typeof action === 'function') {
+    return action(dispatch, getState, extraArgument);
+  }
+  
+  // Otherwise, just pass the action on to the next middleware
+  return next(action);
+};
+
+// Create an enhancer to add additional functionality to the store
+const withExtraArgument = extraArgument => ({ dispatch, getState }) => next => action => {
+  if (typeof action === 'function') {
+    return action(dispatch, getState, extraArgument);
+  }
+  return next(action);
+};
+
+// Root reducer placeholder for demonstration
+const rootReducer = (state = {}, action) => {
+  switch(action.type) {
+    case 'INCREMENT': 
+      return { count: (state.count || 0) + 1 };
+    default: 
+      return state;
+  }
+};
+
+// Create a Redux store including the thunk middleware
+const store = createStore(
+  rootReducer,
+  applyMiddleware(withExtraArgument({ apiService: /* your service layer */ }))
+);
+
+// Action creators
+const increment = () => ({ type: 'INCREMENT' });
+
+const incrementAsync = () => dispatch => {
+  setTimeout(() => {
+    dispatch(increment());
+  }, 1000);
+};
+
+const incrementIfOdd = () => (dispatch, getState) => {
+  const { count } = getState();
+  if (count % 2 !== 0) {
+    dispatch(increment());
+  }
+};
+
+// Dispatch actions
+store.dispatch(incrementAsync());
+store.dispatch(incrementIfOdd());
+```

@@ -1,0 +1,94 @@
+The provided Node.js code defines a utility function to determine the "length" property of a typed array. It first checks if the input is a typed array and then attempts to retrieve the "length" property using different approaches for various JavaScript environments. These environments can differ in how they define and allow access to the "length" property on typed array instances.
+
+The code follows these steps:
+1. It imports necessary utilities such as `forEach` and `callBind`.
+2. It defines an array `typedArrays` listing all supported typed array constructors.
+3. It defines an object `getters` to store the methods used to get the "length" of typed arrays.
+4. It checks if `__proto__` can be used to access prototype chains, as some environments, like Safari, store this attribute on prototypes.
+5. For each type of typed array, it attempts to find or define a reliable getter for the "length" property. It tries to:
+   - Use an existing descriptor if one is available.
+   - Use a mechanism to define a getter function if necessary.
+6. Finally, it exports a function `typedArrayLength` that:
+   - Utilizes a `tryTypedArrays` function to apply all found getter functions and return the length of a given typed array. It returns `false` if the provided value is not a typed array or if it cannot determine the length.
+
+### Rewritten Code
+
+```javascript
+'use strict';
+
+const forEach = require('foreach');
+const callBind = require('call-bind');
+const isTypedArray = require('is-typed-array');
+
+const typedArrays = [
+	'Float32Array',
+	'Float64Array',
+	'Int8Array',
+	'Int16Array',
+	'Int32Array',
+	'Uint8Array',
+	'Uint8ClampedArray',
+	'Uint16Array',
+	'Uint32Array',
+	'BigInt64Array',
+	'BigUint64Array'
+];
+
+const getters = {};
+const hasProto = [].__proto__ === Array.prototype; // eslint-disable-line no-proto
+const getOwnPropertyDescriptor = Object.getOwnPropertyDescriptor;
+const defineProperty = Object.defineProperty;
+
+if (getOwnPropertyDescriptor) {
+	const getLength = (x) => x.length;
+
+	forEach(typedArrays, (typedArray) => {
+		// Check if the typed array is a function or object
+		if (typeof global[typedArray] === 'function' || typeof global[typedArray] === 'object') {
+			const Proto = global[typedArray].prototype;
+			let descriptor = getOwnPropertyDescriptor(Proto, 'length');
+
+			if (!descriptor && hasProto) {
+				const superProto = Proto.__proto__; // eslint-disable-line no-proto
+				descriptor = getOwnPropertyDescriptor(superProto, 'length');
+			}
+
+			// Handle environment peculiarities
+			if (descriptor && descriptor.get) {
+				getters[typedArray] = callBind(descriptor.get);
+			} else if (defineProperty) {
+				const arr = new global[typedArray](2);
+				descriptor = getOwnPropertyDescriptor(arr, 'length');
+				if (descriptor && descriptor.configurable) {
+					defineProperty(arr, 'length', { value: 3 });
+				}
+				if (arr.length === 2) {
+					getters[typedArray] = getLength;
+				}
+			}
+		}
+	});
+}
+
+const tryTypedArrays = (value) => {
+	let foundLength;
+	forEach(getters, (getter) => {
+		if (typeof foundLength !== 'number') {
+			try {
+				const length = getter(value);
+				if (typeof length === 'number') {
+					foundLength = length;
+				}
+			} catch (e) {}
+		}
+	});
+	return foundLength;
+};
+
+module.exports = (value) => {
+	if (!isTypedArray(value)) {
+		return false;
+	}
+	return tryTypedArrays(value);
+};
+```

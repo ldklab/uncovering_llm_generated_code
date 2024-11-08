@@ -1,0 +1,73 @@
+The Node.js code is designed to determine which Babel syntax plugins are necessary based on the ECMAScript features supported by the current Node.js runtime. The script evaluates specific ECMAScript syntax constructs to determine their support. If supported, it adds the associated Babel syntax plugin to a list called `plugins`.
+
+1. **Test ECMAScript Syntax**: 
+   - The code contains a `tests` object that maps ECMAScript features to example code snippets representing those features.
+
+2. **Check Feature Support**:
+   - The `works` function attempts to evaluate (using `eval`) each syntax example in a safe context to check if the syntax is supported by the Node.js version.
+
+3. **Determine Babel Plugins**:
+   - If the syntax works (i.e., no error is thrown), the script adds the required Babel plugin to the `plugins` list.
+   
+4. **Node.js Version Checks**:
+   - Additional checks for `import.meta` and top-level `await` are performed using the Node.js runtime version as these features rely on module context which cannot be evaluated with the current approach.
+
+5. **Output Configuration**:
+   - Finally, the determined list of plugins is exported from the module for potential use in a Babel configuration.
+
+Here is a possible rewrite of the code:
+
+```javascript
+const tests = {
+  // ECMAScript 2018
+  "object-rest-spread": ["({ ...{} })", "({ ...x } = {})"],
+  "async-generators": ["async function* f() {}"],
+
+  // ECMAScript 2019
+  "optional-catch-binding": ["try {} catch {}"],
+  "json-strings": ["'\\u2028'"],
+
+  // ECMAScript 2020
+  "bigint": ["1n"],
+  "optional-chaining": ["a?.b"],
+  "nullish-coalescing-operator": ["a ?? b"],
+
+  // Stage 3
+  "numeric-separator": ["1_2"],
+  "class-properties": [
+    "(class { x = 1 })",
+    "(class { #x = 1 })",
+    "(class { #x() {} })"
+  ],
+  "logical-assignment-operators": ["a ||= b", "a &&= b", "a ??= c"]
+};
+
+const plugins = [];
+
+const isSyntaxSupported = (test) => {
+  try {
+    (0, eval)(`(() => { ${test} })`);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+for (const [feature, testCases] of Object.entries(tests)) {
+  if (testCases.some(isSyntaxSupported)) {
+    plugins.push(require.resolve(`@babel/plugin-syntax-${feature}`));
+  }
+}
+
+const [major, minor] = process.versions.node.split('.').map(Number);
+
+if (major > 10 || (major === 10 && minor >= 4)) {
+  plugins.push(require.resolve("@babel/plugin-syntax-import-meta"));
+}
+
+if (major > 14 || (major === 14 && minor >= 3)) {
+  plugins.push(require.resolve("@babel/plugin-syntax-top-level-await"));
+}
+
+module.exports = () => ({ plugins });
+```

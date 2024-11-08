@@ -1,0 +1,229 @@
+The provided Node.js code is a library for performing deep equality checks between two values of any type. The library can be used to determine if two complex data structures (e.g., objects, arrays) are structurally and value-wise equal.
+
+### Key Functionalities:
+
+1. **Type Determination**: The `type` function determines the type of a given value, returning special cases like 'null', 'undefined', or the custom string tag if present.
+
+2. **FakeMap**: This is a polyfill for `WeakMap` if the JavaScript engine doesn't support it. It uses a unique key to associate metadata with objects.
+
+3. **Memoization**: The `memoizeCompare` and `memoizeSet` functions are used to store and retrieve results of previous equality checks to improve performance, particularly when dealing with circular references.
+
+4. **Deep Equality Algorithm**: The `deepEqual` function is the main entry point which delegates to `simpleEqual` for quick checks (e.g., reference equality, simple value comparisons) and `extensiveDeepEqual` for more thorough style comparisons.
+
+5. **Extensive Comparisons**: The `extensiveDeepEqual` and `extensiveDeepEqualByType` functions handle deeper comparison logic by type, such as objects, arrays, sets, maps, dates, etc., allowing for comparison of nested properties and structural differences.
+
+6. **Enumerable Keys and Symbols**: Functions such as `getEnumerableKeys`, `getEnumerableSymbols`, and helper functions handle the enumeration of object keys and symbols for comparison purposes.
+
+7. **Handling Iterables**: Special functions handle equality checks for iterable objects like arrays, typed arrays, sets, and maps using sorted element comparisons.
+
+8. **Custom Comparator and Memoization Options**: The code allows passing custom comparator functions and memoization strategies through options in the `deepEqual` call for more configurable behavior.
+
+### Rewritten Code:
+
+```javascript
+// Polyfill for a WeakMap using unique keys as object properties
+class FakeMap {
+  constructor() {
+    this._key = `chai/deep-eql__${Math.random() + Date.now()}`;
+  }
+
+  get(key) {
+    return key[this._key];
+  }
+
+  set(key, value) {
+    if (Object.isExtensible(key)) {
+      Object.defineProperty(key, this._key, { value, configurable: true });
+    }
+  }
+}
+
+const MemoizeMap = typeof WeakMap === 'function' ? WeakMap : FakeMap;
+
+// Determine the type of an object with special cases for 'undefined' and 'null'
+function type(obj) {
+  if (typeof obj === 'undefined') return 'undefined';
+  if (obj === null) return 'null';
+  const stringTag = obj[Symbol.toStringTag];
+  return typeof stringTag === 'string' ? stringTag : Object.prototype.toString.call(obj).slice(8, -1);
+}
+
+function memoizeCompare(lhs, rhs, memo) {
+  if (!memo || isPrimitive(lhs) || isPrimitive(rhs)) return null;
+  const lhsMap = memo.get(lhs);
+  const result = lhsMap && lhsMap.get(rhs);
+  return typeof result === 'boolean' ? result : null;
+}
+
+function memoizeSet(lhs, rhs, memo, result) {
+  if (!memo || isPrimitive(lhs) || isPrimitive(rhs)) return;
+  let lhsMap = memo.get(lhs);
+  if (lhsMap) {
+    lhsMap.set(rhs, result);
+  } else {
+    lhsMap = new MemoizeMap();
+    lhsMap.set(rhs, result);
+    memo.set(lhs, lhsMap);
+  }
+}
+
+export default function deepEqual(lhs, rhs, options = {}) {
+  if (options.comparator) return extensiveDeepEqual(lhs, rhs, options);
+  const simpleRes = simpleEqual(lhs, rhs);
+  if (simpleRes !== null) return simpleRes;
+  return extensiveDeepEqual(lhs, rhs, options);
+}
+
+function simpleEqual(lhs, rhs) {
+  if (lhs === rhs) return lhs !== 0 || 1 / lhs === 1 / rhs; // Account for +0 and -0
+  if (lhs !== lhs && rhs !== rhs) return true; // NaN case
+  if (isPrimitive(lhs) || isPrimitive(rhs)) return false;
+  return null;
+}
+
+function extensiveDeepEqual(lhs, rhs, options) {
+  options.memoize = options.memoize === false ? false : options.memoize || new MemoizeMap();
+  const memoRes = memoizeCompare(lhs, rhs, options.memoize) || memoizeCompare(rhs, lhs, options.memoize);
+  if (memoRes !== null) return memoRes;
+
+  const comparator = options.comparator;
+  if (comparator) {
+    const compRes = comparator(lhs, rhs);
+    if (compRes === true || compRes === false) {
+      memoizeSet(lhs, rhs, options.memoize, compRes);
+      return compRes;
+    }
+    const simpleRes = simpleEqual(lhs, rhs);
+    if (simpleRes !== null) return simpleRes;
+  }
+
+  const lhsType = type(lhs);
+  if (lhsType !== type(rhs)) {
+    memoizeSet(lhs, rhs, options.memoize, false);
+    return false;
+  }
+  memoizeSet(lhs, rhs, options.memoize, true);
+  const result = extensiveDeepEqualByType(lhs, rhs, lhsType, options);
+  memoizeSet(lhs, rhs, options.memoize, result);
+  return result;
+}
+
+function extensiveDeepEqualByType(lhs, rhs, type, options) {
+  switch (type) {
+    case 'String':
+    case 'Number':
+    case 'Boolean':
+    case 'Date':
+      return deepEqual(lhs.valueOf(), rhs.valueOf());
+    case 'Promise':
+    case 'Symbol':
+    case 'function':
+    case 'WeakMap':
+    case 'WeakSet':
+      return lhs === rhs;
+    case 'Error':
+      return keysEqual(lhs, rhs, ['name', 'message', 'code'], options);
+    case 'Arguments':
+    case 'Int8Array':
+    case 'Uint8Array':
+    case 'Uint8ClampedArray':
+    case 'Int16Array':
+    case 'Uint16Array':
+    case 'Int32Array':
+    case 'Uint32Array':
+    case 'Float32Array':
+    case 'Float64Array':
+    case 'Array':
+      return iterableEqual(lhs, rhs, options);
+    case 'RegExp':
+      return lhs.toString() === rhs.toString();
+    case 'Generator':
+      return iterableEqual(getGeneratorEntries(lhs), getGeneratorEntries(rhs), options);
+    case 'DataView':
+      return iterableEqual(new Uint8Array(lhs.buffer), new Uint8Array(rhs.buffer), options);
+    case 'ArrayBuffer':
+      return iterableEqual(new Uint8Array(lhs), new Uint8Array(rhs), options);
+    case 'Set':
+    case 'Map':
+      return entriesEqual(lhs, rhs, options);
+    case 'Temporal.PlainDate':
+    case 'Temporal.PlainTime':
+    case 'Temporal.PlainDateTime':
+    case 'Temporal.Instant':
+    case 'Temporal.ZonedDateTime':
+    case 'Temporal.PlainYearMonth':
+    case 'Temporal.PlainMonthDay':
+      return lhs.equals(rhs);
+    case 'Temporal.Duration':
+      return lhs.total('nanoseconds') === rhs.total('nanoseconds');
+    case 'Temporal.TimeZone':
+    case 'Temporal.Calendar':
+      return lhs.toString() === rhs.toString();
+    default:
+      return objectEqual(lhs, rhs, options);
+  }
+}
+
+function iterableEqual(lhs, rhs, options) {
+  if (lhs.length !== rhs.length) return false;
+  for (let i = 0; i < lhs.length; i++) {
+    if (!deepEqual(lhs[i], rhs[i], options)) return false;
+  }
+  return true;
+}
+
+function entriesEqual(lhs, rhs, options) {
+  if (lhs.size !== rhs.size) return false;
+  const lhsEntries = [], rhsEntries = [];
+  lhs.forEach((v, k) => lhsEntries.push([k, v]));
+  rhs.forEach((v, k) => rhsEntries.push([k, v]));
+  return iterableEqual(lhsEntries.sort(), rhsEntries.sort(), options);
+}
+
+function objectEqual(lhs, rhs, options) {
+  const lhsKeys = getEnumerableKeys(lhs).concat(getEnumerableSymbols(lhs));
+  const rhsKeys = getEnumerableKeys(rhs).concat(getEnumerableSymbols(rhs));
+  if (lhsKeys.length !== rhsKeys.length) return false;
+  if (!iterableEqual(mapSymbols(lhsKeys).sort(), mapSymbols(rhsKeys).sort())) return false;
+  return keysEqual(lhs, rhs, lhsKeys, options);
+}
+
+function keysEqual(lhs, rhs, keys, options) {
+  for (const key of keys) {
+    if (!deepEqual(lhs[key], rhs[key], options)) return false;
+  }
+  return true;
+}
+
+function isPrimitive(value) {
+  return value === null || typeof value !== 'object';
+}
+
+function mapSymbols(arr) {
+  return arr.map(entry => (typeof entry === 'symbol' ? entry.toString() : entry));
+}
+
+function getEnumerableKeys(target) {
+  const keys = [];
+  for (const key in target) keys.push(key);
+  return keys;
+}
+
+function getEnumerableSymbols(target) {
+  return Object.getOwnPropertySymbols(target).filter(key => Object.getOwnPropertyDescriptor(target, key).enumerable);
+}
+
+function hasIteratorFunction(obj) {
+  return typeof Symbol !== 'undefined' && typeof obj === 'object' && typeof obj[Symbol.iterator] === 'function';
+}
+
+function getIteratorEntries(obj) {
+  return hasIteratorFunction(obj) ? getGeneratorEntries(obj[Symbol.iterator]()) : [];
+}
+
+function getGeneratorEntries(generator) {
+  const entries = [];
+  for (let item of generator) entries.push(item);
+  return entries;
+}
+```

@@ -1,0 +1,73 @@
+The provided Node.js code is a module for calculating the CRC-32 (Cyclic Redundancy Check) of a given input. CRC-32 is a checksum algorithm commonly used for error checking in data transmission or storage. The code generates a CRC table that helps in efficient computation of the CRC-32 values for buffers or strings.
+
+### Functionality Explanation:
+1. **CRC Table Generation**: 
+   - A table (`crcTable`) is precomputed using the `makeCrcTable` function. This table contains 256 CRC-32 values used for lookup during the CRC calculation.
+   - This precomputation uses bitwise operations to generate each entry based on the polynomial `0xEDB88320`.
+
+2. **crc32 Function**:
+   - The main function for calculating CRC-32 values, `crc32(buf, previous)`, takes a `Buffer` or `string` as an input.
+   - It starts with an optional `previous` CRC value, which defaults to `0`.
+   - The function iterates over each byte in the input, updating the CRC value using the precomputed table.
+   - The result is returned as a `Buffer` representing the CRC-32 checksum split across four bytes.
+
+3. **Signed and Unsigned CRC-32**:
+   - Two additional methods are provided for returning the CRC-32 value:
+     - `crc32.signed(buf)`: Returns the computed CRC-32 as a signed 32-bit integer.
+     - `crc32.unsigned(buf)`: Returns the computed CRC-32 as an unsigned 32-bit integer.
+
+4. **Module Export**: 
+   - The `crc32` function and its methods are exported for use in other files.
+
+Below is a rewritten version of the code maintaining the same functionality:
+
+```javascript
+// crc32.js
+class CRC32 {
+  constructor() {
+    this.crcTable = this.makeCrcTable();
+  }
+
+  makeCrcTable() {
+    const table = new Array(256);
+    for (let n = 0; n < 256; n++) {
+      let c = n;
+      for (let k = 0; k < 8; k++) {
+        c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+      }
+      table[n] = c;
+    }
+    return table;
+  }
+
+  compute(buf, previous = 0) {
+    if (typeof buf === 'string') {
+      buf = Buffer.from(buf, 'utf8');
+    }
+
+    let crc = ~previous;
+    for (let byte of buf) {
+      crc = this.crcTable[(crc ^ byte) & 0xff] ^ (crc >>> 8);
+    }
+
+    crc = ~crc;
+    return Buffer.from([(crc >> 24) & 0xff, (crc >> 16) & 0xff, (crc >> 8) & 0xff, crc & 0xff]);
+  }
+
+  signed(buf) {
+    return this.compute(buf).readInt32BE(0);
+  }
+
+  unsigned(buf) {
+    return this.compute(buf).readUInt32BE(0);
+  }
+}
+
+const crc32Instance = new CRC32();
+
+module.exports = {
+  compute: (buf, previous) => crc32Instance.compute(buf, previous),
+  signed: (buf) => crc32Instance.signed(buf),
+  unsigned: (buf) => crc32Instance.unsigned(buf),
+};
+```

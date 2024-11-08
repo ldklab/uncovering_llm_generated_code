@@ -1,0 +1,124 @@
+The provided Node.js code defines a module for facilitating the process of editing text using an external text editor. It includes both synchronous and asynchronous operations and manages temporary files. Here's an explanation of the functionality:
+
+1. **Error Classes**: Custom error classes (`CreateFileError`, `ReadFileError`, `LaunchEditorError`, `RemoveFileError`) are defined to handle specific errors during file creation, reading, editor launching, and file removal, respectively.
+
+2. **ExternalEditor Class**: 
+   - The constructor takes text and configuration options, sets them up, and creates a temporary file with the given text.
+   - `createTempFile`: Creates a temporary file with specified prefix, postfix, and file mode, writes the initial text into it, and returns the file path.
+   - `getEditorConfig`: Determines the editor to launch based on the environment variables `VISUAL` or `EDITOR`. Defaults to `vi` if none are set.
+   - `run`: Launches the editor process synchronously using `execSync`, waits for completion, reads the file content, sets the last exit status, and returns the edited text.
+   - `runAsync`: Launches the editor process asynchronously using `exec`, reads the file content upon completion, and executes a callback.
+   - `cleanup`: Deletes the temporary file after editing.
+
+3. **Utility Functions**:
+   - `edit`: Instantiates an `ExternalEditor`, runs the editor synchronously, cleans up the temporary file, and returns the resulting text.
+   - `editAsync`: Similar to `edit`, but handles the operation asynchronously, calling a callback upon completion.
+
+4. **Module Exports**: Exports the `edit`, `editAsync` functions, the `ExternalEditor` class, and the custom error classes for external usage.
+
+Here is the possible rewrite for the given code:
+
+```javascript
+const { execSync, exec } = require('child_process');
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
+
+class CreateFileError extends Error {}
+class ReadFileError extends Error {}
+class LaunchEditorError extends Error {}
+class RemoveFileError extends Error {}
+
+class ExternalEditor {
+  constructor(text = '', config = {}) {
+    this.text = text;
+    this.config = config;
+    this.tempFile = this.createTempFile();
+    this.editor = this.detectEditor();
+    this.lastExitStatus = null;
+  }
+
+  createTempFile() {
+    try {
+      const prefix = this.config.prefix || 'external-editor-';
+      const postfix = this.config.postfix || '.txt';
+      const tempPath = path.join(os.tmpdir(), prefix + Date.now() + postfix);
+      fs.writeFileSync(tempPath, this.text, { mode: this.config.mode || 0o644 });
+      return tempPath;
+    } catch (e) {
+      throw new CreateFileError('Failed to create the temporary file', e);
+    }
+  }
+
+  detectEditor() {
+    const editor = process.env.VISUAL || process.env.EDITOR || 'vi';
+    return { bin: editor, args: [] };
+  }
+
+  run() {
+    try {
+      execSync(`${this.editor.bin} ${this.tempFile}`, { stdio: 'inherit' });
+      const resultText = this.readFileContent();
+      this.lastExitStatus = 0;
+      return resultText;
+    } catch (e) {
+      this.lastExitStatus = e.status !== undefined ? e.status : null;
+      throw new LaunchEditorError('Failed to launch your editor', e);
+    }
+  }
+
+  runAsync(callback) {
+    exec(`${this.editor.bin} ${this.tempFile}`, (err) => {
+      if (err) {
+        callback(new LaunchEditorError('Failed to launch your editor', err));
+      } else {
+        try {
+          const resultText = this.readFileContent();
+          callback(null, resultText);
+        } catch (e) {
+          callback(new ReadFileError('Failed to read the temporary file', e));
+        }
+      }
+    });
+  }
+
+  readFileContent() {
+    return fs.readFileSync(this.tempFile, 'utf8');
+  }
+
+  cleanup() {
+    try {
+      fs.unlinkSync(this.tempFile);
+    } catch (e) {
+      throw new RemoveFileError('Failed to remove the temporary file', e);
+    }
+  }
+}
+
+function edit(text = '', config = {}) {
+  const editor = new ExternalEditor(text, config);
+  const result = editor.run();
+  editor.cleanup();
+  return result;
+}
+
+function editAsync(text = '', callback, config = {}) {
+  const editor = new ExternalEditor(text, config);
+  editor.runAsync((err, result) => {
+    if (!err) {
+      editor.cleanup();
+    }
+    callback(err, result);
+  });
+}
+
+module.exports = {
+  edit,
+  editAsync,
+  ExternalEditor,
+  CreateFileError,
+  ReadFileError,
+  LaunchEditorError,
+  RemoveFileError,
+};
+```

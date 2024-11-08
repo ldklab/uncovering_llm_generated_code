@@ -1,0 +1,103 @@
+The given Node.js code defines a simple internationalization (i18n) library implemented in the `Y18n` class. The main functionality of the code involves handling string translations based on locale-specific JSON files.
+
+### Key Features:
+1. **Configuration:** 
+   - `directory`: Specifies the directory to load translation files (default is `./locales`).
+   - `locale`: Defines the current language locale (default is `en`).
+   - `updateFiles`: If true, adds untranslated strings to the locale file (default is true).
+   - `fallbackToLanguage`: Allows falling back to a simpler language code if a locale file is missing (default is true).
+
+2. **Methods:**
+   - `__(str, ...args)`: Retrieves the translation of a string for the current locale, formatting it with additional arguments.
+   - `__n(singular, plural, count, ...args)`: Handles pluralization by selecting the appropriate string (singular or plural) based on the count, formatting it with additional arguments.
+   - `setLocale(locale)`: Updates the current locale.
+   - `getLocale()`: Returns the current locale.
+   - `updateLocale(obj)`: Merges and updates translations in the locale file with the provided object.
+   - `_translate(str, locale)`: Fetches translation for a given string, adding it as untranslated if not found.
+   - `_formatString(str, args)`: Inserts arguments into placeholders in the string.
+
+3. **File Operations:** The library reads/writes JSON files to store translations. If a translation is missing, it can update the file dynamically.
+
+4. **Module Export:** The module exports a function to create a new instance of `Y18n` with configurable settings.
+
+### Rewritten Code:
+
+```javascript
+// y18n.js
+
+const fs = require('fs');
+const path = require('path');
+
+class Y18n {
+  constructor(config = {}) {
+    this.directory = config.directory || './locales';
+    this.locale = config.locale || 'en';
+    this.updateFiles = config.updateFiles !== undefined ? config.updateFiles : true;
+    this.fallbackToLanguage = config.fallbackToLanguage !== undefined ? config.fallbackToLanguage : true;
+  }
+
+  __(str, ...args) {
+    const translation = this._translate(str, this.locale);
+    return this._formatString(translation, args);
+  }
+
+  __n(singular, plural, count, ...args) {
+    const message = count === 1 ? singular : plural;
+    const translation = this._translate(message, this.locale);
+    const formattedTranslation = translation.replace('%d', count);
+    return this._formatString(formattedTranslation, args);
+  }
+
+  setLocale(locale) {
+    this.locale = locale;
+  }
+
+  getLocale() {
+    return this.locale;
+  }
+
+  updateLocale(obj) {
+    const filepath = path.resolve(this.directory, `${this.locale}.json`);
+    let localeData = this._getLocaleData(filepath);
+
+    Object.assign(localeData, obj);
+    this._writeLocaleData(filepath, localeData);
+  }
+
+  _translate(str, locale) {
+    const langPath = path.resolve(this.directory, `${locale}.json`);
+    const fallbackPath = path.resolve(this.directory, `${locale.split('_')[0]}.json`);
+
+    let translations = this._getLocaleData(langPath) || (this.fallbackToLanguage ? this._getLocaleData(fallbackPath) : {});
+
+    if (!(str in translations)) {
+      if (this.updateFiles) {
+        translations[str] = str;
+        this._writeLocaleData(langPath, translations);
+      }
+      return str;
+    }
+
+    return translations[str];
+  }
+
+  _formatString(str, args) {
+    return str.replace(/%s/g, () => args.shift());
+  }
+
+  _getLocaleData(filepath) {
+    return fs.existsSync(filepath) ? JSON.parse(fs.readFileSync(filepath, 'utf-8')) : {};
+  }
+
+  _writeLocaleData(filepath, data) {
+    fs.writeFileSync(filepath, JSON.stringify(data, null, 2));
+  }
+}
+
+module.exports = (config) => new Y18n(config);
+
+// Example usage
+const y18nInstance = require('./y18n')({ locale: 'en' });
+console.log(y18nInstance.__('my awesome string %s', 'foo'));
+console.log(y18nInstance.__n('one fish %s', '%d fishes %s', 2, 'foo'));
+```

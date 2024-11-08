@@ -1,0 +1,116 @@
+The `tar-fs` package is a Node.js library that provides an interface for working with tarball archives using the `tar-stream` library. It allows you to easily pack directories into tarballs and extract tarballs back into directories. Here is a summary of the key functionalities and options provided by `tar-fs`:
+
+1. **Packing and Extracting**: 
+   - `pack` method: Used to create a tarball from a directory. 
+   - `extract` method: Used to extract a tarball to a directory.
+   - Example usage involves creating readable and writable streams to pack or extract files.
+
+2. **Ignoring Files**:
+   - An `ignore` function can be provided to skip certain files or paths when packing or extracting. It can leverage file path patterns or meta headers.
+   - `filter` can be used as an alias to `ignore`.
+
+3. **Specifying Entries**:
+   - The `entries` option allows you to specify which files or directories within the given directory should be included in the tarball.
+
+4. **Header Mapping**:
+   - A `map` function can be supplied to modify headers in the archive, such as renaming files in the tarball.
+
+5. **Stream Mapping**:
+   - `mapStream` allows modification of file streams during packing or extracting. The transformed stream must match the input stream's length unless the header is adjusted.
+
+6. **File and Directory Mode Settings**:
+   - `fmode` and `dmode` options enable setting UNIX file permissions on extracted files and directories.
+   - `readable` and `writable` options are simplified settings for both files and directories.
+
+7. **Handling Symlinks**:
+   - The `dereference` option allows for packing the actual file contents rather than symlinks.
+
+8. **Strict Error Handling**:
+   - Set `strict` to `false` to suppress errors from unsupported entry types.
+
+9. **Copying Directories**:
+   - A direct stream from `pack` to `extract` can be used to copy a directory with preserved meta attributes.
+
+10. **Integration with `tar-stream`**:
+    - The package supports using a custom tar stream for complex operations, such as adding entries after an initial pack operation.
+
+The code implementation for the `tar-fs` package based on the described functionalities in the README would look like this:
+
+```markdown
+// tar-fs.js
+const fs = require('fs');
+const path = require('path');
+const { pipeline } = require('stream');
+const tarStream = require('tar-stream');
+
+function pack(directory, options = {}) {
+  const pack = tarStream.pack(options);
+  const entries = options.entries ? new Set(options.entries) : null;
+
+  function recurseDirectory(currentDir) {
+    const items = fs.readdirSync(currentDir);
+    items.forEach(item => {
+      const fullPath = path.join(currentDir, item);
+      const stat = fs.statSync(fullPath);
+
+      if (options.ignore && options.ignore(fullPath, { type: stat.isDirectory() ? 'directory' : 'file' })) {
+        return;
+      }
+
+      // Check entries if specified
+      if (entries && !entries.has(path.relative(directory, fullPath))) {
+        return;
+      }
+
+      if (stat.isDirectory()) {
+        pack.entry({ name: fullPath, type: 'directory', mode: options.dmode || 0o755 });
+        recurseDirectory(fullPath);
+      } else {
+        const entryHeader = { name: fullPath, size: stat.size, mode: options.fmode || 0o644 };
+        if (options.map) options.map(entryHeader);
+
+        const entry = pack.entry(entryHeader);
+        const stream = fs.createReadStream(fullPath);  
+        const mapStream = options.mapStream ? options.mapStream(stream, entryHeader) : stream;
+        mapStream.pipe(entry);
+      }
+    });
+  }
+
+  recurseDirectory(directory);
+  pack.finalize();
+  return pack;
+}
+
+function extract(outputDir, options = {}) {
+  const extract = tarStream.extract();
+  extract.on('entry', (header, stream, next) => {
+    const outPath = path.join(outputDir, header.name);
+
+    if (options.ignore && options.ignore(outPath, header)) {
+      stream.resume();
+      return next();
+    }
+
+    if (header.type === 'directory') {
+      fs.mkdirSync(outPath, { recursive: true, mode: options.dmode || 0o755 });
+      stream.resume();
+    } else if (header.type === 'file') {
+      const out = fs.createWriteStream(outPath, { mode: options.fmode || 0o644 });
+      const mapStream = options.mapStream ? options.mapStream(stream, header) : stream;
+      pipeline(mapStream, out, next);
+      return;
+    } else {
+      stream.resume();
+    }
+
+    next();
+  });
+
+  return extract;
+}
+
+module.exports = { pack, extract };
+```
+
+This code provides the basic functionality of packing directories into tarballs and extracting tarballs to directories, with additional customization options as described in the README.

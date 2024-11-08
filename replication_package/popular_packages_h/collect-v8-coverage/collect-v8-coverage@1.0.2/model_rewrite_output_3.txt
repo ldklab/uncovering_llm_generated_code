@@ -1,0 +1,50 @@
+The Node.js code defines a `CoverageInstrumenter` class which utilizes the Inspector API to collect JavaScript code coverage data. The class is used to instrument (start and stop collection of) detailed code coverage during the execution of a Node.js application. The primary steps include:
+
+1. Creating a new session using the Inspector API.
+2. Starting the coverage instrumentation that captures detailed coverage (e.g., line level coverage with call counts).
+3. Stopping the instrumentation and fetching the coverage data.
+4. Correcting file URLs on Windows, which have an unconventional format that can be problematic for Node.js to understand.
+
+Here is a possible rewrite of the code:
+
+```javascript
+'use strict';
+
+const { Session } = require('inspector');
+const { promisify } = require('util');
+
+class CoverageInstrumenter {
+  constructor() {
+    this.session = new Session();
+    this.postSession = promisify(this.session.post.bind(this.session));
+  }
+
+  async startInstrumenting() {
+    this.session.connect();
+    await this.postSession('Profiler.enable');
+    await this.postSession('Profiler.startPreciseCoverage', {
+      callCount: true,
+      detailed: true,
+    });
+  }
+
+  async stopInstrumenting() {
+    const { result } = await this.postSession('Profiler.takePreciseCoverage');
+    await this.postSession('Profiler.stopPreciseCoverage');
+    await this.postSession('Profiler.disable');
+
+    if (process.platform === 'win32') {
+      const prefix = 'file:////';
+      result.forEach(res => {
+        if (res.url.startsWith(prefix)) {
+          res.url = 'file://' + res.url.slice(prefix.length);
+        }
+      });
+    }
+
+    return result;
+  }
+}
+
+module.exports.CoverageInstrumenter = CoverageInstrumenter;
+```

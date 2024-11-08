@@ -1,0 +1,95 @@
+The given Node.js code defines a module for traversing a directory tree and emitting events for each file system entry encountered. The main components are:
+
+1. **Walker Class**: Inherits from Node.js's `EventEmitter` to allow for event-driven programming.
+   - **Constructor**: Initializes with a root directory path and an optional directory filter function.
+   - **filterDir**: Method to apply a filter function that determines which directories to include during traversal.
+   - **walk**: Starts the directory walking process by calling a private `_walk` method starting from the root directory.
+   - **_walk**: Recursively visits each entry (file, directory, symlink, etc.) in the directory tree:
+     - Emits an "error" event if reading the directory or getting stats fails.
+     - Emits "entry" for each filesystem entry encountered.
+     - For directories, if a filter is applied, it skips directories that do not pass the filter.
+     - Emits specific events for files, directories, symlinks, block devices, FIFOs (named pipes), sockets, and character devices.
+     - Emits an "end" event when traversal of the root directory's contents is complete.
+
+2. **WalkerFactory Function**: A factory function that constructs a `Walker` instance for a given root directory, immediately starts the walking process, and returns the instance.
+
+Here's the rewritten code:
+
+```javascript
+const fs = require('fs');
+const path = require('path');
+const EventEmitter = require('events');
+
+class DirectoryWalker extends EventEmitter {
+  constructor(baseDirectory) {
+    super();
+    this.baseDirectory = baseDirectory;
+    this.directoryFilter = null;
+  }
+
+  setDirectoryFilter(filterFunction) {
+    this.directoryFilter = filterFunction;
+    return this;
+  }
+
+  startWalking() {
+    this._recurseDirectory(this.baseDirectory);
+    return this;
+  }
+
+  _recurseDirectory(currentDirectory) {
+    fs.readdir(currentDirectory, { withFileTypes: true }, (err, directoryEntries) => {
+      if (err) {
+        this.emit('error', err, currentDirectory);
+        return;
+      }
+
+      directoryEntries.forEach(entry => {
+        const fullPath = path.join(currentDirectory, entry.name);
+        fs.stat(fullPath, (err, stats) => {
+          if (err) {
+            this.emit('error', err, fullPath);
+            return;
+          }
+
+          this.emit('entryFound', fullPath, stats);
+
+          if (stats.isDirectory()) {
+            if (this.directoryFilter && !this.directoryFilter(fullPath, stats)) {
+              return;
+            }
+            this.emit('directoryFound', fullPath, stats);
+            this._recurseDirectory(fullPath);
+          } else if (stats.isFile()) {
+            this.emit('fileFound', fullPath, stats);
+          } else if (stats.isSymbolicLink()) {
+            this.emit('symlinkFound', fullPath, stats);
+          } else if (stats.isBlockDevice()) {
+            this.emit('blockDeviceFound', fullPath, stats);
+          } else if (stats.isFIFO()) {
+            this.emit('fifoFound', fullPath, stats);
+          } else if (stats.isSocket()) {
+            this.emit('socketFound', fullPath, stats);
+          } else if (stats.isCharacterDevice()) {
+            this.emit('characterDeviceFound', fullPath, stats);
+          }
+        });
+      });
+
+      process.nextTick(() => {
+        if (currentDirectory === this.baseDirectory) {
+          this.emit('walkComplete');
+        }
+      });
+    });
+  }
+}
+
+function createDirectoryWalker(baseDirectory) {
+  const walkerInstance = new DirectoryWalker(baseDirectory);
+  process.nextTick(() => walkerInstance.startWalking());
+  return walkerInstance;
+}
+
+module.exports = createDirectoryWalker;
+```

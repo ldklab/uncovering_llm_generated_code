@@ -1,0 +1,117 @@
+The provided Node.js code defines a class `IstanbulReports` intended to help with report generation, presumably for code coverage or similar purposes. It uses other utility classes `Writer` and `Console` to handle writing operations. Here's a breakdown of the key functionalities:
+
+1. **IstanbulReports Class**:
+   - Contains utility functions and a mock console for customizing, writing, and formatting reports.
+
+2. **Node Object**:
+   - `getRelativeName(fullPath)`: Converts a full file path into a path relative to the current working directory.
+
+3. **Context Object**:
+   - `getSource(filePath)`: Reads the contents of a file at `filePath` if it exists, else throws an error.
+   - `classForPercent(type, percent)`: Classifies a numerical percentage into categories ('high', 'medium', 'low') based on pre-defined thresholds.
+   - `console`: Contains methods for text styling and writing, mimicking console functionality.
+
+4. **Writer Class**: 
+   - Accumulates written data into a string buffer, simulating an output that could be redirected to files or other I/O streams.
+
+5. **Console Class**:
+   - Provides similar functionality as the `context.console` but uses `Writer` to handle the output operations.
+
+Here's a possible rewrite of the given Node.js code:
+
+```javascript
+const fs = require('fs');
+
+class IstanbulReports {
+    constructor() {
+        this.writer = new Writer();
+        this.console = new CustomConsole(this.writer);
+    }
+
+    node = {
+        getRelativeName: (fullPath) => {
+            const basePath = process.cwd();
+            return fullPath.replace(basePath, '').replace(/^\/|\\/, '');
+        }
+    }
+
+    context = {
+        getSource: (filePath) => {
+            if (fs.existsSync(filePath)) {
+                return fs.readFileSync(filePath, 'utf-8');
+            }
+            throw new Error(`File not found: ${filePath}`);
+        },
+
+        classForPercent: (type, percent) => {
+            if (percent === 100) return 'high';
+            if (percent >= 80) return 'medium';
+            return 'low';
+        },
+
+        console: {
+            colorize: (str, styleClass) => {
+                const styles = {
+                    high: '\x1b[32m',
+                    medium: '\x1b[33m',
+                    low: '\x1b[31m',
+                    reset: '\x1b[0m'
+                };
+                return `${styles[styleClass] || ''}${str}${styles.reset}`;
+            },
+
+            write: (str) => {
+                this.writer.write(str);
+            },
+
+            println: (str) => {
+                this.writer.write(`${str}\n`);
+            }
+        }
+    }
+}
+
+class Writer {
+    constructor() {
+        this.output = '';
+    }
+
+    write(data) {
+        this.output += data;
+    }
+
+    getOutput() {
+        return this.output;
+    }
+}
+
+class CustomConsole {
+    constructor(writer) {
+        this.writer = writer;
+    }
+
+    colorize(str, styleClass) {
+        const styles = {
+            high: '\x1b[32m',
+            medium: '\x1b[33m',
+            low: '\x1b[31m',
+            reset: '\x1b[0m'
+        };
+        return `${styles[styleClass] || ''}${str}${styles.reset}`;
+    }
+
+    write(str) {
+        this.writer.write(str);
+    }
+
+    println(str) {
+        this.writer.write(`${str}\n`);
+    }
+}
+
+module.exports = IstanbulReports;
+```
+
+In this rewrite:
+- The `Console` class has been renamed to `CustomConsole` to avoid confusion with the global `console` object.
+- Minor adjustments were made to improve clarity and maintain context usage within instances.

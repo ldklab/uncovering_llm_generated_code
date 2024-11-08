@@ -1,0 +1,87 @@
+The code is a Node.js module that handles the conversion of data into buffers using the `Buffer` class from the `buffer` module. It exports two functions: `fromArrayBuffer` and `fromString`, both of which transform data into a buffer format.
+
+1. `__defProp`, `__getOwnPropDesc`, `__getOwnPropNames`, `__hasOwnProp`: These are shortcuts for common JavaScript object property and descriptor functions used for manipulating and defining properties on objects.
+
+2. `__name`: A utility function that sets the `name` property of a function, making the function's name customizable.
+
+3. `__export`: A function that iterates over the `all` object and defines properties on the `target` object with getters for each property, making them enumerable.
+
+4. `__copyProps`: A function that copies properties from one object to another, except for specified properties, respecting property descriptors like enumerability.
+
+5. `__toCommonJS`: Converts the module's export format to CommonJS by creating an export object and adding an `__esModule` property indicating it can be handled as a module.
+
+6. `fromArrayBuffer`: This function takes an `ArrayBuffer`, an optional `offset`, and `length`, and converts it to a `Buffer`. It checks if the input is an `ArrayBuffer` and throws an error if it is not.
+
+7. `fromString`: This function converts a string to a `Buffer`, using an optional encoding parameter. It checks if the input is a string and throws a `TypeError` if not.
+
+Here is the rewritten code:
+
+```javascript
+const { isArrayBuffer } = require("@smithy/is-array-buffer");
+const { Buffer } = require("buffer");
+
+function defineProp(target, key, descriptor) {
+  return Object.defineProperty(target, key, descriptor);
+}
+
+function getPropertyDesc(obj, key) {
+  return Object.getOwnPropertyDescriptor(obj, key);
+}
+
+function getOwnPropertyNames(obj) {
+  return Object.getOwnPropertyNames(obj);
+}
+
+function hasOwnProp(obj, key) {
+  return Object.prototype.hasOwnProperty.call(obj, key);
+}
+
+function nameFunction(target, value) {
+  return defineProp(target, "name", { value, configurable: true });
+}
+
+function exportFunctions(target, functions) {
+  for (const name in functions) {
+    defineProp(target, name, { get: functions[name], enumerable: true });
+  }
+}
+
+function copyProps(to, from, except) {
+  if (from && (typeof from === "object" || typeof from === "function")) {
+    for (const key of getOwnPropertyNames(from)) {
+      if (!hasOwnProp(to, key) && key !== except) {
+        const desc = getPropertyDesc(from, key);
+        defineProp(to, key, { get: () => from[key], enumerable: !desc || desc.enumerable });
+      }
+    }
+  }
+  return to;
+}
+
+function toCommonJS(mod) {
+  const exportObj = defineProp({}, "__esModule", { value: true });
+  return copyProps(exportObj, mod);
+}
+
+const fromArrayBuffer = nameFunction((input, offset = 0, length = input.byteLength - offset) => {
+  if (!isArrayBuffer(input)) {
+    throw new TypeError(`The "input" argument must be ArrayBuffer. Received type ${typeof input} (${input})`);
+  }
+  return Buffer.from(input, offset, length);
+}, "fromArrayBuffer");
+
+const fromString = nameFunction((input, encoding) => {
+  if (typeof input !== "string") {
+    throw new TypeError(`The "input" argument must be of type string. Received type ${typeof input} (${input})`);
+  }
+  return encoding ? Buffer.from(input, encoding) : Buffer.from(input);
+}, "fromString");
+
+const srcExports = {};
+exportFunctions(srcExports, {
+  fromArrayBuffer: () => fromArrayBuffer,
+  fromString: () => fromString
+});
+
+module.exports = toCommonJS(srcExports);
+```

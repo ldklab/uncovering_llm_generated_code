@@ -1,0 +1,111 @@
+The `resolve` Node.js package implements an algorithm that mimics Node.js's `require.resolve()` function, enabling module resolution both asynchronously and synchronously on behalf of another file. It provides functions to determine the path where a module can be located based on the file system and set of options provided. This utility is particularly useful in scenarios where there is a need to resolve modules relative to a specific directory or with specific constraints.
+
+### Key Features:
+
+1. **Asynchronous Resolution**: Allows modules to be resolved asynchronously using the `resolve()` function. It accepts a callback to handle the result or any error that might occur during resolution.
+
+2. **Synchronous Resolution**: Provides a `resolve.sync()` function for synchronous module resolution, throwing an error if the module cannot be resolved.
+
+3. **Customizable Options**: Both methods can be customized using options such as:
+   - `basedir`: The directory to start resolving from.
+   - `extensions`: An array to specify file extensions for resolution.
+   - `includeCoreModules`: Whether to include Node.js core modules.
+   - Custom functions to read files, check if paths are files or directories, and resolve symbolic links.
+   - `readPackage` and `packageFilter`: Functions to read and filter `package.json` files.
+   - `paths` and `moduleDirectory`: Customize module searching paths.
+
+4. **Error Handling Codes**: The package provides specific error codes for common issues encountered during resolution, making error handling more structured.
+
+5. **Preserve Symlinks**: An option to preserve symbolic links during module resolution, reflecting Node.js behavior when executed with a specific flag.
+
+The package is tailored to provide flexibility and extensibility for complex module resolution requirements, making it a valuable tool for developers working with modular JavaScript applications.
+
+```javascript
+const fs = require('fs');
+const path = require('path');
+
+// Asynchronous implementation
+function resolve(id, opts = {}, cb) {
+    const options = { ...defaultOptions, ...opts };
+    _resolve(id, options, cb);
+}
+
+function _resolve(id, opts, cb) {
+    const start = opts.basedir || path.dirname(module.parent.filename);
+    let paths = generateCandidates(id, start, opts);
+
+    (function findNextCandidate(paths) {
+        if (!paths.length) {
+            return cb(new Error(`MODULE_NOT_FOUND: Module ${id} not found`));
+        }
+        const currentPath = paths.shift();
+        opts.isFile(currentPath, function (err, exists) {
+            if (err) {
+                return cb(err);
+            }
+            if (exists) {
+                return cb(null, currentPath);
+            }
+            findNextCandidate(paths);
+        });
+    })(paths);
+}
+
+// Synchronous implementation
+function resolveSync(id, opts = {}) {
+    const options = { ...defaultOptions, ...opts };
+    return _resolveSync(id, options);
+}
+
+function _resolveSync(id, opts) {
+    const start = opts.basedir || path.dirname(module.parent.filename);
+    const paths = generateCandidates(id, start, opts);
+
+    for (let i = 0; i < paths.length; i++) {
+        const currentPath = paths[i];
+        if (opts.isFile(currentPath)) {
+            return currentPath;
+        }
+    }
+    throw new Error(`MODULE_NOT_FOUND: Module ${id} not found`);
+}
+
+function generateCandidates(id, start, opts) {
+    let paths = [];
+    let extensions = opts.extensions || ['.js'];
+    let dir = start;
+
+    while (dir !== path.parse(dir).root) {
+        opts.moduleDirectory.forEach((moduleDir) => {
+            extensions.forEach((ext) => {
+                paths.push(path.join(dir, moduleDir, id + ext));
+            });
+        });
+        dir = path.dirname(dir);
+    }
+
+    return paths;
+}
+
+const defaultOptions = {
+    basedir: __dirname,
+    extensions: ['.js'],
+    includeCoreModules: true,
+    isFile: function (file, cb) {
+        fs.stat(file, function (err, stat) {
+            if (err) return cb(err);
+            cb(null, stat.isFile() || stat.isFIFO());
+        });
+    },
+    isDirectory: function (dir, cb) {
+        fs.stat(dir, function (err, stat) {
+            if (err) return cb(null, false);
+            cb(null, stat.isDirectory());
+        });
+    },
+    moduleDirectory: ['node_modules']
+};
+
+module.exports = resolve;
+module.exports.sync = resolveSync;
+```

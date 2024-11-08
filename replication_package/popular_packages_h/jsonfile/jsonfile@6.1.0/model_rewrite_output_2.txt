@@ -1,0 +1,82 @@
+The given Node.js code provides utility functions to read and write JSON files asynchronously and synchronously. It attempts to use the `graceful-fs` module (which provides improved handling for file system operations) and falls back to the built-in `fs` module if `graceful-fs` isn't available. The code uses the `universalify` package to convert callback-based functions from the file system module to promise-based functions for easier async/await usage. It also handles BOM (Byte Order Mark) stripping during JSON file reading and offers customizable JSON parsing and stringification options. The functions can be configured to either throw an error or return `null` in case of JSON parsing issues.
+
+```javascript
+let fsLib;
+try {
+  fsLib = require('graceful-fs');
+} catch (_) {
+  fsLib = require('fs');
+}
+const universalify = require('universalify');
+const { stringify, stripBom } = require('./utils');
+
+async function asyncReadFile(filePath, options = {}) {
+  if (typeof options === 'string') {
+    options = { encoding: options };
+  }
+
+  const fs = options.fs || fsLib;
+  const shouldThrow = 'throws' in options ? options.throws : true;
+
+  let fileData = await universalify.fromCallback(fs.readFile)(filePath, options);
+  fileData = stripBom(fileData);
+
+  try {
+    return JSON.parse(fileData, options.reviver);
+  } catch (err) {
+    if (shouldThrow) {
+      err.message = `${filePath}: ${err.message}`;
+      throw err;
+    }
+    return null;
+  }
+}
+
+const readFile = universalify.fromPromise(asyncReadFile);
+
+function syncReadFile(filePath, options = {}) {
+  if (typeof options === 'string') {
+    options = { encoding: options };
+  }
+
+  const fs = options.fs || fsLib;
+  const shouldThrow = 'throws' in options ? options.throws : true;
+
+  try {
+    let fileContent = fs.readFileSync(filePath, options);
+    fileContent = stripBom(fileContent);
+    return JSON.parse(fileContent, options.reviver);
+  } catch (err) {
+    if (shouldThrow) {
+      err.message = `${filePath}: ${err.message}`;
+      throw err;
+    }
+    return null;
+  }
+}
+
+async function asyncWriteFile(filePath, jsonObject, options = {}) {
+  const fs = options.fs || fsLib;
+  const jsonString = stringify(jsonObject, options);
+
+  await universalify.fromCallback(fs.writeFile)(filePath, jsonString, options);
+}
+
+const writeFile = universalify.fromPromise(asyncWriteFile);
+
+function syncWriteFile(filePath, jsonObject, options = {}) {
+  const fs = options.fs || fsLib;
+  const jsonString = stringify(jsonObject, options);
+  
+  fs.writeFileSync(filePath, jsonString, options);
+}
+
+const jsonFileUtilities = {
+  readFile,
+  readFileSync: syncReadFile,
+  writeFile,
+  writeFileSync: syncWriteFile
+};
+
+module.exports = jsonFileUtilities;
+```

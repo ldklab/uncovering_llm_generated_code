@@ -1,0 +1,98 @@
+The given Node.js code is a simple localization library that helps with translations based on language files. The `Y18n` class manages localization by loading translation data from JSON files, formatting translations with placeholders, and managing locale settings.
+
+### Key Functionalities:
+1. **Localization Directory and Locale Management:**
+   - The constructor sets the directory for locale files (`./locales` by default) and the current locale (`en` by default).
+   
+2. **Translation Handling:**
+   - The `__()` method takes a string and optional arguments, retrieves its translation based on the current locale, and formats it using the arguments.
+   
+3. **Pluralization:**
+   - The `__n()` method handles singular and plural forms. Depending on a count, it selects between a singular or plural string, retrieves the appropriate translation, and formats it with the count and additional arguments.
+   
+4. **Locale Settings:**
+   - `setLocale(locale)`, `getLocale()`, and `updateLocale(obj)` methods manage locale settings and update locale files with new translations.
+
+5. **Translation Management:**
+   - The `_translate()` method retrieves translations from JSON locale files and optionally updates these files with new entries if translations are missing.
+   
+6. **String Formatting:**
+   - The `_formatString()` method replaces `%s` placeholders in translations with provided arguments.
+
+### Rewritten Code:
+
+```javascript
+// localization.js
+
+const fs = require('fs');
+const path = require('path');
+
+class Localization {
+  constructor({ directory = './locales', locale = 'en', updateFiles = true, fallbackToLanguage = true } = {}) {
+    this.dir = directory;
+    this.currentLocale = locale;
+    this.shouldUpdateFiles = updateFiles;
+    this.fallback = fallbackToLanguage;
+  }
+
+  translate(str, ...params) {
+    const translatedStr = this._getTranslation(str, this.currentLocale);
+    return this._applyParams(translatedStr, params);
+  }
+
+  translatePlural(singular, plural, count, ...params) {
+    const phrase = count === 1 ? singular : plural;
+    let translation = this._getTranslation(phrase, this.currentLocale);
+    translation = translation.replace('%d', count);
+    return this._applyParams(translation, params);
+  }
+
+  updateLocaleData(updateObj) {
+    const localePath = path.resolve(this.dir, `${this.currentLocale}.json`);
+    let currentData = {};
+    if (fs.existsSync(localePath)) {
+      currentData = JSON.parse(fs.readFileSync(localePath, 'utf-8'));
+    }
+    Object.assign(currentData, updateObj);
+    fs.writeFileSync(localePath, JSON.stringify(currentData, null, 2));
+  }
+
+  setLocale(newLocale) {
+    this.currentLocale = newLocale;
+  }
+
+  getLocale() {
+    return this.currentLocale;
+  }
+
+  _getTranslation(key, locale) {
+    const localeFilePath = path.join(this.dir, `${locale}.json`);
+    const fallbackFilePath = path.join(this.dir, `${locale.split('_')[0]}.json`);
+    let translations = {};
+
+    if (fs.existsSync(localeFilePath)) {
+      translations = JSON.parse(fs.readFileSync(localeFilePath, 'utf-8'));
+    } else if (this.fallback && fs.existsSync(fallbackFilePath)) {
+      translations = JSON.parse(fs.readFileSync(fallbackFilePath, 'utf-8'));
+    }
+
+    if (!(key in translations) && this.shouldUpdateFiles) {
+      translations[key] = key;
+      fs.writeFileSync(localeFilePath, JSON.stringify(translations, null, 2));
+    }
+    
+    return translations[key] || key;
+  }
+
+  _applyParams(template, params) {
+    return template.replace(/%s/g, () => params.shift());
+  }
+}
+
+module.exports = (config) => new Localization(config);
+
+// Example usage
+const loc = require('./localization')({ locale: 'en' });
+console.log(loc.translate('my awesome string %s', 'foo')); // Outputs: my awesome string foo
+console.log(loc.translatePlural('one fish %s', '%d fishes %s', 2, 'foo')); // Outputs: 2 fishes foo
+```

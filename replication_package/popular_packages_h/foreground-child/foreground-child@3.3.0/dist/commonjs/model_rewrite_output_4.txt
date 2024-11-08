@@ -1,0 +1,130 @@
+The given Node.js code defines functionality for executing a child process that runs in the foreground, meaning it will use the same input/output streams as the parent process. It uses certain utilities to handle process creation, signal management, and exit handling. Here’s a detailed explanation:
+
+1. **Dependencies & Setup**: The code imports necessary modules and sets up a method to spawn processes based on the platform.
+   - Uses `child_process` for creating child processes.
+   - Uses `cross-spawn` for cross-platform flexibility.
+   - Uses `signal-exit` for handling cleanup when exiting.
+   - Uses custom modules for signal proxying (`proxy-signals.js`) and a watchdog mechanism (`watchdog.js`).
+
+2. **normalizeFgArgs Function**: This function takes arguments intended for child process creation and normalizes them. It accepts various configurations such as:
+   - `program`: A string or array leading to the executable and its arguments.
+   - `args`: Optional arguments for the child process.
+   - `spawnOpts`: Options for process spawning.
+   - `cleanup`: A function to be executed upon process termination.
+
+3. **foregroundChild Function**: This function uses normalized arguments to start a child process that mirrors the standard input/output streams of its parent, making it "foreground".
+   - Calls on the `normalizeFgArgs` to set arguments.
+   - Sets up the `stdio` to [0, 1, 2] (stdin, stdout, stderr) and optionally 'ipc' for inter-process communication.
+   - Manages child process termination signals, trying to send SIGTERM if SIGHUP fails (particularly relevant on Windows).
+   - Handles cleanup via a `cleanup` function provided as an argument, which can return a new exit code or signal for the parent process to handle.
+   - Manages message communication between parent and child through process messaging events.
+   - Returns the spawned child process instance.
+
+4. **Utility Function**: `isPromise` checks if an object is a promise.
+
+Here's a rewritten version of the code organized in a single markdown code block:
+
+```javascript
+"use strict";
+
+const { spawn: nodeSpawn } = require("child_process");
+const crossSpawn = require("cross-spawn");
+const { onExit } = require("signal-exit");
+const { proxySignals } = require("./proxy-signals.js");
+const { watchdog } = require("./watchdog.js");
+
+const spawn = process?.platform === 'win32' ? crossSpawn : nodeSpawn;
+
+function normalizeFgArgs(fgArgs) {
+    let [program, args = [], spawnOpts = {}, cleanup = () => { }] = fgArgs;
+    
+    if (typeof args === 'function') {
+        cleanup = args;
+        spawnOpts = {};
+        args = [];
+    } else if (!!args && typeof args === 'object' && !Array.isArray(args)) {
+        if (typeof spawnOpts === 'function') cleanup = spawnOpts;
+        spawnOpts = args;
+        args = [];
+    } else if (typeof spawnOpts === 'function') {
+        cleanup = spawnOpts;
+        spawnOpts = {};
+    }
+
+    if (Array.isArray(program)) {
+        const [pp, ...pa] = program;
+        program = pp;
+        args = pa;
+    }
+
+    return [program, args, { ...spawnOpts }, cleanup];
+}
+
+function foregroundChild(...fgArgs) {
+    const [program, args, spawnOpts, cleanup] = normalizeFgArgs(fgArgs);
+    spawnOpts.stdio = [0, 1, 2];
+    if (process.send) spawnOpts.stdio.push('ipc');
+
+    const child = spawn(program, args, spawnOpts);
+
+    const childHangup = () => {
+        try {
+            child.kill('SIGHUP');
+        } catch (_) {
+            child.kill('SIGTERM');
+        }
+    };
+
+    const removeOnExit = onExit(childHangup);
+    proxySignals(child);
+    const dog = watchdog(child);
+    let done = false;
+
+    child.on('close', async (code, signal) => {
+        if (done) return;
+        done = true;
+
+        const result = cleanup(code, signal, { watchdogPid: dog.pid });
+        const res = isPromise(result) ? await result : result;
+        removeOnExit();
+
+        if (res === false) return;
+        else if (typeof res === 'string') {
+            signal = res;
+            code = null;
+        } else if (typeof res === 'number') {
+            code = res;
+            signal = null;
+        }
+
+        if (signal) {
+            setTimeout(() => { }, 2000);
+            try {
+                process.kill(process.pid, signal);
+            } catch (_) {
+                process.kill(process.pid, 'SIGTERM');
+            }
+        } else {
+            process.exit(code || 0);
+        }
+    });
+
+    if (process.send) {
+        process.removeAllListeners('message');
+        child.on('message', (message, sendHandle) => {
+            process.send?.(message, sendHandle);
+        });
+        process.on('message', (message, sendHandle) => {
+            child.send(message, sendHandle);
+        });
+    }
+
+    return child;
+}
+
+function isPromise(o) {
+    return !!o && typeof o === 'object' && typeof o.then === 'function';
+}
+
+module.exports = { foregroundChild, normalizeFgArgs };
+```

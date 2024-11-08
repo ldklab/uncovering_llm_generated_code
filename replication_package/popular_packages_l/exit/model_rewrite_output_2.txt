@@ -1,0 +1,31 @@
+The given code defines a Node.js module that exports a function named `exit`. This function attempts to gracefully terminate a Node.js process by ensuring that any output written to the standard output (stdout) and standard error (stderr) streams are fully flushed before exiting. It accomplishes this by checking if additional writes to these streams would block, indicating that not all output has been written. If the streams are not fully drained, it sets up an immediate task to check again, effectively retrying until the streams are ready to be fully drained. Once drained, it calls `process.exit()` to exit the process with the provided exit code (defaulting to 0).
+
+Below is a rewritten version of the described functionality:
+
+```javascript
+// File: gracefulExit.js
+const gracefulExit = (exitCode = 0) => {
+  // Function to check and wait until stdout and stderr are drained
+  const checkAndExit = () => {
+    if (!process.stdout.write('') || !process.stderr.write('')) {
+      // If write buffers are busy, retry the check in the next event loop cycle
+      setImmediate(checkAndExit); 
+    } else {
+      // Exit the process once both streams are drained
+      process.exit(exitCode);
+    }
+  };
+
+  checkAndExit();
+};
+
+module.exports = gracefulExit;
+
+// Example Usage:
+// const gracefulExit = require('./gracefulExit');
+// console.log("Example output.");
+// console.error("Example error.");
+// gracefulExit(5);  // Ensures "Example output." and "Example error." are flushed before exit
+// console.log("This will not be shown.");
+// console.error("Nor will this.");
+```

@@ -1,0 +1,67 @@
+The function `debounce` is designed to limit the rate at which a provided function (`func`) can fire. It returns a new function that delays the execution of `func` until after a specified wait time (`wait`) has elapsed since the last time the debounced function was invoked. 
+
+Key features of the function include:
+- The delay of `func` execution resets every time the debounced function is called, unless the `immediate` parameter is true.
+- If `immediate` is set to true, the `func` is called on the leading edge of the wait interval, rather than the trailing edge.
+- The returned debounced function includes two additional methods:
+  - `clear`: Cancels any scheduled execution of `func`.
+  - `flush`: Immediately executes `func` if it's scheduled and cancels the timeout.
+
+Here's a rewrite of the given code following the same functionality:
+
+```javascript
+function debounce(func, wait = 100, immediate = false) {
+  let timeout, args, context, timestamp, result;
+
+  const executeLater = () => {
+    const last = Date.now() - timestamp;
+
+    if (last < wait && last >= 0) {
+      timeout = setTimeout(executeLater, wait - last);
+    } else {
+      timeout = null;
+      if (!immediate) {
+        result = func.apply(context, args);
+        context = args = null;
+      }
+    }
+  };
+
+  const debounced = function(...args) {
+    context = this;
+    timestamp = Date.now();
+    const callNow = immediate && !timeout;
+
+    if (!timeout) timeout = setTimeout(executeLater, wait);
+
+    if (callNow) {
+      result = func.apply(context, args);
+      context = args = null;
+    }
+
+    return result;
+  };
+
+  debounced.clear = function() {
+    if (timeout) {
+      clearTimeout(timeout);
+      timeout = null;
+    }
+  };
+
+  debounced.flush = function() {
+    if (timeout) {
+      result = func.apply(context, args);
+      context = args = null;
+      clearTimeout(timeout);
+      timeout = null;
+    }
+  };
+
+  return debounced;
+};
+
+debounce.debounce = debounce;
+
+module.exports = debounce;
+```

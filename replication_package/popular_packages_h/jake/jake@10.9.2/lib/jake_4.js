@@ -1,0 +1,207 @@
+const { EventEmitter } = require('events');
+const fs = require('fs');
+const chalk = require('chalk');
+const taskNs = require('./task');
+const { Task, FileTask, DirectoryTask } = taskNs;
+const { Rule } = require('./rule');
+const { Namespace, RootNamespace } = require('./namespace');
+const api = require('./api');
+const utils = require('./utils');
+const { Program } = require('./program');
+const loader = require('./loader')();
+const pkg = JSON.parse(fs.readFileSync(`${__dirname}/../package.json`));
+
+const MAX_RULE_RECURSION_LEVEL = 16;
+
+if (!global.jake) {
+  global.jake = new EventEmitter();
+
+  // Globalize jake and API methods
+  Object.assign(global, api);
+
+  // Extend jake with utilities and file operations
+  Object.assign(global.jake, utils, utils.file);
+
+  // Add API methods to jake object for non-global use
+  Object.assign(global.jake, api);
+
+  buildJake();
+
+  function buildJake() {
+    const jake = global.jake;
+
+    Object.assign(jake, {
+      _invocationChain: [],
+      _taskTimeout: 30000,
+      version: pkg.version,
+      errorCode: null,
+      loader: loader,
+      rootNamespace: new RootNamespace(),
+      defaultNamespace: new RootNamespace(),
+      currentNamespace: new RootNamespace(),
+      currentTaskDescription: null,
+      program: new Program(),
+      FileList: require('filelist').FileList,
+      PackageTask: require('./package_task').PackageTask,
+      PublishTask: require('./publish_task').PublishTask,
+      TestTask: require('./test_task').TestTask,
+      Task,
+      FileTask,
+      DirectoryTask,
+      Namespace,
+      Rule,
+      
+      parseAllTasks,
+      showAllTaskDescriptions,
+      createTask,
+      attemptRule,
+      createPlaceholderFileTask,
+      run
+    });
+
+    function parseAllTasks() {
+      function _parseNs(ns) {
+        for (let nsTask of Object.values(ns.tasks)) {
+          jake.Task[nsTask.fullName] = nsTask;
+        }
+        for (let nsNamespace of Object.values(ns.childNamespaces)) {
+          _parseNs(nsNamespace);
+        }
+      }
+      _parseNs(jake.defaultNamespace);
+    }
+
+    function showAllTaskDescriptions(filter) {
+      const isFilterString = typeof filter === 'string';
+      const taskEntries = Object.entries(jake.Task)
+        .filter(([p]) => isFilterString ? p.includes(filter) : true);
+
+      const maxTaskNameLength = taskEntries.reduce((maxLen, [p, task]) => {
+        if (task.description) {
+          const taskParamsLength = task.params ? task.params.length : 0;
+          return Math.max(maxLen, p.length + taskParamsLength);
+        }
+        return maxLen;
+      }, 0);
+
+      taskEntries.forEach(([p, task]) => {
+        if (task.description) {
+          const taskParams = task.params ? `[${task.params}]` : '';
+          const name = chalk.green(p);
+          const descr = chalk.gray('# ' + task.description);
+          const padding = ' '.repeat(maxTaskNameLength - p.length - taskParams.length + 4);
+          console.log(`jake ${name}${taskParams}${padding}${descr}`);
+        }
+      });
+    }
+
+    function createTask() {
+      const args = Array.from(arguments);
+      const type = args.shift();
+      let [name, prereqs, action, opts] = parseTaskArgs(args);
+      const task = createOrUpdateTask(type, name, prereqs, action, opts);
+      integrateTask(task);
+      return task;
+    }
+
+    function parseTaskArgs(args) {
+      let [name, prereqs] = [null, []];
+      if (typeof args[0] === 'string') {
+        name = args.shift();
+        if (Array.isArray(args[0])) {
+          prereqs = args.shift();
+        }
+      } else {
+        const obj = args.shift();
+        for (name in obj) {
+          prereqs = prereqs.concat(obj[name]);
+          break;
+        }
+      }
+
+      const action = args.find(arg => typeof arg === 'function') || null;
+      const opts = Object.assign({}, args.find(arg => typeof arg !== 'function') || {});
+
+      return [name, prereqs, action, opts];
+    }
+
+    function createOrUpdateTask(type, name, prereqs, action, opts) {
+      let task = jake.currentNamespace.resolveTask(name);
+      if (task && !action) {
+        task.prereqs.push(...prereqs);
+        return task;
+      }
+      
+      switch(type) {
+        case 'directory':
+          action = () => { jake.mkdirP(name); };
+          return new DirectoryTask(name, prereqs, action, opts);
+        case 'file':
+          return new FileTask(name, prereqs, action, opts);
+        default:
+          return new Task(name, prereqs, action, opts);
+      }
+    }
+
+    function integrateTask(task) {
+      jake.currentNamespace.addTask(task);
+      if (jake.currentTaskDescription) {
+        task.description = jake.currentTaskDescription;
+        jake.currentTaskDescription = null;
+      }
+      jake.parseAllTasks();
+    }
+
+    function attemptRule(name, ns, level) {
+      if (level > MAX_RULE_RECURSION_LEVEL) return null;
+      const prereqRule = ns.matchRule(name);
+      if (prereqRule) return prereqRule.createTask(name, level);
+      return null;
+    }
+
+    function createPlaceholderFileTask(name, namespace) {
+      const [nsPath, filePath] = name.split(':').map(s => s || ':').reverse();
+      let task = namespace.resolveTask(name);
+      if (!task) {
+        if (fs.existsSync(filePath)) {
+          task = new FileTask(filePath);
+          task.dummy = true;
+          const ns = nsPath ? namespace.resolveNamespace(nsPath) : namespace;
+          if (ns) ns.addTask(task);
+          jake.Task[`${ns.path}:${filePath}`] = task;
+        }
+      }
+      return task || null;
+    }
+
+    function run() {
+      const args = Array.from(arguments);
+      const { program, loader } = jake;
+
+      program.parseArgs(args);
+      program.init();
+
+      const preempt = program.firstPreemptiveOption();
+      if (preempt) {
+        preempt();
+      } else {
+        const { opts } = program;
+        if (opts.autocomplete && opts.jakefile === true) {
+          process.stdout.write('no-complete');
+          return;
+        }
+        const jakefileLoaded = loader.loadFile(opts.jakefile);
+        const jakelibdirLoaded = loader.loadDirectory(opts.jakelibdir);
+
+        if (!jakefileLoaded && !jakelibdirLoaded && !opts.autocomplete) {
+          fail('No Jakefile. Specify a valid path with -f/--jakefile,' +
+            ' or place one in the current directory.');
+        }
+
+        program.run();
+      }
+    }
+  }
+}
+
+module.exports = global.jake;

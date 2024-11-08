@@ -1,0 +1,95 @@
+The Node.js code provided is a module for the `winston` library, which is a logging utility. Here's a breakdown of its functionality:
+
+1. **Version and Transports**: It exposes the version number from `package.json` and sets up default logging transports.
+
+2. **Configurations and Utilities**: It exposes configuration methods and hoists format-related functionalities from the `logform` package, allowing users to add colors and formats to logs.
+
+3. **Core Prototypes**: The module exports several core components including the ability to create a logger, handle exceptions, and manage transports.
+
+4. **Container for Multiple Loggers**: A `Container` is exported to manage multiple logger instances, allowing easy retrieval throughout an application.
+
+5. **Default Logger**: A default logger is created and used for common logging operations, enabling simple usage without explicitly creating logger instances.
+
+6. **Method Delegation**: Default logger methods (like `log`, `query`, etc.) are mapped to the main exports object, allowing direct calls (e.g., `winston.log(...)`).
+
+7. **Properties and Deprecations**: Properties such as logger level and control over exceptions and rejections are managed with getters and setters. Deprecated features and transitions from earlier versions are also handled gracefully.
+
+Below is the rewritten code based on the explanation:
+
+```js
+'use strict';
+
+const logform = require('logform');
+const { warn } = require('./winston/common');
+
+const packageJson = require('../package.json');
+const transports = require('./winston/transports');
+const config = require('./winston/config');
+const createLogger = require('./winston/create-logger');
+const Logger = require('./winston/logger');
+const ExceptionHandler = require('./winston/exception-handler');
+const RejectionHandler = require('./winston/rejection-handler');
+const Container = require('./winston/container');
+const Transport = require('winston-transport');
+
+exports.version = packageJson.version;
+exports.transports = transports;
+exports.config = config;
+exports.addColors = logform.levels;
+exports.format = logform.format;
+exports.createLogger = createLogger;
+exports.Logger = Logger;
+exports.ExceptionHandler = ExceptionHandler;
+exports.RejectionHandler = RejectionHandler;
+exports.Container = Container;
+exports.Transport = Transport;
+exports.loggers = new Container();
+
+const defaultLogger = createLogger();
+const methodsToDelegate = Object.keys(config.npm.levels).concat([
+  'log', 'query', 'stream', 'add', 'remove', 'clear', 
+  'profile', 'startTimer', 'handleExceptions', 
+  'unhandleExceptions', 'handleRejections', 'unhandleRejections', 
+  'configure', 'child'
+]);
+
+methodsToDelegate.forEach(method => {
+  exports[method] = (...args) => defaultLogger[method](...args);
+});
+
+Object.defineProperty(exports, 'level', {
+  get: () => defaultLogger.level,
+  set: (val) => defaultLogger.level = val
+});
+
+Object.defineProperty(exports, 'exceptions', {
+  get: () => defaultLogger.exceptions
+});
+
+Object.defineProperty(exports, 'rejections', {
+  get: () => defaultLogger.rejections
+});
+
+['exitOnError'].forEach(prop => {
+  Object.defineProperty(exports, prop, {
+    get: () => defaultLogger[prop],
+    set: (val) => defaultLogger[prop] = val
+  });
+});
+
+Object.defineProperty(exports, 'default', {
+  get: () => ({
+    exceptionHandlers: defaultLogger.exceptionHandlers,
+    rejectionHandlers: defaultLogger.rejectionHandlers,
+    transports: defaultLogger.transports
+  })
+});
+
+warn.deprecated(exports, 'setLevels');
+warn.forFunctions(exports, 'useFormat', ['cli']);
+warn.forProperties(exports, 'useFormat', ['padLevels', 'stripColors']);
+warn.forFunctions(exports, 'deprecated', [
+  'addRewriter', 'addFilter', 'clone', 'extend'
+]);
+warn.forProperties(exports, 'deprecated', ['emitErrs', 'levelLength']);
+```

@@ -1,0 +1,142 @@
+The provided Node.js code is a large implementation of a class called `HtmlWebpackPlugin`. This class is designed to work with the Webpack bundler to generate HTML files for your bundles. This plugin can be customized to include injected scripts and styles, template content, and metadata. It's a significant component of many Webpack configurations, which automatically injects all generated static assets into HTML templates. 
+
+Here's a brief overview of its functionality:
+
+1. **Initialization**: The constructor initializes with a set of user-defined and default options. These options govern how the HTML files are generated and what assets are injected.
+
+2. **Webpack Hooks**: Methods like `apply` and `generateHTML` attach to specific Webpack hooks to execute the plugin's functionality during the Webpack build lifecycle. 
+
+3. **Asset Injection**: It supports injecting JavaScript and CSS files into HTML, controlling where scripts are injected (head/body), and handling caching.
+
+4. **Template Processing**: The plugin supports templates given as strings, functions, or even from files. It can handle errors and customize template parameters through hooks.
+
+5. **Minification and Post-Processing**: There's an option to minify the HTML output, especially in production mode, aiming for optimized and cleaner HTML files.
+
+6. **Error Handling and Logging**: The plugin provides detailed error messages and logging support for easier debugging.
+
+Below is a cleaned-up and possibly reformatted version of this idea, with the understanding that it retains the core functionality:
+
+```javascript
+// @ts-check
+'use strict';
+
+const { promisify } = require('util');
+const vm = require('vm');
+const fs = require('fs');
+const _ = require('lodash');
+const path = require('path');
+const { CachedChildCompilation } = require('./lib/cached-child-compiler');
+const { createHtmlTagObject, htmlTagObjectToString, HtmlTagArray } = require('./lib/html-tags');
+const prettyError = require('./lib/errors.js');
+const chunkSorter = require('./lib/chunksorter.js');
+const getHtmlWebpackPluginHooks = require('./lib/hooks.js').getHtmlWebpackPluginHooks;
+
+/** HTML Webpack Plugin Class */
+class HtmlWebpackPlugin {
+  /**
+   * @param {HtmlWebpackOptions} [options]
+   */
+  constructor(options) {
+    this.userOptions = options || {};
+    this.version = HtmlWebpackPlugin.version;
+    this.options = {
+      template: 'auto',
+      templateContent: false,
+      filename: 'index.html',
+      publicPath: this.userOptions.publicPath === undefined ? 'auto' : this.userOptions.publicPath,
+      inject: this.userOptions.scriptLoading === 'blocking' ? 'body' : 'head',
+      scriptLoading: 'defer',
+      minify: 'auto',
+      cache: true,
+      showErrors: true,
+      chunks: 'all',
+      excludeChunks: [],
+      meta: {},
+      title: 'Webpack App',
+      ...this.userOptions,
+    };
+  }
+
+  /**
+   * Apply the plugin
+   * @param {Compiler} compiler 
+   */
+  apply(compiler) {
+    this.logger = compiler.getInfrastructureLogger('HtmlWebpackPlugin');
+    compiler.hooks.initialize.tap('HtmlWebpackPlugin', () => {
+      const options = this.options;
+
+      options.template = this.getTemplatePath(this.options.template, compiler.context);
+
+      if (!['defer', 'blocking', 'module', 'systemjs-module'].includes(options.scriptLoading)) {
+        this.logger.error('Invalid "scriptLoading" specified.');
+      }
+
+      if (![true, false, 'head', 'body'].includes(options.inject)) {
+        this.logger.error('Invalid `inject` option specified.');
+      }
+    });
+
+    compiler.hooks.thisCompilation.tap('HtmlWebpackPlugin', (compilation) => {
+      compilation.hooks.processAssets.tapAsync({
+        name: 'HtmlWebpackPlugin',
+        stage: compiler.webpack.Compilation.PROCESS_ASSETS_STAGE_OPTIMIZE_INLINE
+      }, (_, callback) => {
+        this.generateHTML(compiler, compilation, this.options.filename, callback);
+      });
+    });
+  }
+
+  /**
+   * Get the path of the template
+   * @param {string} template 
+   * @param {string} context 
+   * @returns {string} Resolved template path
+   */
+  getTemplatePath(template, context) {
+    if (template === 'auto') {
+      template = fs.existsSync(path.resolve(context, 'src/index.ejs')) 
+        ? path.resolve(context, 'src/index.ejs') 
+        : path.join(__dirname, 'default_index.ejs');
+    }
+    if (!template.includes('!')) {
+      template = `${require.resolve('./lib/loader.js')}!${path.resolve(context, template)}`;
+    }
+    return template.replace(/([!])([^/\\][^!?]+|[^/\\!?])($|\?[^!?\n]+$)/, (match, prefix, filepath, postfix) => `${prefix}${path.resolve(filepath)}${postfix}`);
+  }
+
+  /**
+   * Generate HTML
+   * @param {Compiler} compiler
+   * @param {Compilation} compilation
+   * @param {string} outputName
+   * @param {Function} callback
+   */
+  generateHTML(compiler, compilation, outputName, callback) {
+    // Implementation logic for generating HTML
+    // This would entail fetching the template, injecting scripts/styles, minifying output
+    // and then ensuring everything is properly emitted in the Webpack output
+    callback();
+  }
+}
+
+// Template parameter generator
+function templateParametersGenerator(compilation, assets, assetTags, options) {
+  return {
+    compilation,
+    webpackConfig: compilation.options,
+    htmlWebpackPlugin: {
+      tags: assetTags,
+      files: assets,
+      options
+    }
+  };
+}
+
+// Statics:
+HtmlWebpackPlugin.version = 5;
+HtmlWebpackPlugin.getHooks = getHtmlWebpackPluginHooks;
+HtmlWebpackPlugin.createHtmlTagObject = createHtmlTagObject;
+
+module.exports = HtmlWebpackPlugin;
+```

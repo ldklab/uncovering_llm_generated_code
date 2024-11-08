@@ -1,0 +1,81 @@
+The provided Node.js code is a module that exports a function `wordwrap`, which wraps a given text to fit within specified character limits per line. It accepts `start`, `stop`, and `params` as arguments, allowing flexibility in specifying these bounds. 
+
+The `wordwrap` function supports two modes: 'soft' (default) and 'hard'. In 'soft' mode, lines are broken at whitespace boundaries or after a defined number of characters (`stop`). In 'hard' mode, every line is forcibly broken after `stop` characters, without considering whitespace.
+
+The logic handles both string and object inputs to define the `start`, `stop`, and `params`. It processes a text input by splitting it into chunks using a regular expression and then assembles these chunks into lines of specified width.
+
+The module also provides two additional utilities, `wordwrap.soft` (an alias for the default behavior) and `wordwrap.hard`, which sets the mode to 'hard'.
+
+Here's a rewritten version of the code:
+
+```javascript
+function wordwrap(start, stop, params) {
+    if (typeof start === 'object') {
+        params = start;
+        start = params.start;
+        stop = params.stop;
+    }
+
+    if (typeof stop === 'object') {
+        params = stop;
+        start = start || params.start;
+        stop = undefined;
+    }
+
+    if (!stop) {
+        stop = start;
+        start = 0;
+    }
+
+    params = params || {};
+    const mode = params.mode || 'soft';
+    const regex = mode === 'hard' ? /\b/ : /(\S+\s+)/;
+
+    return function (text) {
+        const chunks = text.toString()
+            .split(regex)
+            .reduce((acc, value) => {
+                if (mode === 'hard') {
+                    for (let i = 0; i < value.length; i += stop - start) {
+                        acc.push(value.slice(i, i + stop - start));
+                    }
+                } else {
+                    acc.push(value);
+                }
+                return acc;
+            }, []);
+
+        return chunks.reduce((lines, chunk) => {
+            if (chunk === '') return lines;
+
+            const processedChunk = chunk.replace(/\t/g, '    ');
+            const lastIndex = lines.length - 1;
+
+            if (lines[lastIndex].length + processedChunk.length > stop) {
+                lines[lastIndex] = lines[lastIndex].replace(/\s+$/, '');
+                processedChunk.split(/\n/).forEach((line) => {
+                    lines.push(' '.repeat(start) + line.trimStart());
+                });
+            } else if (processedChunk.includes('\n')) {
+                const parts = processedChunk.split(/\n/);
+                lines[lastIndex] += parts.shift();
+                parts.forEach((line) => {
+                    lines.push(' '.repeat(start) + line.trimStart());
+                });
+            } else {
+                lines[lastIndex] += processedChunk;
+            }
+
+            return lines;
+        }, [' '.repeat(start)]).join('\n');
+    };
+}
+
+wordwrap.soft = wordwrap;
+
+wordwrap.hard = function (start, stop) {
+    return wordwrap(start, stop, { mode: 'hard' });
+};
+
+module.exports = wordwrap;
+```

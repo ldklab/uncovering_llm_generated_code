@@ -1,0 +1,22 @@
+The provided Node.js code is a module that exports a function for deferring the execution of a callback using the microtask queue. This functionality is typically provided by `queueMicrotask`, but if it's not available, the module falls back on using a resolved `Promise` to achieve a similar effect. 
+
+Here's how it works:
+1. The code checks if `queueMicrotask` is available as a function in the current environment.
+2. If `queueMicrotask` is available, it uses that native API, binding it correctly to either the `window` (in browsers) or `global` (in Node.js).
+3. If `queueMicrotask` is not available, it falls back to using a resolved `Promise`. 
+4. The fallback mechanism involves creating (or reusing) a resolved promise, calling `then` with the provided callback, and handling any potential errors by throwing them asynchronously.
+
+Below is a possible rewrite of this Node.js code:
+
+```javascript
+/*! queue-microtask. MIT License. Feross Aboukhadijeh <https://feross.org/opensource> */
+let resolvedPromise;
+
+module.exports = typeof queueMicrotask === 'function'
+  ? queueMicrotask.bind(globalThis)
+  : callback => {
+      (resolvedPromise ||= Promise.resolve()).then(callback).catch(error => {
+        setTimeout(() => { throw error; }, 0);
+      });
+    }
+```

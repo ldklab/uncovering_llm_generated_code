@@ -1,0 +1,85 @@
+The provided code implements a simplified version of the Node.js Buffer class for use in browser environments, utilizing Typed Arrays (specifically Uint8Array). This custom Buffer class supports the following functionalities:
+
+1. **Constructor Overloading** - Can be initialized with a number, string, ArrayBuffer, or array-like object, handling each case appropriately:
+   - When passed a number, it creates a Buffer with that length.
+   - When passed a string, it converts the string into a Buffer using UTF-8 encoding.
+   - When passed an ArrayBuffer, it wraps around it possibly with offset and length.
+   - When passed an array-like object, it copies its contents into the Buffer.
+
+2. **Encoding and String Conversion**:
+   - Offers the `_fromString` static method to convert a string to a UTF-8 encoded buffer.
+   - Implements `toString` instance method to convert buffer contents back into a UTF-8 string.
+
+3. **Utility Methods**:
+   - `slice`: Provides the ability to create a sub-buffer from a range within the buffer.
+   - `concat`: A static method that concatenates an array of Buffers into a single Buffer. Handles calculation of the total length if not provided.
+
+4. **Module Export**: Ensures compatibility with CommonJS by exporting the Buffer class for use in module-based environments.
+
+Here is the rewritten code maintaining the same functionality:
+
+```javascript
+class Buffer extends Uint8Array {
+  constructor(arg, encodingOrOffset, length) {
+    if (typeof arg === 'number') {
+      super(arg);
+    } else if (typeof arg === 'string') {
+      super(Buffer._fromString(arg, encodingOrOffset));
+    } else if (arg instanceof ArrayBuffer) {
+      super(arg, encodingOrOffset, length);
+    } else {
+      super(arg.length);
+      for (let i = 0; i < arg.length; i++) {
+        this[i] = arg[i];
+      }
+    }
+  }
+
+  static _fromString(string, encoding = 'utf8') {
+    if (encoding !== 'utf8') {
+      throw new Error('Unsupported encoding: only utf8 is implemented');
+    }
+    return new TextEncoder('utf-8').encode(string);
+  }
+
+  static from(arg, encodingOrOffset, length) {
+    return new Buffer(arg, encodingOrOffset, length);
+  }
+
+  toString(encoding = 'utf8') {
+    if (encoding !== 'utf8') {
+      throw new Error('Only utf8 encoding is supported for toString');
+    }
+    return new TextDecoder('utf-8').decode(this);
+  }
+
+  slice(start, end) {
+    return new Buffer(super.slice(start, end));
+  }
+
+  static concat(buffers, totalLength) {
+    if (!Array.isArray(buffers)) {
+      throw new TypeError('"list" argument must be an Array of Buffers');
+    }
+
+    if (buffers.length === 0) {
+      return Buffer.from([]);
+    }
+
+    totalLength = totalLength ?? buffers.reduce((acc, buf) => acc + buf.length, 0);
+    const result = new Buffer(totalLength);
+    let offset = 0;
+
+    for (const buffer of buffers) {
+      result.set(buffer, offset);
+      offset += buffer.length;
+    }
+
+    return result;
+  }
+}
+
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports.Buffer = Buffer;
+}
+```

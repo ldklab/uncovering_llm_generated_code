@@ -1,0 +1,132 @@
+The Node.js code provided is a module for parsing and manipulating docblocks in source code. It includes functions to extract, strip, parse, and print docblocks, which are comments that begin with `/**` and might include annotations or metadata.
+
+Here's a breakdown of each function's role:
+- `extract(contents)`: Finds and returns the docblock from the given content.
+- `strip(contents)`: Removes a docblock from the content, returning the rest of the content.
+- `parse(docblock)`: Parses a docblock to extract pragmas (directives typically marked by `@`).
+- `parseWithComments(docblock)`: Parses a docblock to separate pragmas and comments, normalizing multiple lines into a single line if required.
+- `print({comments, pragmas})`: Takes a docblock's comments and pragmas to reconstruct it into a formatted string.
+
+Below is the rewritten version of the original code:
+
+```javascript
+'use strict';
+
+const os = require('os');
+const detectNewline = require('detect-newline');
+
+const commentEndRe = /\*\/$/;
+const commentStartRe = /^\/\*\*/;
+const docblockRe = /^\s*(\/\*\*?(.|\r?\n)*?\*\/)/;
+const lineCommentRe = /(^|\s+)\/\/([^\r\n]*)/g;
+const ltrimNewlineRe = /^(\r?\n)+/;
+const multilineRe = /(?:^|\r?\n) *(@[^\r\n]*?) *\r?\n *(?![^@\r\n]*\/\/[^]*)([^@\r\n\s][^@\r\n]+?) *\r?\n/g;
+const propertyRe = /(?:^|\r?\n) *@(\S+) *([^\r\n]*)/g;
+const stringStartRe = /(\r?\n|^) *\* ?/g;
+const STRING_ARRAY = [];
+
+function extract(contents) {
+  const match = contents.match(docblockRe);
+  return match ? match[0].trimLeft() : '';
+}
+
+function strip(contents) {
+  const match = contents.match(docblockRe);
+  return match && match[0] ? contents.substring(match[0].length) : contents;
+}
+
+function parse(docblock) {
+  return parseWithComments(docblock).pragmas;
+}
+
+function parseWithComments(docblock) {
+  const line = detectNewline(docblock) || os.EOL;
+
+  docblock = docblock
+    .replace(commentStartRe, '')
+    .replace(commentEndRe, '')
+    .replace(stringStartRe, '$1');
+
+  let prev = '';
+
+  while (prev !== docblock) {
+    prev = docblock;
+    docblock = docblock.replace(multilineRe, `${line}$1 $2${line}`);
+  }
+
+  docblock = docblock.replace(ltrimNewlineRe, '').trimRight();
+  const result = Object.create(null);
+  const comments = docblock
+    .replace(propertyRe, '')
+    .replace(ltrimNewlineRe, '')
+    .trimRight();
+  let match;
+
+  while ((match = propertyRe.exec(docblock))) {
+    const nextPragma = match[2].replace(lineCommentRe, '');
+
+    if (typeof result[match[1]] === 'string' || Array.isArray(result[match[1]])) {
+      result[match[1]] = STRING_ARRAY.concat(result[match[1]], nextPragma);
+    } else {
+      result[match[1]] = nextPragma;
+    }
+  }
+
+  return {
+    comments,
+    pragmas: result
+  };
+}
+
+function print({comments = '', pragmas = {}}) {
+  const line = detectNewline(comments) || os.EOL;
+
+  const head = '/**';
+  const start = ' *';
+  const tail = ' */';
+  const keys = Object.keys(pragmas);
+  const printedObject = keys
+    .flatMap(key => printKeyValues(key, pragmas[key]))
+    .map(keyValue => start + ' ' + keyValue + line)
+    .join('');
+
+  if (!comments) {
+    if (keys.length === 0) {
+      return '';
+    }
+
+    if (keys.length === 1 && !Array.isArray(pragmas[keys[0]])) {
+      const value = pragmas[keys[0]];
+      return `${head} ${printKeyValues(keys[0], value)[0]}${tail}`;
+    }
+  }
+
+  const printedComments = comments
+    .split(line)
+    .map(textLine => `${start} ${textLine}`)
+    .join(line) + line;
+
+  return (
+    head +
+    line +
+    (comments ? printedComments : '') +
+    (comments && keys.length ? start + line : '') +
+    printedObject +
+    tail
+  );
+}
+
+function printKeyValues(key, valueOrArray) {
+  return STRING_ARRAY.concat(valueOrArray).map(value =>
+    `@${key} ${value}`.trim()
+  );
+}
+
+module.exports = {
+  extract,
+  strip,
+  parse,
+  parseWithComments,
+  print
+};
+```

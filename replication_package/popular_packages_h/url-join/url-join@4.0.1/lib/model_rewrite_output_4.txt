@@ -1,0 +1,65 @@
+The provided Node.js code is a module pattern that creates a utility function called `urljoin`. This function is designed to concatenate and normalize URL components into a single URL string. Here's a breakdown of how it works:
+
+1. **Module Definition**: The function is structured to work with different module systems:
+   - It exports the `urljoin` function for Node.js environments using CommonJS.
+   - It defines the same function for AMD (Asynchronous Module Definition) environments.
+   - It attaches the function to a global object for browser environments.
+
+2. **Normalization Logic**: The core of this utility is the `normalize` function that:
+   - Checks if the URL array is valid and consists of strings.
+   - Handles URL protocols properly, ensuring correct slashes (`"http://"` etc.).
+   - Removes unnecessary slashes between URL parts except when required.
+   - Ensures the URL ends with a single slash.
+   - Converts query parameter separators from `?` to `&` to ensure each pair is correctly delineated.
+
+3. **Utility Function**: The `urljoin` function:
+   - Accepts multiple arguments or an array of strings.
+   - Passes this list to the `normalize` function to generate a normalized URL string.
+
+Here's a possible rewrite of the code:
+
+```js
+(function(name, context, definition) {
+  if (typeof module !== 'undefined' && module.exports) {
+    module.exports = definition();
+  } else if (typeof define === 'function' && define.amd) {
+    define(definition);
+  } else {
+    context[name] = definition();
+  }
+})('urljoin', this, function() {
+
+  function normalize(urlParts) {
+    if (!urlParts.length) return '';
+
+    if (typeof urlParts[0] !== 'string') throw new TypeError('Url must be a string. Received ' + urlParts[0]);
+
+    if (urlParts[0].match(/^[^/:]+:\/*$/) && urlParts.length > 1) {
+      urlParts[0] += urlParts[1];
+      urlParts.splice(1, 1);
+    }
+
+    urlParts[0] = urlParts[0].replace(/^([^/:]+):\/*/, (match, protocol) =>
+      protocol === 'file' ? `${protocol}:///` : `${protocol}://`
+    );
+
+    const normalizedUrl = urlParts.map((part, index) => {
+      if (typeof part !== 'string') throw new TypeError('Url must be a string. Received ' + part);
+      if (!part) return '';
+      if (index > 0) part = part.replace(/^[\/]+/, '');
+      if (index < urlParts.length - 1) part = part.replace(/[\/]+$/, '');
+      else part = part.replace(/[\/]+$/, '/');
+      return part;
+    }).join('/');
+
+    const urlWithParametersFixed = normalizedUrl.replace(/\/(\?|&|#[^!])/g, '$1');
+    const [base, ...params] = urlWithParametersFixed.split('?');
+    return base + (params.length ? '?' + params.join('&') : '');
+  }
+
+  return function(...args) {
+    const input = Array.isArray(args[0]) ? args[0] : args;
+    return normalize(input);
+  };
+});
+```

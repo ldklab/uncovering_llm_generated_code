@@ -1,0 +1,69 @@
+The `safer-buffer` package is designed to provide a polyfill for the modern Buffer API, thus helping developers maintain compatibility with older versions of Node.js (specifically versions prior to Node.js 4.5.0 and versions 5.x prior to 5.9.0) that do not support the `Buffer.alloc()` and `Buffer.from()` methods. 
+
+The package offers an immediate way to replace dangerous old API patterns (`Buffer()` and `new Buffer()`) with safe alternatives. The `safer-buffer` package enforces safe usage by throwing an error if the outdated and insecure methods are used, unlike the `safe-buffer` package, which allows those older methods resulting in potential security vulnerabilities.
+
+### Installation and Usage:
+
+1. **Replace Old API Calls**: The first step is to port all instances of `Buffer()` and `new Buffer()` to use `Buffer.alloc()` or `Buffer.from()`.
+
+2. **Polyfill Usage**: 
+   - Import the safer `Buffer` from this package in files where the Buffer API is used:
+     ```javascript
+     const Buffer = require('safer-buffer').Buffer;
+     ```
+   - If using older Node.js versions that require `var`, replace `const` with `var`.
+
+3. **Linter Enforcement**: A linter like `standard` can be used to help identify and adapt instances of unsafe Buffer API usage.
+
+4. **Handling Errors**: The package intentionally throws errors when old unsafe Buffer API usage is detected. This allows developers to catch such errors during testing rather than have unprotected buffers in production.
+
+5. **Alternative Usage**: If error throwing is not desired, the `safer-buffer` object can be used directly without overriding the native `Buffer`, i.e., 
+   ```javascript
+   var SaferBuffer = require('safer-buffer').Buffer;
+   ```
+   This way, new safe methods (`SaferBuffer.from` and `SaferBuffer.alloc`) can be utilized, while old methods remain available but must be avoided manually or through a linter.
+
+6. **Discouraged Usage**: The `safer-buffer` package discourages the use of `Buffer.allocUnsafe()`, and instead places it under `require('safer-buffer/dangerous')` for deliberate usage only.
+
+By using `safer-buffer`, developers ensure safer buffer handling and encourage migration to the new Buffer API across their codebase.
+
+Here’s the implementation code for the Node.js package described:
+
+```javascript
+// safer-buffer/index.js
+
+// Create a facade to provide a safe Buffer API
+
+// Check Node.js version to determine if Buffer.from and Buffer.alloc are natively supported
+var bufferNs = 
+  typeof Buffer.from === 'function' ? Buffer : require('buffer').Buffer;
+
+var alloc = bufferNs.alloc;
+var allocUnsafe = function() {
+  throw new Error('Buffer.allocUnsafe() is discouraged, explicitly require it from "safer-buffer/dangerous" if needed.');
+};
+var from = bufferNs.from;
+
+// Export the safe Buffer API
+exports.Buffer = {
+  from: function() {
+    if (arguments.length > 1 && typeof arguments[1] === 'string') {
+      return from.apply(bufferNs, arguments);
+    }
+    var arg = arguments[0];
+    if (typeof arg === 'number') {
+      throw new TypeError('Use Buffer.alloc() instead of Buffer(number) for safety.');
+    }
+    return from.call(bufferNs, arg);
+  },
+  alloc: alloc,
+  allocUnsafe: allocUnsafe
+};
+
+// safer-buffer/dangerous.js
+var bufferNs = 
+  typeof Buffer.from === 'function' ? Buffer : require('buffer').Buffer;
+exports.Buffer = bufferNs;
+```
+
+This implementation provides a safer Buffer interface that will throw errors when the application attempts to use the insecure old buffer constructor. Additionally, it supports the modern Buffer API using a polyfill for compatibility with older Node.js versions.

@@ -1,0 +1,102 @@
+The provided Node.js code consists of two files, `index.js` and `proto-loader-gen-types.js`.
+
+### Explanation
+
+1. **index.js**:
+   - This file defines a class `GRPCProtoLoader` that facilitates loading Protocol Buffer (Proto) files.
+   - It provides two methods:
+     - `load(filePath, options)`: An asynchronous method to load a proto file using an optional set of options. If `options.includeDirs` is specified, it helps resolve the file paths from these directories. It returns a promise that resolves with the loaded protobuf root.
+     - `loadSync(filePath, options)`: A synchronous method with functionality similar to `load`, but it uses `protobuf.loadSync` and returns the descriptor of the loaded protobuf.
+
+2. **proto-loader-gen-types.js**:
+   - This script uses the `yargs` library to parse command-line arguments and the `protobufjs` library for Protocol Buffers handling.
+   - The main function `generateTypeScript` converts a Proto file to TypeScript interfaces and writes it to an output directory. This function:
+     - Loads the .proto file and checks if `includeDirs` are provided for additional include directories.
+     - Outputs a TypeScript file reflecting the Proto message types.
+     - Ensures the output directory exists and writes the generated TypeScript content to a file.
+   - Command-line arguments are parsed to obtain `includeDirs` and `outDir`. The `filePath` arguments passed are processed by the `generateTypeScript` function.
+
+Here is the rewritten code according to the explanation:
+
+```javascript
+// index.js
+const protobuf = require('protobufjs');
+const fs = require('fs');
+const path = require('path');
+
+class GRPCProtoLoader {
+    static async load(filePath, options = {}) {
+        const root = new protobuf.Root();
+        if (options.includeDirs) {
+            options.includeDirs.forEach(dir => root.resolvePath = protobuf.util.path.resolvePath);
+        }
+        return protobuf.load(filePath, root, options);
+    }
+
+    static loadSync(filePath, options = {}) {
+        const root = new protobuf.Root();
+        if (options.includeDirs) {
+            options.includeDirs.forEach(dir => root.resolvePath = protobuf.util.path.resolvePath);
+        }
+        const rootLoaded = protobuf.loadSync(filePath, root, options);
+        return protobuf.toDescriptor(rootLoaded);
+    }
+}
+
+module.exports = GRPCProtoLoader;
+
+// proto-loader-gen-types.js
+const yargs = require('yargs');
+const protobuf = require('protobufjs');
+const fs = require('fs');
+const path = require('path');
+
+function generateTypeScript(filePath, options) {
+    const root = new protobuf.Root();
+    
+    if (options.includeDirs) {
+        protobuf.util.path.resolvePath = (origin, target) => {
+            const paths = [path.join(process.cwd(), origin), ...options.includeDirs];
+            for (const p of paths) {
+                const resolved = path.join(p, target);
+                if (fs.existsSync(resolved)) return resolved;
+            }
+            return null;
+        };
+    }
+    
+    protobuf.loadSync(filePath, root);
+
+    const outputDir = options.outDir || 'proto';
+    const fileName = path.basename(filePath, '.proto') + '.ts';
+    const outputPath = path.join(outputDir, fileName);
+
+    const writeFileContent = (namespace) => {
+        let typescriptCode = '// Generated TypeScript for ' + fileName + '\n';
+        namespace.nestedArray.forEach(child => {
+            if (child instanceof protobuf.Type) {
+                typescriptCode += protobuf.Type.toDescriptor(child).toString();
+            }
+        });
+
+        if (!fs.existsSync(outputDir)) fs.mkdirSync(outputDir, { recursive: true });
+        fs.writeFileSync(outputPath, typescriptCode);
+    };
+
+    writeFileContent(root);
+}
+
+const argv = yargs
+    .option('includeDirs', {
+        alias: 'I',
+        type: 'array',
+    })
+    .option('outDir', {
+        alias: 'O',
+        type: 'string',
+        demandOption: true,
+    })
+    .argv;
+
+argv._.forEach(filePath => generateTypeScript(filePath, argv));
+```

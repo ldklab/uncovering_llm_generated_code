@@ -1,0 +1,70 @@
+The given Node.js code defines a function `naturalCompare` to compare two strings in a "natural order", which means it takes into account numerical content of the strings in addition to their alphabetical sorting. This is particularly useful when comparing strings that contain numbers, producing results in a more human-friendly way compared to traditional lexicographical sorting.
+
+Key functionalities:
+1. Initial setup assigns positions and codes for comparison.
+2. The `getCode` function maps character codes to values, handling numerics and alphabets differently, and applies specific transformations for digits (0-9) and letters (A-Z, a-z).
+3. The main comparison loop fetches codes for each position in the strings and checks whether they need special treatment (e.g., if they are digits).
+4. If there's a difference in the codes, the function returns -1 or 1 depending on which is smaller, indicating the order of the two strings.
+5. If no differences are found, it returns 0, indicating equality.
+6. At the end, it attempts to export the `naturalCompare` function for Node.js environments or attach it to the `String` object for use in other environments (e.g., browsers).
+
+Here is the rewritten code with the same functionality:
+
+```javascript
+/*
+ * @version    1.4.0
+ * @date       2015-10-26
+ * @stability  3 - Stable
+ * @author     Lauri Rooden (https://github.com/litejs/natural-compare-lite)
+ * @license    MIT License
+ */
+
+function naturalCompare(a, b) {
+    let posA = 0, posB = 0;
+    const alphabet = String.alphabet;
+
+    const getCode = (str, pos, code) => {
+        if (code) {
+            let i = pos;
+            while ((code = getCode(str, i)) < 76 && code > 65) ++i;
+            return +str.slice(pos - 1, i);
+        }
+        code = alphabet ? alphabet.indexOf(str.charAt(pos)) : -1;
+        if (code > -1) return code + 76;
+        
+        code = str.charCodeAt(pos) || 0;
+        if (code < 45 || code > 127) return code;
+        if (code < 46) return 65; // -
+        if (code < 48) return code - 1;
+        if (code < 58) return code + 18; // 0-9
+        if (code < 65) return code - 11;
+        if (code < 91) return code + 11; // A-Z
+        if (code < 97) return code - 37;
+        if (code < 123) return code + 5; // a-z
+        return code - 63;
+    };
+
+    a = a.toString();
+    b = b.toString();
+
+    while (true) {
+        const codeA = getCode(a, posA++);
+        const codeB = getCode(b, posB++);
+
+        if (codeA < 76 && codeB < 76 && codeA > 66 && codeB > 66) {
+            posA = getCode(a, posA, posA);
+            posB = getCode(b, posB, posA);
+        }
+
+        if (codeA !== codeB) return codeA < codeB ? -1 : 1;
+        if (!codeB) break;
+    }
+    return 0;
+}
+
+try {
+    module.exports = naturalCompare;
+} catch (e) {
+    String.naturalCompare = naturalCompare;
+}
+```

@@ -1,0 +1,98 @@
+The `graphemer` library is a Node.js package designed to handle the complexities of Unicode string splitting. It focuses on accurately identifying and splitting user-perceived characters, known as grapheme clusters, from a JavaScript string. Graphemes can consist of multiple Unicode code points, especially in the case of emoji and accented characters, making them different from JavaScript's perception of string length. Using `graphemer`, developers can:
+
+1. Split strings into grapheme clusters, ensuring multi-code-point characters like emojis or combining marks are kept intact.
+2. Iteratively access grapheme clusters.
+3. Count the number of grapheme clusters in a string, which represents the user-perceived "length" of the string.
+
+Below is the implementation of the `graphemer` library:
+
+```javascript
+// graphemer.js
+
+class Graphemer {
+    constructor() {
+        // Load grapheme break data or rules for different Unicode versions here
+        this.breakRules = this.loadBreakRules();
+    }
+    
+    loadBreakRules() {
+        // This function represents the initialization of the grapheme breaking rules
+        // based on Unicode specifications. Normally, this could involve loading a
+        // complex set of rules or data, but for simplicity, let's assume a basic setup.
+        
+        return {
+            // These are pseudo-rules for illustration. Real rules would be based on
+            // the Unicode UAX #29 report.
+            SurrogatePair: (current, next) => {
+                return (0xD800 <= current && current <= 0xDBFF) &&
+                       (0xDC00 <= next && next <= 0xDFFF);
+            },
+            CombiningMark: (current, next) => {
+                // This is a simplified check.
+                return (this.isBaseChar(current) && this.isCombiningMark(next));
+            },
+            // Other complex rules would go here
+        }
+    }
+    
+    isBaseChar(codePoint) {
+        // Determine if the codePoint is a base character
+        // Simplified check, real checks would be based on Unicode data
+        return codePoint >= 0x0041 && codePoint <= 0x007A;
+    }
+    
+    isCombiningMark(codePoint) {
+        // Determine if the codePoint is a combining mark
+        // Simplified check, real checks would be based on Unicode data
+        return codePoint >= 0x0300 && codePoint <= 0x036F;
+    }
+
+    splitGraphemes(string) {
+        let graphemes = [];
+        let currentGrapheme = '';
+        for (let i = 0; i < string.length; i++) {
+            const currentChar = string.charCodeAt(i);
+            const nextChar = string.charCodeAt(i + 1);
+
+            currentGrapheme += string[i];
+            
+            if (!this.shouldBreak(currentChar, nextChar)) {
+                continue;
+            }
+
+            graphemes.push(currentGrapheme);
+            currentGrapheme = '';
+        }
+        
+        if (currentGrapheme) {
+            graphemes.push(currentGrapheme); // push remaining grapheme if there is any
+        }
+        
+        return graphemes;
+    }
+
+    iterateGraphemes(string) {
+        const graphemes = this.splitGraphemes(string);
+        return graphemes.values();
+    }
+
+    countGraphemes(string) {
+        return this.splitGraphemes(string).length;
+    }
+    
+    shouldBreak(current, next) {
+        // Check all break rules to decide if a break should occur
+        if (next === undefined) return true; // Always break at the end of the string
+        // Example break rule checks:
+        if (this.breakRules.SurrogatePair(current, next)) return false;
+        if (this.breakRules.CombiningMark(current, next)) return false;
+        return true; // Default behavior, break
+    }
+}
+
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports.default = Graphemer;
+}
+```
+
+This code provides the basic functionality to handle grapheme cluster splitting based on simplified assumptions of Unicode rules, focusing primarily on surrogate pairs and basic combining marks. A full implementation would require more detailed data and complex rule handling based on the Unicode Standard Annex #29.

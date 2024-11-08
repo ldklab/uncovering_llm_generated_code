@@ -1,0 +1,73 @@
+The provided Node.js code defines a plugin for the AJV JSON schema validator library. This plugin is designed to facilitate the addition of custom format validations to AJV. Here's a summary of its functionality:
+
+1. **Imports and Initial Setup**:
+   - The code imports format definitions (`fullFormats` and `fastFormats`) and a limit function from local modules (`formats`, `limit`). It also imports code generation utilities from AJV.
+
+2. **Plugin Function Definition (formatsPlugin)**:
+   - The main function, `formatsPlugin`, is defined to accept an AJV instance and an options object. It sets default options if none are provided.
+   - The function first checks if the provided options object is an array, in which case it treats the array as a list of formats to be added using a helper function, `addFormats`.
+   - Based on the `mode` option (`fast` or `full`), it decides which format set to use and calls `addFormats`.
+   - If `opts.keywords` is `true`, the `limit` function is used to add extra keyword support.
+   - The function returns the augmented AJV instance for chaining or further configuration.
+
+3. **Getter Method**:
+   - A static method, `formatsPlugin.get`, is available to retrieve a specific format by name. It throws an error if the format name is not known.
+
+4. **Helper Function (addFormats)**:
+   - The `addFormats` function iterates over a list of format names, adding each format to the AJV instance from the appropriate format set (`fs`).
+
+5. **Export**:
+   - The module exports the `formatsPlugin` function as both a named and default export, enabling it to be imported in various module systems.
+
+Here is a possible rewrite of this code:
+
+```javascript
+"use strict";
+const { fullFormats, fastFormats, formatNames } = require("./formats");
+const addLimitKeywords = require("./limit");
+const { Name, _ } = require("ajv/dist/compile/codegen");
+
+const fullName = new Name("fullFormats");
+const fastName = new Name("fastFormats");
+
+const formatsPlugin = (ajv, opts = { keywords: true }) => {
+  if (Array.isArray(opts)) {
+    addFormats(ajv, opts, fullFormats, fullName);
+    return ajv;
+  }
+  
+  const [formatsSet, exportName] = opts.mode === "fast" ? [fastFormats, fastName] : [fullFormats, fullName];
+  const formatsList = opts.formats || formatNames;
+  
+  addFormats(ajv, formatsList, formatsSet, exportName);
+  
+  if (opts.keywords) {
+    addLimitKeywords(ajv);
+  }
+  
+  return ajv;
+};
+
+formatsPlugin.get = (name, mode = "full") => {
+  const formatsSet = mode === "fast" ? fastFormats : fullFormats;
+  const format = formatsSet[name];
+  
+  if (!format) {
+    throw new Error(`Unknown format "${name}"`);
+  }
+  
+  return format;
+};
+
+function addFormats(ajv, list, formatsSet, exportName) {
+  ajv.opts.code.formats = ajv.opts.code.formats || _ `require("ajv-formats/dist/formats").${exportName}`;
+  
+  for (const formatName of list) {
+    ajv.addFormat(formatName, formatsSet[formatName]);
+  }
+}
+
+exports.default = formatsPlugin;
+module.exports = formatsPlugin;
+module.exports.default = formatsPlugin;
+```

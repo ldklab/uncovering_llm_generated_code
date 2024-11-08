@@ -1,0 +1,112 @@
+The code defines a module to mimic the unix command `which`, used to locate executable programs in the user's path. It includes both asynchronous (`which`) and synchronous (`whichSync`) methods to find the location of a command. 
+
+### Functionality:
+1. **Platform Check**: It considers differences between Windows and Unix-like systems, specifically handling path separators and executable extensions.
+2. **Path Checking**: 
+   - Searches through directories in the `PATH` environment variable and considers the current directory on Windows.
+   - It matches both explicitly specified and implicit executable extensions on Windows (e.g., `.EXE`, `.CMD`) and none for Unix.
+3. **Regex for Slash Detection**: Handles path-like strings with `/` or `\` independently depending on the platform.
+4. **Command Finding**: It stops searching after finding the first match unless `opt.all` is specified to find all matches.
+5. **Error Handling**: Throws a custom error if the command isn't found, unless `opt.nothrow` is true, in which case it returns null.
+
+### Rewritten Code:
+```javascript
+const { isexe, sync: isexeSync } = require('isexe');
+const { join, delimiter, sep, posix } = require('path');
+
+const isWindows = process.platform === 'win32';
+
+const rSlash = new RegExp(`[${posix.sep}${sep === posix.sep ? '' : sep}]`.replace(/(\\)/g, '\\$1'));
+const rRel = new RegExp(`^\\.${rSlash.source}`);
+
+const getNotFoundError = (cmd) => Object.assign(new Error(`not found: ${cmd}`), { code: 'ENOENT' });
+
+const getPathInfo = (cmd, {
+  path: optPath = process.env.PATH,
+  pathExt: optPathExt = process.env.PATHEXT,
+  delimiter: optDelimiter = delimiter,
+}) => {
+  const pathEnv = cmd.match(rSlash) ? [''] : [
+    ...(isWindows ? [process.cwd()] : []),
+    ...(optPath || '').split(optDelimiter),
+  ];
+
+  if (isWindows) {
+    const pathExtExe = optPathExt || ['.EXE', '.CMD', '.BAT', '.COM'].join(optDelimiter);
+    const pathExt = pathExtExe.split(optDelimiter).flatMap((item) => [item, item.toLowerCase()]);
+    if (cmd.includes('.') && pathExt[0] !== '') {
+      pathExt.unshift('');
+    }
+    return { pathEnv, pathExt, pathExtExe };
+  }
+
+  return { pathEnv, pathExt: [''] };
+};
+
+const getPathPart = (raw, cmd) => {
+  const pathPart = /^".*"$/.test(raw) ? raw.slice(1, -1) : raw;
+  const prefix = !pathPart && rRel.test(cmd) ? cmd.slice(0, 2) : '';
+  return prefix + join(pathPart, cmd);
+};
+
+const which = async (cmd, opt = {}) => {
+  const { pathEnv, pathExt, pathExtExe } = getPathInfo(cmd, opt);
+  const found = [];
+
+  for (const envPart of pathEnv) {
+    const p = getPathPart(envPart, cmd);
+
+    for (const ext of pathExt) {
+      const withExt = p + ext;
+      if (await isexe(withExt, { pathExt: pathExtExe, ignoreErrors: true })) {
+        if (!opt.all) {
+          return withExt;
+        }
+        found.push(withExt);
+      }
+    }
+  }
+
+  if (opt.all && found.length) {
+    return found;
+  }
+
+  if (opt.nothrow) {
+    return null;
+  }
+
+  throw getNotFoundError(cmd);
+};
+
+const whichSync = (cmd, opt = {}) => {
+  const { pathEnv, pathExt, pathExtExe } = getPathInfo(cmd, opt);
+  const found = [];
+
+  for (const pathEnvPart of pathEnv) {
+    const p = getPathPart(pathEnvPart, cmd);
+
+    for (const ext of pathExt) {
+      const withExt = p + ext;
+      if (isexeSync(withExt, { pathExt: pathExtExe, ignoreErrors: true })) {
+        if (!opt.all) {
+          return withExt;
+        }
+        found.push(withExt);
+      }
+    }
+  }
+
+  if (opt.all && found.length) {
+    return found;
+  }
+
+  if (opt.nothrow) {
+    return null;
+  }
+
+  throw getNotFoundError(cmd);
+};
+
+module.exports = which;
+which.sync = whichSync;
+```

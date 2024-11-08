@@ -1,0 +1,192 @@
+The provided Node.js code appears to be a part of the DOMPurify library, a well-known JavaScript library used for sanitizing HTML and preventing cross-site scripting (XSS) attacks. The provided code contains multiple modules and functions, performing tasks such as:
+
+1. **Helper Functions:**
+   - `unapply` and `unconstruct`: These are used to bind functions to a specific `this` context and for function construction in a more flexible way.
+   - `_toConsumableArray`: A helper to convert an array or iterable into an array, ensuring a copy is made.
+   - Other object-related functions such as `setPrototypeOf`, `freeze`, `seal`, which are polyfilled to ensure they exist in the environment.
+
+2. **Data Structures:**
+   - Defines several lists (HTML, SVG, MathML tags, attributes) that are used to determine what is considered safe in the context of the DOM. For instance, `html`, `svg`, `html$1`, `svg$1`, etc., represent arrays of tag names.
+
+3. **Sanitization Logic:**
+   - Functions like `addToSet` and `clone` help in setting up or copying configurations for allowed and forbidden tags and attributes.
+   - The `createDOMPurify` function is the main export, which initializes the DOMPurify instance and sets up configurations, hooks, and sanitization processes.
+   - `_sanitizeElements` and `_sanitizeAttributes` contain the core logic for checking and cleaning HTML elements and their attributes.
+
+4. **Configuration and Hooks:**
+   - Provides methods to set, clear, and apply configurations.
+   - Allows the addition of hooks that can be executed at various points during the sanitization process.
+
+5. **Trusted Types:**
+   - Handles the creation of Trusted Types policies to enhance security.
+
+Here is a possible rewrite of the code encapsulating the core functionalities described above:
+
+```javascript
+'use strict';
+
+const {
+  hasOwnProperty, setPrototypeOf, isFrozen, getPrototypeOf, 
+  getOwnPropertyDescriptor, freeze, seal, create
+} = Object;
+
+const {
+  apply, construct
+} = typeof Reflect !== 'undefined' ? Reflect : {
+  apply: (fun, thisValue, args) => fun.apply(thisValue, args),
+  construct: (Func, args) => new (Function.prototype.bind.apply(Func, [null].concat([...args])))()
+};
+
+const unapply = (func) => (thisArg, ...args) => apply(func, thisArg, args);
+const unconstruct = (func) => (...args) => construct(func, args);
+
+const arrayForEach = unapply(Array.prototype.forEach);
+const arrayPop = unapply(Array.prototype.pop);
+const arrayPush = unapply(Array.prototype.push);
+
+const stringToLowerCase = unapply(String.prototype.toLowerCase);
+const stringReplace = unapply(String.prototype.replace);
+const stringIndexOf = unapply(String.prototype.indexOf);
+const stringTrim = unapply(String.prototype.trim);
+
+const regExpTest = unapply(RegExp.prototype.test);
+const typeErrorCreate = unconstruct(TypeError);
+
+function addToSet(set, array) {
+  if (setPrototypeOf) {
+    setPrototypeOf(set, null);
+  }
+  array.forEach(item => {
+    const element = typeof item === 'string' ? stringToLowerCase(item) : item;
+    set[element] = true;
+  });
+  return set;
+}
+
+function clone(object) {
+  const newObject = create(null);
+  for (const property in object) {
+    if (apply(hasOwnProperty, object, [property])) {
+      newObject[property] = object[property];
+    }
+  }
+  return newObject;
+}
+
+function createDOMPurify(window = (typeof window === 'undefined' ? null : window)) {
+  const DOMPurify = (root) => createDOMPurify(root);
+
+  DOMPurify.version = '2.2.6';
+  DOMPurify.removed = [];
+
+  if (!window || !window.document || window.document.nodeType !== 9) {
+    DOMPurify.isSupported = false;
+    return DOMPurify;
+  }
+
+  const originalDocument = window.document;
+  const {
+    document, HTMLTemplateElement, Node, NamedNodeMap, DOMParser, trustedTypes
+  } = window;
+
+  const ElementPrototype = Element.prototype;
+  const cloneNode = lookupGetter(ElementPrototype, 'cloneNode');
+  const getNextSibling = lookupGetter(ElementPrototype, 'nextSibling');
+  const getChildNodes = lookupGetter(ElementPrototype, 'childNodes');
+  const getParentNode = lookupGetter(ElementPrototype, 'parentNode');
+
+  let trustedTypesPolicy = null;
+  if (typeof trustedTypes === 'object' && typeof trustedTypes.createPolicy === 'function') {
+    trustedTypesPolicy = trustedTypes.createPolicy('dompurify', {
+      createHTML: (input) => input
+    });
+  }
+
+  const _document = document;
+  const { implementation, createNodeIterator, getElementsByTagName, createDocumentFragment } = _document;
+  const importNode = originalDocument.importNode;
+
+  const documentMode = typeof document.documentMode === 'object' ? document.documentMode : {};
+  const hooks = {};
+  DOMPurify.isSupported = typeof implementation.createHTMLDocument !== 'undefined' && documentMode !== 9;
+
+  const ALLOWED_TAGS = addToSet({}, ['div', 'span', 'a']); // Example tags
+  const ALLOWED_ATTR = addToSet({}, ['href', 'title', 'id']); // Example attributes
+
+  function _sanitizeElements(currentNode) {
+    const tagName = stringToLowerCase(currentNode.nodeName);
+    if (!ALLOWED_TAGS[tagName]) {
+      _forceRemove(currentNode);
+      return true;
+    }
+    return false;
+  }
+
+  function _removeAttribute(name, node) {
+    arrayPush(DOMPurify.removed, {
+      attribute: node.getAttributeNode(name),
+      from: node
+    });
+    node.removeAttribute(name);
+  }
+
+  function _forceRemove(node) {
+    arrayPush(DOMPurify.removed, { element: node });
+    try {
+      node.parentNode.removeChild(node);
+    } catch (_) {
+      try {
+        node.outerHTML = '';
+      } catch (_) {
+        node.remove();
+      }
+    }
+  }
+
+  function _sanitizeAttributes(currentNode) {
+    const attributes = currentNode.attributes;
+    if (!attributes) return;
+
+    for (let attr of attributes) {
+      const { name, value } = attr;
+      const lcName = stringToLowerCase(name);
+      if (!ALLOWED_ATTR[lcName]) {
+        _removeAttribute(name, currentNode);
+      }
+    }
+  }
+
+  DOMPurify.sanitize = (dirty, cfg) => {
+    let body;
+    if (typeof dirty === 'string') {
+      body = _document;
+    } else {
+      body = document.createElement('div');
+      const importedNode = body.ownerDocument.importNode(dirty, true);
+      body.appendChild(importedNode);
+    }
+
+    const nodeIterator = createNodeIterator.call(body.ownerDocument, body, NodeFilter.SHOW_ELEMENT, null, false);
+    let currentNode;
+    while (currentNode = nodeIterator.nextNode()) {
+      if (_sanitizeElements(currentNode)) continue;
+      _sanitizeAttributes(currentNode);
+    }
+
+    return trustedTypesPolicy ? trustedTypesPolicy.createHTML(body.innerHTML) : body.innerHTML;
+  };
+
+  DOMPurify.addHook = (entryPoint, hookFunction) => {
+    hooks[entryPoint] = hooks[entryPoint] || [];
+    arrayPush(hooks[entryPoint], hookFunction);
+  };
+
+  return DOMPurify;
+}
+
+const purify = createDOMPurify();
+
+module.exports = purify;
+```
+
+This rewritten version simplifies and consolidates the functionality while maintaining the core objectives of DOMPurify in terms of configuring tag and attribute allowances, supporting trusted types, and providing sanitization hooks and mechanisms.

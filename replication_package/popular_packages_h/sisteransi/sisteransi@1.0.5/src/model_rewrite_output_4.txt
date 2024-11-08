@@ -1,0 +1,89 @@
+The given Node.js code defines a module for controlling the terminal cursor and screen. This module provides functionalities to move the cursor, scroll, erase sections of the terminal screen, and generate a beep sound. It uses ANSI escape codes to achieve these functionalities.
+
+### Functionality Overview
+
+1. **Cursor Control:**
+   - `to(x, y)`: Moves the cursor to a specific position on the terminal. If only `x` is provided, it moves the cursor horizontally on the current line.
+   - `move(x, y)`: Moves the cursor relative to its current position. Negative values move up or left; positive values move down or right.
+   - `up`, `down`, `forward`, `backward`: Move the cursor in the respective direction by a specified count.
+   - `nextLine`, `prevLine`: Move the cursor to the next or previous line respectively.
+   - `left`: Moves the cursor to the beginning of the current line.
+   - `hide`, `show`: Hide or show the cursor.
+   - `save`, `restore`: Save the current cursor position or restore to a previously saved position.
+
+2. **Scrolling:**
+   - `up`, `down`: Scroll the terminal content up or down by a specified number of lines.
+
+3. **Screen Erasing:**
+   - `screen`: Clears the entire screen.
+   - `up`, `down`: Erase parts of the screen from the current cursor position upwards or downwards.
+   - `line`, `lineEnd`, `lineStart`: Clear the current line, from the cursor to the line end, or from the beginning of the line to the cursor.
+   - `lines(count)`: Erase a specified number of lines, then place the cursor at the start of the first erased line.
+
+4. **Beep:**
+   - Emits a beep sound.
+
+Here's a rewritten version of the code:
+
+```javascript
+'use strict';
+
+const ESC = '\x1B';
+const CSI = `${ESC}[`;
+const beep = '\u0007';
+
+const cursorControls = {
+  to(positionX, positionY) {
+    if (positionY === undefined) return `${CSI}${positionX + 1}G`;
+    return `${CSI}${positionY + 1};${positionX + 1}H`;
+  },
+  move(deltaX, deltaY) {
+    let sequence = '';
+
+    if (deltaX < 0) sequence += `${CSI}${-deltaX}D`;
+    else if (deltaX > 0) sequence += `${CSI}${deltaX}C`;
+
+    if (deltaY < 0) sequence += `${CSI}${-deltaY}A`;
+    else if (deltaY > 0) sequence += `${CSI}${deltaY}B`;
+
+    return sequence;
+  },
+  up: (steps = 1) => `${CSI}${steps}A`,
+  down: (steps = 1) => `${CSI}${steps}B`,
+  forward: (steps = 1) => `${CSI}${steps}C`,
+  backward: (steps = 1) => `${CSI}${steps}D`,
+  nextLine: (steps = 1) => `${CSI}E`.repeat(steps),
+  prevLine: (steps = 1) => `${CSI}F`.repeat(steps),
+  left: `${CSI}G`,
+  hide: `${CSI}?25l`,
+  show: `${CSI}?25h`,
+  save: `${ESC}7`,
+  restore: `${ESC}8`
+};
+
+const scrollingControls = {
+  up: (lines = 1) => `${CSI}S`.repeat(lines),
+  down: (lines = 1) => `${CSI}T`.repeat(lines)
+};
+
+const eraseControls = {
+  screen: `${CSI}2J`,
+  up: (times = 1) => `${CSI}1J`.repeat(times),
+  down: (times = 1) => `${CSI}J`.repeat(times),
+  line: `${CSI}2K`,
+  lineEnd: `${CSI}K`,
+  lineStart: `${CSI}1K`,
+  lines(number) {
+    let output = '';
+    for (let index = 0; index < number; index++) {
+      output += this.line + (index < number - 1 ? cursorControls.up() : '');
+    }
+    if (number) {
+      output += cursorControls.left;
+    }
+    return output;
+  }
+};
+
+module.exports = { cursor: cursorControls, scroll: scrollingControls, erase: eraseControls, beep };
+```

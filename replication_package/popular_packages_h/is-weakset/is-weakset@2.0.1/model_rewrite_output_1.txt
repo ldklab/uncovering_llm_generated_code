@@ -1,0 +1,52 @@
+The given Node.js code defines a function to check whether a given value is an instance of `WeakSet`. The implementation checks for the availability of `WeakSet` and its `has` method and handles environments where `WeakSet` or its `has` method may not be present, providing graceful degradation or alternative checks in such cases.
+
+Here's a breakdown of the functionality:
+1. It checks if `WeakMap` and `WeakSet` constructors are available in the environment.
+2. If `WeakMap` is not available, the `isWeakSet` function defaults to always returning `false` since `WeakSet` is also likely unavailable.
+3. If no implementation of the `has` method is available on `WeakSet`, the function returns `false` since it can't properly check the instance.
+4. The main exported function checks if a given object is an instance of `WeakSet` using the presence of the `has` method and also handles exceptions to accommodate environments or polyfills that might impact the normal behavior.
+
+Here's the rewritten code:
+
+```javascript
+'use strict';
+
+const $WeakMap = typeof WeakMap === 'function' && WeakMap.prototype ? WeakMap : null;
+const $WeakSet = typeof WeakSet === 'function' && WeakSet.prototype ? WeakSet : null;
+
+let exportedFunction;
+
+if (!$WeakMap) {
+	// If WeakMap is not available, assume WeakSet is also unavailable
+	exportedFunction = function isWeakSet(x) {
+		return false;
+	};
+}
+
+const $mapHas = $WeakMap ? $WeakMap.prototype.has : null;
+const $setHas = $WeakSet ? $WeakSet.prototype.has : null;
+if (!exportedFunction && !$setHas) {
+	// If the `has` method is not available on WeakSet, the function returns false
+	module.exports = function isWeakSet(x) {
+		return false;
+	};
+} else {
+	module.exports = exportedFunction || function isWeakSet(x) {
+		if (!x || typeof x !== 'object') {
+			return false;
+		}
+		try {
+			$setHas.call(x, $setHas);
+			if ($mapHas) {
+				try {
+					$mapHas.call(x, $mapHas);
+				} catch (e) {
+					return true;
+				}
+			}
+			return x instanceof $WeakSet; // Handling for environments with non-standard implementations
+		} catch (e) {}
+		return false;
+	};
+}
+```

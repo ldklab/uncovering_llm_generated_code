@@ -1,0 +1,124 @@
+The provided Node.js code offers an implementation of a Mustache template engine. Its primary functionality is to parse and render templates using mustache expressions. Here's a breakdown of how it operates:
+
+1. **Initialization:** The `Mustache` class has a constructor that initializes the template tags (`{{` and `}}`) and a cache for parsed templates to avoid reparsing.
+
+2. **Static Methods:**
+   - `escapeHtml`: Ensures characters within content are rendered safely in HTML by escaping special characters.
+   - `render`: Static method for rendering a template with a given view (data context), partial templates, and custom tags. It internally creates an instance of the `Mustache` class to parse the template and render it with the view data.
+
+3. **Instance Methods:**
+   - `parse`: Takes a template string and converts it into tokens, identifying text and mustache tags while managing nested sections. Caching is used to store parsed structures for efficiency.
+   - `renderTokens`: Recursively processes the tokens using the view data and any partials to construct the final rendered string. It handles text nodes, variable substitution, and sections (loops or conditional context).
+   - `lookup`: Extracts values from the view object, supporting dot notation for nested structures.
+
+4. **Modules Export:** Exports the `Mustache` class for use in Node.js environments, or attaches it to the `window` object for browser usage when `module` and `module.exports` are unavailable.
+
+Here is a possible rewrite of this Node.js code:
+
+```javascript
+class Mustache {
+  constructor() {
+    this.tags = ['{{', '}}'];
+    this.templateCache = {};
+  }
+
+  static escapeHtml(text) {
+    const entityMap = {
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#39;',
+      '/': '&#x2F;',
+    };
+    return String(text).replace(/[&<>"'\/]/g, s => entityMap[s]);
+  }
+
+  static render(template, view, partials = {}, tags = null) {
+    const mustache = new Mustache();
+    if (tags) mustache.tags = tags;
+    const tokens = mustache.parse(template);
+    return mustache.renderTokens(tokens, view, partials, view);
+  }
+
+  parse(template) {
+    if (this.templateCache[template]) return this.templateCache[template];
+
+    const tokens = [];
+    const sections = [];
+    let index = 0;
+    const openTag = this.tags[0], closeTag = this.tags[1];
+
+    while (index < template.length) {
+      const openIndex = template.indexOf(openTag, index);
+      if (openIndex === -1) {
+        tokens.push(['text', template.substring(index)]);
+        break;
+      }
+      
+      if (openIndex > index) {
+        tokens.push(['text', template.substring(index, openIndex)]);
+      }
+
+      const closeIndex = template.indexOf(closeTag, openIndex + openTag.length);
+      if (closeIndex === -1) throw new Error(`Unclosed tag at ${openIndex}`);
+
+      const tagContent = template.substring(openIndex + openTag.length, closeIndex).trim();
+      if (tagContent.startsWith('#')) {
+        sections.push(tagContent.slice(1));
+        tokens.push(['#', tagContent.slice(1), closeIndex + closeTag.length]);
+      } else if (tagContent.startsWith('/')) {
+        if (!sections.length || sections[sections.length - 1] !== tagContent.slice(1)) {
+          throw new Error(`Unclosed section "${tagContent.slice(1)}" at ${openIndex}`);
+        }
+        sections.pop();
+      } else {
+        tokens.push(['name', tagContent]);
+      }
+
+      index = closeIndex + closeTag.length;
+    }
+
+    if (sections.length) {
+      throw new Error(`Unclosed section "${sections[sections.length - 1]}"`);
+    }
+
+    return this.templateCache[template] = tokens;
+  }
+
+  renderTokens(tokens, view, partials, originalView) {
+    return tokens.reduce((result, token) => {
+      const [type, value] = token;
+      
+      if (type === 'text') {
+        return result + value;
+      } else if (type === 'name') {
+        return result + Mustache.escapeHtml(this.lookup(value, view));
+      } else if (type === '#') {
+        const sectionData = this.lookup(value, view);
+        if (!sectionData) return result;
+
+        if (Array.isArray(sectionData)) {
+          return result + sectionData.reduce((secResult, item) => {
+            return secResult + this.renderTokens(tokens, item, partials, item);
+          }, '');
+        }
+
+        return result + this.renderTokens(tokens, sectionData, partials, originalView);
+      }
+
+      return result;
+    }, '');
+  }
+
+  lookup(name, view) {
+    return name.split('.').reduce((value, key) => value && value[key], view);
+  }
+}
+
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = Mustache;
+} else {
+  window.Mustache = Mustache;
+}
+```

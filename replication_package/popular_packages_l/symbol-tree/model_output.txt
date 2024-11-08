@@ -1,0 +1,138 @@
+The `symbol-tree` package is a library for creating efficient tree or linked list structures using JavaScript's `Symbol` for storage of metadata. It's particularly designed for use with DOM trees but can be used with any collection of objects. By leveraging `Symbol`, the library ensures that metadata does not interfere with object properties.
+
+Here is a brief explanation of the functionality provided by this library:
+
+1. **Tree and List Manipulation**: The library allows manipulation of objects as nodes in a tree structure or as elements in a linked list. Operations include inserting nodes before or after other nodes, appending or prepending children, and removing nodes, all achievable in constant time `O(1)`.
+
+2. **Sibling and Parent Access**: Provides methods to access sibling and parent nodes (`previousSibling`, `nextSibling`, `parent`) and determine relationships between nodes, like checking if a node has children with `hasChildren`.
+
+3. **Iteration and Conversion**: The library supports converting trees or subtrees to arrays and provides iterators for traversing children, siblings, ancestors, and entire trees.
+
+4. **Tree Comparison and Positioning**: Provides methods to compare the relative position of nodes (`compareTreePosition`) and obtain an index of a node among its siblings (`index`).
+
+5. **Performance Considerations**: The functions are designed to optimize for performance, often completing in constant time or amortized constant time, except where noted.
+
+Here's a simple implementation of this functionality as a Node.js package:
+
+```javascript
+'use strict';
+
+const nodeDataMap = new WeakMap();
+
+class SymbolTree {
+    constructor(description = 'SymbolTree data') {
+        this.symbol = Symbol(description);
+    }
+
+    initialize(object) {
+        if (!nodeDataMap.has(object)) {
+            nodeDataMap.set(object, { parent: null, children: [] });
+        }
+        return object;
+    }
+
+    insertBefore(referenceObject, newObject) {
+        this._checkNotPresent(newObject);
+        const refData = nodeDataMap.get(referenceObject);
+        const parentData = nodeDataMap.get(refData.parent);
+        const index = parentData.children.indexOf(referenceObject);
+        parentData.children.splice(index, 0, newObject);
+        nodeDataMap.set(newObject, { parent: refData.parent, children: [] });
+        return newObject;
+    }
+
+    insertAfter(referenceObject, newObject) {
+        this._checkNotPresent(newObject);
+        const refData = nodeDataMap.get(referenceObject);
+        const parentData = nodeDataMap.get(refData.parent);
+        const index = parentData.children.indexOf(referenceObject);
+        parentData.children.splice(index + 1, 0, newObject);
+        nodeDataMap.set(newObject, { parent: refData.parent, children: [] });
+        return newObject;
+    }
+
+    prependChild(parent, newObject) {
+        this._checkNotPresent(newObject);
+        const parentData = nodeDataMap.get(parent);
+        parentData.children.unshift(newObject);
+        nodeDataMap.set(newObject, { parent, children: [] });
+        return newObject;
+    }
+
+    appendChild(parent, newObject) {
+        this._checkNotPresent(newObject);
+        const parentData = nodeDataMap.get(parent);
+        parentData.children.push(newObject);
+        nodeDataMap.set(newObject, { parent, children: [] });
+        return newObject;
+    }
+
+    remove(object) {
+        const data = nodeDataMap.get(object);
+        if (data && data.parent !== null) {
+            const parentData = nodeDataMap.get(data.parent);
+            const index = parentData.children.indexOf(object);
+            parentData.children.splice(index, 1);
+            nodeDataMap.set(object, { parent: null, children: [] });
+        }
+        return object;
+    }
+
+    hasChildren(object) {
+        const data = nodeDataMap.get(object);
+        return data && data.children.length > 0;
+    }
+
+    firstChild(object) {
+        const data = nodeDataMap.get(object);
+        return data && data.children[0];
+    }
+
+    lastChild(object) {
+        const data = nodeDataMap.get(object);
+        return data && data.children[data.children.length - 1];
+    }
+
+    previousSibling(object) {
+        const data = nodeDataMap.get(object);
+        if (data && data.parent !== null) {
+            const parentData = nodeDataMap.get(data.parent);
+            const index = parentData.children.indexOf(object);
+            return parentData.children[index - 1] || null;
+        }
+        return null;
+    }
+
+    nextSibling(object) {
+        const data = nodeDataMap.get(object);
+        if (data && data.parent !== null) {
+            const parentData = nodeDataMap.get(data.parent);
+            const index = parentData.children.indexOf(object);
+            return parentData.children[index + 1] || null;
+        }
+        return null;
+    }
+
+    parent(object) {
+        const data = nodeDataMap.get(object);
+        return data && data.parent;
+    }
+
+    _checkNotPresent(object) {
+        if (nodeDataMap.has(object) && nodeDataMap.get(object).parent !== null) {
+            throw new Error('Object is already present in a SymbolTree');
+        }
+    }
+}
+
+module.exports = SymbolTree;
+
+// Usage example
+// const SymbolTree = require('./symbol-tree');
+// const tree = new SymbolTree();
+// let a = {foo: 'bar'};
+// let b = {foo: 'baz'};
+// tree.insertBefore(b, a);
+```
+
+This implementation supports basic operations for building and manipulating tree structures using `Symbols` for metadata, providing the core functionality as outlined in the package description.

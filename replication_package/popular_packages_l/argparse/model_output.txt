@@ -1,0 +1,134 @@
+The functionality described in the `argparse` Node.js package is a command-line argument parser similar to Python's `argparse` module. It allows developers to define and parse command-line arguments for a Node.js application, with support for sub-commands.
+
+### Key Features:
+1. **Argument Definitions**: Allows defining command-line arguments with associated options such as help descriptions and data types.
+  
+2. **Sub-Commands**: Support for parsing arguments within sub-commands, useful for applications with complex command-line interfaces.
+
+3. **Help and Version Information**: Automatically generates help messages and supports a version argument for displaying the application's version.
+
+### Usage:
+1. **Initialization**: Create an `ArgumentParser` instance providing options like a description of the parser.
+
+2. **Define Arguments**: Use the `add_argument` method to specify the arguments your program accepts, along with options like help messages and action types (e.g., to show version or type conversions).
+
+3. **Parse Arguments**: Call `parse_args()` to read the arguments passed to the program from the command line.
+
+### Example:
+The example provided shows how to define a CLI application in a file `test.js` using `argparse`. The application can handle `-v/--version` for displaying version, and other optional arguments like `-f/--foo`, `-b/--bar`, and `--baz` with custom help descriptions.
+
+Here is the implementation of this functionality in a Node.js package:
+
+```javascript
+// argparse.js
+'use strict';
+
+/**
+ * A simple implementation of an argument parser similar to Python's argparse
+ */
+class ArgumentParser {
+  constructor(options = {}) {
+    this.description = options.description || '';
+    this.arguments = [];
+    this.showHelp = options.add_help !== false;
+
+    if (this.showHelp) {
+      this.add_argument('-h', '--help', {
+        action: 'storeTrue',
+        help: 'show this help message and exit'
+      });
+    }
+  }
+
+  add_argument(shortName, longName, options = {}) {
+    const arg = {
+      shortName: shortName,
+      longName: longName,
+      options: options,
+      dest: this._getDest(longName)
+    };
+
+    this.arguments.push(arg);
+  }
+
+  _getDest(argName) {
+    return argName.replace(/^-+/, '').replace(/-([a-z])/g, (g) => g[1].toUpperCase());
+  }
+
+  parse_args() {
+    const args = process.argv.slice(2);
+    const result = {};
+    let currentArg = null;
+
+    args.forEach((arg) => {
+      if (arg.startsWith('-')) {
+        const argDef = this.arguments.find(argSet => 
+          argSet.shortName === arg || argSet.longName === arg
+        );
+
+        if (argDef) {
+          currentArg = argDef;
+          if (argDef.options.action === 'storeTrue') {
+            result[currentArg.dest] = true;
+            currentArg = null;
+          } else if (argDef.options.action === 'version') {
+            console.log(argDef.options.version);
+            process.exit(0);
+          }
+        } else if (arg === '-h' || arg === '--help') {
+          this.print_help();
+          process.exit(0);
+        } else {
+          throw new Error(`unrecognized argument: ${arg}`);
+        }
+      } else {
+        if (currentArg != null) {
+          result[currentArg.dest] = arg;
+          currentArg = null;
+        }
+      }
+    });
+
+    this.arguments.forEach(arg => {
+      if (!result[arg.dest] && arg.options.default) {
+        result[arg.dest] = arg.options.default;
+      }
+    });
+
+    return result;
+  }
+
+  print_help() {
+    console.log(`usage: ${process.argv[1]} [-h] [args...]`);
+    console.log(this.description);
+    console.log('\noptional arguments:');
+    this.arguments.forEach(arg => {
+      const options = arg.options;
+      console.log(`  ${arg.shortName}${arg.longName ? ', ' + arg.longName : ''}\t\t${options.help || ''}`);
+    });
+  }
+}
+
+// Export the ArgumentParser for use in other files.
+exports.ArgumentParser = ArgumentParser;
+
+// test.js - Example usage
+#!/usr/bin/env node
+'use strict';
+
+const { ArgumentParser } = require('./argparse');
+const { version } = require('./package.json');
+
+const parser = new ArgumentParser({
+  description: 'Argparse example'
+});
+
+parser.add_argument('-v', '--version', { action: 'version', version });
+parser.add_argument('-f', '--foo', { help: 'foo bar' });
+parser.add_argument('-b', '--bar', { help: 'bar foo' });
+parser.add_argument('--baz', { help: 'baz bar' });
+
+console.dir(parser.parse_args());
+```
+
+This code provides a basic structure for an argument parser. The `ArgumentParser` class supports adding arguments with `add_argument`, and `parse_args` which reads command-line input and returns an object of parsed arguments. It includes a simple help display using `print_help`. Adjustments and enhancements can be made to handle more features and error cases.

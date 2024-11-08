@@ -1,0 +1,122 @@
+The given Node.js code provides a module that deals with setting the 'Content-Length' header in HTTP requests. Here's the breakdown of its functionality:
+
+1. **Helper Functions**: 
+   - `__defProp` and `__getOwnPropDesc` are shortcuts for certain `Object` methods, specifically `Object.defineProperty` and `Object.getOwnPropertyDescriptor`.
+   - `__getOwnPropNames` and `__hasOwnProp` use built-in methods to fetch property names or check for their existence.
+   - `__name` is a utility to change the `name` property of a function for better debugging.
+   - `__export` is a utility to help with module exports by setting properties for each key in the `all` object onto the `target`.
+   - `__copyProps` copies properties from one object to another, excluding specific properties if needed.
+   - `__toCommonJS` wraps a module so it can be used with CommonJS style imports.
+
+2. **Main Middleware Functionality**:
+   - `contentLengthMiddleware`: This middleware function calculates the content length of an HTTP request's body and sets the `Content-Length` header if the header is not already set.
+   - Uses the `bodyLengthChecker` function to determine the length of the request body.
+
+3. **Options and Plugin Setup**:
+   - `contentLengthMiddlewareOptions`: Specifies options for how the middleware should be integrated, like the execution step in the middleware stack and tags.
+   - `getContentLengthPlugin`: A higher-order function that returns a plugin for a client stack, applying the `contentLengthMiddleware` to it.
+
+Here's a rewritten version of the provided Node.js code:
+
+```javascript
+// Helper functions for defining properties and managing exports
+const defineProperty = Object.defineProperty;
+const getOwnPropertyDescriptor = Object.getOwnPropertyDescriptor;
+const getOwnPropertyNames = Object.getOwnPropertyNames;
+const hasOwnProperty = Object.prototype.hasOwnProperty;
+
+// Utility function to set the name of a function
+const setName = (func, name) => {
+  defineProperty(func, 'name', { value: name, configurable: true });
+};
+
+// Exporting helper
+const exportProperties = (target, properties) => {
+  for (const key in properties) {
+    defineProperty(target, key, {
+      get: properties[key],
+      enumerable: true,
+    });
+  }
+};
+
+// Copy properties from one object to another
+const copyProperties = (target, source, exclude, defaultDescriptor) => {
+  if (source && (typeof source === 'object' || typeof source === 'function')) {
+    for (const key of getOwnPropertyNames(source)) {
+      if (!hasOwnProperty.call(target, key) && key !== exclude) {
+        defineProperty(target, key, {
+          get: () => source[key],
+          enumerable: !(defaultDescriptor = getOwnPropertyDescriptor(source, key)) || defaultDescriptor.enumerable,
+        });
+      }
+    }
+  }
+  return target;
+};
+
+// Convert module to be compatible with CommonJS
+const toCommonJS = (module) => copyProperties(defineProperty({}, "__esModule", { value: true }), module);
+
+// src/index.ts
+const src_exports = {};
+
+exportProperties(src_exports, {
+  contentLengthMiddleware,
+  contentLengthMiddlewareOptions,
+  getContentLengthPlugin,
+});
+
+module.exports = toCommonJS(src_exports);
+
+// Required dependencies
+const { HttpRequest } = require('@smithy/protocol-http');
+
+// Constants
+const CONTENT_LENGTH_HEADER = 'content-length';
+
+// Middleware function to set the Content-Length header
+function contentLengthMiddleware(bodyLengthChecker) {
+  return (next) => async (args) => {
+    const request = args.request;
+    if (HttpRequest.isInstance(request)) {
+      const { body, headers } = request;
+      if (body && !Object.keys(headers).some(key => key.toLowerCase() === CONTENT_LENGTH_HEADER)) {
+        try {
+          const length = bodyLengthChecker(body);
+          request.headers = {
+            ...headers,
+            [CONTENT_LENGTH_HEADER]: String(length),
+          };
+        } catch (error) {
+          // Handle error if needed
+        }
+      }
+    }
+    return next({ ...args, request });
+  };
+}
+setName(contentLengthMiddleware, 'contentLengthMiddleware');
+
+// Middleware options configuration
+const contentLengthMiddlewareOptions = {
+  step: 'build',
+  tags: ['SET_CONTENT_LENGTH', 'CONTENT_LENGTH'],
+  name: 'contentLengthMiddleware',
+  override: true,
+};
+
+// Plugin to apply the middleware
+const getContentLengthPlugin = setName((options) => ({
+  applyToStack: (clientStack) => {
+    clientStack.add(contentLengthMiddleware(options.bodyLengthChecker), contentLengthMiddlewareOptions);
+  }
+}), 'getContentLengthPlugin');
+
+// Annotate CommonJS export names for ESM imports
+0 && (module.exports = {
+  contentLengthMiddleware,
+  contentLengthMiddlewareOptions,
+  getContentLengthPlugin,
+});
+```

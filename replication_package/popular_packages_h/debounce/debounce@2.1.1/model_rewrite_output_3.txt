@@ -1,0 +1,99 @@
+The provided code implements a debounce function in Node.js. This function limits how often a particular function, `function_`, can execute by postponing its execution until after a specified wait time (`wait` milliseconds) has elapsed since the last invocation. It can be useful for optimizing resources by throttling frequent function calls, such as those triggered by events like resizing or scrolling.
+
+### Key Functionality:
+- **Type Checking**: Throws errors if the provided `function_` is not a valid function or if `wait` is negative.
+- **Options**: Accepts an options object which may contain an `immediate` boolean to dictate if the function should run immediately instead of after the wait time.
+- **Context and Arguments Storage**: Captures `this` context and the arguments for eventual function invocation.
+- **Execution Control**: Utilizes `setTimeout` to delay function execution until the end of the wait period.
+- **Immediate Execution**: If the `immediate` option is true, the function runs immediately on the first call, but not again until after the debounce period.
+- **Debounced Function Methods**:
+  - **clear**: Cancels any pending execution.
+  - **flush**: Executes the function immediately and cancels pending debounce.
+  - **trigger**: Directly executes the function and clears the timeout.
+
+### Rewritten Code:
+
+```javascript
+function debounce(func, wait = 100, options = {}) {
+	if (typeof func !== 'function') {
+		throw new TypeError(`Expected a function, but received ${typeof func}`);
+	}
+
+	if (wait < 0) {
+		throw new RangeError('`wait` cannot be negative');
+	}
+
+	const { immediate } = typeof options === 'boolean' ? { immediate: options } : options;
+
+	let context, args, timeoutId, timestamp, result;
+
+	function execute() {
+		const callContext = context;
+		const callArguments = args;
+		context = args = undefined;
+		result = func.apply(callContext, callArguments);
+		return result;
+	}
+
+	function later() {
+		const lastElapsed = Date.now() - timestamp;
+		if (lastElapsed < wait && lastElapsed >= 0) {
+			timeoutId = setTimeout(later, wait - lastElapsed);
+		} else {
+			timeoutId = undefined;
+			if (!immediate) {
+				execute();
+			}
+		}
+	}
+
+	const debounced = function(...args_) {
+		if (
+			context &&
+			this !== context &&
+			Object.getPrototypeOf(this) === Object.getPrototypeOf(context)
+		) {
+			throw new Error('Debounced method called with differing contexts of the same prototype.');
+		}
+
+		context = this;
+		args = args_;
+		timestamp = Date.now();
+		
+		const shouldCallImmediately = immediate && !timeoutId;
+		
+		if (!timeoutId) {
+			timeoutId = setTimeout(later, wait);
+		}
+		
+		if (shouldCallImmediately) {
+			execute();
+		}
+		
+		return result;
+	};
+
+	debounced.clear = () => {
+		if (timeoutId) {
+			clearTimeout(timeoutId);
+			timeoutId = undefined;
+		}
+	};
+
+	debounced.flush = () => {
+		if (timeoutId) {
+			debounced.trigger();
+		}
+	};
+
+	debounced.trigger = () => {
+		execute();
+		debounced.clear();
+	};
+
+	return debounced;
+}
+
+module.exports.debounce = debounce;
+module.exports = debounce;
+```

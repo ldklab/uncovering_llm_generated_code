@@ -1,0 +1,66 @@
+The given Node.js code defines a `Scheduler` class, which manages a queue of tasks that should be executed during idle periods. Here's how it works:
+
+1. **taskQueue**: The `Scheduler` maintains a queue (`taskQueue`) for storing tasks (callbacks) that will be executed when the system is idle.
+
+2. **addTask(callback)**: This method adds a new task to the queue. After adding a task, it calls `scheduleNextTask()` to ensure that the task is eventually run.
+
+3. **scheduleNextTask()**: This method checks if there are any tasks in the queue. If there are tasks and no ongoing idle callback (indicated by `requestIdleCallbackId` being `null`), it uses `requestIdleCallback()` to schedule execution during the browser’s idle periods.
+
+4. **runTasks(deadline)**: This method runs tasks from the queue as long as the queue is not empty and there is available idle time (`deadline.timeRemaining() > 0`). It dequeues and executes tasks one by one. After running the tasks, if the queue is still not empty, it schedules the next batch of tasks.
+
+5. **requestIdleCallback() function**: This function simulates the behavior of the `requestIdleCallback` API in a Node.js environment, as Node.js does not have this API. It uses `setTimeout` to mimic calling the callback when the system is "idle," passing a dummy `deadline` object with a high remaining time.
+
+6. **Global Assignment**: The function `requestIdleCallback` is assigned as a global function to simulate a browser-like environment within Node.js.
+
+```javascript
+class Scheduler {
+  constructor() {
+    this.taskQueue = [];
+    this.requestIdleCallbackId = null;
+  }
+
+  addTask(callback) {
+    this.taskQueue.push(callback);
+    this.scheduleNextTask();
+  }
+
+  scheduleNextTask() {
+    if (this.taskQueue.length > 0 && !this.requestIdleCallbackId) {
+      this.requestIdleCallbackId = requestIdleCallback((deadline) => this.runTasks(deadline));
+    }
+  }
+
+  runTasks(deadline) {
+    while (this.taskQueue.length > 0 && deadline.timeRemaining() > 0) {
+      const task = this.taskQueue.shift();
+      task();
+    }
+
+    this.requestIdleCallbackId = null;
+
+    if (this.taskQueue.length > 0) {
+      this.scheduleNextTask();
+    }
+  }
+}
+
+// Usage example:
+const scheduler = new Scheduler();
+
+scheduler.addTask(() => console.log('Task 1'));
+scheduler.addTask(() => console.log('Task 2'));
+scheduler.addTask(() => console.log('Task 3'));
+
+function requestIdleCallback(callback) {
+  // Fallback for Node.js environment, where requestIdleCallback is not implemented
+  return setTimeout(() => {
+    callback({
+      timeRemaining() {
+        return Number.MAX_VALUE; // Some very large time remaining to simulate idle time
+      }
+    });
+  }, 0);
+}
+
+global.requestIdleCallback = requestIdleCallback; // Simulate browser environment
+```

@@ -1,0 +1,87 @@
+The provided Node.js code creates a middleware handling mechanism. It defines a `MiddlewareStack` class where you can register various middleware functions using the `use` method. Each middleware is a function that receives a `context` object and a `next` function to pass control to the next middleware.
+
+The `compose` function is available to combine multiple middleware functions into a single middleware functionality that executes the functions in right-to-left order using functional composition.
+
+Two higher-order functions `withErrorHandling` and `withLogging` are provided to wrap middleware functions with additional logic: `withErrorHandling` to catch and log errors, and `withLogging` to log the context before and after the middleware execution.
+
+Here's the rewritten code:
+
+```js
+// index.js
+
+class MiddlewareStack {
+    constructor() {
+        this.middleware = [];
+    }
+
+    use(fn) {
+        this.middleware.push(fn);
+    }
+
+    async execute(context) {
+        for (const fn of this.middleware) {
+            await fn(context);
+        }
+    }
+}
+
+function compose(...middlewares) {
+    return (context) => {
+        return middlewares.reduceRight(
+            (next, fn) => () => fn(context, next),
+            () => Promise.resolve()
+        )();
+    };
+}
+
+function withErrorHandling(fn) {
+    return async (context, next) => {
+        try {
+            await fn(context, next);
+        } catch (error) {
+            console.error('An error occurred:', error);
+            context.error = error;
+        }
+    };
+}
+
+function withLogging(fn) {
+    return async (context, next) => {
+        console.log('Processing:', context);
+        await fn(context, next);
+        console.log('Processed:', context);
+    };
+}
+
+module.exports = {
+    MiddlewareStack,
+    compose,
+    withErrorHandling,
+    withLogging
+};
+
+// Example Usage
+
+const { MiddlewareStack, compose, withErrorHandling, withLogging } = require('./index');
+
+const stack = new MiddlewareStack();
+
+function firstMiddleware(ctx, next) {
+    ctx.first = true;
+    next();
+}
+
+function secondMiddleware(ctx, next) {
+    ctx.second = true;
+    next();
+}
+
+stack.use(withLogging(withErrorHandling(firstMiddleware)));
+stack.use(withLogging(withErrorHandling(secondMiddleware)));
+
+(async () => {
+    const context = {};
+    await stack.execute(context);
+    console.log('Final context:', context);
+})();
+```

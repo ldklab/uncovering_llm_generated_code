@@ -1,0 +1,53 @@
+The provided Node.js code is a module that exports a function `dataUriToBuffer`, which converts a Data URI into a `Buffer` instance. This functionality seems to rely on a utility function `makeDataUriToBuffer` imported from the `common` module. The code defines two helper functions, `base64ToArrayBuffer` and `stringToBuffer`, which respectively convert Base64-encoded strings and regular strings into `ArrayBuffer` objects.
+
+Here's a breakdown of what each part does:
+
+1. **base64ToArrayBuffer**: 
+   - This function takes a Base64-encoded string and converts it into an `ArrayBuffer`. It does this by first decoding the Base64 string into bytes and then storing those bytes in an `ArrayBuffer`.
+
+2. **stringToBuffer**:
+   - This function converts a regular string into an `ArrayBuffer` by iterating over each character, converting it to its ASCII value, and placing these values into the `ArrayBuffer`.
+
+3. **dataUriToBuffer**:
+   - This is the main exported function. It is created by calling `makeDataUriToBuffer` (presumably a method from the `common` module) with the two helper functions (`stringToBuffer` and `base64ToArrayBuffer`) as arguments. This setup suggests that `makeDataUriToBuffer` constructs a more complex function using these utilities to convert Data URIs to `Buffer` instances.
+
+Here's a possible rewrite of the Node.js code:
+
+```javascript
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.dataUriToBuffer = void 0;
+const { makeDataUriToBuffer } = require("./common");
+
+function base64ToArrayBuffer(base64) {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+    const bytes = [];
+    for (let i = 0; i < base64.length; i += 4) {
+        const idx0 = chars.indexOf(base64[i]);
+        const idx1 = chars.indexOf(base64[i + 1]);
+        const idx2 = base64[i + 2] === '=' ? 0 : chars.indexOf(base64[i + 2]);
+        const idx3 = base64[i + 3] === '=' ? 0 : chars.indexOf(base64[i + 3]);
+
+        const bin0 = (idx0 << 2) | (idx1 >> 4);
+        const bin1 = ((idx1 & 15) << 4) | (idx2 >> 2);
+        const bin2 = ((idx2 & 3) << 6) | idx3;
+
+        bytes.push(bin0);
+        if (base64[i + 2] !== '=') bytes.push(bin1);
+        if (base64[i + 3] !== '=') bytes.push(bin2);
+    }
+    const buffer = Uint8Array.from(bytes).buffer;
+    return buffer;
+}
+
+function stringToBuffer(str) {
+    const buffer = new ArrayBuffer(str.length);
+    const view = new Uint8Array(buffer);
+    for (let i = 0; i < str.length; i++) {
+        view[i] = str.charCodeAt(i);
+    }
+    return buffer;
+}
+
+exports.dataUriToBuffer = makeDataUriToBuffer({ stringToBuffer, base64ToArrayBuffer });
+```

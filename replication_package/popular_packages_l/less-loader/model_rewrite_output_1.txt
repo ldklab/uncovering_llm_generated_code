@@ -1,0 +1,85 @@
+The provided Node.js code is a Webpack configuration file. This configuration is used to bundle JavaScript and LESS files into a production-ready output with CSS extracted. Here's a breakdown of what each part does:
+
+1. The entry point for the application is specified as `./src/index.js`, meaning Webpack starts its build process from this file.
+
+2. The output configuration specifies that the bundled JavaScript code will be output to `./dist/bundle.js`.
+
+3. The `module` section defines rules for processing different types of files; currently, it processes `.less` files:
+   - Uses either `style-loader` in development or `MiniCssExtractPlugin.loader` in production to handle styles.
+   - Uses `css-loader` to interpret `@import` and `url()` like `import/require()` and resolve them.
+   - Uses `less-loader` to compile LESS to CSS, with specific options:
+     - `strictMath` ensures strict math operations in LESS.
+     - Allows importing from `node_modules`.
+     - Appends `@specialVar: 1;` to the content of any file ending in 'special.less'.
+     - Generates source maps.
+     - Logs LESS issues as warnings or errors in production mode.
+
+4. The `MiniCssExtractPlugin` is used to extract CSS into separate files, generating `[name].css` for each entry chunk.
+
+5. The `resolve` configuration is used to customize how modules are resolved, here setting `mainFiles` for less dependencies to include `main`.
+
+6. Source maps are enabled with `devtool: 'source-map'` to help debug the bundled code.
+
+Here is a rewritten version of the provided Webpack configuration file:
+
+```javascript
+// Filename: webpack.config.js
+
+const path = require('path');
+const MiniCssExtractPlugin = require('mini-css-extract-plugin');
+
+module.exports = {
+  entry: './src/index.js',
+  output: {
+    filename: 'bundle.js',
+    path: path.resolve(__dirname, 'dist'),
+  },
+  module: {
+    rules: [
+      {
+        test: /\.less$/i,
+        use: [
+          process.env.NODE_ENV !== 'production' ? 'style-loader' : MiniCssExtractPlugin.loader,
+          {
+            loader: 'css-loader',
+            options: {
+              sourceMap: true,
+            },
+          },
+          {
+            loader: 'less-loader',
+            options: {
+              lessOptions: {
+                strictMath: true,
+                paths: [path.resolve(__dirname, 'node_modules')],
+              },
+              additionalData: (content, loaderContext) => {
+                const { resourcePath } = loaderContext;
+                return resourcePath.endsWith('special.less')
+                  ? '@specialVar: 1;' + content
+                  : content;
+              },
+              sourceMap: true,
+              webpackImporter: true,
+              lessLogAsWarnOrErr: process.env.NODE_ENV === 'production',
+            },
+          },
+        ],
+      },
+    ],
+  },
+  plugins: [
+    new MiniCssExtractPlugin({
+      filename: '[name].css',
+    }),
+  ],
+  resolve: {
+    byDependency: {
+      less: {
+        mainFiles: ['main'],
+      },
+    },
+  },
+  devtool: 'source-map',
+};
+```

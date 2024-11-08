@@ -1,0 +1,95 @@
+The given Node.js code is a mock implementation for creating ASCII art from text using different fonts. This mockup simulates the functionality of the figlet library. Here's a breakdown of its functionalities:
+
+1. **Font Management**: It manages font data using an object named `fonts` where font data is stored once loaded.
+
+2. **Loading Font Data**: Using `loadFontData(fontName)`, it reads a font file (`*.flf`) and stores its data, mimicking what would happen with an actual FIGfont load operation. It resolves with this data, or rejects if an error occurs during loading.
+
+3. **Generate ASCII Art**: The `generateAsciiArt(text, fontData, options)` function is a placeholder that simulates converting text to ASCII art by repeating each character 5 times.
+
+4. **Text Generation**: The `text(inputText, options, callback)` function loads the required font and then generates ASCII art, supporting both promises and callback patterns for asynchronous operations.
+
+5. **Synchronous Text Generation**: `textSync(inputText, options)` generates ASCII art synchronously. It assumes font data is already loaded, otherwise throws an error.
+
+6. **Font Metadata**: `metadata(fontName, callback)` loads a font and simulates returning metadata information about it.
+
+7. **Fonts List**: `fontsList(callback)` returns a list of loaded fonts, either synchronously through direct return or asynchronously via a callback.
+
+8. **Exported Functions**: The `figlet` object, which provides the core functionalities, is exported as a module.
+
+Here is the restructured code:
+
+```javascript
+const fs = require('fs');
+const path = require('path');
+
+const figlet = (() => {
+  const fonts = {};
+
+  const loadFontData = (fontName) => {
+    if (fonts[fontName]) {
+      return Promise.resolve(fonts[fontName]);
+    }
+    return new Promise((resolve, reject) => {
+      fs.readFile(path.join(__dirname, `${fontName}.flf`), 'utf8', (err, data) => {
+        if (err) {
+          reject(err);
+        } else {
+          fonts[fontName] = data;
+          resolve(data);
+        }
+      });
+    });
+  };
+
+  const generateAsciiArt = (text) => {
+    return text.split('').map(char => char.repeat(5)).join(' ');
+  };
+
+  const text = (inputText, options = {}, callback) => {
+    const fontName = typeof options === 'string' ? options : options.font || 'Standard';
+
+    return loadFontData(fontName)
+      .then(fontData => generateAsciiArt(inputText, fontData, options))
+      .then(asciiArt => (callback ? callback(null, asciiArt) : asciiArt))
+      .catch(err => (callback ? callback(err) : Promise.reject(err)));
+  };
+
+  const textSync = (inputText, options = {}) => {
+    const fontName = typeof options === 'string' ? options : options.font || 'Standard';
+    const fontData = fonts[fontName];
+
+    if (!fontData) {
+      throw new Error(`Font data for ${fontName} not loaded`);
+    }
+    return generateAsciiArt(inputText, fontData, options);
+  };
+
+  const metadata = (fontName, callback) => {
+    return loadFontData(fontName)
+      .then(fontData => {
+        const options = {font: fontName};
+        const headerComment = 'Header information';
+        return [options, headerComment];
+      })
+      .then(([options, headerComment]) => (callback ? callback(null, options, headerComment) : [options, headerComment]))
+      .catch(err => (callback ? callback(err) : Promise.reject(err)));
+  };
+
+  const fontsList = (callback) => {
+    const availableFonts = Object.keys(fonts);
+    if (callback) callback(null, availableFonts);
+    return availableFonts;
+  };
+
+  return {
+    text,
+    textSync,
+    metadata,
+    fonts: fontsList,
+    fontsSync: fontsList,
+    parseFont: (fontName, fontData) => { fonts[fontName] = fontData; }
+  };
+})();
+
+module.exports = figlet;
+```

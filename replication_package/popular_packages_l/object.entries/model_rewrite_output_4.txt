@@ -1,0 +1,71 @@
+The provided Node.js code defines a module that implements a custom `entries()` function, which replicates the behavior of `Object.entries()`. The function generates an array of arrays, where each sub-array contains a key-value pair of the object's enumerable properties, including symbols if supported by the environment. Here’s how the functionality works step-by-step:
+
+1. **Imports and Initial Setup:** 
+   - The code imports utility functions like `callBound` for safely calling methods, and `ToObject` for converting a value to an object.
+   - It checks if the environment supports symbols and initializes function references for later use.
+
+2. **Custom Entries Function:** 
+   - The `entries()` function converts its argument to an object and then iterates over its enumerable properties.
+   - It collects each enumerable property (both string and symbol) into an array of `[key, value]` pairs, checking for symbol support.
+
+3. **Shim Functionality:** 
+   - A `shim()` function is exported which checks if `Object.entries()` already exists.
+   - If it does, it ensures compatibility with strings, making necessary adjustments.
+   - If `Object.entries()` does not exist, it assigns the custom `entries()` function to `Object.entries`.
+
+The module effectively adds support for object entries in older environments or adjusts behavior to ensure compatibility with string objects.
+
+Below is the rewritten code with the same functionality:
+
+```markdown
+'use strict';
+
+var callBound = require('call-bind/callBound');
+var hasSymbols = typeof Symbol === 'function' && typeof Symbol('') === 'symbol';
+var $propIsEnumerable = callBound('Object.prototype.propertyIsEnumerable');
+var toObject = require('es-abstract/2019/ToObject');
+var $stringSlice = callBound('String.prototype.slice');
+
+var customObjectEntries = function (O) {
+    var obj = toObject(O);
+    var entries = [];
+    
+    for (var key in obj) {
+        if ($propIsEnumerable(obj, key)) {
+            entries.push([key, obj[key]]);
+        }
+    }
+    
+    if (hasSymbols && Object.prototype.toString.call(obj) === '[object Object]') {
+        var symbols = Object.getOwnPropertySymbols(obj);
+        for (var i = 0; i < symbols.length; i++) {
+            if ($propIsEnumerable(obj, symbols[i])) {
+                entries.push([symbols[i], obj[symbols[i]]]);
+            }
+        }
+    }
+    
+    return entries;
+};
+
+customObjectEntries.shim = function () {
+    if (Object.entries) {
+        var entriesCompatWithStrings = (function () {
+            return Object.entries('foo')[0][0] === '0';
+        }());
+
+        if (!entriesCompatWithStrings) {
+            var originalEntries = Object.entries;
+            Object.entries = function (it) {
+                return originalEntries.call(Object, it);
+            };
+        }
+    } else {
+        Object.entries = customObjectEntries;
+    }
+    
+    return Object.entries;
+};
+
+module.exports = customObjectEntries;
+```

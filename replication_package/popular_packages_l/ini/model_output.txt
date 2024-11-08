@@ -1,0 +1,97 @@
+The functionality described in the README.md is for a Node.js package that provides utilities to parse and serialize INI file format into JavaScript objects and vice versa. The key features of this package include:
+
+1. **Parse INI File**: Takes a string in INI format and converts it into a JavaScript object. Sections in the INI file are nested as objects within the resulting object, and items without sections are treated as global.
+
+2. **Stringify Object**: Converts a JavaScript object back into a string in INI format. It supports various options to customize the output like adding spaces around `=`, aligning `=`, specifying section prefixes, sorting, adding newlines, specifying line endings, and appending `[]` to array keys.
+
+3. **Safe and Unsafe Functions**: Functions to escape and unescape strings making them safe for use in INI files.
+
+Here is the code implementing the described functionality:
+
+```js
+// ini.js
+
+export function parse(iniText) {
+    const result = {};
+    let currentSection = result;
+
+    iniText.split(/\r?\n/).forEach(line => {
+        line = line.trim();
+        if (!line || line.startsWith(';')) return; // Ignore comments and empty lines
+
+        const sectionMatch = line.match(/^\[(.*)\]$/);
+        if (sectionMatch) {
+            const path = sectionMatch[1].split('.');
+            currentSection = path.reduce((acc, part) => acc[part] = acc[part] || {}, result);
+            return;
+        }
+
+        const [key, ...valueParts] = line.split('=');
+        const value = valueParts.join('=').trim();
+        const arrMatch = key.match(/(\w+)\[\]$/);
+
+        if (arrMatch) {
+            const arrKey = arrMatch[1];
+            currentSection[arrKey] = currentSection[arrKey] || [];
+            currentSection[arrKey].push(value);
+        } else {
+            currentSection[key.trim()] = value;
+        }
+    });
+
+    return result;
+}
+
+export function stringify(obj, options = {}) {
+    const opts = {
+        whitespace: false,
+        align: false,
+        sort: false,
+        newline: false,
+        platform: process.platform,
+        bracketedArray: true,
+        section: '',
+        ...options
+    };
+
+    let result = '';
+    const eol = opts.platform === 'win32' ? '\r\n' : '\n';
+    const whitespace = opts.whitespace ? ' ' : '';
+
+    function serializeSection(section, prefix = '') {
+        let keys = Object.keys(section);
+        if (opts.sort) keys.sort();
+
+        keys.forEach(key => {
+            let value = section[key];
+            if (typeof value === 'object' && !Array.isArray(value)) {
+                const newPrefix = prefix ? `${prefix}.${key}` : key;
+                if (opts.newline && newPrefix) result += eol;
+                result += `[${opts.section}${newPrefix}]${eol}`;
+                serializeSection(value, newPrefix);
+            } else {
+                if (Array.isArray(value) && opts.bracketedArray) {
+                    value.forEach(item => result += `${key}[]${whitespace}=${whitespace}${item}${eol}`);
+                } else {
+                    result += `${key}${whitespace}=${whitespace}${value}${eol}`;
+                }
+            }
+        });
+    }
+
+    serializeSection(obj);
+    return result;
+}
+
+export function safe(string) {
+    return string.replace(/["\\]/g, '\\$&');  // Escape " and \
+}
+
+export function unsafe(string) {
+    return string.replace(/\\(["\\])/g, '$1');  // Unescape \" and \\
+}
+
+export { parse as decode, stringify as encode };
+```
+
+This code provides the necessary functions to parse and stringify INI files, escape and unescape unsafe strings, and options to customize the serialized output.

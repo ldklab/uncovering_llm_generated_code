@@ -1,0 +1,137 @@
+The provided Node.js code is a module for a PostCSS plugin called `cssnano`. This plugin is used to optimize and minify CSS. Here's a breakdown of the key functionalities:
+
+1. **Dependencies**: The code imports necessary modules: 
+   - `path` for handling file paths.
+   - `postcss` to integrate with PostCSS plugin system.
+   - `lilconfig` to manage loading configuration files.
+   
+2. **Preset Resolution**: The primary function `resolvePreset` handles setting up the plugin preset. Presets can be specified in several ways:
+   - As a string alias (`'default'`), which resolves to the default preset.
+   - As an array which includes a preset and options or a function to dynamically determine plugins.
+   - Directly via a function or an already resolved set of plugins.
+   - By dynamically loading a module corresponding to a custom preset from `node_modules`.
+
+3. **Configuration Resolution**: `resolveConfig` determines the preset configuration:
+   - Checks direct options provided.
+   - If not available, leverages `lilconfig` to find configuration files like `.cssnanorc`, `package.json`, etc.
+   - Defaults to the 'default' preset if no config is found.
+
+4. **Plugin Setup**: The `cssnanoPlugin` function:
+   - Accepts `options` where plugins can be explicitly set.
+   - Ensures the `preset.plugins` is well-defined and begins to assemble the array of plugins from resolved options, checking their resolvability.
+   - Iterates over the plugins, processing each one and integrating them into a PostCSS processor.
+
+5. **Export**: Finally, the configured PostCSS processor using `cssnano` plugins is exported for use elsewhere.
+
+Below is a refactored version of the given code while maintaining its original functionality:
+
+```javascript
+'use strict';
+const path = require('path');
+const postcss = require('postcss');
+const { lilconfigSync } = require('lilconfig');
+
+const cssnano = 'cssnano';
+
+/** @typedef {{preset?: any, plugins?: any[], configFile?: string}} Options */
+
+/**
+ * Check if a module ID is resolvable
+ * @param {string} moduleId
+ * @returns {boolean}
+ */
+function isResolvable(moduleId) {
+  try {
+    require.resolve(moduleId);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Resolve the appropriate preset for cssnano configuration
+ * @param {any} preset
+ * @returns {[import('postcss').PluginCreator<any>, boolean | Record<string, any> | undefined][]}
+ */
+function resolvePreset(preset) {
+  let fn, options;
+  
+  if (Array.isArray(preset)) {
+    [fn, options] = preset;
+  } else {
+    fn = preset;
+    options = {};
+  }
+  
+  if (fn.plugins) return fn.plugins;
+  if (fn === 'default') return require('cssnano-preset-default')(options).plugins;
+  if (typeof fn === 'function') return fn(options).plugins;
+  if (isResolvable(fn)) return require(fn)(options).plugins;
+  
+  const presetName = `cssnano-preset-${fn}`;
+  if (isResolvable(presetName)) return require(presetName)(options).plugins;
+  
+  throw new Error(`Cannot load preset "${fn}". Check your configuration for errors.`);
+}
+
+/**
+ * Resolve cssnano plugins configuration
+ * @param {Options} options
+ * @returns {Array}
+ */
+function resolveConfig(options) {
+  if (options.preset) return resolvePreset(options.preset);
+  
+  const searchPath = options.configFile ? undefined : process.cwd();
+  const configPath = options.configFile ? path.resolve(process.cwd(), options.configFile) : undefined;
+  
+  const configExplorer = lilconfigSync(cssnano, {
+    searchPlaces: [
+      'package.json', '.cssnanorc', '.cssnanorc.json',
+      '.cssnanorc.js', 'cssnano.config.js'
+    ],
+  });
+
+  const config = configPath ? configExplorer.load(configPath) : configExplorer.search(searchPath);
+
+  return config !== null ? resolvePreset(config.config.preset || config.config) : resolvePreset('default');
+}
+
+/**
+ * Create a cssnano plugin for PostCSS
+ * @param {Options} [options={}]
+ * @returns {import('postcss').Processor}
+ */
+function cssnanoPlugin(options = {}) {
+  if (Array.isArray(options.plugins)) {
+    options.preset = options.preset || { plugins: [] };
+
+    options.plugins.forEach(plugin => {
+      const pluginArray = Array.isArray(plugin) ? plugin : [plugin, {}];
+      const [pluginDef, pluginOpts] = pluginArray;
+      const resolvedPlugin = typeof pluginDef === 'string' && isResolvable(pluginDef) ? require(pluginDef) : pluginDef;
+      options.preset.plugins.push([resolvedPlugin, pluginOpts]);
+    });
+  }
+
+  const plugins = [];
+  const nanoPlugins = resolveConfig(options);
+
+  for (const nanoPlugin of nanoPlugins) {
+    if (Array.isArray(nanoPlugin)) {
+      const [processor, opts] = nanoPlugin;
+      if (opts === true || (typeof opts === 'object' && !opts.exclude)) {
+        plugins.push(processor(opts));
+      }
+    } else {
+      plugins.push(nanoPlugin);
+    }
+  }
+
+  return postcss(plugins);
+}
+
+cssnanoPlugin.postcss = true;
+module.exports = cssnanoPlugin;
+```

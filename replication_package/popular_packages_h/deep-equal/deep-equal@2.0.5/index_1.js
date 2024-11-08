@@ -1,0 +1,231 @@
+'use strict';
+
+const objectKeys = require('object-keys');
+const isArguments = require('is-arguments');
+const is = require('object-is');
+const isRegex = require('is-regex');
+const flags = require('regexp.prototype.flags');
+const isArray = require('isarray');
+const isDate = require('is-date-object');
+const whichBoxedPrimitive = require('which-boxed-primitive');
+const GetIntrinsic = require('get-intrinsic');
+const callBound = require('call-bind/callBound');
+const whichCollection = require('which-collection');
+const getIterator = require('es-get-iterator');
+const getSideChannel = require('side-channel');
+const whichTypedArray = require('which-typed-array');
+const assign = require('object.assign');
+
+const $getTime = callBound('Date.prototype.getTime');
+const gPO = Object.getPrototypeOf;
+const $objToString = callBound('Object.prototype.toString');
+
+const $Set = GetIntrinsic('%Set%', true);
+const $mapHas = callBound('Map.prototype.has', true);
+const $mapGet = callBound('Map.prototype.get', true);
+const $mapSize = callBound('Map.prototype.size', true);
+const $setAdd = callBound('Set.prototype.add', true);
+const $setDelete = callBound('Set.prototype.delete', true);
+const $setHas = callBound('Set.prototype.has', true);
+const $setSize = callBound('Set.prototype.size', true);
+
+// Checks if a set has an element that is deeply equal to a given value
+function setHasEqualElement(set, val1, opts, channel) {
+  let i = getIterator(set);
+  let result;
+  while ((result = i.next()) && !result.done) {
+    if (internalDeepEqual(val1, result.value, opts, channel)) {
+      $setDelete(set, result.value);
+      return true;
+    }
+  }
+  return false;
+}
+
+// Finds a matching primitive loosely
+function findLooseMatchingPrimitives(prim) {
+  if (typeof prim === 'undefined') return null;
+  if (typeof prim === 'object') return void 0;
+  if (typeof prim === 'symbol') return false;
+  if (typeof prim === 'string' || typeof prim === 'number') return +prim === +prim;
+  return true;
+}
+
+// Checks if a map might have a loose primitive match
+function mapMightHaveLoosePrim(a, b, prim, item, opts, channel) {
+  let altValue = findLooseMatchingPrimitives(prim);
+  if (altValue != null) return altValue;
+  let curB = $mapGet(b, altValue);
+  let looseOpts = assign({}, opts, { strict: false });
+  return !(typeof curB === 'undefined' && !$mapHas(b, altValue)) && 
+         internalDeepEqual(item, curB, looseOpts, channel) &&
+         !$mapHas(a, altValue) && internalDeepEqual(item, curB, looseOpts, channel);
+}
+
+// Checks if a set might have a loose primitive match
+function setMightHaveLoosePrim(a, b, prim) {
+  let altValue = findLooseMatchingPrimitives(prim);
+  if (altValue != null) return altValue;
+  return $setHas(b, altValue) && !$setHas(a, altValue);
+}
+
+// Checks if a map has an equal entry
+function mapHasEqualEntry(set, map, key1, item1, opts, channel) {
+  let i = getIterator(set);
+  let result;
+  while ((result = i.next()) && !result.done) {
+    let key2 = result.value;
+    if (internalDeepEqual(key1, key2, opts, channel) &&
+        internalDeepEqual(item1, $mapGet(map, key2), opts, channel)) {
+      $setDelete(set, key2);
+      return true;
+    }
+  }
+  return false;
+}
+
+// Checks if two values are deeply equal
+function internalDeepEqual(actual, expected, options, channel) {
+  let opts = options || {};
+  if (opts.strict ? is(actual, expected) : actual === expected) return true;
+
+  let actualBoxed = whichBoxedPrimitive(actual);
+  let expectedBoxed = whichBoxedPrimitive(expected);
+  if (actualBoxed !== expectedBoxed) return false;
+
+  if (!actual || !expected || (typeof actual !== 'object' && typeof expected !== 'object')) {
+    return opts.strict ? is(actual, expected) : actual == expected;
+  }
+
+  let hasActual = channel.has(actual);
+  let hasExpected = channel.has(expected);
+  let sentinel;
+  if (hasActual && hasExpected && channel.get(actual) === channel.get(expected)) return true;
+
+  if (!hasActual) channel.set(actual, {});
+  if (!hasExpected) channel.set(expected, {});
+
+  return objEquiv(actual, expected, opts, channel);
+}
+
+// Checks if a value is a Buffer
+function isBuffer(x) {
+  return x && typeof x === 'object' && typeof x.length === 'number' &&
+         typeof x.copy === 'function' && typeof x.slice === 'function' &&
+         (x.length === 0 || typeof x[0] === 'number') && 
+         !!(x.constructor && x.constructor.isBuffer && x.constructor.isBuffer(x));
+}
+
+// Checks if two sets are equivalent
+function setEquiv(a, b, opts, channel) {
+  if ($setSize(a) !== $setSize(b)) return false;
+  let iA = getIterator(a);
+  let iB = getIterator(b);
+  let resultA;
+  let resultB;
+  let set;
+  while ((resultA = iA.next()) && !resultA.done) {
+    if (resultA.value && typeof resultA.value === 'object') {
+      if (!set) set = new $Set();
+      $setAdd(set, resultA.value);
+    } else if (!$setHas(b, resultA.value)) {
+      if (opts.strict) return false;
+      if (!setMightHaveLoosePrim(a, b, resultA.value)) return false;
+      if (!set) set = new $Set();
+      $setAdd(set, resultA.value);
+    }
+  }
+  if (set) {
+    while ((resultB = iB.next()) && !resultB.done) {
+      if (resultB.value && typeof resultB.value === 'object') {
+        if (!setHasEqualElement(set, resultB.value, opts.strict, channel)) return false;
+      } else if (
+        !opts.strict && !$setHas(a, resultB.value) && 
+        !setHasEqualElement(set, resultB.value, opts.strict, channel)
+      ) {
+        return false;
+      }
+    }
+    return $setSize(set) === 0;
+  }
+  return true;
+}
+
+// Checks if two maps are equivalent
+function mapEquiv(a, b, opts, channel) {
+  if ($mapSize(a) !== $mapSize(b)) return false;
+  let iA = getIterator(a);
+  let iB = getIterator(b);
+  let resultA;
+  let resultB;
+  let set;
+  let key, item1, item2;
+  while ((resultA = iA.next()) && !resultA.done) {
+    key = resultA.value[0];
+    item1 = resultA.value[1];
+    if (key && typeof key === 'object') {
+      if (!set) set = new $Set();
+      $setAdd(set, key);
+    } else {
+      item2 = $mapGet(b, key);
+      if ((typeof item2 === 'undefined' && !$mapHas(b, key)) ||
+          !internalDeepEqual(item1, item2, opts, channel)) {
+        if (opts.strict) return false;
+        if (!mapMightHaveLoosePrim(a, b, key, item1, opts, channel)) return false;
+        if (!set) set = new $Set();
+        $setAdd(set, key);
+      }
+    }
+  }
+  if (set) {
+    while ((resultB = iB.next()) && !resultB.done) {
+      key = resultB.value[0];
+      item2 = resultB.value[1];
+      if (key && typeof key === 'object') {
+        if (!mapHasEqualEntry(set, a, key, item2, opts, channel)) return false;
+      } else if (
+        !opts.strict &&
+        (!a.has(key) || !internalDeepEqual($mapGet(a, key), item2, opts, channel)) &&
+        !mapHasEqualEntry(set, a, key, item2, assign({}, opts, { strict: false }), channel)
+      ) {
+        return false;
+      }
+    }
+    return $setSize(set) === 0;
+  }
+  return true;
+}
+
+// Checks if two objects are equivalent
+function objEquiv(a, b, opts, channel) {
+  if (typeof a !== typeof b || a == null || b == null) return false;
+  if ($objToString(a) !== $objToString(b)) return false;
+  if (isArguments(a) !== isArguments(b)) return false;
+  let aIsArray = isArray(a), bIsArray = isArray(b);
+  if (aIsArray !== bIsArray) return false;
+  let aIsError = a instanceof Error, bIsError = b instanceof Error;
+  if (aIsError !== bIsError) return false;
+  if ((aIsError || bIsError) && (a.name !== b.name || a.message !== b.message)) return false;
+  let aIsRegex = isRegex(a), bIsRegex = isRegex(b);
+  if (aIsRegex !== bIsRegex || (aIsRegex || bIsRegex) && (a.source !== b.source || flags(a) !== flags(b))) return false;
+  let aIsDate = isDate(a), bIsDate = isDate(b);
+  if (aIsDate !== bIsDate || (aIsDate || bIsDate) && $getTime(a) !== $getTime(b)) return false;
+  if (opts.strict && gPO && gPO(a) !== gPO(b)) return false;
+  if (whichTypedArray(a) !== whichTypedArray(b)) return false;
+  let aIsBuffer = isBuffer(a), bIsBuffer = isBuffer(b);
+  if (aIsBuffer !== bIsBuffer || (aIsBuffer || bIsBuffer && (a.length !== b.length || !a.every((val, idx) => val === b[idx])))) return false;
+  let ka = objectKeys(a), kb = objectKeys(b);
+  if (ka.length !== kb.length) return false;
+  ka.sort(); kb.sort();
+  if (!ka.every((val, idx) => val === kb[idx])) return false;
+  if (!ka.every(key => internalDeepEqual(a[key], b[key], opts, channel))) return false;
+  let aCollection = whichCollection(a), bCollection = whichCollection(b);
+  if (aCollection !== bCollection) return false;
+  if (aCollection === 'Set' || bCollection === 'Set') return setEquiv(a, b, opts, channel);
+  if (aCollection === 'Map') return mapEquiv(a, b, opts, channel);
+  return true;
+}
+
+module.exports = function deepEqual(a, b, opts) {
+  return internalDeepEqual(a, b, opts, getSideChannel());
+};

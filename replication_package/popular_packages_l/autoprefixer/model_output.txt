@@ -1,0 +1,95 @@
+The functionality described in this README.md file is for a Node.js package called Autoprefixer, which is a plugin for PostCSS. Its primary function is to parse CSS files and automatically add vendor prefixes to CSS rules based on the data and compatibility tables from "Can I Use". This tool eliminates the need for developers to manually add vendor-specific prefixes to ensure their CSS rules work across various browsers and platforms.
+
+### Key Features:
+
+1. **Vendor Prefixing**: 
+   - Autoprefixer processes your CSS and adds necessary browser-specific prefixes. For example, it will transform `::placeholder { color: gray; }` into:
+
+     ```css
+     ::-moz-placeholder {
+       color: gray;
+     }
+     ::placeholder {
+       color: gray;
+     }
+     ```
+
+   - It similarly prefixes media queries. For example:
+
+     ```css
+     @media (min-resolution: 2dppx) {
+       .image {
+         background-image: url(image@2x.png);
+       }
+     }
+     ```
+     is transformed into:
+     ```css
+     @media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 2dppx) {
+       .image {
+         background-image: url(image@2x.png);
+       }
+     }
+     ```
+
+2. **Automatic Updates**:
+   - It updates prefix requirements as new versions of browsers are released.
+
+3. **Browser Support Focus**:
+   - Uses the popularity and property support information from "Can I Use" to determine which prefixes are necessary.
+
+4. **Simplification**:
+   - Developers can write clean CSS without worrying about prefixes, relying on Autoprefixer for all compatibility tasks.
+
+### Implementation Code for Autoprefixer:
+
+```js
+const postcss = require('postcss');
+
+// Define the autoprefixer plugin
+const autoprefixer = postcss.plugin('autoprefixer', (opts = {}) => {
+  const browsers = opts.browsers || []; // Browser support list
+  // Main method to process CSS and add prefixes
+  return (root) => {
+    root.walkRules(rule => {
+      rule.walkDecls(decl => {
+        // Example: Placeholder prefixing logic
+        if (decl.prop === 'color' && rule.selector.includes('::placeholder')) {
+          rule.cloneBefore({ selector: '::-moz-placeholder' });
+        }
+      });
+
+      // Example: Media query prefixing logic
+      if (rule.parent && rule.parent.type === 'atrule' && /min-resolution/.test(rule.parent.params)) {
+        rule.parent.cloneBefore({ params: rule.parent.params.replace('(min-resolution', '(-webkit-min-device-pixel-ratio') });
+      }
+    });
+  };
+});
+
+// Example CSS input
+const css = `
+  ::placeholder {
+    color: gray;
+  }
+  @media (min-resolution: 2dppx) {
+    .image {
+      background-image: url(image@2x.png);
+    }
+  }
+`;
+
+// Process the CSS using autoprefixer
+postcss([autoprefixer({ browsers: ['last 2 versions'] })])
+  .process(css)
+  .then(result => {
+    console.log(result.css);
+  })
+  .catch(error => {
+    console.error(error);
+  });
+
+module.exports = autoprefixer;
+```
+
+This code represents a simplification of the Autoprefixer functionality where it uses PostCSS to parse and transform CSS by adding necessary vendor prefixes. It listens for specific CSS rules and applies transformations accordingly. In practice, the actual implementation would handle a wide variety of CSS properties and browser quirks much more comprehensively.

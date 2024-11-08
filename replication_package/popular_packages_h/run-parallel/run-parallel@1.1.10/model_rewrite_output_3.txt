@@ -1,0 +1,58 @@
+The Node.js code provided defines a function `runParallel` that executes multiple asynchronous tasks in parallel. This function can handle an array or an object of tasks, where each task is a function that accepts a callback to be called when it completes. After all tasks complete, or if an error occurs, a final callback is invoked with the results of the tasks or the error.
+
+Here's how `runParallel` works:
+
+1. **Input Handling**: It takes two parameters: `tasks` (an array or an object of functions to run) and `cb` (a callback function to be executed after all tasks finish).
+
+2. **Initialization**: The function initializes `results` (to store the results from tasks), `pending` (to count how many tasks are yet to finish), and `keys` (to hold the keys if `tasks` is an object).
+
+3. **Determine Task Structure**: If `tasks` is an array, `results` is an array and `pending` is set to the length of `tasks`. Otherwise, `keys` stores the object's keys, `results` is an object, and `pending` is set to the number of keys.
+
+4. **Completion Check**: A `done` function checks if all tasks are finished or if there's an error. It ensures that the `cb` is only called once, being cautious about synchronous execution by using `process.nextTick`.
+
+5. **Task Execution**: The function iterates over `tasks`. For arrays, it uses indexes, and for objects, it uses keys. It executes each task, passing a callback that captures the results or errors and reduces the `pending` counter. When `pending` becomes zero or an error occurs, `done` is called.
+
+6. **Empty Tasks Handling**: If `pendng` is 0 from the start (meaning there are no tasks), it directly calls `done`.
+
+Below is a possible rewrite of the provided code with the same functionality:
+
+```javascript
+module.exports = runParallel;
+
+function runParallel(tasks, cb) {
+  let results = Array.isArray(tasks) ? [] : {};
+  let pending = Array.isArray(tasks) ? tasks.length : Object.keys(tasks).length;
+  const keys = Array.isArray(tasks) ? null : Object.keys(tasks);
+  let isSync = true;
+
+  function done(err) {
+    function end() {
+      if (cb) cb(err, results);
+      cb = null;
+    }
+    if (isSync) process.nextTick(end);
+    else end();
+  }
+
+  function each(index, err, result) {
+    results[index] = result;
+    if (--pending === 0 || err) {
+      done(err);
+    }
+  }
+
+  if (pending === 0) {
+    done(null);
+  } else if (keys) {
+    keys.forEach(key => {
+      tasks[key]((err, result) => each(key, err, result));
+    });
+  } else {
+    tasks.forEach((task, i) => {
+      task((err, result) => each(i, err, result));
+    });
+  }
+
+  isSync = false;
+}
+```

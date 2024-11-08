@@ -1,0 +1,76 @@
+The Node.js code provided defines a custom Webpack plugin named `CopyWebpackPlugin`. This plugin is used to copy files from specified source paths to target paths during the Webpack build process.
+
+### Functionality:
+- **Initialization**: The `CopyWebpackPlugin` class is constructed with an `options` object, which contains a `patterns` property. Each pattern specifies a `from` (source) path and a `to` (destination) path, and may optionally include a `transform` function.
+
+- **Integration with Webpack**: The plugin registers an asynchronous function to the `emit` hook of the Webpack compiler. This hook is executed when Webpack is ready to emit files to the file system.
+
+- **Handling Patterns**: For each pattern defined in the options, it resolves the absolute path of the `from` directory and uses `fast-glob` to identify files matching the pattern.
+
+- **File Copying**: For each file that matches the pattern, it reads the file's content and optionally transforms it using a specified `transform` function. It then registers the transformed content with the Webpack compilation as an asset, using the `to` path to determine where the file should be output.
+
+### Rewritten Code:
+
+```javascript
+const fs = require('fs');
+const path = require('path');
+const glob = require('fast-glob');
+
+class CopyWebpackPlugin {
+  constructor(options = {}) {
+    this.options = options;
+  }
+
+  apply(compiler) {
+    compiler.hooks.emit.tapAsync('CopyWebpackPlugin', async (compilation, callback) => {
+      try {
+        const context = compiler.options.context;
+        const patterns = this.options.patterns || [];
+
+        await Promise.all(patterns.map(pattern => this.handlePattern(pattern, context, compilation)));
+
+        callback();
+      } catch (error) {
+        callback(error);
+      }
+    });
+  }
+
+  async handlePattern(pattern, context, compilation) {
+    const absoluteFrom = path.resolve(context, pattern.from);
+    const filesToCopy = glob.sync(absoluteFrom);
+
+    await Promise.all(filesToCopy.map(file => this.copyFile(file, pattern.to, compilation, pattern)));
+  }
+
+  copyFile(from, to, compilation, pattern) {
+    return new Promise((resolve, reject) => {
+      fs.readFile(from, (err, content) => {
+        if (err) return reject(err);
+
+        let outputPath;
+        if (typeof to === 'function') {
+          outputPath = to({ context: path.dirname(from), absoluteFilename: from });
+        } else {
+          outputPath = path.join(to, path.basename(from));
+        }
+
+        if (pattern.transform) {
+          content = pattern.transform(content, from);
+        }
+
+        compilation.assets[outputPath] = {
+          source: () => content,
+          size: () => content.length,
+        };
+
+        resolve();
+      });
+    });
+  }
+}
+
+module.exports = CopyWebpackPlugin;
+```
+
+This code has the same functionality, structured with cleaner async/await usage, providing better readability and error handling in the `apply` method.

@@ -1,0 +1,84 @@
+The provided Node.js code is a CommonJS module that exports two functions: `fromArrayBuffer` and `fromString`. The code includes utility functions to define properties, export methods, copy properties, and convert modules to a CommonJS format with additional support for compatibility with ESModules. 
+
+1. **Utility Functions:**
+   - `__defProp`: Wraps `Object.defineProperty` to facilitate property definition on objects.
+   - `__getOwnPropDesc`: Wraps `Object.getOwnPropertyDescriptor` to retrieve property descriptors.
+   - `__getOwnPropNames`: Wraps `Object.getOwnPropertyNames` to get all property names of an object.
+   - `__hasOwnProp`: Wraps the Object's own `hasOwnProperty` method.
+   - `__name`: Sets a `name` property with a configurable descriptor on a function or object.
+   - `__export`: Exports properties by defining them on the target object with their getters.
+   - `__copyProps`: Copies properties from a source object to a target object, excluding specified properties, and accounts for property descriptors to maintain enumeration.
+   - `__toCommonJS`: Converts a module into CommonJS format with an `__esModule` property.
+
+2. **Exported Functions:**
+   - `fromArrayBuffer`: Converts an `ArrayBuffer` into a `Buffer` using an optional offset and length. Throws an error if the input is not an `ArrayBuffer`.
+   - `fromString`: Converts a string into a `Buffer`. Allows specifying a string encoding, defaulting to the Buffer default if not provided. Throws an error if the input is not a string.
+
+3. **Functionality for ESM Compatibility:**
+   - The module is designed to be compatible with both CommonJS and ESModules, indicated by the `__toCommonJS` function and the setting of `__esModule`.
+
+Below is the rewritten Node.js code following the same functionality:
+
+```javascript
+const { defineProperty, getOwnPropertyDescriptor, getOwnPropertyNames, prototype } = Object;
+const { Buffer } = require('buffer');
+const { isArrayBuffer } = require('@smithy/is-array-buffer');
+
+const __defProp = defineProperty;
+const __getOwnPropDesc = getOwnPropertyDescriptor;
+const __getOwnPropNames = getOwnPropertyNames;
+const __hasOwnProp = prototype.hasOwnProperty;
+
+const __name = (target, value) => __defProp(target, "name", { value, configurable: true });
+
+const __export = (target, all) => {
+  for (const name in all) {
+    __defProp(target, name, { get: all[name], enumerable: true });
+  }
+};
+
+const __copyProps = (to, from, except, desc) => {
+  if (from && (typeof from === "object" || typeof from === "function")) {
+    for (const key of __getOwnPropNames(from)) {
+      if (!__hasOwnProp.call(to, key) && key !== except) {
+        __defProp(to, key, {
+          get: () => from[key],
+          enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable
+        });
+      }
+    }
+  }
+  return to;
+};
+
+const __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
+
+// src/index.ts
+
+const src_exports = {};
+__export(src_exports, {
+  fromArrayBuffer: () => fromArrayBuffer,
+  fromString: () => fromString
+});
+module.exports = __toCommonJS(src_exports);
+
+const fromArrayBuffer = /* @__PURE__ */ __name((input, offset = 0, length = input.byteLength - offset) => {
+  if (!isArrayBuffer(input)) {
+    throw new TypeError(`The "input" argument must be ArrayBuffer. Received type ${typeof input} (${input})`);
+  }
+  return Buffer.from(input, offset, length);
+}, "fromArrayBuffer");
+
+const fromString = /* @__PURE__ */ __name((input, encoding) => {
+  if (typeof input !== "string") {
+    throw new TypeError(`The "input" argument must be of type string. Received type ${typeof input} (${input})`);
+  }
+  return encoding ? Buffer.from(input, encoding) : Buffer.from(input);
+}, "fromString");
+
+// Annotate the CommonJS export names for ESM import in node:
+0 && (module.exports = {
+  fromArrayBuffer,
+  fromString
+});
+```

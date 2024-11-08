@@ -1,0 +1,90 @@
+The provided Node.js code defines a module named `FastGlob` which is designed to process patterns and return file paths according to the patterns specified. It supports asynchronous, synchronous, and stream-based operations for globbing file paths. Here is a breakdown of its functionality:
+
+1. **Asynchronous Globbing**: The `FastGlob` function handles an asynchronous operation which takes a source (pattern) and options, validates them, and processes the task using an asynchronous provider. The results from all tasks are flattened into a single array.
+
+2. **Synchronous Globbing**: The `FastGlob.sync` function processes patterns in a synchronous manner, similar to the asynchronous version but without waiting for Promises. It also flattens the results.
+
+3. **Stream-Based Globbing**: The `FastGlob.stream` function handles patterns as a stream, supporting asynchronous iteration over results using a multiplexed stream approach.
+
+4. **Additional Utility Functions**:
+    - `generateTasks`: Generates tasks based on the input patterns and options.
+    - `isDynamicPattern`: Checks if a pattern is dynamic based on given options.
+    - `escapePath`: Escapes the given path to ensure valid globbing.
+
+5. **Utilities and Providers**:
+    - The module imports utilities for string manipulation, arrays, and streams.
+    - It uses different providers (`async`, `sync`, and `stream`) for different modes of operation.
+    - Task management is handled via an imported `taskManager`.
+  
+6. **Input Validation**: Before proceeding with pattern processing, the `assertPatternsInput` function ensures that input patterns are non-empty strings or arrays of strings.
+
+7. **Export**: The `FastGlob` function and its associated methods are exported as a module.
+
+Below is the rewritten code maintaining the same functionality:
+
+```javascript
+"use strict";
+const taskManager = require("./managers/tasks");
+const AsyncProvider = require("./providers/async");
+const StreamProvider = require("./providers/stream");
+const SyncProvider = require("./providers/sync");
+const Settings = require("./settings");
+const utils = require("./utils");
+
+async function FastGlob(source, options) {
+    validatePatternsInput(source);
+    const works = createWorkTasks(source, AsyncProvider, options);
+    const results = await Promise.all(works);
+    return utils.array.flatten(results);
+}
+
+const FastGlobExtended = function () {};
+
+FastGlobExtended.sync = function sync(source, options) {
+    validatePatternsInput(source);
+    const works = createWorkTasks(source, SyncProvider, options);
+    return utils.array.flatten(works);
+};
+
+FastGlobExtended.stream = function stream(source, options) {
+    validatePatternsInput(source);
+    const works = createWorkTasks(source, StreamProvider, options);
+    return utils.stream.merge(works);
+};
+
+FastGlobExtended.generateTasks = function generateTasks(source, options) {
+    validatePatternsInput(source);
+    const patterns = Array.isArray(source) ? source : [source];
+    const settings = new Settings(options);
+    return taskManager.generate(patterns, settings);
+};
+
+FastGlobExtended.isDynamicPattern = function isDynamicPattern(source, options) {
+    validatePatternsInput(source);
+    const settings = new Settings(options);
+    return utils.pattern.isDynamicPattern(source, settings);
+};
+
+FastGlobExtended.escapePath = function escapePath(source) {
+    validatePatternsInput(source);
+    return utils.path.escape(source);
+};
+
+function createWorkTasks(source, Provider, options) {
+    const patterns = Array.isArray(source) ? source : [source];
+    const settings = new Settings(options);
+    const tasks = taskManager.generate(patterns, settings);
+    const provider = new Provider(settings);
+    return tasks.map(provider.read, provider);
+}
+
+function validatePatternsInput(input) {
+    const source = Array.isArray(input) ? input : [input];
+    const isValidSource = source.every(item => utils.string.isString(item) && !utils.string.isEmpty(item));
+    if (!isValidSource) {
+        throw new TypeError('Patterns must be a string (non-empty) or an array of strings');
+    }
+}
+
+module.exports = Object.assign(FastGlob, FastGlobExtended);
+```

@@ -1,0 +1,67 @@
+The Node.js script provides a fallback mechanism for the `Object.keys` method in JavaScript, ensuring that the application has access to this functionality even if it is not natively supported in the environment. The script consists of two main functions: `objectKeysShim` and `objectKeys`.
+
+1. **`objectKeysShim` Function:**
+   - Checks if `Object.keys` is not a function, and if so, it assigns a new implementation to `Object.keys`.
+   - This implementation manually iterates over the object's properties and collects them into an array if they are the object's own properties (using `hasOwnProperty`).
+   - The function returns the `Object.keys` function, whether it is the native one or the shimmed version.
+
+2. **`objectKeys` Function:**
+   - Implements the same manual iteration over an object's properties to collect its keys into an array.
+   - Throws a `TypeError` if the provided argument is not an object.
+   - This function is exported as the main module function.
+
+3. **Exports:**
+   - The module exports the `objectKeys` function for general use.
+   - It also exports `objectKeysShim`, allowing users to apply the shim to the `Object.keys` method in their environment.
+
+Here is a possible rewrite of the Node.js code:
+
+```javascript
+// object-keys.js
+
+'use strict';
+
+function createObjectKeysFunction() {
+  return function (obj) {
+    if (obj !== Object(obj)) {
+      throw new TypeError('Object.keys called on a non-object');
+    }
+    var result = [];
+    for (var prop in obj) {
+      if (Object.prototype.hasOwnProperty.call(obj, prop)) {
+        result.push(prop);
+      }
+    }
+    return result;
+  };
+}
+
+function shimObjectKeys() {
+  if (typeof Object.keys !== 'function') {
+    Object.keys = createObjectKeysFunction();
+  }
+  return Object.keys;
+}
+
+const objectKeys = createObjectKeysFunction();
+
+module.exports = objectKeys;
+module.exports.shim = shimObjectKeys;
+
+// Example usage:
+
+// const keys = require('./object-keys');
+// const assert = require('assert');
+// const obj = { a: 1, b: 2, c: 3 };
+
+// assert.deepEqual(keys(obj), ['a', 'b', 'c']);
+
+// delete Object.keys;
+// const shimmedKeys = keys.shim();
+// assert.equal(shimmedKeys, keys);
+// assert.deepEqual(Object.keys(obj), keys(obj));
+
+// const shimmedKeys2 = keys.shim();
+// assert.equal(shimmedKeys2, Object.keys);
+// assert.deepEqual(Object.keys(obj), keys(obj));
+```

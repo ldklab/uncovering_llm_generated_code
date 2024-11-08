@@ -1,0 +1,107 @@
+The provided Node.js code snippet is a basic implementation that mimics some functionalities of the `@emotion/react` library, which is a popular CSS-in-JS tool used in React applications to style components. Here's a breakdown of the code:
+
+1. **CSS-in-JS Functionality (`css` Function):** 
+   - The function `css` generates a unique class name and adds corresponding styles to a stylesheet in the document. It handles both string and object syntax for styles.
+
+2. **Global Styles (`Global` Component):** 
+   - The `Global` component uses the `useEffect` hook to inject global CSS directly into the HTML document's `<head>` section. It removes these styles when the component is unmounted to avoid duplication.
+
+3. **Class Name Management (`ClassNames` Component):**
+   - The `ClassNames` component provides a utility (`cx`) for dynamically combining multiple class names. It facilitates usage of the `css` function and conditional class name application.
+
+4. **JSX Pragmatic Functionality (`jsx` function):**
+   - The custom `jsx` function handles props containing `css` and automatically applies generated class names to the element.
+
+5. **Demo Usage:**
+   - The code demonstrates the usage of these utilities in a minimal React application to dynamically style elements. It includes a `<div>` with inline styles, a `<Global>` component for global styles, and a `<ClassNames>` component example with dynamic class names.
+
+Below is the rewritten Node.js code based on the explanation:
+
+```javascript
+/** @jsx jsx */
+import React from 'react';
+import ReactDOM from 'react-dom';
+
+// Simplified CSS-in-JS styling function
+const css = (styles) => {
+  const styleSheet = document.styleSheets[0];
+  const className = `jsx-${Math.random().toString(36).substr(2, 5)}`;
+
+  let stylesStr = typeof styles === 'string'
+    ? styles
+    : Object.entries(styles).map(([key, value]) => `${key}: ${value};`).join(' ');
+
+  styleSheet.insertRule(`.${className} { ${stylesStr} }`, styleSheet.cssRules.length);
+
+  return className;
+};
+
+// Function to apply global styles
+const Global = ({ styles }) => {
+  React.useEffect(() => {
+    const styleTag = document.createElement("style");
+    document.head.appendChild(styleTag);
+
+    const styleSheet = styleTag.sheet;
+    const stylesStr = Object.entries(styles)
+      .map(([selector, rules]) => `${selector} { ${Object.entries(rules).map(([key, value]) => `${key}: ${value};`).join(' ')} }`)
+      .join(' ');
+
+    styleSheet.insertRule(stylesStr, styleSheet.cssRules.length);
+
+    return () => {
+      document.head.removeChild(styleTag); // Cleanup global styles to prevent duplication
+    };
+  }, [styles]);
+
+  return null;
+};
+
+// Component for applying css and cx functionalities
+const ClassNames = ({ children }) => {
+  const cx = (...args) => args.filter(Boolean).join(' ');
+
+  return children({ css, cx });
+};
+
+// JSX pragma compatible function
+const jsx = (type, props, ...children) => {
+  if (props?.css) {
+    const className = css(props.css);
+    return React.createElement(type, { ...props, className: props.className ? `${props.className} ${className}` : className }, ...children);
+  }
+  return React.createElement(type, props, ...children);
+};
+
+// Usage demonstration
+ReactDOM.render(
+  <div css={{ color: 'hotpink' }}>
+    <div
+      css={css`
+        color: green;
+      `}
+    />
+    <Global
+      styles={{
+        body: {
+          margin: 0,
+          padding: 0
+        }
+      }}
+    />
+    <ClassNames>
+      {({ css, cx }) => (
+        <div
+          className={cx(
+            'some-class',
+            css`
+              color: yellow;
+            `
+          )}
+        />
+      )}
+    </ClassNames>
+  </div>,
+  document.getElementById('root')
+);
+```

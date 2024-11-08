@@ -1,0 +1,113 @@
+The given Node.js code is a module that implements a schema traversal function which is used to navigate through a JSON schema object. The main functionalities include:
+
+1. **Traverse Functionality:**
+   - The `traverse` function takes a schema, options, and a callback function.
+   - It allows legacy support where the second parameter can directly be the callback function.
+   - It differentiates between pre-processing (`cb.pre`) and post-processing (`cb.post`) functions that run before and after traversing each schema node.
+
+2. **Keyword Sets:**
+   - Various sets of keywords are specified to handle differently during traversal:
+     - **`keywords`**: JSON schema keywords to focus traversal on.
+     - **`arrayKeywords`**: Keywords associated with arrays.
+     - **`propsKeywords`**: Keywords that contain properties or definitions.
+     - **`skipKeywords`**: Keywords to skip unless the `allKeys` option is enabled.
+
+3. **Recursive Traversal Logic:**
+   - The `_traverse` function is a recursive utility used by `traverse` to walk through the schema object.
+   - It navigates based on the type of keyword and invokes the `pre` and `post` processing functions.
+   - If a keyword is an object or array type that should be traversed, it processes each of its elements or properties.
+
+4. **Utility Function:**
+   - `escapeJsonPtr` function deals with encoding JSON Pointers by escaping characters per JSON Pointer specification.
+
+```javascript
+'use strict';
+
+var traverse = module.exports = function (schema, opts, cb) {
+  if (typeof opts == 'function') {
+    cb = opts;
+    opts = {};
+  }
+
+  cb = opts.cb || cb;
+  var pre = (typeof cb == 'function') ? cb : cb.pre || function() {};
+  var post = cb.post || function() {};
+
+  _traverse(opts, pre, post, schema, '', schema);
+};
+
+traverse.keywords = {
+  additionalItems: true,
+  items: true,
+  contains: true,
+  additionalProperties: true,
+  propertyNames: true,
+  not: true,
+  if: true,
+  then: true,
+  else: true
+};
+
+traverse.arrayKeywords = {
+  items: true,
+  allOf: true,
+  anyOf: true,
+  oneOf: true
+};
+
+traverse.propsKeywords = {
+  $defs: true,
+  definitions: true,
+  properties: true,
+  patternProperties: true,
+  dependencies: true
+};
+
+traverse.skipKeywords = {
+  default: true,
+  enum: true,
+  const: true,
+  required: true,
+  maximum: true,
+  minimum: true,
+  exclusiveMaximum: true,
+  exclusiveMinimum: true,
+  multipleOf: true,
+  maxLength: true,
+  minLength: true,
+  pattern: true,
+  format: true,
+  maxItems: true,
+  minItems: true,
+  uniqueItems: true,
+  maxProperties: true,
+  minProperties: true
+};
+
+function _traverse(opts, pre, post, schema, jsonPtr, rootSchema, parentJsonPtr, parentKeyword, parentSchema, keyIndex) {
+  if (schema && typeof schema == 'object' && !Array.isArray(schema)) {
+    pre(schema, jsonPtr, rootSchema, parentJsonPtr, parentKeyword, parentSchema, keyIndex);
+    for (var key in schema) {
+      var sch = schema[key];
+      if (Array.isArray(sch)) {
+        if (key in traverse.arrayKeywords) {
+          for (var i=0; i<sch.length; i++)
+            _traverse(opts, pre, post, sch[i], `${jsonPtr}/${key}/${i}`, rootSchema, jsonPtr, key, schema, i);
+        }
+      } else if (key in traverse.propsKeywords) {
+        if (sch && typeof sch == 'object') {
+          for (var prop in sch)
+            _traverse(opts, pre, post, sch[prop], `${jsonPtr}/${key}/${escapeJsonPtr(prop)}`, rootSchema, jsonPtr, key, schema, prop);
+        }
+      } else if (key in traverse.keywords || (opts.allKeys && !(key in traverse.skipKeywords))) {
+        _traverse(opts, pre, post, sch, `${jsonPtr}/${key}`, rootSchema, jsonPtr, key, schema);
+      }
+    }
+    post(schema, jsonPtr, rootSchema, parentJsonPtr, parentKeyword, parentSchema, keyIndex);
+  }
+}
+
+function escapeJsonPtr(str) {
+  return str.replace(/~/g, '~0').replace(/\//g, '~1');
+}
+```

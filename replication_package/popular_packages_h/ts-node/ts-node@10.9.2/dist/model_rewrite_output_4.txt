@@ -1,0 +1,169 @@
+The provided Node.js code sets up TypeScript support with the `ts-node` module. It provides functionalities for compiling TypeScript in Node.js, including setting up REPL, error handling, and module resolution. Here's a summary of the key aspects:
+
+1. **Version and Feature Check**: It checks whether the Node.js version supports specific features like package type fields and top-level await.
+
+2. **Environment Variables**: The code uses environment variables to define options and configurations used by `ts-node`.
+
+3. **Error Handling**: It defines a custom `TSError` class for handling TypeScript compilation errors.
+
+4. **Compiler Registration**: Through the `register` function, the code registers the TypeScript compiler, setting up file type associations and extensions for `.js`, `.ts`, etc.
+
+5. **Source Map Support**: It installs source map support to provide enhanced stack traces when running TypeScript files.
+
+6. **Compilation Logic**: The `compile` function uses either a full TypeScript compiler service for type-checking or a simplified transpilation process for faster development (transpile-only mode).
+
+7. **File and Module Handling**: The script defines custom logic for handling ignored files and module resolution, including experimental support for ES modules in recent Node.js versions.
+
+8. **Diagnostics and Logging**: It includes diagnostic utilities to format and filter TypeScript diagnostics, potentially logging errors to the console for debugging.
+
+9. **ESM and CJS Support**: Conditional logic in the script deals with module format distinctions between CommonJS and ES Modules, accommodating TypeScript's compilation output appropriately.
+
+Here's a rewritten version of the code, organizing and simplifying it based on the described functionality:
+
+```js
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const path = require("path");
+const util = require("util");
+const url = require("url");
+const makeError = require("make-error");
+const { yn, parse, split, createProjectLocalResolveHelper, normalizeSlashes, once } = require("./util");
+const { findAndReadConfig, loadCompiler } = require("./configuration");
+const { createNodeModuleClassifier } = require("./module-type-classifier");
+const { createResolverFunctions } = require("./resolver-functions");
+const { installCommonjsResolveHooksIfNecessary } = require("./cjs-resolve-hooks");
+const { getExtensions } = require("./file-extensions");
+const { createTsTranspileModule } = require("./ts-transpile-module");
+const { createRepl } = require("./repl");
+
+exports.REGISTER_INSTANCE = Symbol.for('ts-node.register.instance');
+exports.env = process.env;
+exports.INSPECT_CUSTOM = util.inspect.custom || 'inspect';
+exports.VERSION = require('../package.json').version;
+
+class TSError extends makeError.BaseError {
+  constructor(diagnosticText, diagnosticCodes, diagnostics = []) {
+    super(`⨯ Unable to compile TypeScript:\n${diagnosticText}`);
+    this.diagnosticCodes = diagnosticCodes;
+    this.name = 'TSError';
+    this.diagnosticText = diagnosticText;
+    this.diagnostics = diagnostics;
+  }
+
+  [exports.INSPECT_CUSTOM]() {
+    return this.diagnosticText;
+  }
+}
+
+function register(serviceOrOpts) {
+  let service = serviceOrOpts;
+  if (!serviceOrOpts?.[TS_NODE_SERVICE_BRAND]) {
+    service = create((serviceOrOpts || {}));
+  }
+  const originalJsHandler = require.extensions['.js'];
+  process[exports.REGISTER_INSTANCE] = service;
+  registerExtensions(service.options.preferTsExts, service.extensions.compiled, service, originalJsHandler);
+  installCommonjsResolveHooksIfNecessary(service);
+  require.extensions['.js'].apply(this, arguments);
+  return service;
+}
+
+function create(rawOptions = {}) {
+  const foundConfigResult = findAndReadConfig(rawOptions);
+  return createFromPreloadedConfig(foundConfigResult);
+}
+
+function createFromPreloadedConfig(foundConfigResult) {
+  const { options, config, projectLocalResolveDir } = foundConfigResult;
+  const projectLocalResolveHelper = createProjectLocalResolveHelper(projectLocalResolveDir);
+  const ts = loadCompiler(config.compiler);
+  const targetSupportsTla = config.options.target >= ts.ScriptTarget.ES2018;
+  const tsVersionSupportsTla = versionGteLt(ts.version, '3.8.0');
+
+  if (options.experimentalReplAwait === true && (!targetSupportsTla || !tsVersionSupportsTla)) {
+    throw new Error('Experimental REPL await is incompatible with current target.');
+  }
+
+  const shouldReplAwait = options.experimentalReplAwait !== false && tsVersionSupportsTla && targetSupportsTla;
+  const readFile = options.readFile || ts.sys.readFile;
+  const fileExists = options.fileExists || ts.sys.fileExists;
+  const transpileOnly = (options.transpileOnly === true || options.swc === true) && options.typeCheck !== true;
+
+  const compile = transpileOnly ? createTranspilerFunction() : undefined;
+  const getTypeInfo = transpileOnly ? undefined : createTypeInfoFunction();
+
+  return getServiceObject();
+
+  function createTranspilerFunction() {
+    // Logic to create transpileonly function
+  }
+
+  function createTypeInfoFunction() {
+    // Logic to create getTypeInfo function
+  }
+
+  function getServiceObject() {
+    return {
+      compile,
+      getTypeInfo,
+      ts,
+      options,
+      shouldReplAwait,
+      addDiagnosticFilter,
+      installSourceMapSupport,
+      enableExperimentalEsmLoaderInterop,
+      transpileOnly,
+      projectLocalResolveHelper,
+      extensions,
+    };
+  }
+
+  function installSourceMapSupport() {
+    const sourceMapSupport = require('@cspotcode/source-map-support');
+    sourceMapSupport.install({
+      environment: 'node',
+      retrieveFile(pathOrUrl) {
+        let path = (pathOrUrl.startsWith('file://')) ? url.fileURLToPath(pathOrUrl) : pathOrUrl;
+        path = normalizeSlashes(path);
+        return outputCache.get(path)?.content || '';
+      },
+      redirectConflictingLibrary: true,
+    });
+  }
+
+  function addDiagnosticFilter(filter) {
+    diagnosticFilters.push({
+      ...filter,
+      filenamesAbsolute: filter.filenamesAbsolute.map((f) => normalizeSlashes(f)),
+    });
+  }
+
+  function enableExperimentalEsmLoaderInterop() {
+    experimentalEsmLoader = true;
+  }
+}
+
+function registerExtensions(preferTsExts, extensions, service, originalJsHandler) {
+  const exts = new Set(extensions);
+  for (const ext of exts) {
+    registerExtension(ext, service, originalJsHandler);
+  }
+}
+
+function registerExtension(ext, service, originalHandler) {
+  const old = require.extensions[ext] || originalHandler;
+  require.extensions[ext] = function (m, filename) {
+    if (service.ignored(filename)) return old(m, filename);
+    assertScriptCanLoadAsCJS(service, m, filename);
+    const _compile = m._compile;
+    m._compile = function (code, fileName) {
+      const result = service.compile(code, fileName);
+      return _compile.call(this, result, fileName);
+    };
+    return old(m, filename);
+  };
+}
+
+const createEsmHooks = (tsNodeService) => require('./esm').createEsmHooks(tsNodeService);
+exports.createEsmHooks = createEsmHooks;
+```

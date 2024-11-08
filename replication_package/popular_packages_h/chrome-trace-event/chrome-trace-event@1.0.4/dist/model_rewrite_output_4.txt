@@ -1,0 +1,126 @@
+The Node.js code provides a `Tracer` class for generating trace events in Google's Trace Event format. Its purpose is to help developers trace operations within a Node.js application, giving them insights into the application's execution over time.
+
+Here is a breakdown of the functionality:
+- The `evCommon` function generates a base event object with the current timestamp, process ID, and thread ID.
+- The `Tracer` class extends `stream.Readable` and allows the creation of trace events. It can be configured with various options like `parent`, `fields`, `objectMode`, and `noStream`.
+- The options determine if the tracer logs events immediately or stores them for later, and whether the events should be output as strings or objects.
+- Methods like `begin`, `end`, `completeEvent`, and `instantEvent` are used to create specific types of trace events with different phases (`B`, `E`, `X`, `I`).
+- The class supports creating child tracers, which inherit certain settings from a parent tracer.
+- For non-stream mode, `flush` is used to emit all stored events.
+- Additional methods handle the internal event queue, `_pushString` formats events as JSON strings for streaming output.
+
+Here's the rewritten code:
+
+```javascript
+"use strict";
+
+/**
+ * trace-event - A library to create a trace of your node app per
+ * Google's Trace Event format:
+ * // JSSTYLED
+ *      https://docs.google.com/document/d/1CvAClvFfyA5R-PhYUmn5OOQtYMH4h6I0nSsKchNAySU
+ */
+const { Readable } = require("stream");
+
+function evCommon() {
+    const hrtime = process.hrtime();
+    const ts = hrtime[0] * 1000000 + Math.round(hrtime[1] / 1000);
+    return {
+        ts,
+        pid: process.pid,
+        tid: process.pid
+    };
+}
+
+class Tracer extends Readable {
+    constructor(opts = {}) {
+        super();
+        this.noStream = Boolean(opts.noStream);
+        this.events = [];
+        this._objectMode = Boolean(opts.objectMode);
+        this.parent = opts.parent;
+        this.fields = Object.assign({}, opts.parent?.fields, opts.fields);
+
+        if (!this.fields.cat) {
+            this.fields.cat = "default";
+        } else if (Array.isArray(this.fields.cat)) {
+            this.fields.cat = this.fields.cat.join(",");
+        }
+
+        if (!this.fields.args) {
+            this.fields.args = {};
+        }
+
+        this._push = this.parent ? this.parent._push.bind(this.parent) :
+            this._objectMode ? this.push : this._pushString.bind(this);
+
+        if (!this.parent) {
+            const streamOpts = { objectMode: this._objectMode };
+            if (!this._objectMode) streamOpts.encoding = "utf8";
+            Readable.call(this, streamOpts);
+        }
+    }
+
+    flush() {
+        if (this.noStream) {
+            this.events.forEach(evt => this._push(evt));
+            this._flush();
+        }
+    }
+
+    _read(_) {}
+
+    _pushString(ev) {
+        const separator = this.firstPush ? ",\n" : "[";
+        this.firstPush = true;
+        this.push(separator + JSON.stringify(ev), "utf8");
+    }
+
+    _flush() {
+        if (!this._objectMode) {
+            this.push("]");
+        }
+    }
+
+    child(fields) {
+        return new Tracer({
+            parent: this,
+            fields: fields
+        });
+    }
+
+    begin(fields) {
+        return this.mkEventFunc("B")(fields);
+    }
+
+    end(fields) {
+        return this.mkEventFunc("E")(fields);
+    }
+
+    completeEvent(fields) {
+        return this.mkEventFunc("X")(fields);
+    }
+
+    instantEvent(fields) {
+        return this.mkEventFunc("I")(fields);
+    }
+
+    mkEventFunc(ph) {
+        return (fields) => {
+            const ev = { ...evCommon(), ph };
+            if (fields) {
+                if (typeof fields === "string") {
+                    ev.name = fields;
+                } else {
+                    Object.keys(fields).forEach(k => {
+                        ev[k] = k === "cat" ? fields.cat.join(",") : fields[k];
+                    });
+                }
+            }
+            this.noStream ? this.events.push(ev) : this._push(ev);
+        };
+    }
+}
+
+module.exports = { Tracer };
+```

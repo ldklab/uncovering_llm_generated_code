@@ -1,0 +1,103 @@
+The `cssesc` package is a JavaScript library designed for escaping strings or identifiers for use in CSS. It generates the shortest possible ASCII-only output by converting non-ASCII characters into valid CSS escape sequences. Here's a breakdown of its capabilities:
+
+1. **API Functionality**:
+   - The main function `cssesc(value, options)` takes a string (`value`) and returns an escaped version of it. The escaping is done to make the string safe for use in CSS strings or identifiers.
+   - Options can control the behavior of the escaping process:
+     - `isIdentifier`: When `true`, the output is suitable for CSS identifiers; otherwise, it's suitable for CSS strings.
+     - `quotes`: Specifies the type of quotes (`'single'` or `'double'`) around the escaped string, affecting how `"` and `'` are escaped.
+     - `wrap`: If `true`, wraps the escaped string in quotes, making it a valid CSS string literal.
+     - `escapeEverything`: When `true`, escapes all characters, even printable ASCII symbols.
+   - Global default options can be set through `cssesc.options`.
+
+2. **Version**: The library includes `cssesc.version` to indicate its semantic version number.
+
+3. **Command-Line Interface (CLI)**: The package provides a CLI tool when installed globally, enabling string escaping from the command line. Options like `--identifier` can tailor the behavior similar to the API's options.
+
+The following code implements the core functionality of the `cssesc` package:
+
+```javascript
+const defaultOptions = {
+  isIdentifier: false,
+  quotes: 'single',
+  wrap: false,
+  escapeEverything: false,
+};
+
+function toHex(character) {
+  return character.charCodeAt(0).toString(16).toUpperCase();
+}
+
+function escapeCharacter(character, options) {
+  if (options.escapeEverything) {
+    const hex = toHex(character);
+    return `\\${hex.length === 1 ? '0' : ''}${hex} `;
+  }
+  // Escape non-ASCII characters
+  if (character.charCodeAt(0) > 0x7F) {
+    const hex = toHex(character);
+    return `\\${hex} `;
+  }
+  switch (character) {
+    case '\0':
+      return '\\0 ';
+    case '\b':
+    case '\v':
+    case '\t':
+    case '\r':
+    case '\f':
+      return `\\${character.charCodeAt(0).toString(16)} `;
+    case '\n':
+      return '\\A ';
+    case '\u0000':
+      return '\\0 ';
+    case '\u000C':
+      return '\\c ';
+    case '"':
+      return options.quotes === 'double' ? `\\"` : '"';
+    case '\'':
+      return options.quotes === 'single' ? `\\'` : '\'';
+    case ' ':
+      return '\\ ';
+    default:
+      if (!character.match(/[ -~]/)) {
+        const hex = toHex(character);
+        return `\\${hex.length === 1 ? '0' : ''}${hex} `;
+      }
+      return character;
+  }
+}
+
+function cssesc(input, options = {}) {
+  // Merge default options with user-provided options
+  options = { ...defaultOptions, ...options };
+
+  let escaped = Array.from(input, character => escapeCharacter(character, options)).join('');
+
+  if (options.wrap) {
+    const quote = options.quotes === 'double' ? '"' : '\'';
+    escaped = `${quote}${escaped}${quote}`;
+  }
+
+  // Handle CSS identifiers
+  if (options.isIdentifier) {
+    // Ensure starting character is legal in identifiers
+    if (/^[0-9]/.test(escaped)) {
+      escaped = `\\3${escaped.charAt(0)}${escaped.slice(1)}`;
+    }
+  }
+
+  return escaped;
+}
+
+// Expose options object and version
+cssesc.options = { ...defaultOptions };
+cssesc.version = '1.0.0';
+
+if (require.main === module) {
+  // Simple CLI support
+  const input = process.argv.slice(2).join(' ');
+  console.log(cssesc(input, { wrap: true }));
+}
+
+module.exports = cssesc;
+```

@@ -1,0 +1,72 @@
+The provided Node.js code defines a function `globToRegExp` that converts a glob pattern to a regular expression (RegExp) pattern. Glob patterns are used for filename matching with special characters such as `*`, `?`, and others. This function takes a glob pattern as a string and an optional settings object with boolean properties: `extended` for enabling extended syntax like character sets and groups, `globstar` for supporting "**" as a match for arbitrary directory depths, and `flags` for specifying RegExp flags. It processes each character in the glob string and constructs a corresponding RegExp pattern string, considering the options provided. The final RegExp pattern is returned by wrapping it as a regular expression object.
+
+Here is the rewritten code:
+
+```javascript
+function globToRegExp(glob, options = {}) {
+  const { extended = false, globstar = false, flags = '' } = options;
+  let regExpString = '^';
+  let inGroup = false;
+  let charSet = false;
+
+  for (let i = 0; i < glob.length; i++) {
+    const char = glob[i];
+
+    if (char === '/') {
+      regExpString += '/';
+    } else if (char === '*') {
+      if (glob[i + 1] === '*' && globstar) {
+        regExpString += '.*';
+        i++;
+      } else {
+        regExpString += '[^/]*';
+      }
+    } else if (char === '?') {
+      regExpString += extended ? '.' : '\\?';
+    } else if (char === '[') {
+      if (extended) {
+        charSet = true;
+        regExpString += char;
+      } else {
+        regExpString += '\\[';
+      }
+    } else if (char === ']') {
+      if (extended && charSet) {
+        charSet = false;
+        regExpString += char;
+      } else {
+        regExpString += '\\]';
+      }
+    } else if (char === '{') {
+      if (extended) {
+        inGroup = true;
+        regExpString += '(';
+      } else {
+        regExpString += '\\{';
+      }
+    } else if (char === '}') {
+      if (extended && inGroup) {
+        inGroup = false;
+        regExpString += ')';
+      } else {
+        regExpString += '\\}';
+      }
+    } else if (char === ',') {
+      if (extended && inGroup) {
+        regExpString += '|';
+      } else {
+        regExpString += '\\,';
+      }
+    } else if ('+^$()|\\'.includes(char)) {
+      regExpString += '\\' + char;
+    } else {
+      regExpString += char;
+    }
+  }
+
+  regExpString += '$';
+  return new RegExp(regExpString, flags);
+}
+
+module.exports = globToRegExp;
+```

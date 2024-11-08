@@ -1,0 +1,101 @@
+The functionality of the given Node.js code revolves around extending the capabilities of the `figlet.js` library to handle loading of fonts asynchronously and synchronously. Here's a breakdown of the code:
+
+1. **Dependencies**: It requires `fs` for file system operations and `path` for handling file paths.
+
+2. **Font Directory Path**: The `fontDir` is defined, pointing to the fonts directory relative to the current script's location.
+
+3. **`loadFont` Method**: 
+   - Asynchronously loads a font from the fonts directory.
+   - Checks if the font is already cached; if so, it returns it directly.
+   - Reads font files (`.flf`), parses them, and caches the result.
+   - Returns a promise and optionally uses a callback function.
+
+4. **`loadFontSync` Method**:
+   - Synchronously performs what `loadFont` does.
+   - Primarily focuses on blocking loading and parsing of font files.
+
+5. **`fonts` Method**:
+   - Asynchronously retrieves the list of available font names.
+   - Filters files in the `fonts` directory to include only `.flf` files.
+   - Returns a promise and optionally uses a callback function.
+
+6. **`fontsSync` Method**:
+   - Provides a synchronous way to list all the font names available.
+
+7. **Export**: The `figlet` object, with the newly added functionalities, is exported for use in other modules.
+
+Here's a rewritten version of the code:
+
+```javascript
+/*
+  Node plugin for figlet.js
+*/
+
+const figlet = require("./figlet.js");
+const fs = require("fs");
+const path = require("path");
+
+const fontDir = path.join(__dirname, "/../fonts/");
+
+// Asynchronously loads a font into the figlet object.
+figlet.loadFont = function (name, next) {
+  return new Promise((resolve, reject) => {
+    if (figlet.figFonts[name]) {
+      next && next(null, figlet.figFonts[name].options);
+      return resolve(figlet.figFonts[name].options);
+    }
+
+    fs.readFile(path.join(fontDir, `${name}.flf`), 'utf-8', (err, fontData) => {
+      if (err) {
+        next && next(err);
+        return reject(err);
+      }
+
+      try {
+        const font = figlet.parseFont(name, fontData + "");
+        next && next(null, font);
+        resolve(font);
+      } catch (error) {
+        next && next(error);
+        reject(error);
+      }
+    });
+  });
+};
+
+// Synchronously loads a font into the figlet object.
+figlet.loadFontSync = function (name) {
+  if (figlet.figFonts[name]) {
+    return figlet.figFonts[name].options;
+  }
+
+  const fontData = fs.readFileSync(path.join(fontDir, `${name}.flf`), 'utf-8');
+  return figlet.parseFont(name, fontData + "");
+};
+
+// Asynchronously returns an array containing all of the font names.
+figlet.fonts = function (next) {
+  return new Promise((resolve, reject) => {
+    fs.readdir(fontDir, (err, files) => {
+      if (err) {
+        next && next(err);
+        return reject(err);
+      }
+
+      const fontList = files.filter(file => /\.flf$/.test(file))
+                            .map(file => file.replace(/\.flf$/, ""));
+      next && next(null, fontList);
+      resolve(fontList);
+    });
+  });
+};
+
+// Synchronously returns an array of all font names.
+figlet.fontsSync = function () {
+  return fs.readdirSync(fontDir)
+           .filter(file => /\.flf$/.test(file))
+           .map(file => file.replace(/\.flf$/, ""));
+};
+
+module.exports = figlet;
+```

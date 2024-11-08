@@ -1,0 +1,58 @@
+'use strict';
+
+// Import the mongoose library from the local `lib` directory
+const mongoose = require('./lib/');
+
+// Export the mongoose object, making all its methods and properties available as both named exports and default exports
+module.exports = {
+  ...mongoose,
+  default: mongoose,
+  mongoose: mongoose,
+  
+  // Re-export specific properties for ESM compatibility
+  cast: mongoose.cast,
+  STATES: mongoose.STATES,
+  setDriver: mongoose.setDriver,
+  set: mongoose.set,
+  get: mongoose.get,
+  createConnection: mongoose.createConnection,
+  connect: mongoose.connect,
+  disconnect: mongoose.disconnect,
+  startSession: mongoose.startSession,
+  pluralize: mongoose.pluralize,
+  model: mongoose.model,
+  deleteModel: mongoose.deleteModel,
+  modelNames: mongoose.modelNames,
+  plugin: mongoose.plugin,
+  connections: mongoose.connections,
+  version: mongoose.version,
+  Aggregate: mongoose.Aggregate,
+  Mongoose: mongoose.Mongoose,
+  Schema: mongoose.Schema,
+  SchemaType: mongoose.SchemaType,
+  SchemaTypes: mongoose.SchemaTypes,
+  VirtualType: mongoose.VirtualType,
+  Types: mongoose.Types,
+  Query: mongoose.Query,
+  Model: mongoose.Model,
+  Document: mongoose.Document,
+  ObjectId: mongoose.ObjectId,
+  isValidObjectId: mongoose.isValidObjectId,
+  isObjectIdOrHexString: mongoose.isObjectIdOrHexString,
+  syncIndexes: mongoose.syncIndexes,
+  Decimal128: mongoose.Decimal128,
+  Mixed: mongoose.Mixed,
+  Date: mongoose.Date,
+  Number: mongoose.Number,
+  Error: mongoose.Error,
+  MongooseError: mongoose.MongooseError,
+  now: mongoose.now,
+  CastError: mongoose.CastError,
+  SchemaTypeOptions: mongoose.SchemaTypeOptions,
+  mongo: mongoose.mongo,
+  mquery: mongoose.mquery,
+  sanitizeFilter: mongoose.sanitizeFilter,
+  trusted: mongoose.trusted,
+  skipMiddlewareFunction: mongoose.skipMiddlewareFunction,
+  overwriteMiddlewareResult: mongoose.overwriteMiddlewareResult,
+};

@@ -1,0 +1,112 @@
+The `npm-package-arg` Node.js package is designed to parse package descriptors used in commands like `npm install` or defined in `package.json` dependencies. It processes these descriptors and provides structured information about the package, such as its type, name, version, or where it can be fetched from.
+
+### Key Features and Methods
+
+1. **Parsing with npa(arg[, where])**: 
+    - Takes a string (`arg`) representing a package descriptor (e.g., `foo@1.2`, `@bar/foo@1.2`, URLs, file paths) and optional path (`where`) to resolve relative file paths.
+    - Returns an object containing details like package type, name, and fetch spec.
+    - Throws an error if the input is invalid (e.g., unsupported protocol or invalid package name).
+
+2. **Resolving with npa.resolve(name, spec[, where])**: 
+    - Similar to `npa(arg)`, but it separately takes a package name and version spec.
+    - Throws an error under similar invalid conditions as `npa(arg)`.
+
+3. **Converting to Package URL with npa.toPurl(arg, reg)**: 
+    - Converts a package descriptor to its package URL (purl) form.
+    - Can use a specific registry URL or default to `https://registry.npmjs.org`.
+    - Throws an error if conversion to purl is not possible.
+
+### Result Object
+
+The method `npa(arg)` and `npa.resolve(name, spec)` return a comprehensive object with properties:
+- `type`: Indicates the type of package (e.g., `git`, `tag`, `version`, etc.).
+- `registry`: Boolean indicating if the resource is hosted on a registry.
+- `name`, `scope`, `escapedName`: Provide details on package name and scope.
+- `rawSpec`, `saveSpec`, `fetchSpec`: Provide specifier details for fetching or saving.
+- `gitRange`, `gitCommittish`, `hosted`: Provide details specific to git dependencies.
+- `raw`, `subSpec`: Original input string and details specific to alias types.
+
+Here is the implementation of this functionality:
+
+```javascript
+'use strict';
+
+module.exports = npa;
+module.exports.resolve = resolve;
+module.exports.toPurl = toPurl;
+
+const url = require('url');
+const process = require('process');
+
+function npa(arg, where) {
+  if (!arg) throw new Error('Invalid package argument');
+
+  return parse(arg, where || process.cwd());
+}
+
+function resolve(name, spec, where) {
+  if (!name || !spec) throw new Error('Invalid name or spec');
+
+  const arg = `${name}@${spec}`;
+  return parse(arg, where || process.cwd());
+}
+
+function toPurl(arg, reg = 'https://registry.npmjs.org') {
+  const parsed = parse(arg);
+  if (!parsed.name || !parsed.version) throw new Error('Unable to resolve purl');
+  
+  return `pkg:npm/${parsed.name}@${parsed.version}`;
+}
+
+function parse(arg, where) {
+  let result = {
+    raw: arg,
+    type: null,
+    registry: true,
+    name: null,
+    scope: null,
+    rawSpec: null,
+    saveSpec: null,
+    fetchSpec: null,
+    gitRange: null,
+    gitCommittish: null,
+    hosted: null
+  };
+
+  // Regex to determine type and parse the argument
+  const gitPattern = /^git(\+.*):\/\/(.*)/;
+  const filePattern = /(file:)?(.+\.(tar\.gz|tgz|tar))$/;
+  const directoryPattern = /^\.\.?\//;
+  
+  if (gitPattern.test(arg)) {
+    result.type = 'git';
+    result.fetchSpec = arg.match(gitPattern)[0];
+  } else if (filePattern.test(arg)) {
+    result.type = 'file';
+    result.fetchSpec = where + '/' + arg.match(filePattern)[2];
+  } else if (directoryPattern.test(arg)) {
+    result.type = 'directory';
+    result.fetchSpec = where + '/' + arg;
+  } else if (arg.includes('@')) {
+    let [name, version] = arg.split('@');
+    if (name.startsWith('@')) {
+      [result.scope, name] = name.split('/');
+      result.scope = '@' + result.scope;
+    }
+    result.type = version ? 'version' : 'range';
+    result.name = name;
+    result.rawSpec = result.saveSpec = result.fetchSpec = version || 'latest';
+  } else {
+    result.type = 'tag';
+    result.name = arg;
+    result.rawSpec = result.saveSpec = result.fetchSpec = 'latest';
+  }
+
+  result.escapedName = escapeName(result.name);
+  return result;
+}
+
+function escapeName(name) {
+  return name ? name.replace('/', '%2f') : null;
+}
+```

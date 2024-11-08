@@ -1,0 +1,73 @@
+The given Node.js code is a CommonJS module setup that exports two functions: `getSmithyContext` and `normalizeProvider`. It has utility functions to define property descriptors, get property names, check property existence, and manage object properties for exports. Here's a brief rundown of its main components:
+- It defines utility functions like `__defProp`, `__getOwnPropDesc`, `__getOwnPropNames`, and `__hasOwnProp` for fundamental object operations.
+- The `__name` function assigns a configurable name to a target function.
+- The `__export` function exports properties by defining getters on the target object.
+- The `__copyProps` function copies properties from one object to another, excluding a specified key.
+- The `__toCommonJS` function creates a CommonJS module format by setting `__esModule` to `true` and copying properties.
+- `getSmithyContext` tries to access a specific property (`SMITHY_CONTEXT_KEY`) from the `context` object, or assigns it an empty object if it doesn't exist.
+- `normalizeProvider` checks if the input is a function; if not, it returns a function that resolves the input to a promise.
+
+The code concludes by exporting `getSmithyContext` and `normalizeProvider` for use in other modules. Here is a possible rewrite:
+
+```javascript
+// Utility functions for property management
+const defineProp = Object.defineProperty;
+const getOwnPropDesc = Object.getOwnPropertyDescriptor;
+const getOwnPropNames = Object.getOwnPropertyNames;
+const hasOwnProp = Object.prototype.hasOwnProperty;
+
+const nameFunction = (target, value) => {
+  defineProp(target, "name", { value, configurable: true });
+};
+
+const exportModule = (target, exports) => {
+  for (const prop in exports) {
+    defineProp(target, prop, { get: exports[prop], enumerable: true });
+  }
+};
+
+const copyProperties = (to, from, exclude) => {
+  if (from && (typeof from === "object" || typeof from === "function")) {
+    for (const key of getOwnPropNames(from)) {
+      if (!hasOwnProp.call(to, key) && key !== exclude) {
+        defineProp(to, key, { 
+          get: () => from[key], 
+          enumerable: !(desc = getOwnPropDesc(from, key)) || desc.enumerable 
+        });
+      }
+    }
+  }
+  return to;
+};
+
+const toCommonJS = (mod) => {
+  return copyProperties(defineProp({}, "__esModule", { value: true }), mod);
+};
+
+// Exported functions from src
+const srcExports = {};
+exportModule(srcExports, {
+  getSmithyContext: () => getSmithyContext,
+  normalizeProvider: () => normalizeProvider
+});
+module.exports = toCommonJS(srcExports);
+
+// Function to get the Smithy context
+const importTypes = require("@smithy/types");
+const getSmithyContext = nameFunction((context) => {
+  return context[importTypes.SMITHY_CONTEXT_KEY] || (context[importTypes.SMITHY_CONTEXT_KEY] = {});
+}, "getSmithyContext");
+
+// Function to normalize a provider
+const normalizeProvider = nameFunction((input) => {
+  if (typeof input === "function") return input;
+  const promisified = Promise.resolve(input);
+  return () => promisified;
+}, "normalizeProvider");
+
+// Annotation for ESM import
+0 && (module.exports = {
+  getSmithyContext,
+  normalizeProvider
+});
+```

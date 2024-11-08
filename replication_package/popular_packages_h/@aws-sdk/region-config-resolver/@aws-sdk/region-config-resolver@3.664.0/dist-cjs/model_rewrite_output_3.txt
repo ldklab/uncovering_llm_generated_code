@@ -1,0 +1,96 @@
+The provided Node.js code defines a module that exports a set of functions and constants for handling AWS region configuration. The module appears to be part of a larger project dealing with AWS region extensions and configuration resolution. Here's what each part of the code does:
+
+1. **Custom Helper Functions**: 
+   - Several helper functions such as `__defProp`, `__getOwnPropDesc`, `__getOwnPropNames`, `__hasOwnProp`, and others are defined to facilitate properties manipulation and exporting functions within the module.
+
+2. **Exporting Functions and Constants**:
+   - The module exports functions and constants related to AWS region configuration, such as:
+     - `getAwsRegionExtensionConfiguration`: a function to configure AWS region with a runtime configuration.
+     - `resolveAwsRegionExtensionConfiguration`: resolves the AWS region configuration.
+     - `resolveRegionConfig`: resolves configuration related to regions, allowing handling of "fips" regions and default configurations.
+     - Constants `REGION_ENV_NAME`, `REGION_INI_NAME` representing AWS region environment variable names and file metadata.
+     - Objects `NODE_REGION_CONFIG_OPTIONS` and `NODE_REGION_CONFIG_FILE_OPTIONS` hold configuration options for reading environment variables or configuration files.
+
+3. **Region Configuration Functions**:
+   - `getAwsRegionExtensionConfiguration` defines how to handle and validate the configuration of regions dynamically.
+   - `resolveAwsRegionExtensionConfiguration` extracts and validates the region from the configuration object.
+   - `resolveRegionConfig` includes logic to handle "fips" regions and extracts a real AWS region for a given configuration.
+
+Here's a possible rewrite of the code:
+
+```javascript
+"use strict";
+
+const REGION_ENV_NAME = "AWS_REGION";
+const REGION_INI_NAME = "region";
+
+const NODE_REGION_CONFIG_OPTIONS = {
+  environmentVariableSelector: (env) => env[REGION_ENV_NAME],
+  configFileSelector: (profile) => profile[REGION_INI_NAME],
+  default: () => { throw new Error("Region is missing"); }
+};
+
+const NODE_REGION_CONFIG_FILE_OPTIONS = {
+  preferredFile: "credentials"
+};
+
+function isFipsRegion(region) {
+  return typeof region === "string" &&
+    (region.startsWith("fips-") || region.endsWith("-fips"));
+}
+
+function getRealRegion(region) {
+  if (isFipsRegion(region)) {
+    return ["fips-aws-global", "aws-fips"].includes(region) ? "us-east-1" : region.replace(/fips-(dkr-|prod-)?|-fips/, "");
+  }
+  return region;
+}
+
+function getAwsRegionExtensionConfiguration(runtimeConfig) {
+  let runtimeConfigRegion = async () => {
+    if (runtimeConfig.region === undefined) {
+      throw new Error("Region is missing from runtimeConfig");
+    }
+    const region = runtimeConfig.region;
+    return typeof region === "string" ? region : region();
+  };
+
+  return {
+    setRegion: (region) => { runtimeConfigRegion = region; },
+    region: () => runtimeConfigRegion,
+  };
+}
+
+function resolveAwsRegionExtensionConfiguration(awsRegionExtensionConfiguration) {
+  return {
+    region: awsRegionExtensionConfiguration.region()
+  };
+}
+
+function resolveRegionConfig(input) {
+  const { region, useFipsEndpoint } = input;
+  if (!region) throw new Error("Region is missing");
+
+  return {
+    ...input,
+    region: async () => {
+      const resolvedRegion = typeof region === "string" ? region : await region();
+      return getRealRegion(resolvedRegion);
+    },
+    useFipsEndpoint: async () => {
+      const resolvedRegion = typeof region === "string" ? region : await region();
+      return isFipsRegion(resolvedRegion) ? true : (typeof useFipsEndpoint !== "function" ? !!useFipsEndpoint : useFipsEndpoint());
+    }
+  };
+}
+
+module.exports = {
+  getAwsRegionExtensionConfiguration,
+  resolveAwsRegionExtensionConfiguration,
+  resolveRegionConfig,
+  REGION_ENV_NAME,
+  REGION_INI_NAME,
+  NODE_REGION_CONFIG_OPTIONS,
+  NODE_REGION_CONFIG_FILE_OPTIONS
+};
+```

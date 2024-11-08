@@ -1,0 +1,81 @@
+The provided Node.js code defines a function `eos` (end-of-stream) that detects when a readable or writable stream has finished processing. It listens for events such as 'end', 'finish', 'close', and 'error' on the stream, then calls a callback when the stream has successfully finished or failed with an error. The function takes three arguments: the stream, an optional options object, and a callback function. Options can specify whether the stream is readable, writable, or should handle error events. The function registers necessary event listeners on the stream and performs cleanup by removing those listeners once the stream is done or an error occurs.
+
+```javascript
+const { Stream } = require('stream');
+
+function eos(stream, options, callback) {
+  // If options is a function, reassign it as callback and use an empty object as options
+  if (typeof options === 'function') {
+    callback = options;
+    options = {};
+  }
+  
+  options = options || {};
+  callback = callback || function() {};
+
+  // Determine if readable, writable, and error options are set
+  const isReadable = options.readable !== false;
+  const isWritable = options.writable !== false;
+  const handleError = options.error !== false;
+  
+  // Track event states
+  let hasClosed = false;
+  let hasEnded = false;
+
+  // Define cleanup function to remove event listeners
+  function removeListeners() {
+    stream.removeListener('close', handleClose);
+    stream.removeListener('finish', handleFinish);
+    stream.removeListener('end', handleEnd);
+    stream.removeListener('error', handleErrorEvent);
+  }
+
+  // Error handler
+  function handleErrorEvent(err) {
+    if (!handleError) return;
+    removeListeners();
+    callback.call(stream, err);
+  }
+
+  // End event handler
+  function handleEnd() {
+    hasEnded = true;
+    if (isWritable && hasClosed) return;
+    if (!isReadable) return callback.call(stream);
+    if (isWritable && stream.writable && !hasClosed) return;
+    removeListeners();
+    callback.call(stream);
+  }
+
+  // Close event handler
+  function handleClose() {
+    hasClosed = true;
+    if (isReadable && hasEnded) return;
+    if (isWritable && stream.writable && !hasEnded) return;
+    removeListeners();
+    callback.call(stream);
+  }
+
+  // Finish event handler
+  function handleFinish() {
+    handleEnd();
+  }
+
+  // Bind event handlers to the stream
+  const handleEndBound = handleEnd.bind(stream);
+  const handleFinishBound = handleFinish.bind(stream);
+  const handleCloseBound = handleClose.bind(stream);
+  const handleErrorBound = handleErrorEvent.bind(stream);
+
+  // Attach event listeners based on options
+  if (isReadable) stream.on('end', handleEndBound);
+  if (isWritable) stream.on('finish', handleFinishBound);
+  if (handleError) stream.on('error', handleErrorBound);
+  stream.on('close', handleCloseBound);
+
+  // Return the original stream
+  return stream;
+}
+
+module.exports = eos;
+```

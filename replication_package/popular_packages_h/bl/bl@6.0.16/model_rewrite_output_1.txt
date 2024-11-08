@@ -1,0 +1,112 @@
+The given Node.js code defines a class `BufferListStream` that extends the functionality of a `DuplexStream` from the `readable-stream` module. This class utilizes a `BufferList` module to manage a list of buffers efficiently.
+
+### Functionality:
+
+1. **Instantiation and Callback Handling**: 
+   - The `BufferListStream` can be instantiated directly or via a function call.
+   - If a callback is provided, it's stored, and event handlers are set up to call this callback in case of errors during piping.
+
+2. **Inheritance and Method Extension**:
+   - It inherits from `DuplexStream` and uses `inherits` for prototype chaining.
+   - It also incorporates properties from `BufferList`.
+
+3. **Stream Operations**:
+   - Implements `_write` for writing data to the buffer and invokes a callback on completion.
+   - Implements `_read` to read from the buffer and manages the internal buffer state correctly.
+
+4. **Stream End and Destroy**:
+   - The `end` method closes the stream and invokes any final callback with the entire buffered data.
+   - The `_destroy` method clears the internal buffers and sets their length to zero, allowing clean-up of resources.
+
+5. **Utility Method**:
+   - The `_isBufferList` checks if an object is a buffer list or compatible with it.
+
+6. **Exports**:
+   - The module exports `BufferListStream` and the `BufferList` for external usage.
+
+```javascript
+'use strict'
+
+const DuplexStream = require('readable-stream').Duplex;
+const inherits = require('inherits');
+const BufferList = require('./BufferList');
+
+function BufferListStream(callback) {
+  if (!(this instanceof BufferListStream)) {
+    return new BufferListStream(callback);
+  }
+
+  if (typeof callback === 'function') {
+    this._callback = callback;
+
+    const piper = (err) => {
+      if (this._callback) {
+        this._callback(err);
+        this._callback = null;
+      }
+    };
+
+    this.on('pipe', (src) => {
+      src.on('error', piper);
+    });
+    this.on('unpipe', (src) => {
+      src.removeListener('error', piper);
+    });
+
+    callback = null;
+  }
+
+  BufferList._init.call(this, callback);
+  DuplexStream.call(this);
+}
+
+inherits(BufferListStream, DuplexStream);
+Object.assign(BufferListStream.prototype, BufferList.prototype);
+
+BufferListStream.prototype._new = function(callback) {
+  return new BufferListStream(callback);
+};
+
+BufferListStream.prototype._write = function(buf, encoding, callback) {
+  this._appendBuffer(buf);
+
+  if (typeof callback === 'function') {
+    callback();
+  }
+};
+
+BufferListStream.prototype._read = function(size) {
+  if (!this.length) {
+    return this.push(null);
+  }
+
+  size = Math.min(size, this.length);
+  this.push(this.slice(0, size));
+  this.consume(size);
+};
+
+BufferListStream.prototype.end = function(chunk) {
+  DuplexStream.prototype.end.call(this, chunk);
+
+  if (this._callback) {
+    this._callback(null, this.slice());
+    this._callback = null;
+  }
+};
+
+BufferListStream.prototype._destroy = function(err, cb) {
+  this._bufs.length = 0;
+  this.length = 0;
+  cb(err);
+};
+
+BufferListStream.prototype._isBufferList = function(b) {
+  return b instanceof BufferListStream || b instanceof BufferList || BufferListStream.isBufferList(b);
+};
+
+BufferListStream.isBufferList = BufferList.isBufferList;
+
+module.exports = BufferListStream;
+module.exports.BufferListStream = BufferListStream;
+module.exports.BufferList = BufferList;
+```

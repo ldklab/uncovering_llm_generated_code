@@ -1,0 +1,61 @@
+The given Node.js code is a Babel plugin that facilitates polyfilling of JavaScript features using `core-js` version 3. The plugin checks if the Babel API version is 7 and configures its behavior based on provided options. Here's a breakdown of its functionality:
+
+- **Initialization**: The plugin requires Babel's `declare` function from `@babel/helper-plugin-utils`. It is exported as a module using the `declare` wrapper function.
+- **Options**: The plugin accepts options with defaults set - `method` is `'usage-global'`, `version` is `'3.0'`, and `proposals` is `false`.
+- **Visitor**: The plugin visits each program (module):
+  - **method 'entry-global'**: It traverses the import declarations and updates any imports from `core-js` to use a specific version by modifying the import source.
+  - **method 'usage-global' or 'usage-pure'**: It adds an import at the top of the file to polyfill all features using the full version of `core-js`.
+  - **proposals**: If set to true, it adds an additional import for polyfills of ECMAScript proposals.
+
+This way, the plugin can dynamically adjust what polyfills are included based on the specified method and options.
+
+Here is a rewritten version of the given code:
+
+```javascript
+const { declare } = require('@babel/helper-plugin-utils');
+
+module.exports = declare((api, options) => {
+  api.assertVersion(7);
+
+  const {
+    method = 'usage-global',
+    version = '3.0',
+    proposals = false
+  } = options;
+
+  return {
+    name: 'babel-plugin-polyfill-corejs3',
+
+    visitor: {
+      Program(path) {
+        if (method === 'entry-global') {
+          path.traverse({
+            ImportDeclaration(importPath) {
+              const sourceValue = importPath.node.source.value;
+              if (sourceValue.startsWith('core-js')) {
+                importPath.node.source.value = `core-js@${version}`;
+              }
+            }
+          });
+        } else if (method === 'usage-global' || method === 'usage-pure') {
+          path.node.body.unshift(
+            api.types.importDeclaration(
+              [],
+              api.types.stringLiteral(`core-js@${version}/full`)
+            )
+          );
+        }
+
+        if (proposals) {
+          path.node.body.unshift(
+            api.types.importDeclaration(
+              [],
+              api.types.stringLiteral(`core-js@${version}/proposals`)
+            )
+          );
+        }
+      }
+    }
+  };
+});
+```

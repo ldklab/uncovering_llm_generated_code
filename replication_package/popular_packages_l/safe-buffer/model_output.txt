@@ -1,0 +1,79 @@
+The `safe-buffer` package provides a safer, consistent way to create and manage Buffers in Node.js across all versions. Buffers are used to handle binary data in Node.js, and the native Buffer API has potential pitfalls, especially around uninitialized memory. The `safe-buffer` package aims to mitigate these issues by implementing modern buffer creation methods such as `Buffer.from`, `Buffer.alloc`, `Buffer.allocUnsafe`, and `Buffer.allocUnsafeSlow`. These methods ensure that, when an uninitialized buffer is created, it's done so consciously and with a clear understanding of the associated risks.
+
+Here’s how the key functionalities of `safe-buffer` are implemented:
+
+1. **`Buffer.from`**: This method creates a new buffer from various input types (arrays, array buffers, strings, and other buffers). It maintains the same allocated memory when sharing a typed array's buffer.
+
+2. **`Buffer.alloc`**: This method is used for creating a new zero-filled buffer of a specified size, ensuring the buffer is initialized safely.
+
+3. **`Buffer.allocUnsafe`**: This method creates a new buffer of specified size without initializing the memory, meaning it might contain old data. This is fast but potentially unsafe if not immediately overwritten.
+
+4. **`Buffer.allocUnsafeSlow`**: Similar to `Buffer.allocUnsafe`, but ensures that the buffer is not allocated from the internal pool to avoid memory retention problems.
+
+The package uses native implementations of these methods when available and polyfills them for older versions of Node.js, ensuring backward compatibility and improving security without introducing breaking changes.
+
+Here's the code to implement this functionality using Node.js:
+
+```javascript
+// safe-buffer.js
+'use strict';
+
+var buffer = require('buffer');
+var Buffer = buffer.Buffer;
+
+// Check if native Buffer.from, Buffer.alloc, Buffer.allocUnsafe, Buffer.allocUnsafeSlow are available
+var useNative = typeof Buffer.alloc === 'function' && typeof Buffer.allocUnsafe === 'function';
+
+function safeBuffer(size) {
+  if (useNative) {
+    return Buffer.alloc(size);
+  } else {
+    var buf = new Buffer(size);
+    buf.fill(0);
+    return buf;
+  }
+}
+
+function safeBufferFrom(data, encoding) {
+  if (useNative) {
+    return Buffer.from(data, encoding);
+  } else {
+    if (typeof data === 'string') {
+      return new Buffer(data, encoding);
+    } else {
+      var buf = new Buffer(data.length);
+      for (var i = 0; i < data.length; i++) {
+        buf[i] = data[i];
+      }
+      return buf;
+    }
+  }
+}
+
+function safeBufferAllocUnsafe(size) {
+  if (useNative) {
+    return Buffer.allocUnsafe(size);
+  } else {
+    return new Buffer(size);
+  }
+}
+
+function safeBufferAllocUnsafeSlow(size) {
+  if (useNative) {
+    return Buffer.allocUnsafeSlow(size);
+  } else {
+    return new Buffer(size);
+  }
+}
+
+module.exports = {
+  Buffer: {
+    from: safeBufferFrom,
+    alloc: safeBuffer,
+    allocUnsafe: safeBufferAllocUnsafe,
+    allocUnsafeSlow: safeBufferAllocUnsafeSlow
+  }
+};
+```
+
+This module wraps the creation of Buffers to ensure safety and compatibility, leveraging new methods when available and safely polyfilling them when not. To use it, replace the native Buffer calls with the module's methods to help prevent memory disclosure vulnerabilities.

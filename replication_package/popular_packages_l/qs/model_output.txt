@@ -1,0 +1,89 @@
+The `qs` Node.js package provides functionalities to parse and stringify query strings with additional options and features, ensuring more flexible and secure handling of data. Here's a concise breakdown of its functionality:
+
+1. **Parsing Query Strings**:
+   - It can parse query strings into JavaScript objects, considering nested objects represented with bracket notation. 
+   - It supports plain objects without prototype methods via the `plainObjects` option.
+   - You can manage the depth of nested parsing with options like `depth` and `strictDepth`.
+   - It handles URI encoded strings ensuring compatibility with URL standards.
+   - Syntax such as dot notation, array parsing, and custom delimiters are supported.
+   - It offers several configurations for handling duplicate keys, empty arrays, and primitive values.
+   - More robust parsing options include charset management, handling special character encodings, and support for various formats.
+
+2. **Stringifying Objects**:
+   - Converts JavaScript objects into query strings using configurable encoding options.
+   - Allows custom sorting, filtering, and serializer functions for handling complex objects.
+   - Supports various array formats and notations, providing a flexible approach to how arrays are represented in the query string.
+   - Provides options to adjust handling of null and undefined values, encoding of space characters, and special character sets.
+   - It can handle both the `utf-8` charset used widely today, as well as legacy character sets.
+
+3. **Security and Configuration**:
+   - The library offers various options to limit parsing depth and the number of parameters to prevent potential abuse.
+   - It supports both modern and legacy character encoding systems to ensure broad compatibility.
+   - Allows overriding of default encoder and decoder functions for customized handling of keys and values.
+ 
+Here's an implementation of the basics of this functionality:
+
+```javascript
+// qs.js - A minimalist implementation of `qs` functionalities.
+class Qs {
+    static parse(str, options = {}) {
+        const obj = {};
+        const { delimiter = '&', depth = 5, allowDots = false } = options;
+        const pairs = str.replace(/^\?/, '').split(delimiter);
+        
+        for (const pair of pairs) {
+            const [key, val = ''] = pair.split('=').map(decodeURIComponent);
+            this._set(obj, key, val, { depth, allowDots });
+        }
+        
+        return obj;
+    }
+
+    static stringify(obj, options = {}) {
+        const { delimiter = '&', allowDots = false } = options;
+        return Object.entries(obj)
+            .map(([key, val]) => this._encode(key, val, { allowDots }))
+            .join(delimiter);
+    }
+
+    static _set(obj, path, value, { depth, allowDots }) {
+        const keys = allowDots ? path.split('.') : path.split('[').map(k => k.replace(/]$/, ''));
+        if (keys.length > depth) keys.length = depth;
+
+        let nested = obj;
+        for (let i = 0; i < keys.length - 1; i++) {
+            const key = keys[i] || Object.keys(nested).length;
+            nested = nested[key] = nested[key] || {};
+        }
+        nested[keys[keys.length - 1]] = value;
+    }
+
+    static _encode(key, value, { allowDots }) {
+        if (typeof value === 'object' && value !== null) {
+            return Object.entries(value)
+                .map(([subKey, subVal]) => this._encode(`${key}${allowDots ? '.' : '['}${subKey}${allowDots ? '' : ']'}`, subVal, { allowDots }))
+                .join('&');
+        }
+        return `${encodeURIComponent(key)}=${encodeURIComponent(value)}`;
+    }
+}
+
+module.exports = Qs;
+
+// Testing the parsing and stringifying functionality
+const qs = require('./qs');
+const assert = require('assert');
+
+const obj = qs.parse('a=c');
+assert.deepEqual(obj, { a: 'c' });
+
+const str = qs.stringify(obj);
+assert.equal(str, 'a=c');
+
+assert.deepEqual(qs.parse('foo[bar]=baz'), { foo: { bar: 'baz' } });
+assert.deepEqual(qs.parse('a%5Bb%5D=c'), { a: { b: 'c' } });
+
+assert.equal(qs.stringify({ a: { b: 'c' } }), 'a%5Bb%5D=c');
+assert.equal(qs.stringify({ a: { b: 'c' } }, { allowDots: true }), 'a.b=c');
+```
+This implementation focuses on the core ability to parse and stringify nested structures, respecting the depth limit and accommodating dot notation. It omits some advanced configurations and security features for brevity.

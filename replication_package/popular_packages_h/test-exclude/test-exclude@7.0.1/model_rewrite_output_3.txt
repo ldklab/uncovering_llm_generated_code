@@ -1,0 +1,118 @@
+The given Node.js code defines a `TestExclude` class that manages file and directory exclusion patterns based on specified configuration. This class is particularly useful for purposes like code instrumentation, where certain file types or paths need to be included or excluded. Below is a breakdown of its functionality:
+
+1. **Constructor (`constructor`)**: The constructor sets up the default options and allows custom options to override these defaults.
+2. **Option Handling**:
+   - Converts `include`, `exclude`, and `extension` strings into arrays if needed.
+   - Prepares glob-style patterns for inclusion and exclusion.
+   - Handles special negation patterns by differentiating between excluded and include-negated rules.
+3. **Method `handleNegation`:** Processes negative glob patterns to separate rules.
+4. **Method `shouldInstrument`:** Determines if a given file should be instrumented by checking against include and exclude patterns and considering file extensions.
+5. **Method `globSync`:** Synchronously finds files that match certain patterns and should be instrumented.
+6. **Method `glob`:** Asynchronously performs the same function as `globSync`.
+7. **Helper Functions**:
+   - `prepGlobPatterns`: Prepares glob patterns, allowing directory exclusion and pattern normalization.
+   - `getExtensionPattern`: Formats file extensions for glob matching.
+
+Below is a rewrite of the given code:
+
+```js
+'use strict';
+
+const path = require('path');
+const { glob } = require('glob');
+const { minimatch } = require('minimatch');
+const { defaults } = require('@istanbuljs/schema');
+const isOutsideDir = require('./is-outside-dir');
+
+class TestExclude {
+    constructor(opts = {}) {
+        // Merge given options with defaults
+        Object.assign(this, {relativePath: true}, defaults.testExclude);
+        Object.entries(opts).forEach(([key, value]) => {
+            if (value !== undefined) this[key] = value;
+        });
+
+        // Normalize configurations
+        this.include = this.toArray(this.include);
+        this.exclude = this.toArray(this.exclude);
+        this.extension = this.toArray(this.extension, false);
+
+        // Prepare glob patterns
+        this.include = this.preparePatterns(this.include);
+        if (this.excludeNodeModules) this.exclude.push('**/node_modules/**');
+        this.exclude = this.preparePatterns(this.exclude);
+
+        // Handle negations
+        this.handleNegation();
+    }
+
+    toArray(value, defaultArray = []) {
+        return typeof value === 'string' ? [value] : value || defaultArray;
+    }
+
+    preparePatterns(patterns) {
+        if (!patterns || patterns.length === 0) return false;
+        return prepGlobPatterns(patterns);
+    }
+
+    handleNegation() {
+        const negate = header => header.charAt(0) === '!';
+        const strip = header => header.slice(1);
+
+        if (Array.isArray(this.include)) {
+            const negatedIncludes = this.include.filter(negate).map(strip);
+            this.exclude.push(...this.preparePatterns(negatedIncludes));
+            this.include = this.include.filter(header => !negate(header));
+        }
+
+        this.excludeNegated = this.preparePatterns(this.exclude.filter(negate).map(strip));
+        this.exclude = this.exclude.filter(header => !negate(header));
+    }
+
+    shouldInstrument(filename, relFile) {
+        if (this.extension && !this.extension.some(ext => filename.endsWith(ext))) return false;
+        let pathToCheck = this.relativePath && !isOutsideDir(this.cwd, filename)
+            ? (relFile || path.relative(this.cwd, filename)).replace(/^\.[\\/]/, '')
+            : filename;
+        const match = pattern => minimatch(pathToCheck, pattern, { dot: true });
+        return (!this.include || this.include.some(match)) &&
+               (!this.exclude.some(match) || this.excludeNegated.some(match));
+    }
+
+    get globOptions() {
+        return { cwd: this.cwd, nodir: true, dot: true, posix: true, ignore: this.excludeNegated.length > 0 ? [] : this.exclude };
+    }
+
+    globSync(cwd = this.cwd) {
+        return glob.sync(getExtensionPattern(this.extension || []), this.globOptions)
+            .filter(file => this.shouldInstrument(path.resolve(cwd, file)));
+    }
+
+    async glob(cwd = this.cwd) {
+        const files = await glob(getExtensionPattern(this.extension || []), this.globOptions);
+        return files.filter(file => this.shouldInstrument(path.resolve(cwd, file)));
+    }
+}
+
+function prepGlobPatterns(patterns) {
+    return patterns.reduce((result, pattern) => {
+        if (!/\/\*\*$/.test(pattern)) result.push(pattern.replace(/\/$/, '') + '/**');
+        if (/^\*\*\//.test(pattern)) result.push(pattern.replace(/^\*\*\//, ''));
+        result.push(pattern);
+        return result;
+    }, []);
+}
+
+function getExtensionPattern(extension) {
+    switch (extension.length) {
+        case 0:
+            return '**';
+        case 1:
+            return `**/*${extension[0]}`;
+        default:
+            return `**/*{${extension.join()}}`;
+    }
+}
+
+module.exports = TestExclude;
+```

@@ -1,0 +1,65 @@
+The provided Node.js code is a module that implements CSS selector functionalities to match DOM elements. It utilizes the `css-what` library to parse CSS selectors and the `domutils` library for traversing and querying DOM elements. Here’s a breakdown of how the code works:
+
+1. **Class `CSSselect`:** It contains static methods to perform actions using CSS selectors:
+   - `selectAll(selector, elems, options)`: Finds all elements matching the given CSS selector.
+   - `compile(selector, options)`: Compiles a CSS selector into a function that can test if an element matches the selector.
+   - `compilePart(part, options)`: A helper to compile individual parts of a CSS selector into test functions.
+   - `is(elem, query, options)`: Checks if a single element matches a given CSS query.
+   - `selectOne(selector, elems, options)`: Finds the first element that matches the given CSS selector.
+
+2. **Selector Compilation:**
+   - The `compile` method first parses the selector string into an array of selector parts.
+   - It then creates an array of functions from these parts using `compilePart`.
+   - The compiled function checks whether each function in the array returns `true` for a given element, thereby testing if the element matches the entire selector.
+
+3. **Part Compilation:**
+   - `compilePart` constructs a function based on the type of selector part, such as 'tag' or 'descendant'. The function tests if elements meet the conditions described by these parts.
+
+4. **Integration with domutils:**
+   - Uses `domutils.findAll` to retrieve all matching elements and `domutils.findOne` to retrieve the first matching element within a set of elements.
+
+Here's the rewritten Node.js code:
+
+```javascript
+// index.js
+const cssWhat = require('css-what');
+const domutils = require('domutils');
+
+class CSSselect {
+  static selectAll(selector, elems, options = {}) {
+    const compiledSelector = this.compile(selector, options);
+    return domutils.findAll(compiledSelector, elems, options);
+  }
+
+  static compile(selector, options = {}) {
+    const parsedSelector = cssWhat.parse(selector);
+    const testFunctions = parsedSelector[0].map(part => this.compilePart(part, options));
+
+    return element => testFunctions.every(func => func(element));
+  }
+
+  static compilePart(part, options) {
+    switch (part.type) {
+      case 'tag':
+        return elem => elem.tagName === part.name;
+      case 'descendant':
+        return elem => elem.parentNode != null;
+      // Additional selector types can be handled here...
+      default:
+        throw new Error(`Unsupported selector type: ${part.type}`);
+    }
+  }
+
+  static is(elem, query, options = {}) {
+    const compiledSelector = this.compile(query, options);
+    return compiledSelector(elem);
+  }
+
+  static selectOne(selector, elems, options = {}) {
+    const compiledSelector = this.compile(selector, options);
+    return domutils.findOne(compiledSelector, elems, options);
+  }
+}
+
+module.exports = CSSselect;
+```

@@ -1,0 +1,251 @@
+The provided Node.js code is an implementation of a markdown parser. It serves as a wrapper around the parsing workflow by managing the conversion of markdown text into HTML or other text formats. Here's a step-by-step breakdown of how it functions:
+
+1. **Module Imports**: It imports various dependencies required for lexing, parsing, rendering, and processing tokens using classes like `Lexer`, `Parser`, `Renderer`, etc.
+
+2. **Main Function - `marked`**: 
+   - Takes markdown input `src`, options `opt`, and an optional callback `callback`.
+   - Validates input, ensuring it is a string and not undefined or null.
+   - Checks if the second argument is a callback to allow optional options.
+   - Merges provided options with defaults and handles deprecated options.
+   - Uses `Lexer` to tokenize markdown into significant elements.
+   - If a callback is provided, it attempts asynchronous operations like code highlighting.
+   - Without callback, it synchronously parses tokens to generate the final result using `Parser`.
+
+3. **Options Handling**:
+   - Provides methods to set (`setOptions`), get (`getDefaults`), and use extensions (`use`) with options.
+   - Allows customization of the rendering and tokenizing process through extended functionalities.
+
+4. **Token Processing**:
+   - A utility function `walkTokens` iterates over all tokens, handling nested tokens (like list items or table cells) and invoking a callback on each.
+
+5. **Inline Parsing**: 
+   - `parseInline` method provides a way to parse markdown elements that do not require full document parsing, using similar options and error handling.
+
+6. **Exposing Components**:
+   - Exposes essential components (`Parser`, `Renderer`, `Lexer`, etc.) and methods of the module via the `marked` object, providing a modular approach.
+
+Here's a rewritten version of the code, organized in a single markdown block:
+
+```javascript
+const Lexer = require('./Lexer.js');
+const Parser = require('./Parser.js');
+const Tokenizer = require('./Tokenizer.js');
+const Renderer = require('./Renderer.js');
+const TextRenderer = require('./TextRenderer.js');
+const Slugger = require('./Slugger.js');
+const { merge, checkSanitizeDeprecation, escape } = require('./helpers.js');
+const { getDefaults, changeDefaults, defaults } = require('./defaults.js');
+
+function marked(src, opt, callback) {
+  if (typeof src === 'undefined' || src === null) {
+    throw new Error('marked(): input parameter is undefined or null');
+  }
+  if (typeof src !== 'string') {
+    throw new Error('marked(): input parameter is of type ' + Object.prototype.toString.call(src) + ', string expected');
+  }
+
+  if (typeof opt === 'function') {
+    callback = opt;
+    opt = null;
+  }
+
+  opt = merge({}, marked.defaults, opt || {});
+  checkSanitizeDeprecation(opt);
+
+  if (callback) {
+    const highlight = opt.highlight;
+    let tokens;
+
+    try {
+      tokens = Lexer.lex(src, opt);
+    } catch (e) {
+      return callback(e);
+    }
+
+    const done = function(err) {
+      let out;
+      if (!err) {
+        try {
+          out = Parser.parse(tokens, opt);
+        } catch (e) {
+          err = e;
+        }
+      }
+
+      opt.highlight = highlight;
+
+      return err ? callback(err) : callback(null, out);
+    };
+
+    if (!highlight || highlight.length < 3) {
+      return done();
+    }
+
+    delete opt.highlight;
+    if (!tokens.length) return done();
+
+    let pending = 0;
+    marked.walkTokens(tokens, function(token) {
+      if (token.type === 'code') {
+        pending++;
+        setTimeout(() => {
+          highlight(token.text, token.lang, (err, code) => {
+            if (err) {
+              return done(err);
+            }
+            if (code != null && code !== token.text) {
+              token.text = code;
+              token.escaped = true;
+            }
+            pending--;
+            if (pending === 0) {
+              done();
+            }
+          });
+        }, 0);
+      }
+    });
+
+    if (pending === 0) {
+      done();
+    }
+    return;
+  }
+
+  try {
+    const tokens = Lexer.lex(src, opt);
+    if (opt.walkTokens) {
+      marked.walkTokens(tokens, opt.walkTokens);
+    }
+    return Parser.parse(tokens, opt);
+  } catch (e) {
+    e.message += '\nPlease report this to https://github.com/markedjs/marked.';
+    if (opt.silent) {
+      return '<p>An error occurred:</p><pre>' + escape(e.message + '', true) + '</pre>';
+    }
+    throw e;
+  }
+}
+
+marked.options = marked.setOptions = function(opt) {
+  merge(marked.defaults, opt);
+  changeDefaults(marked.defaults);
+  return marked;
+};
+
+marked.getDefaults = getDefaults;
+marked.defaults = defaults;
+
+marked.use = function(extension) {
+  const opts = merge({}, extension);
+  if (extension.renderer) {
+    const renderer = marked.defaults.renderer || new Renderer();
+    for (const prop in extension.renderer) {
+      const prevRenderer = renderer[prop];
+      renderer[prop] = (...args) => {
+        let ret = extension.renderer[prop].apply(renderer, args);
+        if (ret === false) {
+          ret = prevRenderer.apply(renderer, args);
+        }
+        return ret;
+      };
+    }
+    opts.renderer = renderer;
+  }
+  if (extension.tokenizer) {
+    const tokenizer = marked.defaults.tokenizer || new Tokenizer();
+    for (const prop in extension.tokenizer) {
+      const prevTokenizer = tokenizer[prop];
+      tokenizer[prop] = (...args) => {
+        let ret = extension.tokenizer[prop].apply(tokenizer, args);
+        if (ret === false) {
+          ret = prevTokenizer.apply(tokenizer, args);
+        }
+        return ret;
+      };
+    }
+    opts.tokenizer = tokenizer;
+  }
+  if (extension.walkTokens) {
+    const walkTokens = marked.defaults.walkTokens;
+    opts.walkTokens = (token) => {
+      extension.walkTokens(token);
+      if (walkTokens) {
+        walkTokens(token);
+      }
+    };
+  }
+  marked.setOptions(opts);
+};
+
+marked.walkTokens = function(tokens, callback) {
+  for (const token of tokens) {
+    callback(token);
+    switch (token.type) {
+      case 'table': {
+        for (const cell of token.tokens.header) {
+          marked.walkTokens(cell, callback);
+        }
+        for (const row of token.tokens.cells) {
+          for (const cell of row) {
+            marked.walkTokens(cell, callback);
+          }
+        }
+        break;
+      }
+      case 'list': {
+        marked.walkTokens(token.items, callback);
+        break;
+      }
+      default: {
+        if (token.tokens) {
+          marked.walkTokens(token.tokens, callback);
+        }
+      }
+    }
+  }
+};
+
+marked.parseInline = function(src, opt) {
+  if (typeof src === 'undefined' || src === null) {
+    throw new Error('marked.parseInline(): input parameter is undefined or null');
+  }
+  if (typeof src !== 'string') {
+    throw new Error('marked.parseInline(): input parameter is of type ' + Object.prototype.toString.call(src) + ', string expected');
+  }
+
+  opt = merge({}, marked.defaults, opt || {});
+  checkSanitizeDeprecation(opt);
+
+  try {
+    const tokens = Lexer.lexInline(src, opt);
+    if (opt.walkTokens) {
+      marked.walkTokens(tokens, opt.walkTokens);
+    }
+    return Parser.parseInline(tokens, opt);
+  } catch (e) {
+    e.message += '\nPlease report this to https://github.com/markedjs/marked.';
+    if (opt.silent) {
+      return '<p>An error occurred:</p><pre>' + escape(e.message + '', true) + '</pre>';
+    }
+    throw e;
+  }
+};
+
+marked.Parser = Parser;
+marked.parser = Parser.parse;
+
+marked.Renderer = Renderer;
+marked.TextRenderer = TextRenderer;
+
+marked.Lexer = Lexer;
+marked.lexer = Lexer.lex;
+
+marked.Tokenizer = Tokenizer;
+
+marked.Slugger = Slugger;
+
+marked.parse = marked;
+
+module.exports = marked;
+```

@@ -1,0 +1,97 @@
+The provided Node.js code is a module for creating and managing "Archiver" instances. It provides functionality to register different archival formats (like zip, tar, json), and to create Archiver instances using these formats. 
+
+Here's a breakdown of the key functionality:
+
+1. **Archiver Class**: It's assumed that in `require('./lib/core')`, there's a class or constructor function named `Archiver`.
+
+2. **Formats Management**: An object `formats` is used to store different archival format constructors. 
+
+3. **Creating Archiver Instances**: Through the `vending` function and its `create` method, new Archiver instances can be instantiated, given the required format is registered. A format-specific module is set on the instance.
+
+4. **Registering Formats**: The `registerFormat` method allows the registration of new archive formats. It ensures that:
+   - Format names aren't registered more than once.
+   - Format modules are valid functions and implement required methods like `append` and `finalize`.
+
+5. **Checking Format Registration**: `isRegisteredFormat` checks if a format has already been registered.
+
+6. **Default Registrations**: Formats `zip`, `tar`, and `json` are registered by default, each linking to their respective module.
+
+Here’s a possible rewrite of the code:
+
+```javascript
+/**
+ * Archiver Vending Module
+ *
+ * @ignore
+ * @license [MIT]{@link https://github.com/archiverjs/node-archiver/blob/master/LICENSE}
+ * @copyright (c) 2012-2014 Chris Talkington, contributors.
+ */
+const Archiver = require('./lib/core');
+
+const formats = {};
+
+/**
+ * Dispenses a new Archiver instance.
+ *
+ * @param  {String} format The archive format to use.
+ * @param  {Object} options Options for the Archiver
+ * @return {Archiver} 
+ */
+const vending = (format, options) => vending.create(format, options);
+
+/**
+ * Creates a new Archiver instance with the given format and options.
+ *
+ * @param  {String} format The archive format to use.
+ * @param  {Object} options Options for the Archiver
+ * @return {Archiver}
+ */
+vending.create = (format, options) => {
+  const Module = formats[format];
+  if (Module) {
+    const instance = new Archiver(format, options);
+    instance.setFormat(format);
+    instance.setModule(new Module(options));
+    return instance;
+  } else {
+    throw new Error(`create(${format}): format not registered`);
+  }
+};
+
+/**
+ * Registers a new format for use with archiver.
+ *
+ * @param  {String} format The name of the format.
+ * @param  {Function} module The function for archiver to interact with.
+ */
+vending.registerFormat = (format, module) => {
+  if (formats[format]) {
+    throw new Error(`register(${format}): format already registered`);
+  }
+
+  if (typeof module !== 'function') {
+    throw new Error(`register(${format}): format module invalid`);
+  }
+
+  if (typeof module.prototype.append !== 'function' || typeof module.prototype.finalize !== 'function') {
+    throw new Error(`register(${format}): format module missing methods`);
+  }
+
+  formats[format] = module;
+};
+
+/**
+ * Checks if the format is already registered.
+ * 
+ * @param {String} format The name of the format.
+ * @return {boolean} 
+ */
+vending.isRegisteredFormat = (format) => !!formats[format];
+
+// Register default formats
+vending.registerFormat('zip', require('./lib/plugins/zip'));
+vending.registerFormat('tar', require('./lib/plugins/tar'));
+vending.registerFormat('json', require('./lib/plugins/json'));
+
+module.exports = vending;
+```

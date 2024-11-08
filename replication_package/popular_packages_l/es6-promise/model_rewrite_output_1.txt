@@ -1,0 +1,83 @@
+The provided Node.js code is a simple implementation of an ES6-like Promise library with basic capabilities, which includes the methods `then`, `catch`, and `finally`. It features the core functionality of Promises, such as handling fulfilled and rejected states and allowing chaining operations.
+
+### Explanation:
+1. **Promise Constructor**: The constructor initializes a promise with a `state` of 'pending' and a `value`. It also accepts an `executor` function which is immediately called, passing `resolve` and `reject` functions.
+2. **State Handling**: Methods `resolve` and `reject` are used to change the state of the promise to 'fulfilled' or 'rejected', accordingly, setting the value or reason.
+3. **Handling Promise Resolution**: The `resolvePromise` function is a utility to handle promise resolution, capturing synchronous errors and handling them via rejection.
+4. **then Method**: This method allows chaining by returning a new promise. Depending on the state of the original promise, it will either resolve or reject using the fulfillment or rejection value.
+5. **catch Method**: This equivalent to `then(null, onRejected)`, for handling promise rejections.
+6. **finally Method**: Executes a callback regardless of how the promise was settled.
+7. **Polyfill**: The `polyfill` method assigns this custom implementation to the global context if `Promise` is not already present, enabling usage in environments that lack native support.
+8. **Auto-polyfill and Export**: It attempts to polyfill automatically in environments like browsers and exports the `Promise` functionality if in a Node.js-like environment.
+
+### Rewritten Code:
+```javascript
+(function (global) {
+  class SimplePromise {
+    constructor(executor) {
+      this.state = 'pending';
+      this.value = undefined;
+
+      const resolve = (value) => this._settle('fulfilled', value);
+      const reject = (reason) => this._settle('rejected', reason);
+
+      try {
+        executor(resolve, reject);
+      } catch (error) {
+        reject(error);
+      }
+    }
+
+    _settle(state, value) {
+      if (this.state === 'pending') {
+        this.state = state;
+        this.value = value;
+      }
+    }
+
+    then(onFulfilled, onRejected) {
+      return new SimplePromise((resolve, reject) => {
+        if (this.state === 'fulfilled') {
+          resolve(onFulfilled(this.value));
+        } else if (this.state === 'rejected') {
+          reject(onRejected(this.value));
+        }
+      });
+    }
+
+    catch(onRejected) {
+      return this.then(null, onRejected);
+    }
+
+    finally(onFinally) {
+      return this.then(
+        value => SimplePromise.resolve(onFinally()).then(() => value),
+        reason => SimplePromise.resolve(onFinally()).then(() => { throw reason; })
+      );
+    }
+
+    static resolve(value) {
+      return new SimplePromise((resolve) => resolve(value));
+    }
+
+    static reject(reason) {
+      return new SimplePromise((_, reject) => reject(reason));
+    }
+
+    static polyfill() {
+      if (!global.Promise) {
+        global.Promise = SimplePromise;
+      }
+    }
+  }
+
+  if (typeof window !== 'undefined') {
+    SimplePromise.polyfill();
+  }
+
+  if (typeof module !== 'undefined') {
+    module.exports = { Promise: SimplePromise };
+  }
+
+}(typeof window !== 'undefined' ? window : global));
+```

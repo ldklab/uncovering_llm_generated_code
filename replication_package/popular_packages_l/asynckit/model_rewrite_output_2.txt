@@ -1,0 +1,88 @@
+The given Node.js code provides two utility functions, `parallel` and `serial`, in an `asyncKit` object for handling asynchronous operations. 
+
+### Functionality:
+
+1. **Parallel Functionality (`parallel`):**
+   - Executes async tasks concurrently.
+   - Accepts an `input`, an `iterator` function, and a `finalCallback`.
+   - The `iterator` is called for each item in the `input`. If an error occurs in any item, the process is halted, and `finalCallback` is invoked with the error and results.
+   - If all tasks are completed without errors, `finalCallback` is called with `null` and the results.
+   - Supports abort functions to cancel remaining jobs in case of an error.
+
+2. **Serial Functionality (`serial`):**
+   - Executes async tasks sequentially, moving to the next task only after the current one completes.
+   - Accepts an `input`, an `iterator` function, and a `finalCallback`.
+   - Each item is processed one by one. If an error occurs, the further execution stops, and `finalCallback` is invoked with the error and results.
+   - After processing all items without any error, `finalCallback` is invoked with `null` and the results.
+
+Both methods support inputs either as arrays or objects, and they handle keys/indexes appropriately.
+
+### Rewritten Code:
+
+```javascript
+// File: index.js
+const asyncKit = {
+  parallel: function(input, iterator, finalCallback) {
+    const isArray = Array.isArray(input);
+    const keys = isArray ? input.map((_, i) => i) : Object.keys(input);
+    const totalJobs = keys.length;
+    const results = isArray ? [] : {};
+    let completed = 0;
+    let hasError = false;
+    const abortFunctions = [];
+
+    keys.forEach(key => {
+      if (hasError) return;
+
+      const item = input[key];
+      const abortFn = iterator(item, key, (error, result) => {
+        if (hasError) return;
+
+        completed++;
+        if (error) {
+          hasError = true;
+          abortFunctions.forEach(fn => fn && fn());
+          finalCallback(error, results);
+        } else {
+          results[key] = result;
+          if (completed === totalJobs) {
+            finalCallback(null, results);
+          }
+        }
+      });
+
+      if (typeof abortFn === 'function') {
+        abortFunctions.push(abortFn);
+      }
+    });
+  },
+
+  serial: function(input, iterator, finalCallback) {
+    const isArray = Array.isArray(input);
+    const keys = isArray ? input.map((_, i) => i) : Object.keys(input);
+    const results = isArray ? [] : {};
+    let index = 0;
+    const totalJobs = keys.length;
+
+    function iterate(err, result) {
+      if (err || index === totalJobs) {
+        finalCallback(err, results);
+        return;
+      }
+
+      if (index > 0) {
+        results[keys[index - 1]] = result;
+      }
+
+      const currentKey = keys[index++];
+      const currentItem = input[currentKey];
+      iterator(currentItem, currentKey, iterate);
+    }
+
+    iterate();
+  }
+};
+
+// Export the package functionalities
+module.exports = asyncKit;
+```

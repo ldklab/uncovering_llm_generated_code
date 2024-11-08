@@ -1,0 +1,82 @@
+The provided Node.js code defines three main functionalities across three separate modules:
+
+1. **`foregroundChild`:** This function is responsible for spawning a child process and handling its exit behavior. It does so by invoking a command (`cmd`) with specified arguments (`args`). The process's input, output, and error streams are connected to the parent process's streams. Upon the child process's exit, it can either directly exit the parent process with the child's exit code, or it can invoke a callback to decide further actions. The callback can return a number (to set the exit code) or a string (to send a signal to the parent process).
+
+2. **`proxySignals`:** This function sets up a listener for specific signals (`SIGINT`, `SIGTERM`, `SIGHUP`, `SIGBREAK`) so when the parent process receives any of these signals, they are passed on to the specified child process (`childProcess`). This helps in properly handling termination signals ensuring that the child processes are also terminated gracefully.
+
+3. **`watchdog`:** This function spawns a new node process that acts as a watchdog. When it receives a `SIGHUP` signal, it attempts to kill the associated child process with a `SIGKILL` after a short delay, ensuring that a child process does not linger after the parent process exits.
+
+Here is a rewritten version of the Node.js code implementing the same functionalities:
+
+```javascript
+// index.js
+import { spawn } from 'child_process';
+import process from 'process';
+
+export function foregroundChild(cmd, args, optionsOrCallback, maybeCallback) {
+  let options = typeof optionsOrCallback === 'function' ? {} : optionsOrCallback;
+  let callback = typeof optionsOrCallback === 'function' ? optionsOrCallback : maybeCallback;
+
+  const cmdWithArgs = Array.isArray(args) ? args : [args];
+  const optionsWithStdio = { ...options, stdio: [0, 1, 2, 'ipc'] };
+
+  const child = spawn(cmd, cmdWithArgs, optionsWithStdio);
+
+  child.on('exit', (code, signal) => {
+    if (!callback) {
+      process.exit(code || (signal ? 1 : 0));
+    } else {
+      const result = callback();
+      if (result instanceof Promise) {
+        result.then(res => handleCallbackResult(res, code, signal))
+              .catch(() => process.exit(1));
+      } else {
+        handleCallbackResult(result, code, signal);
+      }
+    }
+  });
+
+  child.on('error', () => process.exit(1));
+
+  function handleCallbackResult(result, code, signal) {
+    if (typeof result === 'number') {
+      process.exit(result);
+    } else if (typeof result === 'string') {
+      process.kill(process.pid, result);
+    } else if (result !== false) {
+      process.exit(code || (signal ? 1 : 0));
+    }
+  }
+
+  return child;
+}
+
+// proxy-signals.js
+import process from 'process';
+
+export function proxySignals(childProcess) {
+  const signals = ['SIGINT', 'SIGTERM', 'SIGHUP', 'SIGBREAK'];
+  signals.forEach(signal =>
+    process.on(signal, () => childProcess.kill(signal))
+  );
+}
+
+// watchdog.js
+import { spawn } from 'child_process';
+import process from 'process';
+
+export function watchdog(childProcess) {
+  const watchdogProcess = spawn(process.argv[0], [
+    '-e',
+    `
+    process.stdin.resume();
+    process.on('SIGHUP', () => {
+      setTimeout(() => process.kill(${childProcess.pid}, 'SIGKILL'), 500);
+    });
+  `
+  ]);
+
+  process.on('exit', () => watchdogProcess.kill('SIGHUP'));
+  return watchdogProcess;
+}
+```

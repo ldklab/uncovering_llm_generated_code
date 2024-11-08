@@ -1,0 +1,102 @@
+The Node.js package described in the README.md is an implementation of Node.js's `util` module designed to work in environments that lack native `util` support, such as web browsers. Its primary purpose is to provide compatibility for browser environments, allowing reusable Node.js code to run seamlessly across different platforms without modification.
+
+### Key Functionality:
+
+1. **Simulating `util` in Browser Environments**: Since Node.js's `util` module is not natively available in browsers, this package acts as a polyfill or substitute to provide similar functionality.
+
+2. **Installation**:  
+   - Most users won't need to install it separately, as bundlers like Browserify or Webpack typically include it when bundling for browsers.
+   - If manual installation is necessary, it can be done via `npm install util`.
+
+3. **Usage Example**: 
+   - The example shows how to use `util.inherits` to set up classical inheritance between custom objects and event emitters in JavaScript.
+
+4. **Browser Compatibility**:
+   - The module uses ES5 features; support for environments like IE8 can be extended using polyfills such as `es5-shim`.
+   - Features such as `util.promisify` and `util.callbackify` require Promises to be available, so, additional shims like `es6-promise` might be necessary for older browsers.
+
+5. **API Goals**:
+   - The module aims to mirror the Node.js `util` module API, specifically supporting Node 8 LTS API.
+   - Some methods like `inspect` and `format` are simplified for compatibility reasons.
+
+6. **Contribution Guidelines**:
+   - Contributions should focus on porting existing Node.js features and maintaining parity with Node.js's `util`.
+   - The module excludes features not available in the Node.js `util`.
+
+7. **Licensing**: Under the MIT License, allowing flexible use and contribution to the codebase.
+
+Here is a basic implementation of a Node.js package simulating the functionality described:
+
+```javascript
+// util.js - Simulating Node.js `util` module for browser environments
+
+// Simple implementation of util's inherits for inheritance
+function inherits(ctor, superCtor) {
+    if (typeof superCtor !== 'function' && superCtor !== null) {
+        throw new TypeError('The super constructor must be either null or a function');
+    }
+
+    ctor.super_ = superCtor;
+    ctor.prototype = Object.create(superCtor && superCtor.prototype, {
+        constructor: {
+            value: ctor,
+            writable: true,
+            configurable: true,
+        },
+    });
+    if (superCtor) Object.setPrototypeOf(ctor, superCtor);
+}
+
+// Simple implementation of util's promisify for Promise-based APIs
+function promisify(original) {
+    if (typeof original !== 'function') {
+        throw new TypeError('The "original" argument must be of type Function');
+    }
+  
+    function fn(...args) {
+        return new Promise((resolve, reject) => {
+            try {
+                original.call(this, ...args, (err, ...values) => {
+                    if (err) {
+                        reject(err);
+                    } else {
+                        resolve(values.length > 1 ? values : values[0]);
+                    }
+                });
+            } catch (err) {
+                reject(err);
+            }
+        });
+    }
+  
+    return fn;
+}
+
+// Simple implementation of util's format for string interpolation
+function format(f, ...args) {
+    if (typeof f !== 'string') {
+        throw new TypeError('First argument must be a string');
+    }
+
+    return f.replace(/%[sdj%]/g, (x) => {
+        if (x === '%%') return '%';
+        if (!args.length) return x;
+        switch (x) {
+            case '%s': return String(args.shift());
+            case '%d': return Number(args.shift());
+            case '%j': return JSON.stringify(args.shift());
+            default: return x;
+        }
+    });
+}
+
+// Exposing the functions as part of the module
+module.exports = {
+    inherits,
+    promisify,
+    format,
+    // More functions can be added here
+};
+```
+
+This code provides a simple browser-compatible utility module mimicking a subset of Node.js's `util` functions like `inherits`, `promisify`, and `format`. Users in browsers can use these functions to imitate Node.js behavior, making it easier to write platform-agnostic code.

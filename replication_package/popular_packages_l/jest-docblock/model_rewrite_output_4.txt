@@ -1,0 +1,79 @@
+The provided Node.js code is a module for handling docblocks in JavaScript or TypeScript files. A docblock is a special comment section that typically contains annotations (pragmas) and comments, often used for documentation purposes.
+
+The module offers the following functionalities:
+
+1. **extract**: This function extracts the entire docblock from a given string. It matches a block that starts with `/**` and ends with `*/`, returning this match if it exists.
+
+2. **strip**: This function removes the docblock from a given string. It identifies the docblock starting with `/**` and ending with `*/` and removes it from the text.
+
+3. **parse**: This function parses the contents of a docblock to extract key-value pairs known as 'pragmas'. A pragma in a docblock starts with `@` followed by a keyword. The method extracts these pragmas and returns them as an object, with support for duplicate pragmas being stored in an array.
+
+4. **parseWithComments**: This function extends the functionality of `parse`, returning both the extracted pragmas and any non-pragma comments as separate properties in a returned object.
+
+5. **print**: This function takes an object containing `comments` and `pragmas`, and constructs a formatted docblock string from these components. Comments and pragmas will be printed in the format used in docblocks, prepending `*` before each line or each pragma entry.
+
+Below is a rewrite of the original Node.js code with the same functionality:
+
+```javascript
+// Rewritten jest-docblock.js
+
+const extract = (contents) => {
+  const match = contents.match(/^\s*\/\*\*([\s\S]*?)\*\//);
+  return match ? match[0] : '';
+};
+
+const strip = (contents) => {
+  return contents.replace(/^\s*\/\*\*([\s\S]*?)\*\/\s*/, '');
+};
+
+const parse = (docblock) => {
+  const lines = docblock.split('\n').map(line => line.trim());
+  const pragmas = {};
+  lines.forEach(line => {
+    const pragmaMatch = line.match(/^@\w+/);
+    if (pragmaMatch) {
+      const key = pragmaMatch[0].slice(1);
+      const value = line.substring(pragmaMatch[0].length).trim();
+      if (pragmas[key]) {
+        if (Array.isArray(pragmas[key])) {
+          pragmas[key].push(value);
+        } else {
+          pragmas[key] = [pragmas[key], value];
+        }
+      } else {
+        pragmas[key] = value;
+      }
+    }
+  });
+  return pragmas;
+};
+
+const parseWithComments = (docblock) => {
+  const pragmas = parse(docblock);
+  const commentLines = docblock.split('\n').map(line => line.trim());
+  const comments = commentLines.filter(line => !line.startsWith('@')).join(' ')
+                               .replace(/\/\*\*|\*\//g, '').trim();
+  return { comments, pragmas };
+};
+
+const print = ({ comments = '', pragmas = {} }) => {
+  const pragmaLines = Object.entries(pragmas)
+    .map(([key, value]) => {
+      if (Array.isArray(value)) {
+        return value.map(val => ` * @${key} ${val}`).join('\n');
+      }
+      return ` * @${key} ${value}`;
+    })
+    .join('\n');
+  const commentLines = comments.split('\n').map(line => ` * ${line}`).join('\n');
+  return `/**\n${commentLines}\n${pragmaLines ? '\n' + pragmaLines : ''}\n */`;
+};
+
+module.exports = {
+  extract,
+  strip,
+  parse,
+  parseWithComments,
+  print,
+};
+```

@@ -1,0 +1,75 @@
+The Node.js script above defines a `Split2` class extending the `Transform` stream, which processes incoming data chunks by splitting them into lines using a given matcher (regular expression). The main features of the code are as follows:
+
+1. **Matcher and Splitting:** Uses a default line break matcher (`/\r?\n/`) to split incoming data into lines.
+2. **Mapping:** Optionally applies a transformation (`mapper`) function to each split line.
+3. **Handling Maximum Line Length:** Checks if lines exceed a specified `maxLength`. It rejects the transformation or skips the line based on the `skipOverflow` flag.
+4. **Buffered Data:** Maintains a buffer for data that hasn't been fully processed yet.
+5. **Readable Object Mode:** Determines if the stream should output objects based on whether a mapper function is provided.
+6. **Flush and Error Handling:** Processes remaining buffered data on stream end, with error handling both for mapper functions and for line length constraint.
+7. **Custom Stream Destruction:** Overwrites the default destroy method to emit a `close` event and perform cleanup.
+
+Below is a rewritten version of the provided Node.js code:
+
+```javascript
+const { Transform } = require('stream');
+
+class LineSplitter extends Transform {
+  constructor(matcher = /\r?\n/, mapper, options = {}) {
+    super({ readableObjectMode: !!mapper, ...options });
+    this.matcher = matcher;
+    this.mapper = mapper;
+    this.buffer = '';
+    this.maxLength = options.maxLength;
+    this.skipOverflow = options.skipOverflow || false;
+  }
+
+  _transform(chunk, encoding, callback) {
+    this.buffer += chunk.toString();
+    let lines = this.buffer.split(this.matcher);
+    this.buffer = lines.pop();
+
+    for (let line of lines) {
+      if (this.maxLength && line.length > this.maxLength) {
+        if (this.skipOverflow) continue;
+        return callback(new Error('Line exceeded maxLength'));
+      }
+      
+      if (this.mapper) {
+        try {
+          line = this.mapper(line);
+        } catch (error) {
+          return callback(error);
+        }
+      }
+
+      this.push(line);
+    }
+
+    callback();
+  }
+
+  _flush(callback) {
+    if (this.buffer) {
+      let line = this.buffer;
+      if (this.maxLength && line.length > this.maxLength) {
+        if (!this.skipOverflow) return callback(new Error('Line exceeded maxLength'));
+      } else {
+        try {
+          if (this.mapper) line = this.mapper(line);
+          this.push(line);
+        } catch (error) {
+          return callback(error);
+        }
+      }
+    }
+    callback();
+  }
+  
+  destroy(err, callback) {
+    this.emit('close');
+    super.destroy(err, callback);
+  }
+}
+
+module.exports = (matcher, mapper, options) => new LineSplitter(matcher, mapper, options);
+```

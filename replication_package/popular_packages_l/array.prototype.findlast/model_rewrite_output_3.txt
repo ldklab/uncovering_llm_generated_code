@@ -1,0 +1,95 @@
+The Node.js code provided consists of two main files: `index.js` and `test.js`. Here's a breakdown of the functionality:
+
+### Functionality Explanation
+
+1. **`findLast` Function**: This function mimics the behavior of `Array.prototype.findLast`. It iterates over an array from the end to the beginning, executing a provided predicate function for each element. It returns the last element for which the predicate returns a truthy value. If no such element exists, it returns `undefined`.
+
+2. **Error Handling**: The function checks if the provided array is `null` or `undefined` and if the predicate is not a function. It throws a `TypeError` if any of these checks fail.
+
+3. **Polyfill Logic**: It includes a polyfill mechanism that checks if `Array.prototype.findLast` is natively available. If not, it uses the `findLast` function defined above as a fallback.
+
+4. **Shim Method**: It ensures that `Array.prototype.findLast` is available and assigns the polyfill if necessary. The `shim` method also returns the polyfill function for additional configuration.
+
+5. **Module Exports**: The `mainExport` object exports the `findLast` function along with `shim` and `getPolyfill` methods. This export system allows other modules to require and use the polyfill.
+
+6. **`test.js` Testing**: This file uses Node's `assert` module to test the `findLast` function. It verifies its behavior on arrays with a specific predicate and checks the shim functionality in scenarios where `Array.prototype.findLast` is missing or already present.
+
+Here's a rewritten version of the Node.js code based on the above explanation:
+
+```javascript
+// index.js
+(function() {
+  'use strict';
+
+  // Function to find the last element satisfying the predicate
+  function findLast(array, predicate) {
+    if (array == null) {
+      throw new TypeError('Array.prototype.findLast called on null or undefined');
+    }
+    if (typeof predicate !== 'function') {
+      throw new TypeError('predicate must be a function');
+    }
+
+    const length = array.length >>> 0;
+    for (let i = length - 1; i >= 0; i--) {
+      if (i in array) {
+        const value = array[i];
+        if (predicate.call(arguments[2], value, i, array)) {
+          return value;
+        }
+      }
+    }
+    return undefined;
+  }
+
+  // Function to retrieve the appropriate polyfill
+  function getPolyfill() {
+    return typeof Array.prototype.findLast === 'function' ? Array.prototype.findLast : findLast;
+  }
+
+  // Shim to add the polyfill to Array.prototype if needed
+  function shim() {
+    const polyfill = getPolyfill();
+    if (Array.prototype.findLast !== polyfill) {
+      Object.defineProperty(Array.prototype, 'findLast', {
+        value: polyfill,
+        configurable: true,
+        writable: true,
+        enumerable: false
+      });
+    }
+    return polyfill;
+  }
+
+  // Export the findLast function and related utilities
+  const mainExport = findLast;
+  mainExport.shim = shim;
+  mainExport.getPolyfill = getPolyfill;
+
+  if (typeof module !== 'undefined' && module.exports) {
+    module.exports = mainExport;
+  }
+}());
+
+// test.js
+const assert = require('assert');
+const findLast = require('./index');
+
+// Sample array and predicate for testing
+const arr = [1, [2], [], 3, [[4]]];
+const isNumber = (x) => typeof x === 'number';
+
+// Test findLast function
+assert.strictEqual(findLast(arr, isNumber), 3);
+
+// Test shim when Array.prototype.findLast is absent
+delete Array.prototype.findLast;
+const shimmed = findLast.shim();
+assert.strictEqual(shimmed, findLast.getPolyfill());
+assert.strictEqual(arr.findLast(isNumber), findLast(arr, isNumber));
+
+// Test shim when Array.prototype.findLast is present
+const reshimmmed = findLast.shim();
+assert.strictEqual(reshimmmed, Array.prototype.findLast);
+assert.strictEqual(arr.findLast(isNumber), findLast(arr, isNumber));
+```

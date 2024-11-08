@@ -1,0 +1,60 @@
+The provided Node.js code is designed to manage and provide detailed information on various operating system signals. Signals are a form of inter-process communication in Unix-like operating systems. Here's a breakdown of the functionality:
+
+1. **Importing Modules**: 
+   - It imports `constants` from the `node:os` module to access operating system constants.
+   - Imports two utility functions, `SIGRTMAX` from a local `realtime.js` module to determine the maximum signal number, and `getSignals` from `signals.js` to acquire a list of signal objects with attributes such as name, number, description, etc.
+
+2. **Signal Listing by Name**:
+   - The `getSignalsByName` function uses the list of signals to map each signal to its respective name as a key in an object, with their details stored as the value.
+
+3. **Signal Listing by Number**:
+   - The `getSignalsByNumber` function attempts to organize the list of signals in an object keyed by signal number. It ensures that signal numbers are used to retrieve the correct signal information, defining up to `SIGRTMAX + 1` signals.
+
+4. **Helper Functions**:
+   - `getSignalByName` formats the signal for `signalsByName`.
+   - `getSignalByNumber` tries to find a signal from the array by its number and formats it for `signalsByNumber`.
+   - `findSignalByNumber` helps locate a signal by its number using the `constants.signals` mapping or direct number comparison.
+
+The final export provides two objects: `signalsByName` and `signalsByNumber`, which are collections of signal descriptions keyed by their names and numbers, respectively.
+
+Here is the rewritten code:
+
+```javascript
+import { constants } from "node:os";
+import { SIGRTMAX } from "./realtime.js";
+import { getSignals } from "./signals.js";
+
+const formatSignalByName = (signal) => [signal.name, signal];
+
+const getSignalsByName = () => {
+  const signals = getSignals();
+  return Object.fromEntries(signals.map(formatSignalByName));
+};
+
+export const signalsByName = getSignalsByName();
+
+const formatSignalByNumber = (number, signals) => {
+  const signal = findSignalByNumber(number, signals);
+  if (!signal) return {};
+
+  const { name, description, supported, action, forced, standard } = signal;
+  return {
+    [number]: { name, number, description, supported, action, forced, standard },
+  };
+};
+
+const getSignalsByNumber = () => {
+  const signals = getSignals();
+  const length = SIGRTMAX + 1;
+  const signalsArray = Array.from({ length }, (_, number) =>
+    formatSignalByNumber(number, signals)
+  );
+  return Object.assign({}, ...signalsArray);
+};
+
+export const signalsByNumber = getSignalsByNumber();
+
+const findSignalByNumber = (number, signals) =>
+  signals.find(({ name }) => constants.signals[name] === number) ||
+  signals.find((signal) => signal.number === number);
+```

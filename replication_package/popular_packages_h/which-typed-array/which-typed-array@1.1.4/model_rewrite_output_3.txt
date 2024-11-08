@@ -1,0 +1,78 @@
+The provided Node.js code is a utility to determine the specific type of a typed array. It uses a combination of available modules and JavaScript features to achieve this. The key operations include:
+
+1. **Dependencies**: It imports various modules, such as `foreach`, `available-typed-arrays`, `call-bind/callBound`, `has-symbols`, `es-abstract/helpers/getOwnPropertyDescriptor`, and `is-typed-array`.
+
+2. **Initialization**: 
+   - It uses `callBound` to bind the `Object.prototype.toString` and `String.prototype.slice` methods.
+   - It checks if the environment supports symbols and `Symbol.toStringTag`.
+
+3. **Typed Array Handling**: 
+   - It retrieves available typed arrays.
+   - It initializes an object `toStrTags` to store getter functions for `Symbol.toStringTag` if they exist.
+   - If `Symbol.toStringTag` is available, it ensures that each typed array includes the `Symbol.toStringTag` property and retrieves its getter function.
+
+4. **Typed Array Identification**:
+   - It defines a function `tryTypedArrays` that checks if an object can be identified as a specific typed array by invoking the getter of the `Symbol.toStringTag` property.
+
+5. **Exported Function**: 
+   - The exported function `whichTypedArray` uses the `is-typed-array` module to check if a value is a typed array.
+   - If `Symbol.toStringTag` is unavailable, it defaults to using `Object.prototype.toString`.
+   - Otherwise, it tries to identify the typed array using `tryTypedArrays`.
+
+Here's the refactored code:
+
+```javascript
+'use strict';
+
+const forEach = require('foreach');
+const availableTypedArrays = require('available-typed-arrays');
+const callBound = require('call-bind/callBound');
+
+const $toString = callBound('Object.prototype.toString');
+const hasSymbols = require('has-symbols')();
+const hasToStringTag = hasSymbols && typeof Symbol.toStringTag === 'symbol';
+
+const typedArrays = availableTypedArrays();
+
+const $slice = callBound('String.prototype.slice');
+const toStrTags = {};
+const gOPD = require('es-abstract/helpers/getOwnPropertyDescriptor');
+const getPrototypeOf = Object.getPrototypeOf;
+
+if (hasToStringTag && gOPD && getPrototypeOf) {
+    forEach(typedArrays, (typedArray) => {
+        if (typeof global[typedArray] === 'function') {
+            const arr = new global[typedArray]();
+            if (!(Symbol.toStringTag in arr)) {
+                throw new EvalError(`this engine has support for Symbol.toStringTag, but ${typedArray} does not have the property! Please report this.`);
+            }
+            const proto = getPrototypeOf(arr);
+            let descriptor = gOPD(proto, Symbol.toStringTag) || gOPD(getPrototypeOf(proto), Symbol.toStringTag);
+            toStrTags[typedArray] = descriptor.get;
+        }
+    });
+}
+
+const tryTypedArrays = (value) => {
+    let foundName = false;
+    forEach(toStrTags, (getter, typedArray) => {
+        if (!foundName) {
+            try {
+                const name = getter.call(value);
+                if (name === typedArray) {
+                    foundName = name;
+                }
+            } catch (e) {}
+        }
+    });
+    return foundName;
+};
+
+const isTypedArray = require('is-typed-array');
+
+module.exports = function whichTypedArray(value) {
+    if (!isTypedArray(value)) return false;
+    if (!hasToStringTag) return $slice($toString(value), 8, -1);
+    return tryTypedArrays(value);
+};
+```

@@ -1,0 +1,90 @@
+The provided Node.js code defines a module that exports a `prepare` function. This function is responsible for attempting to load and register a module loader for a file, based on its extension. It checks various configurations to find a suitable loader and restores the error if it encounters failures.
+
+### Explanation of the Code
+
+1. **Dependencies**: It imports functions from local files: `extension`, `normalize`, and `register`, which are likely helper functions for dealing with file extensions, normalizing configuration objects, and registering modules, respectively.
+
+2. **Function `prepare`**:
+   - **Parameters**:
+     - `extensions`: An object defining which modules should be used to load files with certain extensions.
+     - `filepath`: The path to the file for which a module loader needs to be prepared.
+     - `cwd`: The current working directory for resolving file paths.
+     - `nothrow`: A flag that indicates whether errors should be thrown or returned.
+   
+   - **Logic**:
+     - Determines the file extension using the `extension` helper.
+     - Searches for a configuration matching the file extension and normalizes it using the `normalize` function.
+     - If no suitable module loader is found, an error is thrown (or returned if `nothrow` is true).
+     - Iterates over possible configurations and attempts to register the specified modules.
+     - Records any errors encountered during registration.
+     - If all attempts to load modules fail, an error is constructed with details of the failures.
+
+3. **Return Values**:
+   - Returns `true` if the loader is registered successfully.
+   - Returns an array of registration attempts, including errors, if applicable.
+   - Throws an error if no suitable module loader is found, unless suppressed by the `nothrow` flag.
+
+Here is a rewritten version of the Node.js code:
+
+```javascript
+const path = require('path');
+
+const extension = require('./lib/extension');
+const normalize = require('./lib/normalize');
+const register = require('./lib/register');
+
+exports.prepare = function (extensions, filepath, cwd = null, nothrow = false) {
+  let config, usedExtension;
+  const attempts = [];
+  let onlyErrors = true;
+  const exts = extension(filepath);
+
+  if (exts) {
+    usedExtension = exts.find(ext => {
+      config = normalize(extensions[ext]);
+      return config !== undefined;
+    });
+  }
+
+  if (require.extensions.hasOwnProperty(usedExtension)) {
+    return true;
+  }
+
+  if (!config) {
+    const errorMsg = `No module loader found for "${usedExtension}".`;
+    if (nothrow) return new Error(errorMsg);
+    throw new Error(errorMsg);
+  }
+
+  if (!cwd) {
+    cwd = path.dirname(path.resolve(filepath));
+  }
+  
+  config = Array.isArray(config) ? config : [config];
+
+  for (const option of config) {
+    const attempt = register(cwd, option.module, option.register);
+    const error = attempt instanceof Error ? attempt : null;
+
+    attempts.push({
+      moduleName: option.module,
+      module: error ? null : attempt,
+      error: error,
+    });
+
+    if (!error) {
+      onlyErrors = false;
+      break;
+    }
+  }
+
+  if (onlyErrors) {
+    const err = new Error(`Unable to use specified module loaders for "${usedExtension}".`);
+    err.failures = attempts;
+    if (nothrow) return err;
+    throw err;
+  }
+
+  return attempts;
+};
+```

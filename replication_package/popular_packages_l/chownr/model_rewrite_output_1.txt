@@ -1,0 +1,49 @@
+The Node.js code provided defines a function `chownRecursive` that recursively changes the ownership of files and directories. This function takes a directory path, a user ID (uid), and a group ID (gid) as input. It uses the `fs.lstat` function to check if a path is a directory or a file, and then applies the `fs.chown` function to change its ownership. If it's a directory, it also reads the directory's contents using `fs.readdir` and recursively applies the same function to each item inside. The function handles errors by logging them to the console. The function is exported for external use with `module.exports`.
+
+```javascript
+const fs = require('fs');
+const path = require('path');
+
+/**
+ * Recursively change ownership of files and directories.
+ * @param {string} dirPath - Directory path.
+ * @param {number} uid - User ID.
+ * @param {number} gid - Group ID.
+ */
+function changeOwnershipRecursively(dirPath, uid, gid) {
+  fs.lstat(dirPath, (error, stats) => {
+    if (error) {
+      console.error(`Failed to access ${dirPath}:`, error.message);
+      return;
+    }
+
+    const changeOwnership = (path) => {
+      fs.chown(path, uid, gid, (error) => {
+        if (error) {
+          console.error(`Failed to change ownership for ${path}:`, error.message);
+        }
+      });
+    };
+
+    if (stats.isDirectory()) {
+      changeOwnership(dirPath);
+      
+      fs.readdir(dirPath, (error, contents) => {
+        if (error) {
+          console.error(`Failed to read directory ${dirPath}:`, error.message);
+          return;
+        }
+
+        contents.forEach((item) => {
+          const itemPath = path.join(dirPath, item);
+          changeOwnershipRecursively(itemPath, uid, gid);
+        });
+      });
+    } else {
+      changeOwnership(dirPath);
+    }
+  });
+}
+
+module.exports = changeOwnershipRecursively;
+```

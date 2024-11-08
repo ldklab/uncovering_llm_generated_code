@@ -1,0 +1,189 @@
+The provided Node.js code defines a `Fraction` class which allows creating and manipulating fractional numbers more precisely than floating-point arithmetic typically permits. Here's a breakdown of its functionality:
+
+1. **Constructor**: The `Fraction` class constructor can take various inputs to create a fraction:
+   - Another `Fraction` instance to clone it.
+   - A numerator and an optional denominator.
+   - A number (interpreted as a fraction).
+   - A string representation of a number or fraction.
+   - An array or an object with numerator and denominator fields.
+
+2. **Normalization and Parsing**: 
+   - The `parseInput` method determines how to process different types of input.
+   - Methods like `fromNumeratorDenominator`, `fromNumber`, and `fromString` are used to normalize these inputs to a consistent internal representation.
+
+3. **Arithmetic Operations**:
+   - Methods such as `add`, `sub`, `mul`, `div`, and `mod` perform arithmetic operations between fractions while ensuring precision using the greatest common divisor (GCD).
+   - Helper methods like `gcd` (greatest common divisor) and `lcm` (least common multiple) aid in these operations.
+
+4. **Conversion and Representation**:
+   - `toFraction`: Returns the fraction in a string format, possibly as a mixed number.
+   - `toString` and `valueOf` allow conversion to string and numeric representations.
+   - `floor`, `ceil`: Methods to return the largest integer less than or equal to, or the smallest integer greater than or equal to the fraction.
+
+5. **Miscellaneous**:
+   - `clone` creates a copy of the fraction.
+   - `simplify` reduces the fraction to its simplest form based on a provided tolerance.
+
+Here's a rewritten code that maintains the same functionality:
+
+```javascript
+class Fraction {
+  constructor(a, b = null) {
+    if (a instanceof Fraction) {
+      this.s = a.s;
+      this.n = a.n;
+      this.d = a.d;
+    } else {
+      this.parseInput(a, b);
+    }
+  }
+
+  parseInput(a, b) {
+    if (b !== null) {
+      this.fromNumeratorDenominator(a, b);
+    } else if (typeof a === 'number') {
+      this.fromNumber(a);
+    } else if (typeof a === 'string') {
+      this.fromString(a);
+    } else if (Array.isArray(a)) {
+      this.fromNumeratorDenominator(a[0], a[1]);
+    } else if (typeof a === 'object' && 'n' in a && 'd' in a) {
+      this.fromNumeratorDenominator(a.n, a.d);
+    } else {
+      throw new Error('Invalid input');
+    }
+  }
+
+  fromNumeratorDenominator(n, d) {
+    if (d === 0) throw new Error('Division by zero');
+    const gcdValue = this.gcd(n, d);
+    this.s = Math.sign(n) * Math.sign(d);
+    this.n = BigInt(Math.abs(n) / gcdValue);
+    this.d = BigInt(Math.abs(d) / gcdValue);
+  }
+
+  fromNumber(value) {
+    this.fromString(value.toString());
+  }
+
+  fromString(str) {
+    const [integerPart, fractionalPart = ''] = str.split('.');
+    let repeating = fractionalPart.match(/\((.*)\)/);
+    let nonRepeating = repeating ? repeating.input.slice(0, repeating.index) : fractionalPart;
+    repeating = repeating ? repeating[1] : '';
+
+    let denominator = Math.pow(10, nonRepeating.length) - 1;
+    let numerator = parseInt(nonRepeating + repeating) - parseInt(nonRepeating);
+
+    const totalNumerator = BigInt(parseInt(integerPart) * denominator + numerator);
+    denominator *= Math.pow(10, repeating.length);
+
+    this.fromNumeratorDenominator(totalNumerator, BigInt(denominator));
+  }
+
+  gcd(a, b) {
+    return b ? this.gcd(b, a % b) : Math.abs(a);
+  }
+
+  lcm(a, b) {
+    return (Math.abs(a) / this.gcd(a, b)) * Math.abs(b);
+  }
+
+  toFraction(showMixed = false) {
+    const sign = this.s < 0 ? '-' : '';
+    const whole = showMixed ? Math.floor(this.n / this.d) : 0;
+    const rest = this.n % this.d;
+
+    if (whole !== 0 && rest !== 0) {
+      return `${sign}${whole} ${rest}/${this.d}`;
+    }
+    
+    const numerator = whole !== 0 ? rest : this.n;
+    if (numerator === 0) {
+      return `${sign}${whole}`;
+    }
+
+    return `${sign}${numerator}/${this.d}`;
+  }
+
+  toString() {
+    if (this.n === 0n) return '0';
+    const decimal = Number(this.n) / Number(this.d);
+    return decimal.toFixed(15).replace(/\.?0+$/, '');
+  }
+
+  valueOf() {
+    return Number(this.n * BigInt(this.s)) / Number(this.d);
+  }
+
+  clone() {
+    return new Fraction(this);
+  }
+
+  add(other) {
+    const o = new Fraction(other);
+    const numerator = this.s * this.n * o.d + o.s * o.n * this.d;
+    const denominator = this.d * o.d;
+    return new Fraction(numerator, denominator);
+  }
+
+  sub(other) {
+    const o = new Fraction(other);
+    const numerator = this.s * this.n * o.d - o.s * o.n * this.d;
+    const denominator = this.d * o.d;
+    return new Fraction(numerator, denominator);
+  }
+
+  mul(other) {
+    const o = new Fraction(other);
+    const numerator = this.s * o.s * this.n * o.n;
+    const denominator = this.d * o.d;
+    return new Fraction(numerator, denominator);
+  }
+
+  div(other) {
+    const o = new Fraction(other);
+    return this.mul(new Fraction(o.d, o.n));
+  }
+
+  mod(other) {
+    const o = new Fraction(other);
+    const remainder = this.sub(this.div(o).floor().mul(o));
+    return new Fraction(remainder);
+  }
+
+  floor() {
+    const quotient = this.n / this.d;
+    const remainder = this.n % this.d;
+    if ((this.s < 0 && remainder !== 0n) || (this.s * this.n < 0n)) {
+      return new Fraction(quotient - 1n, 1);
+    } else {
+      return new Fraction(quotient, 1);
+    }
+  }
+
+  ceil() {
+    const quotient = this.n / this.d;
+    const remainder = this.n % this.d;
+    if ((this.s > 0 && remainder !== 0n) || (this.s * this.n > 0n)) {
+      return new Fraction(quotient + 1n, 1);
+    } else {
+      return new Fraction(quotient, 1);
+    }
+  }
+
+  simplify(eps = 0.001) {
+    const tolerance = BigInt(Math.ceil(eps * Number(this.d)));
+    let n = this.n;
+    let d = this.d;
+    while (Math.abs(Number(n / gcdValue - d / gcdValue)) > tolerance) {
+      const gcdValue = this.gcd(n, d);
+      n /= gcdValue;
+      d /= gcdValue;
+    }
+    return new Fraction(n, d);
+  }
+}
+
+module.exports = Fraction;
+```

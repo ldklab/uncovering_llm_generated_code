@@ -1,0 +1,74 @@
+The provided Node.js code module is designed to process and interpret CSS-like nth-child formulas, which are commonly used to select elements based on their order in a collection. Below is a detailed explanation of its functionality:
+
+1. **Parsing (`parse` function):**
+   - The function takes a formula string as input and attempts to match it against a regular expression to extract potential "a" and "b" values for an nth-child formula of the form `an + b`.
+   - If the formula is invalid or results in both `a` and `b` being zero, it throws an error.
+   - It returns an array `[a, b]`, where `a` represents the coefficient of `n` and `b` is a constant.
+
+2. **Compiling (`compile` function):**
+   - This function takes an array `[a, b]` and returns a function that can determine if a given index (0-based) matches the nth-child formula.
+   - It checks if an index satisfies the formula `an + b`. For zero `a`, it checks if the index matches `b - 1` directly.
+
+3. **Nth Check (`nthCheck` function):**
+   - This function serves as an interface for processing a formula string into an index-checking function by parsing and then compiling it.
+   - It returns a function that can be used to verify whether specific indices conform to the nth-child formula.
+
+4. **Generation (`generate` function):**
+   - This function returns a generator function that yields indices which match the nth-child formula.
+   - It continues producing valid indices according to the parsed formula `[a, b]` by incrementing with each call.
+
+5. **Sequence (`sequence` function):**
+   - This function simplifies the use of `generate` by directly parsing a formula and providing the generator function.
+
+6. **Export:**
+   - The module exports the main functionality: `nthCheck`, `parse`, `compile`, `generate`, and `sequence` for use elsewhere.
+
+Here's the rewritten code following this explanation:
+
+```javascript
+// nth-check.js
+
+// Parses the nth-child formula into a coefficients array [a, b].
+function parse(formula) {
+  const match = formula.match(/^((?:-?\d*)?n)?\s*(?:\+?\s*(\d+))?$/);
+  if (!match) throw new Error("Invalid formula");
+
+  let a = parseInt(match[1], 10) || 0;
+  const b = parseInt(match[2], 10) || 0;
+
+  if (a === 0 && b === 0) throw new Error("Invalid formula");
+
+  return [a, b];
+}
+
+// Compiles the coefficients into a function that checks a specific index.
+function compile([a, b]) {
+  return function(index) {
+    if (a === 0) return index === b - 1;
+    return (index - (b - 1)) % a === 0 && (index - (b - 1)) / a >= 0;
+  };
+}
+
+// Main function to obtain the index-checking function from a formula.
+function nthCheck(formula) {
+  return compile(parse(formula));
+}
+
+// Generates a sequence of indices that match the formula.
+function generate([a, b]) {
+  let current = b - 1;
+  return function() {
+    if (a === 0) return current++ === current ? null : current;
+    const result = current;
+    current += a;
+    return (a > 0 && result >= 0) || (a < 0 && result > 0) ? result : null;
+  };
+}
+
+// Returns a generator function for a sequence of matching indices.
+function sequence(formula) {
+  return generate(parse(formula));
+}
+
+export { nthCheck, parse, compile, generate, sequence };
+```

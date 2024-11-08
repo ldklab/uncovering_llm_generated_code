@@ -1,0 +1,149 @@
+The Node.js code provided is a module that facilitates the creation and management of temporary files and directories. Here's a breakdown of its functionality:
+
+1. **Dependencies**: It imports necessary modules like `fs`, `os`, `path`, and `crypto` to handle file system operations, get the temporary directory path, and generate unique identifiers.
+
+2. **Tracked Lists**: It maintains two arrays, `trackedFiles` and `trackedDirs`, to keep track of files and directories that need to be managed (deleted later).
+
+3. **Unique Name Generation**: The `generateUniqueName` function creates a unique file or directory name based on a prefix and suffix, using a random hex string.
+
+4. **Tracking**: Functions `trackFile` and `trackDir` add files and directories to their respective tracked lists.
+
+5. **Cleanup Mechanisms**: 
+   - `cleanupSync` synchronously deletes the tracked files and directories, resetting the arrays afterward. It logs errors if there's an issue deleting any of the files or directories.
+   - `cleanup` is an asynchronous version of cleanup that uses `cleanupSync` and passes results to a callback.
+
+6. **Automatic Cleanup**: The `track` function sets up a listener on the `'exit'` event of the process to ensure cleanup is called when the process exits.
+
+7. **File and Directory Operations**:
+   - `open` and `openSync` are for creating temporary files.
+   - `mkdir` and `mkdirSync` are for creating temporary directories.
+   - `createWriteStream` prepares a writable stream for a temporary file.
+   - `path` generates a path for a temporary file/directory without creating it.
+
+8. **Exports**: It exports all these functionalities so they can be used in other parts of the application.
+
+Below is the rewritten version of the code maintaining the same logic and functionality:
+
+```javascript
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const crypto = require('crypto');
+
+let trackedFiles = [];
+let trackedDirs = [];
+
+function generateUniqueName(prefix = '', suffix = '', dir = os.tmpdir()) {
+  const uniqueId = crypto.randomBytes(16).toString('hex');
+  return path.join(dir, `${prefix}${uniqueId}${suffix}`);
+}
+
+function trackFile(filePath) {
+  trackedFiles.push(filePath);
+}
+
+function trackDirectory(dirPath) {
+  trackedDirs.push(dirPath);
+}
+
+function cleanupSync() {
+  let filesDeleted = 0, dirsDeleted = 0;
+
+  trackedFiles.forEach(filePath => {
+    try {
+      fs.unlinkSync(filePath);
+      filesDeleted++;
+    } catch (err) {
+      console.error(`Error deleting file: ${filePath}`, err);
+    }
+  });
+
+  trackedDirs.forEach(dirPath => {
+    try {
+      fs.rmdirSync(dirPath);
+      dirsDeleted++;
+    } catch (err) {
+      console.error(`Error deleting directory: ${dirPath}`, err);
+    }
+  });
+
+  trackedFiles = [];
+  trackedDirs = [];
+  
+  return { files: filesDeleted, dirs: dirsDeleted };
+}
+
+function cleanup(callback) {
+  try {
+    const result = cleanupSync();
+    callback(null, result);
+  } catch (err) {
+    callback(err);
+  }
+}
+
+function onProcessExit() {
+  process.on('exit', cleanupSync);
+  return module.exports;
+}
+
+function open(options, callback) {
+  if (typeof options === 'string') options = { prefix: options };
+
+  const filePath = generateUniqueName(options.prefix, options.suffix, options.dir);
+  fs.open(filePath, 'w', (err, fd) => {
+    if (err) return callback(err);
+    trackFile(filePath);
+    callback(null, { path: filePath, fd });
+  });
+}
+
+function openSync(options = {}) {
+  const filePath = generateUniqueName(options.prefix, options.suffix, options.dir);
+  const fd = fs.openSync(filePath, 'w');
+  trackFile(filePath);
+  return { path: filePath, fd };
+}
+
+function mkdir(options, callback) {
+  if (typeof options === 'string') options = { prefix: options };
+
+  const dirPath = generateUniqueName(options.prefix, options.suffix, options.dir);
+  fs.mkdir(dirPath, err => {
+    if (err) return callback(err);
+    trackDirectory(dirPath);
+    callback(null, dirPath);
+  });
+}
+
+function mkdirSync(options = {}) {
+  const dirPath = generateUniqueName(options.prefix, options.suffix, options.dir);
+  fs.mkdirSync(dirPath);
+  trackDirectory(dirPath);
+  return dirPath;
+}
+
+function createWriteStream(options = {}) {
+  const filePath = generateUniqueName(options.prefix, options.suffix, options.dir);
+  const stream = fs.createWriteStream(filePath);
+  stream.path = filePath;
+  trackFile(filePath);
+  return stream;
+}
+
+function generatePath(options = {}) {
+  return generateUniqueName(options.prefix, options.suffix, options.dir);
+}
+
+module.exports = {
+  open,
+  openSync,
+  mkdir,
+  mkdirSync,
+  createWriteStream,
+  generatePath,
+  track: onProcessExit,
+  cleanup,
+  cleanupSync
+};
+```

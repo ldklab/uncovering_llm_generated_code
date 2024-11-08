@@ -1,0 +1,69 @@
+The provided Node.js code defines a module that exports a function `entries` which emulates the functionality of `Object.entries`. It additionally includes a `shim` function to ensure compatibility by patching the global `Object.entries` method if it does not exist or behaves unexpectedly, particularly with strings.
+
+Here's the breakdown of the functionality:
+
+1. **Initial Setup and Checks**:
+   - It checks for the existence of native `Object.entries`.
+   - Determines if Symbols are supported in the environment.
+   - Defines bound `propertyIsEnumerable` and `slice` methods for use in other operations.
+
+2. **`entries` Function**:
+   - Converts an input, `O`, to an object using `toObject` from the es-abstract package.
+   - Iterates over the enumerable properties of the object and collects them into an array of `[key, value]` pairs.
+   - Checks for symbol properties when symbols are supported and adds enumerable symbol-keyed properties to the array.
+
+3. **`shimObjectEntries` Function**:
+   - Checks if the native `Object.entries` method is available and works correctly with strings.
+   - If it is available but does not work correctly with strings, it redefines `Object.entries` to fix this.
+   - If `Object.entries` is not available, it assigns the module's `entries` implementation to `Object.entries`.
+
+Here's the possible rewrite of the code:
+
+```javascript
+'use strict';
+
+const callBound = require('call-bind/callBound');
+const toObject = require('es-abstract/2019/ToObject');
+const hasSymbols = typeof Symbol === 'function' && typeof Symbol('') === 'symbol';
+const $propIsEnumerable = callBound('Object.prototype.propertyIsEnumerable');
+const nativeObjectEntries = Object.entries;
+
+function entries(O) {
+    const obj = toObject(O);
+    const entriesArray = [];
+    for (const key in obj) {
+        if ($propIsEnumerable(obj, key)) {
+            entriesArray.push([key, obj[key]]);
+        }
+    }
+    if (hasSymbols && Object.prototype.toString.call(obj) === '[object Object]') {
+        const symbols = Object.getOwnPropertySymbols(obj);
+        for (const symbol of symbols) {
+            if ($propIsEnumerable(obj, symbol)) {
+                entriesArray.push([symbol, obj[symbol]]);
+            }
+        }
+    }
+    return entriesArray;
+}
+
+function shimObjectEntries() {
+    if (Object.entries) {
+        const entriesWorksWithStrings = (function () {
+            return Object.entries('foo')[0][0] === '0';
+        })();
+        if (!entriesWorksWithStrings) {
+            const originalObjectEntries = Object.entries;
+            Object.entries = function (it) {
+                return originalObjectEntries.call(Object, it);
+            };
+        }
+    } else {
+        Object.entries = entries;
+    }
+    return Object.entries;
+}
+
+module.exports = entries;
+module.exports.shim = shimObjectEntries;
+```

@@ -1,0 +1,138 @@
+The Node.js code provides a basic implementation of a promise library called `BluebirdLite`. This implementation includes essential features such as creating promises, registering fulfillment and rejection handlers, cancellation, and utility methods for resolving, rejecting, and aggregating multiple promises.
+
+Here’s a breakdown of the functionality:
+
+1. **Promise States**: The promise can be in three states: `pending`, `fulfilled`, or `rejected`.
+
+2. **Executor Function**: When a new promise is created, it receives an executor function that takes two arguments, `resolve` and `reject`. These functions change the promise state to `fulfilled` or `rejected` respectively and store the corresponding value.
+
+3. **State Update**: The `updateState` method is called when the promise resolves or rejects, which then processes any queued handlers matching the current state (success or failure).
+
+4. **Handling Callbacks**: The `handle` method is the core function that ensures the correct execution of callbacks for both fulfillment and rejection.
+
+5. **Then and Catch Methods**: The `then` method registers callbacks for both fulfillment and rejection. The `catch` method is a shorthand for `then` when only a rejection handler is needed.
+
+6. **Cancelation**: A promise can be cancelled if it's pending, which immediately resolves it with a 'cancelled' state and reason.
+
+7. **Static Methods**:
+   - `resolve`: creates a promise that is already resolved with a given value.
+   - `reject`: creates a promise that is already rejected with a given reason.
+   - `all`: takes an array of promises and returns a single promise that resolves when all of the input promises have resolved or rejects when one of them rejects.
+
+Below is a rewritten version of the provided code:
+
+```javascript
+// bluebird-lite-rewritten.js
+class BluebirdLite {
+  constructor(executor) {
+    this.state = 'pending';
+    this.value = null;
+    this.handlers = [];
+    this.cancelRequested = false;
+
+    const resolve = (value) => {
+      if (!this.cancelRequested) this._transition('fulfilled', value);
+    };
+
+    const reject = (reason) => {
+      if (!this.cancelRequested) this._transition('rejected', reason);
+    };
+
+    try {
+      executor(resolve, reject);
+    } catch (error) {
+      reject(error);
+    }
+  }
+
+  _transition(state, value) {
+    if (this.state === 'pending') {
+      this.state = state;
+      this.value = value;
+      this.handlers.forEach(this._handle, this);
+    }
+  }
+
+  _handle(handler) {
+    const cb = this.state === 'fulfilled' ? handler.onFulfilled : handler.onRejected;
+    
+    if (!cb) {
+      if (this.state === 'fulfilled') handler.resolve(this.value);
+      else handler.reject(this.value);
+      return;
+    }
+
+    try {
+      const result = cb(this.value);
+      handler.resolve(result);
+    } catch (error) {
+      handler.reject(error);
+    }
+  }
+
+  then(onFulfilled, onRejected) {
+    return new BluebirdLite((resolve, reject) => {
+      this._handle({
+        onFulfilled,
+        onRejected,
+        resolve,
+        reject,
+      });
+    });
+  }
+
+  catch(onRejected) {
+    return this.then(null, onRejected);
+  }
+
+  cancel() {
+    if (this.state === 'pending') {
+      this.cancelRequested = true;
+      this._transition('cancelled', 'Promise was cancelled');
+    }
+  }
+
+  static resolve(value) {
+    return new BluebirdLite((resolve) => resolve(value));
+  }
+
+  static reject(reason) {
+    return new BluebirdLite((_, reject) => reject(reason));
+  }
+
+  static all(promises) {
+    return new BluebirdLite((resolve, reject) => {
+      let resolvedCount = 0;
+      const results = new Array(promises.length);
+
+      if (promises.length === 0) return resolve([]);
+
+      promises.forEach((promise, i) => {
+        promise.then((value) => {
+          results[i] = value;
+          resolvedCount++;
+          if (resolvedCount === promises.length) resolve(results);
+        }).catch(reject);
+      });
+    });
+  }
+}
+
+module.exports = BluebirdLite;
+
+// Usage example
+const { log } = console;
+const BluebirdLite = require('./bluebird-lite-rewritten');
+
+const promise1 = new BluebirdLite((resolve) => {
+  setTimeout(() => resolve('Result 1'), 1000);
+});
+
+const promise2 = BluebirdLite.resolve('Result 2');
+
+BluebirdLite.all([promise1, promise2]).then((results) => {
+  log(results); // Output: ['Result 1', 'Result 2']
+}).catch((err) => {
+  log('Error:', err);
+});
+```

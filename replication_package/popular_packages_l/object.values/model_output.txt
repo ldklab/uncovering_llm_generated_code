@@ -1,0 +1,63 @@
+The `object.values` package is an ES2017 spec-compliant shim for the `Object.values` method. Its primary function is to provide a polyfill for environments where `Object.values` either doesn't exist or is noncompliant with the ES2017 specification. 
+
+Here’s a breakdown of its functionality and usage:
+
+1. **Shim Compatibility:** The package ensures compliance with the ES2017 `Object.values` specification, making it suitable for ES3-supported environments. This includes working correctly in environments both with and without Symbol support.
+
+2. **Method Export:** The package exports a function that can be directly used to extract the values of an object's own enumerable properties.
+
+3. **Shim Method:** It provides a `shim` method that directly attaches the polyfill to `Object.values` if it’s not already present or compliant in the executing environment.
+
+4. **Test Compliance and Usage:** A typical usage scenario involves checking the environment's Symbol support, using the polyfill to retrieve an object's values, and conditionally applying the `shim` method if the native `Object.values` method is unavailable.
+
+Here's the node module code that implements this functionality:
+
+```js
+// object.values.js
+(function() {
+    'use strict';
+
+    var hasSymbols = typeof Symbol === 'function' && typeof Symbol() === 'symbol';
+
+    function values(obj) {
+        if (obj == null) { // checks for null or undefined
+            throw new TypeError('Cannot convert undefined or null to object');
+        }
+        var ownProps = Object.keys(obj);
+        var resultArray = [];
+        for (var i = 0; i < ownProps.length; i++) {
+            resultArray.push(obj[ownProps[i]]);
+        }
+        if (hasSymbols) {
+            var symbols = Object.getOwnPropertySymbols(obj);
+            for (var j = 0; j < symbols.length; j++) {
+                if (Object.prototype.propertyIsEnumerable.call(obj, symbols[j])) {
+                    resultArray.push(obj[symbols[j]]);
+                }
+            }
+        }
+        return resultArray;
+    }
+
+    values.shim = function shimObjectValues() {
+        if (!Object.values) {
+            Object.defineProperty(Object, 'values', {
+                value: values,
+                configurable: true,
+                enumerable: false,
+                writable: true
+            });
+        }
+        return Object.values;
+    };
+
+    // Export for various environments
+    if (typeof module !== 'undefined' && module.exports) {
+        module.exports = values;
+    } else {
+        window.objectValues = values;
+    }
+}());
+```
+
+This module defines the `values` function that mimics the `Object.values` behavior by iterating over the object's own properties and optionally its symbol properties when symbols are supported. The `shim` method is provided to conditionally attach this polyfill to `Object` for environments where `Object.values` isn't already implemented. The package exports this functionality for use in Node.js environments, but can also be tested in the browser by attaching to the `window` object.

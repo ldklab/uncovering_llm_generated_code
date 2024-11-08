@@ -1,0 +1,85 @@
+The provided Node.js (TypeScript) code defines a set of utility types for manipulating types to work with AWS SDK clients, simulating different client behaviors. The main functionalities include:
+
+1. **NoUndefined<T>**: A utility type ensuring that none of the properties of a given type `T` are `undefined` or `null`.
+
+2. **AssertiveClient<T>**: Transforms a client so that function arguments and return values are non-nullable by removing `undefined` from these properties.
+
+3. **UncheckedClient<T>**: Similar to `AssertiveClient<T>`, but it makes the return value of a function `Required`, which means all properties must be present.
+
+4. **SdkStream<T>**: Extends a type `T` with a method `transformToString` that returns a `Promise<string>`.
+
+5. **NodeJsClient<T>**: Transforms a client such that all its methods return a `Promise` of an `SdkStream` containing a `Response`.
+
+6. **StreamingBlobPayloadOutputTypes**: Alias for a type representing an `SdkStream` containing a `Response`.
+
+The code exemplifies usage by creating mock clients for AWS S3 using these types, enforcing different type-checking behaviors in a simulated environment.
+
+```typescript
+// smithy-types.ts
+
+export type NoUndefined<T> = {
+  [P in keyof T]-?: NonNullable<T[P]>;
+};
+
+export type AssertiveClient<T> = {
+  [K in keyof T]: T[K] extends (...args: infer A) => infer R ? (...args: NoUndefined<A>) => NoUndefined<R> : T[K];
+};
+
+export type UncheckedClient<T> = {
+  [K in keyof T]: T[K] extends (...args: infer A) => infer R ? (...args: A) => Required<R> : T[K];
+};
+
+export type SdkStream<T> = {
+  transformToString(): Promise<string>;
+} & T;
+
+export type NodeJsClient<T> = {
+  [K in keyof T]: T[K] extends (...args: infer A) => infer R
+    ? (...args: A) => Promise<SdkStream<Response>>
+    : T[K];
+};
+
+export type StreamingBlobPayloadOutputTypes = SdkStream<Response>;
+
+// Example interfaces for type simulation
+import {
+  S3Client,
+  GetObjectCommand,
+  ListBucketsCommand,
+  GetObjectCommandInput,
+} from "@aws-sdk/client-s3";
+import type { AssertiveClient, UncheckedClient, NoUndefined, NodeJsClient } from "./smithy-types";
+
+const s3a = new S3Client({}) as AssertiveClient<S3Client>;
+
+const s3b = new S3Client({}) as UncheckedClient<S3Client>;
+
+async function example() {  
+  try {
+    const getObjectResponse = await s3a.getObject({
+      Bucket: "my-bucket",
+      Key: "my-key",
+    });
+  } catch (error) {
+    console.error("Error with AssertiveClient:", error);
+  }
+
+  const body = await (
+    await s3b.getObject({
+      Bucket: "my-bucket",
+      Key: "my-key",
+    })
+  ).Body.transformToString();
+  console.log("Body as string:", body);
+
+  const getObjectInput: NoUndefined<GetObjectCommandInput> = {
+    Bucket: "my-bucket",
+    Key: "my-key",
+  };
+  const s3c = new S3Client({}) as NodeJsClient<S3Client>;
+  const commandOutput = await s3c.send(new GetObjectCommand(getObjectInput));
+  console.log("Command output body:", await commandOutput.Body.transformToString());
+}
+
+example().catch(console.error);
+```

@@ -1,0 +1,60 @@
+The package `@babel/helper-module-imports` provides helper functions for inserting module imports into a JavaScript file transformed by Babel. This package facilitates the manipulation of the abstract syntax tree (AST) to add or modify module import statements programmatically. This can be particularly useful in Babel plugins or transformations that need to dynamically manage dependencies in the code being transformed.
+
+Here is how you might implement such functionality:
+
+```javascript
+// @babel/helper-module-imports Source Code Example
+
+// Import necessary modules
+const { types: t } = require('@babel/core');
+
+class ModuleImportsHelper {
+  constructor() {
+    this.importedModules = new Map();
+  }
+
+  // Method to add an import statement
+  addImport(path, source, importedName, localName) {
+    if (!this.importedModules.has(source)) {
+      const importDeclaration = t.importDeclaration(
+        [t.importSpecifier(t.identifier(localName), t.identifier(importedName))],
+        t.stringLiteral(source)
+      );
+
+      path.unshiftContainer('body', importDeclaration);
+      this.importedModules.set(source, localName);
+    }
+
+    return t.identifier(this.importedModules.get(source));
+  }
+
+  // Method to check if a module has been imported
+  isModuleImported(source) {
+    return this.importedModules.has(source);
+  }
+}
+
+module.exports = function () {
+  return {
+    visitor: {
+      Program(path) {
+        const moduleHelper = new ModuleImportsHelper();
+
+        // Example usage: Insert a specific module import if it is not already included
+        if (!moduleHelper.isModuleImported('lodash')) {
+          moduleHelper.addImport(path, 'lodash', 'default', '_');
+        }
+
+        // More code to process the AST...
+      }
+    }
+  };
+};
+```
+
+The above code defines a simple system for managing module imports in a Babel transformation:
+
+1. The `ModuleImportsHelper` class keeps track of imported modules in a `Map`.
+2. The `addImport` method inserts an import statement at the start of the file if the module has not been imported yet.
+3. The `isModuleImported` method checks for existing imports to avoid duplicates.
+4. In the Babel plugin function, the helper is used to ensure `lodash` is imported as an example, and further AST processing can be executed as needed.

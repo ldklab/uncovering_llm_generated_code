@@ -1,0 +1,64 @@
+The provided Node.js code defines a module that creates a singleton instance of a "yargs" parser for handling command-line arguments. Here's a breakdown of the code:
+
+1. **Imports and Setup**: 
+   - It imports `Yargs` and `processArgv` from a local file `./build/index.cjs`.
+   - It uses `processArgv.hideBin(process.argv)` to prepare the arguments for parsing, omitting the first two elements (node path and script file path).
+
+2. **Argv Function**:
+   - The `Argv` function wraps the yargs instance, providing a singleton API interface. It initializes a `Yargs` instance with `processArgs`.
+
+3. **Singletonification**:
+   - `singletonify` function ensures that the `Argv` function acts like a singleton, making the parsed command-line arguments accessible both when they are provided directly and when the instance is invoked without arguments.
+   - It uses JavaScript's `Object.defineProperty` to attach properties and methods to the `Argv` function, effectively merging the constructed `Yargs` object's properties into the `Argv` function itself.
+
+4. **Export**:
+   - The configured `Argv` is exported as the module, allowing it to be required and used elsewhere.
+
+Here's a possible rewrite of this Node.js code:
+
+```javascript
+'use strict';
+
+const { Yargs, processArgv } = require('./build/index.cjs');
+
+const argvSingleton = Argv(processArgv.hideBin(process.argv));
+
+function Argv(processArgs, cwd) {
+  const instance = Yargs(processArgs, cwd, require);
+  setupSingleton(instance);
+  return instance;
+}
+
+function setupSingleton(instance) {
+  const properties = [
+    ...Object.keys(instance),
+    ...Object.getOwnPropertyNames(Object.getPrototypeOf(instance))
+  ];
+
+  properties.forEach(key => {
+    if (key === 'argv') {
+      attachGetter(Argv, key, getPropertyGetter(instance, key));
+    } else if (typeof instance[key] === 'function') {
+      Argv[key] = instance[key].bind(instance);
+    } else {
+      attachGetter(Argv, '$0', () => instance.$0);
+      attachGetter(Argv, 'parsed', () => instance.parsed);
+    }
+  });
+}
+
+function attachGetter(object, key, getter) {
+  Object.defineProperty(object, key, {
+    configurable: true,
+    enumerable: true,
+    get: getter,
+  });
+}
+
+function getPropertyGetter(object, key) {
+  const descriptor = Object.getOwnPropertyDescriptor(object, key);
+  return descriptor ? descriptor.get : undefined;
+}
+
+module.exports = argvSingleton;
+```

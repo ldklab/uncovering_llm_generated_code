@@ -1,0 +1,54 @@
+The provided Node.js code defines a module to determine if a given function is an asynchronous function. Here's a detailed explanation of how it works:
+
+- The code uses various built-in objects and properties, such as `Object.prototype.toString`, `Function.prototype.toString`, and `Object.getPrototypeOf`, to inspect the nature of the function passed as an argument.
+- A regular expression (`isFnRegex`) is defined to match strings that represent asynchronous functions. This regex checks for the `async` keyword followed by the `function` keyword or a direct function declaration.
+- The module checks if the environment supports the `Symbol.toStringTag` shim through the `hasToStringTag` variable.
+- A helper function, `getAsyncFunc`, attempts to create a dummy `async function` to determine the prototype of `AsyncFunction`. This is used only if the `Symbol.toStringTag` is supported.
+- The `AsyncFunction` variable is used to cache the prototype of an async function when `toStringTag` is available.
+- The `isAsyncFunction` function is exported as the module's functionality. It checks if the passed `fn` is of the `function` type and tests it against the regex to quickly determine if it's async.
+- If `toStringTag` is not supported, it manually checks if `fn` is an async function using the `Object.prototype.toString` method.
+- If `Symbol.toStringTag` is supported, it compares the prototype of the `fn` against `AsyncFunction` to determine if it's an async function.
+
+Below is the rewritten code organized into a single block:
+
+```javascript
+'use strict';
+
+const toStr = Object.prototype.toString;
+const fnToStr = Function.prototype.toString;
+const isFnRegex = /^\s*async(?:\s+function(?:\s+|\()|\s*\()/;
+const hasToStringTag = require('has-tostringtag/shams')();
+const getProto = Object.getPrototypeOf;
+
+let AsyncFunction;
+
+function getAsyncFunc() {
+    if (!hasToStringTag) {
+        return false;
+    }
+    try {
+        return Function('return async function () {}')();
+    } catch (e) {
+        return false;
+    }
+}
+
+function isAsyncFunction(fn) {
+    if (typeof fn !== 'function') {
+        return false;
+    }
+    if (isFnRegex.test(fnToStr.call(fn))) {
+        return true;
+    }
+    if (!hasToStringTag) {
+        return toStr.call(fn) === '[object AsyncFunction]';
+    }
+    if (typeof AsyncFunction === 'undefined') {
+        const asyncFunc = getAsyncFunc();
+        AsyncFunction = asyncFunc ? getProto(asyncFunc) : false;
+    }
+    return getProto(fn) === AsyncFunction;
+}
+
+module.exports = isAsyncFunction;
+```

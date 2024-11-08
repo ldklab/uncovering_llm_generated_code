@@ -1,0 +1,71 @@
+The provided Node.js code checks the support of various ECMAScript (JavaScript) features within the current Node.js runtime environment. It categorizes features by their ECMAScript versions (2018, 2019, 2020, 2021, 2022) and a Stage 3 proposal, then dynamically includes Babel syntax plugins as necessary for those features that are supported.
+
+Here's a breakdown of its functionality:
+
+1. **Feature Tests**: It defines a set of JavaScript feature tests using a dictionary `tests` where each key is a feature name and the value is an array of test snippets written in that feature's syntax.
+
+2. **Works Function**: The `works` function attempts to evaluate each test snippet to check if the current Node.js runtime supports the syntax. The evaluation is wrapped in a function to prevent execution of the code.
+
+3. **Plugin Selection**: The code iterates over the feature tests, using the `works` function to determine which features are supported. If a feature is supported (at least one of its snippets works), the corresponding Babel plugin is added to the `plugins` array.
+
+4. **Runtime Version Checks**: For certain features that cannot be tested directly in runtime (like `import.meta` or top-level await), the code checks the Node.js version to ensure if they are supported, adding respective Babel plugins if the Node.js version meets the required threshold.
+
+5. **Export**: Finally, it exports a function that returns an object with the `plugins` property, which Babel can use to configure the transformation and syntax support.
+
+Here's the possible restructured code:
+
+```javascript
+const tests = {
+  // ECMAScript 2018
+  "object-rest-spread": ["({ ...{} })", "({ ...x } = {})"],
+  "async-generators": ["async function* f() {}"],
+
+  // ECMAScript 2019
+  "optional-catch-binding": ["try {} catch {}"],
+  "json-strings": ["'\\u2028'"],
+
+  // ECMAScript 2020
+  bigint: ["1n"],
+  "optional-chaining": ["a?.b"],
+  "nullish-coalescing-operator": ["a ?? b"],
+
+  // ECMAScript 2021
+  "numeric-separator": ["1_2"],
+  "logical-assignment-operators": ["a ||= b", "a &&= b", "a ??= c"],
+
+  // ECMAScript 2022
+  "class-properties": ["(class { x = 1 })", "(class { #x = 1 })", "(class { #x() {} })"],
+  "private-property-in-object": ["(class { #x; m() { #x in y } })"],
+  "class-static-block": ["(class { static {} })"],
+};
+
+const plugins = [];
+const works = (test) => {
+  try {
+    eval(`(() => { ${test} })`);
+    return true;
+  } catch (_error) {
+    return false;
+  }
+};
+
+for (const [name, cases] of Object.entries(tests)) {
+  if (cases.some(works)) {
+    plugins.push(require.resolve(`@babel/plugin-syntax-${name}`));
+  }
+}
+
+const [major, minor] = process.versions.node.split('.').map(Number);
+
+if (major > 10 || (major === 10 && minor >= 4)) {
+  plugins.push(require.resolve("@babel/plugin-syntax-import-meta"));
+}
+if (major > 14 || (major === 14 && minor >= 3)) {
+  plugins.push(require.resolve("@babel/plugin-syntax-top-level-await"));
+}
+if (major > 20 || (major === 20 && minor >= 10) || (major === 18 && minor >= 20)) {
+  plugins.push(require.resolve("@babel/plugin-syntax-import-attributes"));
+}
+
+module.exports = () => ({ plugins });
+```

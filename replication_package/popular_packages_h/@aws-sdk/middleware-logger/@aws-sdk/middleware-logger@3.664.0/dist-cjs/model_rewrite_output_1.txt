@@ -1,0 +1,102 @@
+The given Node.js code defines a module that exports three functions: `getLoggerPlugin`, `loggerMiddleware`, and `loggerMiddlewareOptions`. These are related to a logging middleware intended for use with an asynchronous middleware stack, potentially in a client application interacting with something like AWS DynamoDB.
+
+- **Logger Middleware**: The `loggerMiddleware` function is an asynchronous middleware that logs request and response details during API call execution. It logs information using a provided `logger` object. It first tries to log successful responses by capturing metadata and output details. In the event of an error, it logs error details, also making use of any metadata provided with the error.
+
+- **Middleware Options**: `loggerMiddlewareOptions` is an object that contains metadata about how the middleware should behave in the context of a stack, specifying its name, tags, the stack step it should run in, and whether it should override existing step configurations.
+
+- **Logger Plugin**: The `getLoggerPlugin` function returns an object with a method `applyToStack`, which adds the logging middleware to a client's middleware stack using the provided options.
+
+The utility functions and variables at the top of the file facilitate module exports, property copying, and name definition for the functions in a CommonJS environment.
+
+Here's the rewritten code:
+
+```javascript
+"use strict";
+
+// Utility functions for module export
+const __defineProperty = Object.defineProperty;
+const __getOwnPropertyDescriptor = Object.getOwnPropertyDescriptor;
+const __getOwnPropertyNames = Object.getOwnPropertyNames;
+const __hasOwnProperty = Object.prototype.hasOwnProperty;
+
+const defineName = (target, value) => __defineProperty(target, "name", { value, configurable: true });
+const exportModule = (target, all) => {
+  for (const name in all) {
+    __defineProperty(target, name, { get: all[name], enumerable: true });
+  }
+};
+
+const copyProperties = (to, from, except, desc) => {
+  if (from && (typeof from === "object" || typeof from === "function")) {
+    for (let key of __getOwnPropertyNames(from)) {
+      if (!__hasOwnProperty.call(to, key) && key !== except) {
+        __defineProperty(to, key, { get: () => from[key], enumerable: !(desc = __getOwnPropertyDescriptor(from, key)) || desc.enumerable });
+      }
+    }
+  }
+  return to;
+};
+
+const toCommonJS = (mod) => copyProperties(__defineProperty({}, "__esModule", { value: true }), mod);
+
+// Exported entities
+const exports = {};
+exportModule(exports, {
+  getLoggerPlugin: () => getLoggerPlugin,
+  loggerMiddleware: () => loggerMiddleware,
+  loggerMiddlewareOptions: () => loggerMiddlewareOptions
+});
+module.exports = toCommonJS(exports);
+
+// Logger middleware definition
+const loggerMiddleware = async (next, context) => async (args) => {
+  let loggerInfo, loggerError;
+  const { clientName, commandName, logger, dynamoDbDocumentClientOptions = {} } = context;
+  const { overrideInputFilterSensitiveLog, overrideOutputFilterSensitiveLog } = dynamoDbDocumentClientOptions;
+  const inputFilterSensitiveLog = overrideInputFilterSensitiveLog ?? context.inputFilterSensitiveLog;
+  const outputFilterSensitiveLog = overrideOutputFilterSensitiveLog ?? context.outputFilterSensitiveLog;
+
+  try {
+    const response = await next(args);
+    const { $metadata, ...outputWithoutMetadata } = response.output;
+    loggerInfo = logger?.info;
+    loggerInfo?.call(logger, {
+      clientName,
+      commandName,
+      input: inputFilterSensitiveLog(args.input),
+      output: outputFilterSensitiveLog(outputWithoutMetadata),
+      metadata: $metadata
+    });
+    return response;
+  } catch (error) {
+    loggerError = logger?.error;
+    loggerError?.call(logger, {
+      clientName,
+      commandName,
+      input: inputFilterSensitiveLog(args.input),
+      error,
+      metadata: error.$metadata
+    });
+    throw error;
+  }
+};
+
+defineName(loggerMiddleware, "loggerMiddleware");
+
+// Middleware options
+const loggerMiddlewareOptions = {
+  name: "loggerMiddleware",
+  tags: ["LOGGER"],
+  step: "initialize",
+  override: true
+};
+
+// Logger plugin definition
+const getLoggerPlugin = (options) => ({
+  applyToStack: (clientStack) => {
+    clientStack.add(loggerMiddleware, loggerMiddlewareOptions);
+  }
+});
+
+defineName(getLoggerPlugin, "getLoggerPlugin");
+```

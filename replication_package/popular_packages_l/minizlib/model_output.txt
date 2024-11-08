@@ -1,0 +1,87 @@
+The `minizlib` package is a Node.js module that provides fast and synchronous zlib streaming compression and decompression capabilities using the `minipass` library and Node.js's native zlib bindings. The `minizlib` module is designed primarily for use with other projects like `node-tar` and `minipass-fetch`. Here's a breakdown of the functionality described:
+
+### Differences from Node's `zlib`
+
+- **Only Streams:** Unlike Node's `zlib` module, `minizlib` does not offer methods for simple compression or decompression of buffers. It strictly implements streaming functionality.
+  
+- **Synchronous Operation:** The module performs zlib and Brotli operations synchronously on the main thread, relying on the speed of these operations to minimize performance impact. This is in contrast to Node's built-in `zlib` streams, which are asynchronous and built on `stream.Transform`.
+
+- **Efficiency:** The use of `minipass` streams simplifies stream handling, making one-liners like `new zlib.Deflate().end(data).read()` possible without additional boilerplate.
+
+### Supported Classes
+
+The package provides implementation for:
+- `Deflate`, `Inflate`: Basic zlib compression and decompression.
+- `Gzip`, `Gunzip`: Convenient wrappers for gzip compression and decompression.
+- `DeflateRaw`, `InflateRaw`: Raw deflate and inflate without headers.
+- `Unzip`: General decompression.
+- `BrotliCompress`, `BrotliDecompress`: Brotli compression and decompression (supported on Node.js v10+).
+
+### Reproducible Builds
+
+To ensure reproducible gzip outputs across different platforms, you can set the `portable` option to `true`. This sets the OS identifier in the gzip header to `0xFF`, indicating an 'unknown' OS, leading to consistent outputs regardless of the operating system.
+
+Here is a simple implementation example using the `BrotliDecompress` class:
+
+```javascript
+const { Transform } = require('stream');
+const zlib = require('zlib');
+const Minipass = require('minipass');
+
+class MinizlibBase extends Minipass {
+  constructor(opts, engine) {
+    super(opts);
+    this._engine = engine;
+    this._engine.on('data', chunk => this.write(chunk));
+    this._engine.on('end', () => this.end());
+  }
+
+  write(chunk, encoding, callback) {
+    return super.write(chunk, encoding, callback);
+  }
+
+  end(chunk, encoding, callback) {
+    if (chunk) {
+      this.write(chunk, encoding, callback);
+    }
+    this._engine.end();
+  }
+}
+
+class BrotliDecompress extends MinizlibBase {
+  constructor(opts) {
+    super(opts, zlib.createBrotliDecompress(opts));
+  }
+}
+
+const sourceOfCompressedData = () => {
+  const input = new Transform();
+  setImmediate(() => {
+    input.push(Buffer.from('compressed data here', 'binary'));
+    input.push(null);
+  });
+  return input;
+};
+
+const whereToWriteTheDecodedData = () => {
+  const output = new Transform({
+    transform(chunk, encoding, callback) {
+      console.log('Decoded:', chunk.toString());
+      callback(null, chunk);
+    }
+  });
+
+  output.on('finish', () => {
+    console.log('Decompression complete.');
+  });
+
+  return output;
+};
+
+const input = sourceOfCompressedData();
+const decode = new BrotliDecompress();
+const output = whereToWriteTheDecodedData();
+input.pipe(decode).pipe(output);
+```
+
+In this implementation, we define a `MinizlibBase` class that extends `Minipass` and handles setting up the zlib engine and piping the data through the transformation. The `BrotliDecompress` class extends this base class to perform Brotli decompression specifically. The example usage illustrates how to pipe data through this decompression stream.

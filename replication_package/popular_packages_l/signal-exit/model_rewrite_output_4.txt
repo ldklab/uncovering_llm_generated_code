@@ -1,0 +1,88 @@
+The provided Node.js code serves as a utility for handling process exits gracefully by attaching listeners to various exit signals (e.g., SIGINT, SIGTERM, etc.). The main function, `onExit`, allows users to register a callback that executes upon receiving any of these signals or when the process exits normally. This function also returns a `remove` function that can be called to detach all the signal and exit handlers, effectively cleaning up the listeners.
+
+Here's a breakdown of its functionality:
+
+1. **Signal Definitions**: An array `signals` defines various Unix signals that might cause a process to terminate.
+
+2. **Handler Setup**: The `onExit` function accepts a callback and an optional configuration object. It attaches an `exitHandler` to the process's `'exit'` event and a `signalHandler` to each of the signals listed.
+
+3. **Exit Handling**: When a signal is received or the process exits, the `exitHandler` checks if it has already been executed to prevent multiple callbacks. It executes the provided callback with the exit code or signal, and optionally, prevents default exit behavior based on the callback's return value.
+
+4. **Signal Management**: A `hookedSignals` set keeps track of signals for which handlers have been invoked. The `signalHandler` adds a signal to this set before calling `exitHandler`.
+
+5. **Always Last Option**: If `options.alwaysLast` is enabled, the custom emit logic ensures that the `exitHandler` is the last to execute when multiple exit handlers are present.
+
+6. **Removal Function**: The returned `remove` function disassociates the event listeners, restoring normal process behavior.
+
+7. **Browser Compatibility**: A separate no-op implementation of `onExit` is provided for browser environments, as this functionality has no relevance there.
+
+Below is the rewritten code incorporating the above explanations:
+
+```js
+// signal-exit.js
+const signals = [
+  'SIGINT', 'SIGTERM', 'SIGQUIT', 'SIGHUP', 'SIGBREAK',
+  'SIGUSR1', 'SIGUSR2', 'SIGPIPE'
+];
+const originalEmit = process.emit;
+
+export function onExit(callback, options = {}) {
+  if (!process || typeof process.emit !== 'function') {
+    return () => {}; // Return no-op if process isn't suitable
+  }
+
+  let fired = false;
+  const hookedSignals = new Set();
+
+  function exitHandler(exitCode, signal) {
+    if (fired) return;
+    fired = true;
+
+    if (!hookedSignals.has(signal) || callback(exitCode, signal) !== true) {
+      process.exit(exitCode);
+    }
+  }
+
+  function signalHandler(signal) {
+    hookedSignals.add(signal);
+    exitHandler(null, signal);
+  }
+
+  process.on('exit', exitHandler);
+
+  signals.forEach(signal => {
+    try {
+      process.on(signal, signalHandler);
+    } catch (err) {
+      // Ignore errors if signal assignment fails
+    }
+  });
+
+  if (options.alwaysLast) {
+    process.emit = function(...args) {
+      const type = args[0];
+      if (type === 'exit') {
+        process.removeListener('exit', exitHandler);
+        const result = originalEmit.apply(process, args);
+        process.on('exit', exitHandler);
+        return result;
+      }
+      return originalEmit.apply(process, args);
+    }
+  }
+
+  return function remove() {
+    if (fired) return;
+    process.removeListener('exit', exitHandler);
+    signals.forEach(signal => process.removeListener(signal, signalHandler));
+    if (options.alwaysLast) {
+      process.emit = originalEmit;
+    }
+  };
+}
+
+// browser.js (No operation shim for browser environments)
+export function onExit(callback, options = {}) {
+  return () => {}; // No-op for browsers, no process to handle
+}
+```

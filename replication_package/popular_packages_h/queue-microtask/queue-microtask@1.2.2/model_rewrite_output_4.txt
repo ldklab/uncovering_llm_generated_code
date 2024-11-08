@@ -1,0 +1,31 @@
+The Node.js code snippet is a polyfill for the `queueMicrotask` function, which is used to schedule microtasks in JavaScript. The code first checks if the native `queueMicrotask` function is available. If it is, the code exports this function after binding it to the global context. If `queueMicrotask` is not available, it exports a custom implementation using a resolved `Promise` to mimic the behavior of microtask scheduling.
+
+Here's how the code works in detail:
+
+1. It checks if `queueMicrotask` is a function.
+2. If `queueMicrotask` is defined, it binds it to the global object (`globalThis`) and exports it directly.
+3. If `queueMicrotask` is not defined, it creates a fallback:
+   - It uses a lazy-initialized resolved `Promise` to execute the callback, scheduling it as a microtask.
+   - If an error is thrown during callback execution, it catches this error and throws it asynchronously using `setTimeout`, ensuring it doesn't interrupt the microtask queue.
+
+Here is the rewritten code:
+
+```javascript
+/*! queue-microtask. MIT License. Feross Aboukhadijeh <https://feross.org/opensource> */
+let resolvedPromise;
+
+module.exports = (() => {
+  if (typeof queueMicrotask === 'function') {
+    return queueMicrotask.bind(globalThis);
+  } else {
+    return function(callback) {
+      if (!resolvedPromise) {
+        resolvedPromise = Promise.resolve();
+      }
+      resolvedPromise
+        .then(callback)
+        .catch(error => setTimeout(() => { throw error; }, 0));
+    };
+  }
+})();
+```

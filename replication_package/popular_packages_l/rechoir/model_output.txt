@@ -1,0 +1,66 @@
+The `rechoir` package is designed to help Node.js applications work with files of various types by automatically loading appropriate module loaders or transpilers based on file extensions. This allows the application to `require` files with extensions not natively supported by Node.js, like `.coffee`, `.toml`, or `.csv`.
+
+Key functionalities of the `rechoir` package include:
+
+1. **Module Registration**: It leverages configuration objects similar to those used by the `interpret` module to identify which npm module(s) need to be loaded to process a file with a given extension.
+
+2. **Automatic Loading**: Once identified, `rechoir` attempts to load the necessary module (which should be locally installed). This is crucial for working with file types such as CoffeeScript, TOML, or CSV, where transpilers or specific loaders must be used.
+
+3. **Prepares Environment for `require`**: After successfully preparing the environment using the `prepare` function, files with the specified extensions can be directly `required` in the application, just like JavaScript files.
+
+4. **Error Handling**: If the required module loader cannot be registered, `rechoir` will throw an error. The function can be instructed not to throw errors with an optional `noThrow` parameter.
+
+### Implementation
+
+Here's the implementation for the `rechoir` Node.js package:
+
+```javascript
+const path = require('path');
+const resolve = require('resolve');
+
+function prepare(config, filepath, cwd = path.dirname(filepath), noThrow = false) {
+  const ext = path.extname(filepath).slice(1);
+  const moduleLoaders = config[ext];
+
+  if (!moduleLoaders) {
+    if (noThrow) return false;
+    throw new Error(`No loader available for extension '${ext}'`);
+  }
+
+  const errors = [];
+
+  for (const moduleLoader of moduleLoaders) {
+    try {
+      const modulePath = resolve.sync(moduleLoader.module, { basedir: cwd });
+      require(modulePath);
+      moduleLoader.register && moduleLoader.register();
+      return true;
+    } catch (err) {
+      errors.push({ module: moduleLoader.module, error: err });
+    }
+  }
+
+  if (errors.length && !noThrow) {
+    const error = new Error(`Failed to register module loaders for '${ext}'`);
+    error.failures = errors;
+    throw error;
+  }
+
+  return false;
+}
+
+module.exports = { prepare };
+
+// Example usage:
+//
+// const interpretConfig = require('interpret').extensions;
+// const rechoir = require('./rechoir'); // Adjust path to where this file is saved
+// try {
+//   rechoir.prepare(interpretConfig, './file.coffee');
+//   console.log(require('./file.coffee')); // If supported and transpilers are installed
+// } catch (error) {
+//   console.error(error);
+// }
+```
+
+This code defines the `prepare` function that examines the `.extensions` configuration, attempts to resolve necessary modules for a given file type, and modifies the `require` functionality to support non-standard file extensions by registering the appropriate module loader or transpiler. It also demonstrates basic error handling and configuration usage.

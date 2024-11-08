@@ -1,0 +1,77 @@
+The provided Node.js code is a utility for defining properties on objects, potentially using ES5 property descriptors if they are supported in the runtime environment. Below is the explanation of the key components of this code and its rewritten version:
+
+1. **Dependencies and Initial Checks**: 
+   - The `object-keys` module is required to retrieve the keys of an object.
+   - Checks if `Symbol` is supported to include symbol properties later.
+   
+2. **Utility Functions**:
+   - `isFunction`: Determines if a given argument is a function.
+   - `arePropertyDescriptorsSupported`: Tests if the environment supports ES5 property descriptors. It tries to define a non-enumerable property and checks if it works as expected.
+   
+3. **Property Definition Functions**:
+   - `defineProperty`: Defines a single property on an object with the given name and value. It uses property descriptors if they are supported.
+   - `defineProperties`: Defines multiple properties on an object based on a map of key-value pairs, with an optional map of predicate functions to conditionally define properties.
+
+4. **Exports**:
+   - The `defineProperties` function is exported, along with a flag indicating support for descriptors.
+
+Here is the rewritten version of the code in a single markdown code block:
+
+```javascript
+'use strict';
+
+const keys = require('object-keys');
+const hasSymbols = typeof Symbol === 'function' && typeof Symbol('foo') === 'symbol';
+
+const toStr = Object.prototype.toString;
+const concat = Array.prototype.concat;
+const origDefineProperty = Object.defineProperty;
+
+const isFunction = function (fn) {
+    return typeof fn === 'function' && toStr.call(fn) === '[object Function]';
+};
+
+const arePropertyDescriptorsSupported = function () {
+    const obj = {};
+    try {
+        origDefineProperty(obj, 'x', { enumerable: false, value: obj });
+        for (const _ in obj) {
+            return false;
+        }
+        return obj.x === obj;
+    } catch (e) {
+        return false;
+    }
+};
+const supportsDescriptors = origDefineProperty && arePropertyDescriptorsSupported();
+
+const defineProperty = function (object, name, value, predicate) {
+    if (name in object && (!isFunction(predicate) || !predicate())) {
+        return;
+    }
+    if (supportsDescriptors) {
+        origDefineProperty(object, name, {
+            configurable: true,
+            enumerable: false,
+            value: value,
+            writable: true
+        });
+    } else {
+        object[name] = value;
+    }
+};
+
+const defineProperties = function (object, map, predicates = {}) {
+    let props = keys(map);
+    if (hasSymbols) {
+        props = concat.call(props, Object.getOwnPropertySymbols(map));
+    }
+    for (let i = 0; i < props.length; i += 1) {
+        defineProperty(object, props[i], map[props[i]], predicates[props[i]]);
+    }
+};
+
+defineProperties.supportsDescriptors = Boolean(supportsDescriptors);
+
+module.exports = defineProperties;
+```

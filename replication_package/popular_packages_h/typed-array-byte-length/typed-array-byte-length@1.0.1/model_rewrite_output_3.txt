@@ -1,0 +1,95 @@
+The provided Node.js code defines a module that determines the byte length of a given typed array. Here's a breakdown of how it works:
+
+1. **Dependencies and Type Definitions**:
+   - It requires several modules like `call-bind`, `for-each`, `gopd` (GetOwnPropertyDescriptor), `has-proto`, and `is-typed-array`, as well as `available-typed-arrays` which lists all available typed arrays in the environment.
+   - TypeScript typedefs are used to define the types of typed arrays and a getter function type that returns a number representing the byte length.
+
+2. **Getters Object**:
+   - An object named `getters` is created to store getter functions for each typed array type that can retrieve the `byteLength`.
+
+3. **Getter Initialization**:
+   - It checks if the `gOPD` function is available.
+   - For each available typed array, it determines whether the global (window or global) object has a constructor function or object for the typed array.
+   - It attempts to get the `byteLength` property descriptor from the prototype of each typed array.
+   - If not found directly and the environment supports `__proto__`, it tries to get the descriptor from the super prototype.
+   - If a getter is found in the descriptor, it binds the getter function using `callBind` and stores it in the `getters` object.
+   - If configurable, it experiments by altering the length to ensure a correct getter can be used if some environment has a "magic" data property.
+
+4. **tryTypedArrays Function**:
+   - This function iterates over the registered getters and tries to invoke them to compute the `byteLength` for a provided typed array.
+   - If the byte length is found and is a number, it returns this value.
+
+5. **Main Export Function**:
+   - The function exported as the module checks if the provided value is a typed array using `isTypedArray`.
+   - If it is, it uses `tryTypedArrays` to find and return the byte length. If not, it returns `false`.
+
+Here’s a possible rewrite of the code:
+
+```javascript
+'use strict';
+
+const callBind = require('call-bind');
+const forEach = require('for-each');
+const gOPD = require('gopd');
+const hasProto = require('has-proto')();
+const isTypedArray = require('is-typed-array');
+const typedArrays = require('available-typed-arrays')();
+
+// A map to hold getters for byteLength property of each typed array type
+const getters = {};
+
+// Define property utility
+const oDP = Object.defineProperty;
+
+if (gOPD) {
+    const getByteLength = (x) => x.byteLength;
+
+    forEach(typedArrays, (typedArray) => {
+        const globalTypedArray = global[typedArray];
+        if (typeof globalTypedArray === 'function' || typeof globalTypedArray === 'object') {
+            const Proto = globalTypedArray.prototype;
+            let descriptor = gOPD(Proto, 'byteLength');
+
+            if (!descriptor && hasProto) {
+                const superProto = Proto.__proto__;
+                descriptor = gOPD(superProto, 'byteLength');
+            }
+
+            if (descriptor?.get) {
+                getters[typedArray] = callBind(descriptor.get);
+            } else if (oDP) {
+                const arr = new globalTypedArray(2);
+                descriptor = gOPD(arr, 'byteLength');
+                if (descriptor?.configurable) {
+                    oDP(arr, 'length', { value: 3 });
+                }
+                if (arr.length === 2) {
+                    getters[typedArray] = getByteLength;
+                }
+            }
+        }
+    });
+}
+
+const tryTypedArrays = (value) => {
+    let foundByteLength;
+    forEach(getters, (getter) => {
+        if (typeof foundByteLength !== 'number') {
+            try {
+                const byteLength = getter(value);
+                if (typeof byteLength === 'number') {
+                    foundByteLength = byteLength;
+                }
+            } catch (e) {}
+        }
+    });
+    return foundByteLength;
+};
+
+module.exports = function typedArrayByteLength(value) {
+    if (!isTypedArray(value)) {
+        return false;
+    }
+    return tryTypedArrays(value);
+};
+```

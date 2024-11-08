@@ -1,0 +1,91 @@
+The provided Node.js code is a module for environment variable interpolation, primarily used to substitute placeholders within environment variables with their corresponding values. The key functionalities included in this code are:
+
+1. **Regex Definition**: The `DOTENV_SUBSTITUTION_REGEX` is a complex regular expression used to match various patterns of environment variable substitution like `${VAR}` or `${VAR:default}`.
+
+2. **Escape Resolution**: The function `_resolveEscapeSequences` ensures that escaped dollar signs (`\$`) in the values are correctly interpreted as literal dollar signs (`$`).
+
+3. **Interpolation**: The `interpolate` function uses the regex to find placeholders in a given string (value). For each match:
+   - If escaped, it's returned as is (minus the escape character).
+   - If a corresponding value exists in either `processEnv` or `parsed`, it replaces the placeholder.
+   - If no matching value is found, and a default value is provided within the placeholder, it uses that default.
+   - Recursively interpolates nested and chained variable references.
+   
+4. **Environment Variable Expansion**: The `expand` function iterates through the environment variables (`options.parsed`), performs interpolation on each variable value with `interpolate`, resolves escape sequences with `_resolveEscapeSequences`, and then updates the `processEnv` object with the interpolated values.
+
+5. **Exports**: The `expand` function is exported for use in other modules.
+
+```javascript
+'use strict';
+
+const DOTENV_SUBSTITUTION_REGEX = /(\\)?(\$)(?!\()(\{?)([\w.]+)(?::?-((?:\$\{(?:\$\{(?:\$\{[^}]*\}|[^}])*}|[^}])*}|[^}])+))?(\}?)/gi;
+
+function _resolveEscapeSequences(value) {
+  return value.replace(/\\\$/g, '$');
+}
+
+function interpolate(value, processEnv, parsed) {
+  return value.replace(DOTENV_SUBSTITUTION_REGEX, (match, escaped, dollarSign, openBrace, key, defaultValue, closeBrace) => {
+    if (escaped === '\\') {
+      return match.slice(1);
+    } else {
+      if (processEnv[key]) {
+        if (processEnv[key] === parsed[key]) {
+          return processEnv[key];
+        } else {
+          return interpolate(processEnv[key], processEnv, parsed);
+        }
+      }
+
+      if (parsed[key]) {
+        if (parsed[key] === value) {
+          return parsed[key];
+        } else {
+          return interpolate(parsed[key], processEnv, parsed);
+        }
+      }
+
+      if (defaultValue) {
+        if (defaultValue.startsWith('$')) {
+          return interpolate(defaultValue, processEnv, parsed);
+        } else {
+          return defaultValue;
+        }
+      }
+
+      return '';
+    }
+  });
+}
+
+function expand(options) {
+  let processEnv = process.env;
+  if (options && options.processEnv != null) {
+    processEnv = options.processEnv;
+  }
+
+  for (const key in options.parsed) {
+    let value = options.parsed[key];
+    const inProcessEnv = Object.prototype.hasOwnProperty.call(processEnv, key);
+
+    if (inProcessEnv) {
+      if (processEnv[key] === options.parsed[key]) {
+        value = interpolate(value, processEnv, options.parsed);
+      } else {
+        value = processEnv[key];
+      }
+    } else {
+      value = interpolate(value, processEnv, options.parsed);
+    }
+
+    options.parsed[key] = _resolveEscapeSequences(value);
+  }
+
+  for (const processKey in options.parsed) {
+    processEnv[processKey] = options.parsed[processKey];
+  }
+
+  return options;
+}
+
+module.exports.expand = expand;
+```

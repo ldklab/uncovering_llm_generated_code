@@ -1,0 +1,56 @@
+The provided Node.js code defines a `CoverageInstrumenter` class that uses the Node.js `inspector` module to gather JavaScript code coverage information from a running application. The class manages an `inspector` Session to start and stop code coverage instrumentation.
+
+Here's a breakdown of its functionality:
+
+1. **Constructor**: Initializes a new `inspector` Session and converts the session's `post` method to a promise-based function using `util.promisify`.
+
+2. **startInstrumenting**: 
+   - Connects the session to enable interaction with the inspector.
+   - Sends commands to enable the profiler and start collecting precise function coverage data with call counts and detailed information.
+
+3. **stopInstrumenting**:
+   - Collects coverage data by sending a command to take precise coverage results.
+   - Disables precise coverage and the profiler.
+   - On Windows, adjusts file URLs from the form `file:////` to `file://` to address a known issue with network file paths in Node.js.
+
+4. **Exports**: The `CoverageInstrumenter` class is exported as a module.
+
+Here is a rewritten version of the code:
+
+```javascript
+'use strict';
+
+const { Session } = require('inspector');
+const { promisify } = require('util');
+
+class CoverageInstrumenter {
+  constructor() {
+    this.session = new Session();
+    this.postSession = promisify(this.session.post.bind(this.session));
+  }
+
+  async startInstrumenting() {
+    this.session.connect();
+    await this.postSession('Profiler.enable');
+    await this.postSession('Profiler.startPreciseCoverage', { callCount: true, detailed: true });
+  }
+
+  async stopInstrumenting() {
+    const { result } = await this.postSession('Profiler.takePreciseCoverage');
+    await this.postSession('Profiler.stopPreciseCoverage');
+    await this.postSession('Profiler.disable');
+
+    if (process.platform === 'win32') {
+      result.forEach(res => {
+        if (res.url.startsWith('file:////')) {
+          res.url = 'file://' + res.url.slice('file:////'.length);
+        }
+      });
+    }
+
+    return result;
+  }
+}
+
+module.exports.CoverageInstrumenter = CoverageInstrumenter;
+```

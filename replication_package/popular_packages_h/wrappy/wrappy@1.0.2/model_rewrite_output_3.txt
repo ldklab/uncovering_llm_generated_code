@@ -1,0 +1,42 @@
+The provided Node.js code defines a function named `wrappy` that returns a "wrapped" version of a given callback function. The primary purpose of `wrappy` is to ensure that any properties attached to the original function or the callback function are retained in the returned "wrapped" function. This is particularly useful when the function being wrapped has decorations or other properties that need to be preserved.
+
+Here is a breakdown of the functionality:
+1. The `wrappy` function takes two parameters, `fn` and `cb`. If both are provided, it recursively wraps `cb` using `fn`.
+2. If `fn` is not a function, it throws a `TypeError`.
+3. It copies all own properties of `fn` to a new `wrapper` function.
+4. The `wrapper` function:
+   - Takes any number of arguments, applies the wrapped function (`fn`) to them, and collects the result.
+   - If the last argument passed is also a function (assumed to be the callback `cb`), it copies all properties from `cb` to the result if the result is also a function and is different from `cb`.
+5. Finally, it returns the wrapped version of the function.
+
+Here's a possible rewrite of the Node.js code:
+
+```javascript
+module.exports = wrappy;
+
+function wrappy(fn, cb) {
+  if (fn && cb) return wrappy(fn)(cb);
+
+  if (typeof fn !== 'function') {
+    throw new TypeError('need wrapper function');
+  }
+
+  const wrapper = function(...args) {
+    const result = fn.apply(this, args);
+    const lastArg = args[args.length - 1];
+
+    if (typeof result === 'function' && result !== lastArg) {
+      Object.keys(lastArg).forEach(key => {
+        result[key] = lastArg[key];
+      });
+    }
+    return result;
+  };
+
+  Object.keys(fn).forEach(key => {
+    wrapper[key] = fn[key];
+  });
+
+  return wrapper;
+}
+```

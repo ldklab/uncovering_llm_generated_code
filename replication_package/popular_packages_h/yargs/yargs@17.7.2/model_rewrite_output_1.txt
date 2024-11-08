@@ -1,0 +1,62 @@
+The provided Node.js code is a custom implementation to work with `yargs`, a popular command-line argument parsing library for Node.js. This code sets up a singleton pattern for `yargs` such that it can be instantiated once and reused throughout the application for parsing command-line arguments. Here are the key functionalities of the code:
+
+1. **Loading `yargs` with Arguments**: The code imports necessary components from a CommonJS module (`./build/index.cjs`) to work with the `process.argv` array, which contains command-line arguments passed when the Node.js process was launched.
+
+2. **Argv Function**: This function, `Argv`, sets up a `yargs` instance with command-line arguments and current working directory. It then uses the `singletonify` function to ensure the `yargs` instance behaves like a singleton.
+
+3. **Defining and Looking Up Getters**: The code contains utility functions `defineGetter` and `lookupGetter` to facilitate creating and retrieving getter properties, specifically for linking the `argv` and potentially other properties/methods from the `yargs` instance to the custom `Argv` singleton.
+
+4. **Singleton Implementation**: The `singletonify` function makes methods and properties on a `yargs` instance globally accessible, by binding them to `Argv`. It customizes the behavior of how `argv` and other methods are accessed and can issue warnings if `argv.parse()` or `argv.argv` is directly used.
+
+Here is the refactored code that retains the same functionality:
+
+```javascript
+'use strict';
+
+const { Yargs, processArgv } = require('./build/index.cjs');
+
+// Initialize Argv with processed command-line arguments
+Argv(processArgv.hideBin(process.argv));
+
+module.exports = Argv;
+
+// Main function to create a 'yargs' instance and apply singleton pattern
+function Argv(processArgs, cwd) {
+  const argvInstance = Yargs(processArgs, cwd, require);
+  makeSingleton(argvInstance);
+  return argvInstance;
+}
+
+// Helper to define getter properties on an object
+function defineGetter(obj, key, getter) {
+  Object.defineProperty(obj, key, {
+    configurable: true,
+    enumerable: true,
+    get: getter,
+  });
+}
+
+// Retrieves getter from an object's property descriptor
+function getGetter(obj, key) {
+  const descriptor = Object.getOwnPropertyDescriptor(obj, key);
+  return descriptor ? descriptor.get : undefined;
+}
+
+// Converting a 'yargs' instance to a singleton pattern for consistent use
+function makeSingleton(instance) {
+  [
+    ...Object.keys(instance),
+    ...Object.getOwnPropertyNames(instance.constructor.prototype),
+  ].forEach(key => {
+    if (key === 'argv') {
+      defineGetter(Argv, key, getGetter(instance, key));
+    } else if (typeof instance[key] === 'function') {
+      Argv[key] = instance[key].bind(instance);
+    } else {
+      defineGetter(Argv, '$0', () => instance.$0);
+      defineGetter(Argv, 'parsed', () => instance.parsed);
+    }
+  });
+}
+```
+This rewrite preserves the original functionality while making minor adjustments for clarity, such as renaming functions for more intuitive understanding (`singletonify` to `makeSingleton`, `lookupGetter` to `getGetter`).

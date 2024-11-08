@@ -1,0 +1,100 @@
+The 'walker' package is a directory traversal tool for Node.js that allows users to walk through directories and files, emitting events for different types of file system entries it encounters. Its primary features include:
+
+1. **Initialization**: You initialize a walker with a starting directory path.
+
+2. **Event Broadcasting**:
+    - **`entry`**: Emits for every file system entry.
+    - **`dir`**: Emits specifically for directories.
+    - **`file`**: Emits specifically for files.
+    - **`symlink`**: Emits specifically for symbolic links.
+    - **`blockDevice`**: Emits for block devices.
+    - **`fifo`**: Emits for FIFOs.
+    - **`socket`**: Emits for socket files.
+    - **`characterDevice`**: Emits for character devices.
+    - **`error`**: Emits when an error occurs.
+    - **`end`**: Emits when the entire directory tree has been traversed.
+
+3. **Directory Pruning**: Optionally, a `filterDir` method can be used to prevent the traversal of certain subdirectories, allowing you to skip over specific parts of the directory tree.
+
+Below is the code implementation for this functionality:
+
+```javascript
+const fs = require('fs');
+const path = require('path');
+const EventEmitter = require('events');
+
+class Walker extends EventEmitter {
+  constructor(root) {
+    super();
+    this.root = root;
+    this.dirFilter = null;
+  }
+
+  filterDir(filterFn) {
+    this.dirFilter = filterFn;
+    return this;
+  }
+
+  walk() {
+    this._walk(this.root);
+    return this;
+  }
+
+  _walk(dir) {
+    fs.readdir(dir, { withFileTypes: true }, (err, entries) => {
+      if (err) {
+        this.emit('error', err, dir);
+        return;
+      }
+
+      entries.forEach(entry => {
+        const fullPath = path.join(dir, entry.name);
+        fs.stat(fullPath, (err, stat) => {
+          if (err) {
+            this.emit('error', err, fullPath);
+            return;
+          }
+
+          this.emit('entry', fullPath, stat);
+
+          if (stat.isDirectory()) {
+            if (this.dirFilter && !this.dirFilter(fullPath, stat)) {
+              return;
+            }
+            this.emit('dir', fullPath, stat);
+            this._walk(fullPath);
+          } else if (stat.isFile()) {
+            this.emit('file', fullPath, stat);
+          } else if (stat.isSymbolicLink()) {
+            this.emit('symlink', fullPath, stat);
+          } else if (stat.isBlockDevice()) {
+            this.emit('blockDevice', fullPath, stat);
+          } else if (stat.isFIFO()) {
+            this.emit('fifo', fullPath, stat);
+          } else if (stat.isSocket()) {
+            this.emit('socket', fullPath, stat);
+          } else if (stat.isCharacterDevice()) {
+            this.emit('characterDevice', fullPath, stat);
+          }
+        });
+      });
+
+      process.nextTick(() => {
+        if (dir === this.root) {
+          this.emit('end');
+        }
+      });
+    });
+  }
+}
+
+function WalkerFactory(root) {
+  const walkerInstance = new Walker(root);
+  process.nextTick(() => walkerInstance.walk());
+  return walkerInstance;
+}
+
+module.exports = WalkerFactory;
+```
+
+This code provides a comprehensive directory walk-through solution by constructing a Walker class that inherits from EventEmitter. The class provides methods to filter directories and emits events for every type of entry it encounters during the walking process. The user can subscribe to these events to perform specific actions as the file system is traversed.

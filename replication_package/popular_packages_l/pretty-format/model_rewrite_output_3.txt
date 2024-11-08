@@ -1,0 +1,107 @@
+The provided Node.js code defines a module for formatting JavaScript values in a human-readable form. It includes the main `format` function that recursively converts different data types to strings with formatting options. Here's how it works:
+
+1. **Default Theme:** The `defaultTheme` object sets up default color codes for different data types, although it's not used directly in the given code.
+   
+2. **Format Function:** The `format` function initializes options with default values, then calls the `stringify` function.
+
+3. **Stringify Function:** This recursively processes the input value:
+   - If it's a circular reference, it returns `[Circular]`.
+   - If it's an array, it calls `formatArray`.
+   - If it's an object, it tracks references and calls `formatObject`.
+   - If it's a primitive type, it calls `formatPrimitive`.
+
+4. **Format Array Function:** It formats each array element by recursively calling `stringify`, joining the results with commas and indents.
+
+5. **Format Object Function:** Similar to `formatArray`, but processes key-value pairs of the object.
+
+6. **Format Primitive Function:** Directly returns formatted strings for primitive values, handling strings, numbers, booleans, functions, and null.
+
+7. **Custom Plugin:** An example plugin `customPlugin` is implemented to modify function formatting. It tests if a value is a function and serializes it to include the function's name and length of parameters.
+
+Finally, the code demonstrates using `prettyFormat` with a custom plugin that affects how functions in an object are serialized.
+
+```javascript
+// Implementation of a pretty-format package for formatting values
+const defaultTheme = {
+  comment: 'gray',
+  content: 'reset',
+  prop: 'yellow',
+  tag: 'cyan',
+  value: 'green',
+};
+
+function format(value, options = {}) {
+  options = { indent: 2, printFunctionName: true, ...options };
+  return stringify(value, options, '', 0, []);
+}
+
+function stringify(value, options, indentation, depth, refs) {
+  if (refs.includes(value)) return `[Circular]`;
+
+  if (Array.isArray(value)) {
+    return formatArray(value, options, indentation, depth, refs);
+  } else if (typeof value === 'object' && value !== null) {
+    refs.push(value);
+    return formatObject(value, options, indentation, depth, refs);
+  } else {
+    return formatPrimitive(value, options);
+  }
+}
+
+function formatArray(array, options, indentation, depth, refs) {
+  const newIndentation = indentation + ' '.repeat(options.indent);
+  const elements = array.map(
+    item => newIndentation + stringify(item, options, newIndentation, depth + 1, refs)
+  );
+  return `[\n${elements.join(',\n')}\n${indentation}]`;
+}
+
+function formatObject(object, options, indentation, depth, refs) {
+  const newIndentation = indentation + ' '.repeat(options.indent);
+  const entries = Object.entries(object).map(
+    ([key, value]) => 
+      `${newIndentation}${JSON.stringify(key)}: ${stringify(value, options, newIndentation, depth + 1, refs)}`
+  );
+  return `{\n${entries.join(',\n')}\n${indentation}}`;
+}
+
+function formatPrimitive(value, options) {
+  if (value === null) {
+    return 'null';
+  }
+  switch (typeof value) {
+    case 'string':
+      return JSON.stringify(value);
+    case 'number':
+    case 'boolean':
+      return String(value);
+    case 'function':
+      return options.printFunctionName && value.name ? `[Function ${value.name}]` : '[Function]';
+    default:
+      return String(value);
+  }
+}
+
+module.exports = { format };
+
+// Example custom plugin to format functions differently
+const customPlugin = {
+  test(val) {
+    return typeof val === 'function';
+  },
+  serialize(val) {
+    return `[Function ${val.name || 'anonymous'} ${val.length}]`;
+  }
+};
+
+// Using the pretty-format function with a custom plugin
+const { format: prettyFormat } = require('./pretty-format');
+const val = {
+  onClick: function(event) {},
+  render: function() {},
+};
+
+console.log(prettyFormat(val, {
+  plugins: [customPlugin]
+}));
+```

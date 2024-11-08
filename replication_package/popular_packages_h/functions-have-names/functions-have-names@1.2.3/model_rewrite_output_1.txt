@@ -1,0 +1,52 @@
+The provided Node.js code defines a module that checks certain properties relating to function names in JavaScript. Here is a breakdown of the functionality:
+
+1. **`functionsHaveNames` Function**: 
+   - It checks if function expressions have a `name` property of type 'string'. 
+
+2. **Polyfill Check for `Object.getOwnPropertyDescriptor`**:
+   - It attempts to get a property descriptor using `Object.getOwnPropertyDescriptor`. If an error occurs (particularly in IE8), it sets `gOPD` to null, acknowledging that IE8 has a broken implementation.
+
+3. **`functionsHaveConfigurableNames` Method**:
+   - It checks if function names are configurable descriptors. It uses `functionsHaveNames` and `gOPD` to ensure the system supports checking function properties, then it attempts to get a descriptor for a function's name and checks if it is configurable.
+
+4. **`boundFunctionsHaveNames` Method**:
+   - It checks if bound functions have names. It binds an empty function and checks if the name of this bound function is not an empty string, ensuring that environments that support named function expressions also handle names in function bindings correctly.
+
+5. **Exports**:
+   - The module exports `functionsHaveNames`, which includes additional methods to check the configurability of function names and properties of bound function names.
+
+Here is the rewritten version of the code:
+
+```javascript
+'use strict';
+
+function functionsHaveNames() {
+    return typeof function f() {}.name === 'string';
+}
+
+let gOPD = Object.getOwnPropertyDescriptor;
+if (gOPD) {
+    try {
+        gOPD([], 'length');
+    } catch (e) {
+        // IE 8 has a broken gOPD
+        gOPD = null;
+    }
+}
+
+functionsHaveNames.functionsHaveConfigurableNames = function functionsHaveConfigurableNames() {
+    if (!functionsHaveNames() || !gOPD) {
+        return false;
+    }
+    const desc = gOPD(function () {}, 'name');
+    return !!desc && !!desc.configurable;
+};
+
+const $bind = Function.prototype.bind;
+
+functionsHaveNames.boundFunctionsHaveNames = function boundFunctionsHaveNames() {
+    return functionsHaveNames() && typeof $bind === 'function' && function f() {}.bind().name !== '';
+};
+
+module.exports = functionsHaveNames;
+```

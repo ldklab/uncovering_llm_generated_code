@@ -1,0 +1,97 @@
+The `resolve.exports` package is designed as a utility to resolve package entry points and imports within a `package.json` file. It operates based on the concept of conditional exports and imports as defined in Node.js's module resolution specifications. Here’s a detailed breakdown of its functionality:
+
+1. **Exports Resolution**:
+   - The package can resolve paths for specified exports from a package’s `exports` field in `package.json`.
+   - It supports handling various conditions such as `require`, `import`, `node`, `browser`, and more custom conditions.
+   - The primary function for resolving exports is `exports()`. It tries to match the requested package path against the specified conditions in the `exports` field of a package, prioritizing the conditions based on their order in the `package.json`.
+
+2. **Imports Resolution**:
+   - Similar to exports, it supports resolving paths for imports using the `imports` field in `package.json`.
+   - The `imports()` function processes a specified import specifier and resolves it according to the conditions.
+   - Import specifiers must start with `#`, as per Node.js import resolution standards.
+
+3. **General Resolution**:
+   - A helper function `resolve()` automatically decides whether to resolve through `exports()` or `imports()` based on the entry format provided.
+
+4. **Options**:
+   - Users can specify additional options such as custom conditions, toggling browser or require mode, and an unsafe mode.
+   - The `options` parameter allows customization of the resolution process, including whether to prioritize browser conditions or require conditions.
+
+5. **Legacy Resolution**:
+   - Besides exports/imports, the package provides a legacy resolution aimed at resolving traditional fields like `main` and `module` when no `exports` field is present.
+   - This fallback mechanism uses a specified order of fields which can be customized.
+
+6. **APIs and Signature**:
+   - Consistent API signatures across `resolve()`, `exports()`, and `imports()`, with options for customization.
+   
+The package pays special attention to maintaining consistency with Node.js's native resolution to prevent fragmentation across different tools and environments.
+
+Here is an implementation of this package:
+
+```js
+// resolve-exports.js
+
+function conditionsSatisfied(condArr, pathConditions) {
+  for (let condition of condArr) {
+    if (pathConditions[condition]) return pathConditions[condition];
+  }
+  return undefined;
+}
+
+function resolveConditions(pkg, entry, options) {
+  const pathConditions = pkg.exports[entry];
+  if (!pathConditions) throw new Error(`Missing "${entry}" specifier in "${pkg.name}" package`);
+
+  const conditions = ['default', ...(options.conditions || []), options.require ? 'require' : 'import', options.browser ? 'browser' : 'node'];
+  const result = conditionsSatisfied(conditions, pathConditions);
+  if (result) return Array.isArray(result) ? result : [result];
+
+  throw new Error(`No known conditions for "${entry}" specifier in "${pkg.name}" package`);
+}
+
+function resolveImports(pkg, target, options) {
+  const importsMap = pkg.imports || {};
+  const pathConditions = importsMap[target];
+  if (!pathConditions) throw new Error(`Missing "${target}" specifier in "${pkg.name}" package`);
+
+  const conditions = ['default', 'import', ...(options.browser ? ['browser'] : ['node'])];
+  const result = conditionsSatisfied(conditions, pathConditions);
+  if (result) return Array.isArray(result) ? result : [result];
+
+  throw new Error(`No known conditions for "${target}" specifier in "${pkg.name}" package`);
+}
+
+export function exports(pkg, entry = '.', options = {}) {
+  if (!pkg.exports) return undefined;
+  return resolveConditions(pkg, entry.startsWith('./') ? entry : `./${entry}`, options);
+}
+
+export function imports(pkg, target, options = {}) {
+  if (!pkg.imports) return undefined;
+  return resolveImports(pkg, target, options);
+}
+
+export function resolve(pkg, entry = '.', options = {}) {
+  if (entry.startsWith('#')) {
+    return imports(pkg, entry, options);
+  }
+  return exports(pkg, entry, options);
+}
+
+export function legacy(pkg, options = {}) {
+  const fields = options.fields || ['module', 'main'];
+  const isBrowser = options.browser;
+
+  if (isBrowser && pkg.browser && typeof pkg.browser === 'string') {
+    return pkg.browser;
+  } else {
+    for (let field of fields) {
+      if (pkg[field]) return pkg[field];
+    }
+  }
+
+  return undefined;
+}
+```
+
+This code provides a functional implementation of the `resolve.exports` package. It includes the main logic for resolving exports and imports based on the provided specifications and options from the `package.json`. It also implements a legacy resolver for non-exports package fields, based on a priority list of fields.

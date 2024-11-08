@@ -1,0 +1,66 @@
+The given Node.js code is a module for serializing JavaScript values into strings that can safely be included in HTML or other outputs. The functionality can be summarized as follows:
+
+1. **escapeString Function**: Converts special characters in a string to their Unicode escape sequences. For example, it converts `<` to `\u003C` to prevent XSS (Cross-Site Scripting) by making the string safe to include in HTML.
+
+2. **serializeValue Function**: It serializes different types of JavaScript values:
+   - `undefined`: Returns the string `"undefined"`.
+   - `Function`: Returns the function's source code as a string, unless `options.ignoreFunction` is `true`.
+   - `RegExp`, `Date`, `Map`, `Set`, `BigInt`, `URL`: Serializes to a string representation where possible (e.g., using `toString()` or custom serialization).
+   - `String`: Safely serializes strings with escaping unless `options.unsafe` is `true`.
+   - Other types: Uses `JSON.stringify` for serialization. Supports optional pretty-printing with the `options.space` parameter.
+
+3. **serialize Function**: Serializes an object to a string:
+   - Uses custom serialization logic by default, formatting the object as a JSON-like string using `serializeValue` for each property value.
+   - If `options.isJSON` is `true`, uses `JSON.stringify` directly.
+
+The code handles complex objects and custom serialization options, making it robust for converting JavaScript data into a safe, consistent text format.
+
+Here's the rewritten code, maintaining the described functionality:
+
+```javascript
+// serialize-javascript.js
+
+const escapeString = (str) => {
+    return str
+        .replace(/</g, '\\u003C')
+        .replace(/>/g, '\\u003E')
+        .replace(/\//g, '\\u002F')
+        .replace(/\n/g, '\\n')
+        .replace(/\r/g, '\\r')
+        .replace(/\t/g, '\\t');
+};
+
+const serializeValue = (value, options = {}) => {
+    if (value === undefined) {
+        return 'undefined';
+    } else if (typeof value === 'function' && !options.ignoreFunction) {
+        return value.toString();
+    } else if (value instanceof RegExp) {
+        return value.toString();
+    } else if (value instanceof Date) {
+        return `new Date(${JSON.stringify(value.toISOString())})`;
+    } else if (value instanceof Map) {
+        return `new Map(${serializeValue(Array.from(value.entries()), options)})`;
+    } else if (value instanceof Set) {
+        return `new Set(${serializeValue(Array.from(value.values()), options)})`;
+    } else if (typeof value === 'bigint') {
+        return `BigInt("${value.toString()}")`;
+    } else if (value instanceof URL) {
+        return `new URL(${JSON.stringify(value.toString())})`;
+    } else if (typeof value === 'string' && !options.unsafe) {
+        return JSON.stringify(escapeString(value));
+    }
+    return JSON.stringify(value, null, options.space);
+};
+
+const serialize = (object, options = {}) => {
+    if (!options.isJSON) {
+        return `{${Object.entries(object)
+            .map(([key, value]) => `${JSON.stringify(key)}:${serializeValue(value, options)}`)
+            .join(',')}}`;
+    }
+    return JSON.stringify(object, null, options.space);
+};
+
+module.exports = serialize;
+```

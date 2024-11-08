@@ -1,0 +1,234 @@
+'use strict';
+
+const { generate } = require('regjsgen');
+const { parse } = require('regjsparser');
+const regenerate = require('regenerate');
+const unicodeMatchProperty = require('unicode-match-property-ecmascript');
+const unicodeMatchPropertyValue = require('unicode-match-property-value-ecmascript');
+const iuMappings = require('./data/iu-mappings.js');
+const ESCAPE_SETS = require('./data/character-class-escape-sets.js');
+
+const flatMap = (array, callback) => {
+	return array.reduce((result, item) => result.concat(callback(item)), []);
+};
+
+const regenerateContainsAstral = (regenerateData) => {
+	return regenerateData.data.some(cp => cp >= 0x10000);
+};
+
+const SPECIAL_CHARS = /([\\^$.*+?()[\]{}|])/g;
+const UNICODE_SET = regenerate().addRange(0x0, 0x10FFFF);
+const ASTRAL_SET = regenerate().addRange(0x10000, 0x10FFFF);
+
+const NEWLINE_SET = regenerate().add(0x000A, 0x000D, 0x2028, 0x2029);
+const DOT_SET_UNICODE = UNICODE_SET.clone().remove(NEWLINE_SET);
+
+const getCharacterClassEscapeSet = (character, unicode, ignoreCase) => {
+	const sets = ESCAPE_SETS[unicode ? (ignoreCase ? 'UNICODE_IGNORE_CASE' : 'UNICODE') : 'REGULAR'];
+	return sets.get(character);
+};
+
+const getUnicodeDotSet = (dotAll) => dotAll ? UNICODE_SET : DOT_SET_UNICODE;
+
+const getUnicodePropertyValueSet = (property, value) => {
+	const path = value ? `${property}/${value}` : `Binary_Property/${property}`;
+	try {
+		return require(`regenerate-unicode-properties/${path}.js`);
+	} catch {
+		throw new Error(`Failed to recognize value \`${value}\` for property \`${property}\`.`);
+	}
+};
+
+const handleLoneUnicodePropertyNameOrValue = (value) => {
+	try {
+		return getUnicodePropertyValueSet('General_Category', unicodeMatchPropertyValue('General_Category', value));
+	} catch (e) {}
+
+	try {
+		return getUnicodePropertyValueSet('Property_of_Strings', value);
+	} catch (e) {}
+
+	const property = unicodeMatchProperty(value);
+	return getUnicodePropertyValueSet(property);
+};
+
+const getUnicodePropertyEscapeSet = (value, isNegative) => {
+	const [property, val] = value.split('=');
+	let set = val ? getUnicodePropertyValueSet(unicodeMatchProperty(property), unicodeMatchPropertyValue(unicodeMatchProperty(property), val)) : handleLoneUnicodePropertyNameOrValue(property);
+
+	if (isNegative) {
+		if (set.strings) {
+			throw new Error('Cannot negate Unicode property of strings');
+		}
+		return { characters: UNICODE_SET.clone().remove(set.characters), strings: new Set() };
+	}
+
+	return { characters: set.characters.clone(), strings: new Set(set.strings.map(str => str.replace(SPECIAL_CHARS, '\\$1'))) };
+};
+
+const getUnicodePropertyEscapeCharacterClassData = (property, isNegative) => {
+	const set = getUnicodePropertyEscapeSet(property, isNegative);
+	const data = getCharacterClassEmptyData();
+	data.singleChars = set.characters;
+	data.longStrings = set.strings;
+	data.maybeIncludesStrings = set.strings.size > 0;
+	return data;
+};
+
+const config = {
+	flags: { ignoreCase: false, unicode: false, unicodeSets: false, dotAll: false, multiline: false },
+	transform: { dotAllFlag: false, unicodeFlag: false, unicodeSetsFlag: false, unicodePropertyEscapes: false, namedGroups: false, modifiers: false },
+	modifiersData: { i: undefined, s: undefined, m: undefined },
+	get useUnicodeFlag() { return (this.flags.unicode || this.flags.unicodeSets) && !this.transform.unicodeFlag; }
+};
+
+const validateOptions = (options) => {
+	if (!options) return;
+
+	for (const key in options) {
+		const value = options[key];
+		switch (key) {
+			case 'dotAllFlag':
+			case 'unicodeFlag':
+			case 'unicodePropertyEscapes':
+			case 'unicodeSetsFlag':
+			case 'namedGroups':
+				if (value != null && value !== false && value !== 'transform') {
+					throw new Error(`.${key} must be false (default) or 'transform'.`);
+				}
+				break;
+			case 'modifiers':
+				if (value != null && value !== false && value !== 'parse' && value !== 'transform') {
+					throw new Error(`.${key} must be false (default), 'parse' or 'transform'.`);
+				}
+				break;
+			case 'onNamedGroup':
+			case 'onNewFlags':
+				if (value != null && typeof value !== 'function') {
+					throw new Error(`.${key} must be a function.`);
+				}
+				break;
+			default:
+				throw new Error(`.${key} is not a valid regexpu-core option.`);
+		}
+	}
+};
+
+const processCharacterClass = (characterClassItem, regenerateOptions, computed = computeCharacterClass(characterClassItem, regenerateOptions)) => {
+	const { singleChars, transformed, longStrings } = computed;
+	if (transformed) {
+		const bmpOnly = regenerateContainsAstral(singleChars);
+		const setStr = singleChars.toString({ ...regenerateOptions, bmpOnly });
+
+		if (characterClassItem.negative) {
+			if (config.useUnicodeFlag) {
+				update(characterClassItem, `[^${setStr[0] === '[' ? setStr.slice(1, -1) : setStr}]`)
+			} else if (config.flags.unicode || config.flags.unicodeSets) {
+				if (config.flags.ignoreCase) {
+					const astralCharsSet = singleChars.clone().intersection(ASTRAL_SET);
+					const surrogateOrBMPSetStr = singleChars.clone().remove(astralCharsSet).addRange(0xd800, 0xdfff).toString({ bmpOnly: true });
+					const astralNegativeSetStr = ASTRAL_SET.clone().remove(astralCharsSet).toString(regenerateOptions);
+					update(characterClassItem, `(?!${surrogateOrBMPSetStr})[^]|${astralNegativeSetStr}`);
+				} else {
+					const negativeSet = UNICODE_SET.clone().remove(singleChars);
+					update(characterClassItem, negativeSet.toString(regenerateOptions));
+				}
+			} else {
+				update(characterClassItem, `(?!${setStr})[^]`);
+			}
+		} else {
+			const hasEmptyString = longStrings.has('');
+			const pieces = Array.from(longStrings).sort((a, b) => b.length - a.length);
+			if (setStr !== '[]' || longStrings.size === 0) pieces.splice(pieces.length - (hasEmptyString ? 1 : 0), 0, setStr);
+			update(characterClassItem, pieces.join('|'));
+		}
+	}
+	return characterClassItem;
+};
+
+const rewritePattern = (pattern, flags, options) => {
+	validateOptions(options);
+
+	Object.assign(config.flags, {
+		unicode: flags.includes('u'),
+		unicodeSets: flags.includes('v'),
+		ignoreCase: flags.includes('i'),
+		dotAll: flags.includes('s'),
+		multiline: flags.includes('m'),
+	});
+
+	Object.assign(config.transform, {
+		dotAllFlag: config.flags.dotAll && options?.dotAllFlag === 'transform',
+		unicodeFlag: (config.flags.unicode || config.flags.unicodeSets) && options?.unicodeFlag === 'transform',
+		unicodeSetsFlag: config.flags.unicodeSets && options?.unicodeSetsFlag === 'transform',
+		unicodePropertyEscapes: (config.flags.unicode || config.flags.unicodeSets) && (
+			options?.unicodeFlag === 'transform' || options?.unicodePropertyEscapes === 'transform'
+		),
+		namedGroups: options?.namedGroups === 'transform',
+		modifiers: options?.modifiers === 'transform',
+	});
+
+	const regjsparserFeatures = {
+		modifiers: Boolean(options?.modifiers),
+		unicodePropertyEscape: true,
+		unicodeSet: true,
+		namedGroups: true,
+		lookbehind: true,
+	};
+
+	const regenerateOptions = {
+		hasUnicodeFlag: config.useUnicodeFlag,
+		bmpOnly: !config.flags.unicode && !config.flags.unicodeSets
+	};
+
+	const groups = {
+		onNamedGroup: options?.onNamedGroup,
+		lastIndex: 0,
+		names: Object.create(null),
+		namesConflicts: Object.create(null),
+		unmatchedReferences: Object.create(null),
+	};
+
+	const tree = parse(pattern, flags, regjsparserFeatures);
+
+	if (config.transform.modifiers && /\(\?[a-z]*-[a-z]+:/.test(pattern)) {
+		const allDisabledModifiers = Object.create(null);
+		const itemStack = [tree];
+		let node;
+		while (node = itemStack.pop()) {
+			if (Array.isArray(node)) {
+				itemStack.push(...node);
+			} else if (typeof node === 'object' && node != null) {
+				for (const key in node) {
+					const value = node[key];
+					if (key === 'modifierFlags' && value.disabling.length > 0) {
+						value.disabling.split('').forEach(flag => allDisabledModifiers[flag] = true);
+					} else if (typeof value === 'object' && value != null) {
+						itemStack.push(value);
+					}
+				}
+			}
+		}
+		for (const flag in allDisabledModifiers) {
+			config.modifiersData[flag] = true;
+		}
+	}
+
+	processTerm(tree, regenerateOptions, groups);
+	assertNoUnmatchedReferences(groups);
+
+	options?.onNewFlags?.(flags.split('').filter(flag => !config.modifiersData[flag]).join(''));
+	if (config.transform.unicodeSetsFlag) {
+		options.onNewFlags(flags.replace('v', 'u'));
+	}
+	if (config.transform.unicodeFlag) {
+		options.onNewFlags(flags.replace('u', ''));
+	}
+	if (config.transform.dotAllFlag) {
+		options.onNewFlags(flags.replace('s', ''));
+	}
+
+	return generate(tree);
+};
+
+module.exports = rewritePattern;

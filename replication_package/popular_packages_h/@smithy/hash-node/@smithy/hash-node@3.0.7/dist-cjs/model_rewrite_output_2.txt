@@ -1,0 +1,94 @@
+The Node.js code above is a module that implements and exports a class named `Hash`. The purpose of this class is to handle hashing operations using either an HMAC (Hash-based Message Authentication Code) if a secret is provided, or a standard hash if not. The code includes utility functions to handle data conversion and property management for module exports.
+
+Here's a breakdown of how it works:
+
+1. **Utility Functions**: 
+   - **`__defProp`**: A shorthand for `Object.defineProperty`.
+   - **`__getOwnPropDesc`**: Retrieves property descriptors.
+   - **`__getOwnPropNames`**: Gets all property names of an object.
+   - **`__hasOwnProp`**: A shorthand for `Object.prototype.hasOwnProperty`.
+   - **`__name(target, value)`**: Assigns a `name` property to a given target with a configurable descriptor.
+   - **`__export(target, all)`**: Defines properties on `target` with getters from `all`, marking them as enumerable.
+   - **`__copyProps(to, from, except, desc)`**: Copies properties from one object to another while allowing exceptions.
+   - **`__toCommonJS(mod)`**: Converts a module to a CommonJS format with `__esModule` marker.
+
+2. **`Hash` Class**:
+   - Has a constructor that initializes with a specified hashing algorithm and optional secret.
+   - The `update` method allows data to be added to the current hash calculation.
+   - The `digest` method resolves with the calculated hash as a Promise.
+   - The `reset` method initializes or reinitializes the hash.
+
+3. **`castSourceData` Function**:
+   - Converts various data types (string, Buffer, TypedArray, or ArrayBuffer) into a format suitable for hashing.
+
+4. **Module Export**:
+   - The class `Hash` is exported using a CommonJS export with ESM import annotations.
+
+Here’s a possible rewrite of the code:
+
+```javascript
+const { fromString, fromArrayBuffer } = require("@smithy/util-buffer-from");
+const { toUint8Array } = require("@smithy/util-utf8");
+const { Buffer } = require("buffer");
+const { createHash, createHmac } = require("crypto");
+
+// Define utility functions for exporting and defining properties
+function defineProp(target, name, descriptor) {
+  Object.defineProperty(target, name, descriptor);
+}
+
+function copyProps(target, source, except) {
+  if (source && (typeof source === "object" || typeof source === "function")) {
+    Object.getOwnPropertyNames(source).forEach(key => {
+      if (!Object.prototype.hasOwnProperty.call(target, key) && key !== except) {
+        const desc = Object.getOwnPropertyDescriptor(source, key);
+        defineProp(target, key, { 
+          get: () => source[key], 
+          enumerable: !desc || desc.enumerable 
+        });
+      }
+    });
+  }
+  return target;
+}
+
+function toCommonJS(mod) {
+  return copyProps(Object.defineProperty({}, "__esModule", { value: true }), mod);
+}
+
+// Hash class for hash computation
+class Hash {
+  constructor(algorithmIdentifier, secret) {
+    this.algorithmIdentifier = algorithmIdentifier;
+    this.secret = secret;
+    this.reset();
+  }
+
+  update(toHash, encoding) {
+    this.hash.update(toUint8Array(castSourceData(toHash, encoding)));
+  }
+
+  digest() {
+    return Promise.resolve(this.hash.digest());
+  }
+
+  reset() {
+    this.hash = this.secret 
+      ? createHmac(this.algorithmIdentifier, castSourceData(this.secret)) 
+      : createHash(this.algorithmIdentifier);
+  }
+}
+
+// Data casting function
+function castSourceData(toCast, encoding) {
+  if (Buffer.isBuffer(toCast)) return toCast;
+  if (typeof toCast === "string") return fromString(toCast, encoding);
+  if (ArrayBuffer.isView(toCast)) {
+    return fromArrayBuffer(toCast.buffer, toCast.byteOffset, toCast.byteLength);
+  }
+  return fromArrayBuffer(toCast);
+}
+
+// Export Hash class
+module.exports = toCommonJS({ Hash });
+```

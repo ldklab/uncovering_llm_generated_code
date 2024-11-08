@@ -1,0 +1,81 @@
+The Node.js code consists of two files: `index.js` and `package.json`. It describes a module that serves as a node-style module resolver for the `eslint-plugin-import`, designed to determine if a module can be successfully resolved and where it is located in the file system.
+
+### Functionality:
+1. **`index.js`**:
+   - Requires the `resolve` module, which is used for synchronous resolution of modules.
+   - Defines a function `nodeResolver` that accepts custom options to override default resolution settings.
+   - Sets default options for resolving: module extensions, paths, and module directories.
+   - Merges custom options with default options.
+   - Returns an object with an `interfaceVersion` and a `resolve` function.
+   - The `resolve` function:
+     - Takes a module `source`, a `file` acting as a base directory for resolution, and a `config`.
+     - Builds resolution options, including determining the `basedir` from which file paths should be relative.
+     - Attempts to resolve the source module path:
+       - If successful, returns object `{ found: true, path: resolvedPath }`.
+       - If unsuccessful, returns `{ found: false }`.
+   
+2. **`package.json`**:
+   - Defines metadata for the module, including its name, version, and description.
+   - Lists keywords to aid discoverability.
+   - Specifies `resolve` as a dependency.
+   - Provides basic project information such as author and license.
+
+```javascript
+// index.js
+const resolve = require('resolve');
+
+function nodeResolver(customOptions = {}) {
+  const defaultOptions = {
+    extensions: ['.js'],
+    paths: [],
+    moduleDirectory: ['node_modules'],
+  };
+
+  const options = {
+    ...defaultOptions,
+    ...customOptions,
+  };
+
+  return {
+    interfaceVersion: 2,
+    resolve(source, file) {
+      const opts = {
+        ...options,
+        basedir: file ? file.substring(0, file.lastIndexOf('/')) : process.cwd(),
+      };
+
+      try {
+        return {
+          found: true,
+          path: resolve.sync(source, opts),
+        };
+      } catch {
+        return {
+          found: false,
+        };
+      }
+    },
+  };
+}
+
+module.exports = { nodeResolver };
+
+// package.json
+{
+  "name": "eslint-import-resolver-node",
+  "version": "1.0.0",
+  "description": "Node-style module resolution plugin for eslint-plugin-import.",
+  "main": "index.js",
+  "keywords": [
+    "eslint",
+    "import",
+    "resolve",
+    "plugin"
+  ],
+  "dependencies": {
+    "resolve": "^1.20.0"
+  },
+  "author": "Your Name",
+  "license": "MIT"
+}
+```

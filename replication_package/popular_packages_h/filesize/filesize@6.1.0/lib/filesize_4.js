@@ -1,0 +1,141 @@
+"use strict";
+
+/**
+ * filesize module for converting file size numbers into human-readable strings.
+ * Supports conversion using IEC (base-2) and JEDEC (base-10) units.
+ * 
+ * @copyright 2020 Jason Mulligan
+ * @license BSD-3-Clause
+ * @version 6.1.0
+ */
+(function (global) {
+  const bRegex = /^(b|B)$/;
+  const units = {
+    iec: {
+      bits: ["b", "Kib", "Mib", "Gib", "Tib", "Pib", "Eib", "Zib", "Yib"],
+      bytes: ["B", "KiB", "MiB", "GiB", "TiB", "PiB", "EiB", "ZiB", "YiB"],
+    },
+    jedec: {
+      bits: ["b", "Kb", "Mb", "Gb", "Tb", "Pb", "Eb", "Zb", "Yb"],
+      bytes: ["B", "KB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB"],
+    }
+  };
+  const fullForms = {
+    iec: ["", "kibi", "mebi", "gibi", "tebi", "pebi", "exbi", "zebi", "yobi"],
+    jedec: ["", "kilo", "mega", "giga", "tera", "peta", "exa", "zetta", "yotta"],
+  };
+
+  /**
+   * filesize function
+   *
+   * Converts a numerical file size into a human-readable string.
+   * 
+   * @param  {Mixed}   arg - The file size to convert.
+   * @param  {Object}  descriptor - [Optional] Conversion options.
+   * @return {String|Array|Object} The converted file size.
+   */
+  function filesize(arg, descriptor = {}) {
+    if (isNaN(arg)) {
+      throw new TypeError("Invalid number");
+    }
+
+    const {
+      bits = false,
+      unix = false,
+      base = 2,
+      round: roundOption = unix ? 1 : 2,
+      locale = "",
+      localeOptions = {},
+      separator = "",
+      spacer = unix ? "" : " ",
+      symbols = {},
+      standard = base === 2 ? "jedec" : "jedec",
+      output = "string",
+      fullform = false,
+      fullforms = [],
+      exponent: exp = -1
+    } = descriptor;
+
+    let num = Number(arg);
+    const isNegative = num < 0;
+
+    if (isNegative) num = -num;
+
+    const ceil = base > 2 ? 1000 : 1024;
+    let e = exp === -1 || isNaN(exp) ? Math.floor(Math.log(num) / Math.log(ceil)) : exp;
+
+    if (e < 0) e = 0;
+    if (e > 8) e = 8;
+
+    if (output === "exponent") return e;
+
+    let val = num === 0 ? 0 : num / (base === 2 ? Math.pow(2, e * 10) : Math.pow(1000, e));
+
+    if (bits) {
+      val *= 8;
+      if (val >= ceil && e < 8) {
+        val /= ceil;
+        e++;
+      }
+    }
+
+    if (val === ceil && e < 8 && exp === undefined) {
+      val = 1;
+      e++;
+    }
+
+    const result = [
+      Number(val.toFixed(e > 0 ? roundOption : 0)),
+      base === 10 && e === 1 ? (bits ? "kb" : "kB") : units[standard][bits ? "bits" : "bytes"][e]
+    ];
+
+    if (unix) {
+      result[1] = standard === "jedec" ? result[1].charAt(0) : e > 0 ? result[1].replace(/B$/, "") : result[1];
+      if (bRegex.test(result[1])) {
+        result[0] = Math.floor(result[0]);
+        result[1] = "";
+      }
+    }
+
+    if (isNegative) {
+      result[0] = -result[0];
+    }
+
+    result[1] = symbols[result[1]] || result[1];
+
+    if (locale === true) {
+      result[0] = result[0].toLocaleString();
+    } else if (locale) {
+      result[0] = result[0].toLocaleString(locale, localeOptions);
+    } else if (separator) {
+      result[0] = result[0].toString().replace(".", separator);
+    }
+
+    if (fullform) {
+      result[1] = fullforms[e] || fullForms[standard][e] + (bits ? "bit" : "byte") + (result[0] === 1 ? "" : "s");
+    }
+
+    switch (output) {
+      case "array":
+        return result;
+      case "object":
+        return { value: result[0], symbol: result[1], exponent: e };
+      default:
+        return result.join(spacer);
+    }
+  }
+
+  filesize.partial = function (opt) {
+    return function (arg) {
+      return filesize(arg, opt);
+    };
+  };
+
+  if (typeof exports !== "undefined") {
+    module.exports = filesize;
+  } else if (typeof define === "function" && define.amd) {
+    define(() => filesize);
+  } else {
+    global.filesize = filesize;
+  }
+})(typeof window !== "undefined" ? window : global);

@@ -1,0 +1,91 @@
+The `regexpu-core` package provides functionality to transform JavaScript ES2015 Unicode regular expressions into a format compatible with ES5, which lacks native support for certain ES2015 regex features. It achieves this through a single function, `rewritePattern`. 
+
+### Key functionality:
+1. **Basic Usage:**
+   - `rewritePattern(pattern, flags, options)` takes a string `pattern` representing the regex, a string `flags` representing the regex flags, and an optional `options` object.
+   - Returns an ES5-compatible version of the regex pattern.
+
+2. **Core Transpilation Features:**
+   - Transforms regex patterns that utilize ES2015 features, such as the unicode (`u`) flag, dotAll (`s`) flag, Unicode property escapes, named groups, and sets notation (`v` flag) into syntax that older JavaScript engines can understand.
+   - Provides options to handle these features:
+     - `unicodeFlag`: handles transformation of unicode patterns.
+     - `dotAllFlag`: handles transformation of patterns using the `s` (dotAll) flag.
+     - `unicodePropertyEscapes`: transforms Unicode property escape sequences.
+     - `namedGroups`: transforms named capture groups.
+     - `unicodeSetsFlag`: handles the newer set notation.
+   - Offers `modifiers` option for inline flag modifiers transformation.
+
+3. **Options and Hooks:**
+   - `onNamedGroup` and `onNewFlags` options can provide callbacks for handling named groups and flag alterations during pattern rewrites.
+   - Supports `parse` and `transform` modes for experimental regex features.
+
+4. **Handling Non-stable Features:**
+   - Some features when not stable can either result in syntax errors or remain unchanged based on the chosen options.
+   - Once standards for these features stabilize, they will no longer cause syntax errors.
+
+5. **Limitations:**
+   - Some features, like lookbehind assertions, cannot be transformed with this tool alone.
+
+Here's an implementation of `regexpu-core`:
+
+```javascript
+// regexpu-core.js
+const rewritePattern = (pattern, flags = '', options = {}) => {
+  const { unicodeFlag, dotAllFlag, unicodePropertyEscapes, namedGroups, unicodeSetsFlag, modifiers, onNamedGroup, onNewFlags } = options;
+  
+  // Internal function to handle flags
+  const handleFlags = (initialFlags) => {
+    let newFlags = initialFlags;
+    if (unicodeFlag === 'transform') {
+      newFlags = newFlags.replace('u', '');
+    }
+    if(onNewFlags) onNewFlags(newFlags);
+    return newFlags;
+  };
+
+  // Simplistic regex transformations
+  const transformPattern = (pattern) => {
+    let transformedPattern = pattern;
+
+    if (unicodeFlag === 'transform') {
+      transformedPattern = transformedPattern.replace(/\\u\{[0-9A-Fa-f]+\}/g, (match) => {
+        const codePoint = parseInt(match.slice(3, -1), 16);
+        return codePoint <= 0xFFFF ? `\\u${codePoint.toString(16).padStart(4, '0')}` : `\\uD${((codePoint - 0x10000) >> 10) | 0x8000}\\uD${(codePoint & 0x3FF) | 0xDC00}`;
+      });
+    }
+
+    if (dotAllFlag === 'transform') {
+      transformedPattern = transformedPattern.replace(/\./g, '[\\0-\\uFFFF]');
+    }
+
+    if(namedGroups === 'transform') {
+      transformedPattern = transformedPattern.replace(/\(\?<([\w$]+)>/g, '(').replace(/\\k<([\w$]+)>/g, (match, groupName) => {
+        // Placeholder for transforming named groups
+        if(onNamedGroup) onNamedGroup(groupName, transformedPattern.match(new RegExp(`\\(.*?(\\(\\?\\<${groupName}\\>).*?\\)`, 'g')).index);
+        return '\\1'; // Assuming single digit backreference for simplicity
+      });
+    }
+
+    return transformedPattern;
+  };
+
+  // Transform pattern according to options
+  const transformedPattern = transformPattern(pattern);
+
+  // Handle flags according to given options
+  const finalFlags = handleFlags(flags);
+
+  return new RegExp(transformedPattern, finalFlags).source;
+};
+
+module.exports = rewritePattern;
+
+// Example usage:
+const pattern = rewritePattern('foo.bar', 'u', { unicodeFlag: "transform" });
+console.log(pattern);
+
+const unicodeEscapes = rewritePattern('\\u{1D306}', '', { unicodeFlag: "transform" });
+console.log(unicodeEscapes);
+```
+
+This implementation supports a basic version of the features discussed, such as transforming Unicode regex patterns to older JavaScript compatible patterns. However, due to complexity, complete specification-compliance would typically involve integration with a more sophisticated regex parsing and rewriting library, such as Babel plugins or specialized libraries designed to handle complex regex transformations.

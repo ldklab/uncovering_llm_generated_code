@@ -1,0 +1,58 @@
+The given Node.js code defines a class `UserAgentMiddleware` that adds a specific 'User-Agent' header to HTTP requests using AWS SDK's middleware stack. The `UserAgentMiddleware` class takes a user agent string as a parameter upon instantiation. The `applyMiddleware` method adds a middleware function to the provided middleware stack which checks if the current request is an instance of `HttpRequest`. If it is, the middleware function adds the provided user agent string to the request headers before passing the request to the next middleware in the stack. An example usage is provided, where the middleware stack is used to add the custom user agent to an HTTP request, and finally, the final 'User-Agent' header is logged.
+
+```javascript
+const { MiddlewareStack, HttpRequest } = require("@aws-sdk/types");
+
+class UserAgentMiddleware {
+  constructor(userAgentString) {
+    this.userAgentString = userAgentString;
+  }
+
+  applyMiddleware(stack) {
+    stack.add(
+      (next, context) => async (args) => {
+        if (!HttpRequest.isInstance(args.request)) {
+          return next(args);
+        }
+
+        const request = args.request;
+        request.headers = {
+          ...request.headers,
+          'User-Agent': this.userAgentString,
+        };
+
+        return next({ ...args, request });
+      },
+      {
+        step: 'build',
+        name: 'UserAgentMiddleware',
+        override: true,
+      }
+    );
+  }
+}
+
+// Usage Example
+const stack = new MiddlewareStack();
+const customUserAgentMiddleware = new UserAgentMiddleware("Custom/UserAgent");
+customUserAgentMiddleware.applyMiddleware(stack);
+
+async function execute() {
+  const request = new HttpRequest({
+    hostname: "example.com",
+    method: "GET",
+    headers: {},
+  });
+
+  const handler = stack.resolve((next) => (args) => {
+    console.log("Final User-Agent:", args.request.headers["User-Agent"]);
+    return Promise.resolve({ response: {} });
+  }, {});
+
+  await handler({ request });
+}
+
+execute();
+
+module.exports = UserAgentMiddleware;
+```

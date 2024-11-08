@@ -1,0 +1,93 @@
+The provided Node.js code simulates basic zip file creation functionality similar to the JSZip library. It involves compressing files and folders into a zip archive using Node.js built-in modules such as `fs` for file system operations and `zlib` for compression.
+
+### Functionality Explanation
+
+1. **SimpleZip Class**: 
+   - This class acts as a utility to maintain a collection of files and folder structures.
+   - It allows adding files with content via the `file()` method and creating folders (subdirectories) using the `folder()` method.
+
+2. **Compressing and Writing to Zip**:
+   - The `generateAsync()` method is responsible for generating the zip archive.
+   - The method writes content of files to a gzip-compressed file, simulating the addition of files to a zip archive.
+   - The `zlib.createGzip()` is used to compress the files, and `fs.createWriteStream()` creates a writable stream for the zip file.
+   
+3. **Output Handling**:
+   - Once writing is complete, the compressed content is read back from the filesystem, and a Blob-like object simulates output.
+   - This output is resolved as a promise, mimicking asynchronous behavior similar to JSZip.
+
+4. **Utility Function**:
+   - `saveAs()` function saves the compressed data to a specified file, emulating the save functionality.
+
+5. **Example Usage**:
+   - Creates an instance of `SimpleZip`.
+   - Adds a file named "Hello.txt" and a "smile.gif" inside an "images" sub-folder.
+   - The zip is generated, and its content is saved to "example.zip".
+
+Here is the rewritten code based on this explanation:
+
+```javascript
+const fs = require('fs');
+const zlib = require('zlib');
+
+class SimpleZip {
+    constructor() {
+        this.files = {};
+        this.folders = {};
+    }
+
+    file(name, content) {
+        this.files[name] = content;
+    }
+
+    folder(name) {
+        const folder = new SimpleZip();
+        this.folders[name] = folder;
+        return folder;
+    }
+
+    async generateAsync(options = { type: 'blob' }) {
+        const tempZipPath = './tempzip.zip';
+        const output = fs.createWriteStream(tempZipPath);
+        const gzip = zlib.createGzip();
+
+        gzip.pipe(output);
+
+        for (const name in this.files) {
+            gzip.write(this.files[name]);
+        }
+
+        for (const folderName in this.folders) {
+            const folder = this.folders[folderName];
+            for (const file in folder.files) {
+                gzip.write(folder.files[file]);
+            }
+        }
+
+        gzip.end();
+
+        return new Promise((resolve, reject) => {
+            output.on('close', () => {
+                const zipContent = fs.readFileSync(tempZipPath);
+                fs.unlinkSync(tempZipPath);
+                resolve(new Blob([zipContent]));
+            });
+            gzip.on('error', (err) => reject(err));
+        });
+    }
+}
+
+const saveAs = (content, filename) => {
+    fs.writeFileSync(filename, content);
+    console.log('Saved:', filename);
+};
+
+const zip = new SimpleZip();
+zip.file("Hello.txt", "Hello World\n");
+
+const imgFolder = zip.folder("images");
+imgFolder.file("smile.gif", Buffer.from('fakebase64data', 'base64'));
+
+zip.generateAsync({ type: "blob" }).then((content) => {
+    saveAs(content, "example.zip");
+});
+```

@@ -1,0 +1,132 @@
+The given Node.js code is a utility to determine if a string is a glob pattern. A glob pattern is typically used for file matching purposes, allowing for wildcard characters. The code utilizes two key checks: `strictCheck` and `relaxedCheck`, which analyze different parts of the string to identify glob-like features:
+
+1. **`strictCheck`:** This function performs a detailed and thorough scan of the string to determine if it contains any pattern elements indicative of a glob pattern, such as '*', '?', '[', ']', '{', '}', and '(' with conditions on what follows. It also looks for specific sequences that match glob patterns.
+
+2. **`relaxedCheck`:** This offers a more lenient, faster check for glob patterns, and it is used when options configure the module to be less strict.
+
+3. **`isGlob`:** The main exported function checks if a string is a valid glob pattern. If the `str` is empty or not a string, it immediately returns `false`. It also supports extended globs through the `isExtglob` module. Depending on `options`, it defaults to `strictCheck` or switches to `relaxedCheck`.
+
+Here is a possible rewrite of the code, intended to mirror the functionality laid out above:
+
+```javascript
+/*!
+ * is-glob <https://github.com/jonschlinkert/is-glob>
+ *
+ * Copyright (c) 2014-2017, Jon Schlinkert.
+ * Released under the MIT License.
+ */
+
+const isExtglob = require('is-extglob');
+
+const MATCHING_PAIRS = { '{': '}', '(': ')', '[': ']' };
+
+function strictGlobCheck(input) {
+  if (input.startsWith('!')) {
+    return true;
+  }
+
+  let index = 0;
+  let indicators = {
+    pipe: -2,
+    closeSquare: -2,
+    closeCurly: -2,
+    closeParen: -2,
+    backSlash: -2
+  };
+
+  while (index < input.length) {
+    const currentChar = input[index];
+
+    if (currentChar === '*') {
+      return true;
+    }
+
+    if (input[index + 1] === '?' && /[\].+)]/.test(currentChar)) {
+      return true;
+    }
+
+    if (handleSquareBrackets(input, index, indicators)) {
+      return true;
+    }
+
+    if (/[\{\(\|]/.test(currentChar) && testMatchingClosure(input, index, indicators, currentChar)) {
+      return true;
+    }
+
+    index = handleEscapeCharacter(input, index) || index + 1;
+  }
+  
+  return false;
+}
+
+function relaxedGlobCheck(input) {
+  if (input.startsWith('!')) {
+    return true;
+  }
+
+  let index = 0;
+
+  while (index < input.length) {
+    if (/[*?{}()[\]]/.test(input[index])) {
+      return true;
+    }
+
+    index = handleEscapeCharacter(input, index) || index + 1;
+  }
+  
+  return false;
+}
+
+function handleSquareBrackets(input, index, indicators) {
+  if (indicators.closeSquare !== -1 && input[index] === '[' && input[index + 1] !== ']') {
+    if (indicators.closeSquare < index) {
+      indicators.closeSquare = input.indexOf(']', index);
+    }
+    if (indicators.closeSquare > index && ensureBackslashNotInterrupting(input, index, indicators.closeSquare)) {
+      return true;
+    }
+  }
+}
+
+function ensureBackslashNotInterrupting(input, start, end) {
+  const backSlashIndex = input.indexOf('\\', start);
+  return backSlashIndex === -1 || backSlashIndex > end;
+}
+
+function testMatchingClosure(input, index, indicators, currentChar) {
+  const closingChar = MATCHING_PAIRS[currentChar];
+  if (/[\{\|]/.test(currentChar) && input[index + 1] !== closingChar) {
+    const closureIndex = input.indexOf(closingChar, index);
+    return closureIndex > index && ensureBackslashNotInterrupting(input, index, closureIndex);
+  }
+  return false;
+}
+
+function handleEscapeCharacter(input, index) {
+  if (input[index] === '\\') {
+    const openingChar = input[index + 1];
+    const closingChar = MATCHING_PAIRS[openingChar];
+    if (closingChar) {
+      const closingIndex = input.indexOf(closingChar, index + 2);
+      if (closingIndex !== -1) {
+        return closingIndex + 1;
+      }
+    }
+  }
+  return null;
+}
+
+module.exports = function isGlob(input, options) {
+  if (typeof input !== 'string' || input.length === 0) {
+    return false;
+  }
+
+  if (isExtglob(input)) {
+    return true;
+  }
+
+  const checkFunction = options && options.strict === false ? relaxedGlobCheck : strictGlobCheck;
+
+  return checkFunction(input);
+};
+```

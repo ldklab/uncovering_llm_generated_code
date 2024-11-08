@@ -1,0 +1,91 @@
+The Node.js code you provided serves as a configuration and optimization module for handling SVG files. It incorporates functionality to load and import configuration files and optimize SVG content based on the configuration. Here’s a detailed breakdown of its functionality:
+
+1. **Dependencies**: The module imports several core Node.js modules (`os`, `fs`, `path`, `url`) and a custom module (`svgo.js`).
+
+2. **`importConfig` Function**: This asynchronous function dynamically imports a configuration file. It checks if the file has a `.cjs` extension and uses `require()` for such files, while other files are imported using dynamic `import()` after converting the path to a file URL. It ensures the imported config is a valid object and throws an error if not.
+
+3. **`isFile` Function**: This asynchronous function checks if a given path is a file. It uses `fs.promises.stat` to get file statistics and returns true if it's a file, otherwise false.
+
+4. **`loadConfig` Function**: This asynchronous function tries to load a config file, either specified directly or by searching the current and parent directories for config files named `svgo.config.js`, `svgo.config.mjs`, or `svgo.config.cjs`. It uses `importConfig` to import the configuration once found.
+
+5. **`optimize` Function**: This function optimizes an SVG input using the provided configuration or an empty object as a default. It also ensures the configuration is an object and sets the end-of-line format for output SVG files based on the OS.
+
+Below is a possible rewrite of the code, maintaining its original functionality:
+
+```javascript
+'use strict';
+
+const os = require('os');
+const fs = require('fs');
+const path = require('path');
+const { pathToFileURL } = require('url');
+const { optimize: svgoOptimize } = require('./svgo.js');
+
+const importConfig = async (configFile) => {
+  let config;
+  if (configFile.endsWith('.cjs')) {
+    config = require(configFile);
+  } else {
+    const { default: importedConfig } = await import(pathToFileURL(configFile));
+    config = importedConfig;
+  }
+  
+  if (!config || typeof config !== 'object' || Array.isArray(config)) {
+    throw new Error(`Invalid config file "${configFile}"`);
+  }
+  
+  return config;
+};
+
+const isFile = async (filepath) => {
+  try {
+    const fileStats = await fs.promises.stat(filepath);
+    return fileStats.isFile();
+  } catch {
+    return false;
+  }
+};
+
+const loadConfig = async (configFile, currentDir = process.cwd()) => {
+  if (configFile) {
+    const absolutePath = path.isAbsolute(configFile) ? configFile : path.join(currentDir, configFile);
+    return await importConfig(absolutePath);
+  }
+  
+  let directory = currentDir;
+  
+  while (true) {
+    const configFiles = ['svgo.config.js', 'svgo.config.mjs', 'svgo.config.cjs'];
+    
+    for (const configFilename of configFiles) {
+      const configFilePath = path.join(directory, configFilename);
+      if (await isFile(configFilePath)) {
+        return await importConfig(configFilePath);
+      }
+    }
+    
+    const parentDir = path.dirname(directory);
+    if (directory === parentDir) return null;
+    directory = parentDir;
+  }
+};
+
+const optimize = (svgInput, config = {}) => {
+  if (typeof config !== 'object') {
+    throw new Error('Config should be an object');
+  }
+  
+  const eolSetting = os.EOL === '\r\n' ? 'crlf' : 'lf';
+  
+  return svgoOptimize(svgInput, {
+    ...config,
+    js2svg: {
+      eol: eolSetting,
+      ...config.js2svg,
+    },
+  });
+};
+
+exports.loadConfig = loadConfig;
+exports.optimize = optimize;
+```

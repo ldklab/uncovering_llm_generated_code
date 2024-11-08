@@ -1,0 +1,96 @@
+The `eslint-import-resolver-typescript` package acts as a TypeScript resolver for `eslint-plugin-import`, allowing ESLint to understand TypeScript's module resolution. Here's a breakdown of the functionality:
+
+1. **TypeScript Support for ESLint**: Enhances `eslint-plugin-import` by adding TypeScript support, enabling ESLint to:
+   - Resolve `import`/`require` for TypeScript-specific file extensions like `.ts`, `.tsx`, `.d.ts`, and their variants.
+   - Resolve module paths defined in `tsconfig.json`, such as path aliases.
+   - Prioritize resolving TypeScript definition files (`@types/*`) over JavaScript files.
+
+2. **Configuration**: Users include the resolver in their `.eslintrc` configuration file by setting up the plugin and specifying the resolver. It supports:
+   - Automatic resolution of TypeScript types.
+   - Configuration to specify custom or multiple `tsconfig.json` files (useful for monorepos).
+
+3. **Enhanced Resolve Options**: This resolver uses `enhanced-resolve` under the hood, and exposes options like:
+   - `conditionNames`: Specifies conditions for module resolution, supporting module formats and environments.
+   - `extensions`: A list of file extensions to resolve.
+   - `extensionAlias`: Defines extension aliases for files.
+   - `mainFields`: Determines which fields in `package.json` to prioritize during resolution.
+
+4. **Defaults and Customization**: Provides default settings for `conditionNames`, `extensions`, `extensionAlias`, and `mainFields`, all of which can be customized if needed.
+
+5. **Documentation and Contribution**: It includes a notice for version behavior changes, installation and configuration instructions, and guidance for contributing. Additionally, it references related tools like `eslint-plugin-i` for speed improvements.
+
+Here's the implementation of `eslint-import-resolver-typescript`:
+
+```javascript
+// eslint-import-resolver-typescript.js
+const path = require('path');
+const fs = require('fs');
+const enhancedResolve = require('enhanced-resolve');
+
+const defaultConditionNames = [
+  "types", "import", "esm2020", "es2020", "es2015", "require", 
+  "node", "node-addons", "browser", "default"
+];
+
+const defaultExtensions = [
+  ".ts", ".tsx", ".d.ts", ".js", ".jsx", ".json", ".node"
+];
+
+const defaultExtensionAlias = {
+  ".js": [".ts", ".tsx", ".d.ts", ".js"],
+  ".jsx": [".tsx", ".d.ts", ".jsx"],
+  ".cjs": [".cts", ".d.cts", ".cjs"],
+  ".mjs": [".mts", ".d.mts", ".mjs"]
+};
+
+const defaultMainFields = [
+  "types", "typings", "fesm2020", "fesm2015", 
+  "esm2020", "es2020", "module", "jsnext:main", "main"
+];
+
+function resolve(source, file, config = {}) {
+  const resolver = enhancedResolve.create({
+    extensions: config.extensions || defaultExtensions,
+    conditionNames: config.conditionNames || defaultConditionNames,
+    mainFields: config.mainFields || defaultMainFields,
+    alias: config.extensionAlias || defaultExtensionAlias,
+    ...config
+  });
+
+  return new Promise((resolve, reject) => {
+    resolver(path.dirname(file), source, (err, result) => {
+      if (err) return reject(err);
+      resolve(result);
+    });
+  });
+}
+
+function interfaceVersion() {
+  return 2;
+}
+
+function resolveModuleDependency(source, file, config) {
+  return resolve(source, file, config)
+    .then(res => ({
+      found: true,
+      path: res
+    }))
+    .catch(() => ({
+      found: false
+    }));
+}
+
+module.exports = {
+  interfaceVersion,
+  resolve: resolveModuleDependency,
+  defaultConditionNames,
+  defaultExtensions,
+  defaultExtensionAlias,
+  defaultMainFields
+};
+```
+
+This implementation defines:
+- Default resolution settings for conditions, extensions, aliases, and main fields.
+- A resolver function using `enhanced-resolve` to handle TypeScript file resolution based on the configuration.
+- The necessary interface for ESLint with methods `interfaceVersion` and `resolve`.

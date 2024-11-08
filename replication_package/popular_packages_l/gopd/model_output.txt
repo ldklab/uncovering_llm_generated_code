@@ -1,0 +1,39 @@
+The `gopd` package provides a functionality similar to `Object.getOwnPropertyDescriptor`, which retrieves property descriptors from objects. However, it addresses a known issue with Internet Explorer's implementation of this method, implying that in some IE versions, `Object.getOwnPropertyDescriptor` may not function as expected. The package seems to offer compatibility and a fallback mechanism when native descriptors are not supported.
+
+The typical usage involves checking if `gopd` is a function (indicating descriptors are supported). If so, you can use `gopd` as a drop-in replacement for `Object.getOwnPropertyDescriptor`. If it is not supported, it safely falls back to `null` or a falsy value signaling the developer to handle this absence.
+
+Below is the code implementing the functionality of the `gopd` package:
+
+```javascript
+// gopd.js
+'use strict';
+
+var supportsDescriptors = !!Object.getOwnPropertyDescriptor;
+
+function getOwnPropertyDescriptorIEPolyfill(obj, prop) {
+	if (obj == null) { // implicit null and undefined check
+		throw new TypeError('Cannot convert undefined or null to object');
+	}
+	
+	// Convert to an object
+	obj = Object(obj);
+
+	// If the property is not directly present in the object, return undefined
+	if (!Object.prototype.hasOwnProperty.call(obj, prop)) {
+		return undefined;
+	}
+
+	return {
+		value: obj[prop],
+		writable: true,
+		enumerable: true,
+		configurable: true
+	};
+}
+
+var gOPD = supportsDescriptors ? Object.getOwnPropertyDescriptor : getOwnPropertyDescriptorIEPolyfill;
+
+module.exports = gOPD;
+```
+
+This implementation first checks if the native `Object.getOwnPropertyDescriptor` is supported in the environment. If supported, it directly uses it; otherwise, it defines a polyfill function `getOwnPropertyDescriptorIEPolyfill` to mimic the behavior of `Object.getOwnPropertyDescriptor`. The polyfill simply emulates the property descriptor for environments without true support, particularly assuming all properties to be writable, enumerable, and configurable, which suffices for many, but not all, situations. The chosen approach allows code bases to function seamlessly across different JavaScript environments despite discrepancies in descriptor support.

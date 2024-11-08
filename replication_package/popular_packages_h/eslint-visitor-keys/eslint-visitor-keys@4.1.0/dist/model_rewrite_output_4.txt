@@ -1,0 +1,159 @@
+The given Node.js code is a utility module that defines and manages "visitor keys" for parsing and traversing the structure of an Abstract Syntax Tree (AST) used in programming language analysis, such as JavaScript. Here’s a breakdown of its functionality:
+
+1. **Basic Definitions**:
+   - The code defines a type `VisitorKeys` which is a mapping of AST node types (such as `ArrayExpression`, `BinaryExpression`, etc.) to arrays of strings, denoting the properties of these nodes that should be visited in a traversal process.
+   
+2. **Initialization**:
+   - `KEYS`: It is an object where each key corresponds to a type of AST node, and the value is an array of property names (as strings) that should be visited within nodes of that type.
+   - `NODE_TYPES`: This array contains all the keys of the `KEYS` object, representing all defined AST node types.
+   - The code freezes each array within `KEYS` to prevent any modification of the visitor key lists.
+   
+3. **Utility Functions**:
+   - `filterKey(key)`: This function filters out certain keys, specifically those that start with underscore ('_') or are part of a predefined blacklist (`KEY_BLACKLIST`), which includes properties related to comments or the parent relationship of nodes.
+   - `getKeys(node)`: This function returns the keys from a given node (object), excluding those filtered out by `filterKey` method.
+   - `unionWith(additionalKeys)`: This function allows users to create a union of existing `KEYS` with additional visitor keys provided in `additionalKeys`. It ensures no duplicates and freezes the resulting structure.
+
+Here is the rewritten version of the code with the same functionality:
+
+```javascript
+'use strict';
+
+/* eslint-disable jsdoc/valid-types -- doesn't allow `readonly`. 
+   TODO: remove after fix: https://github.com/jsdoc-type-pratt-parser/jsdoc-type-pratt-parser/issues/164
+*/
+/**
+ * @typedef {{ readonly [type: string]: ReadonlyArray<string> }} VisitorKeys
+ */
+
+const KEYS = {
+    ArrayExpression: ["elements"],
+    ArrayPattern: ["elements"],
+    ArrowFunctionExpression: ["params", "body"],
+    AssignmentExpression: ["left", "right"],
+    AssignmentPattern: ["left", "right"],
+    AwaitExpression: ["argument"],
+    BinaryExpression: ["left", "right"],
+    BlockStatement: ["body"],
+    BreakStatement: ["label"],
+    CallExpression: ["callee", "arguments"],
+    CatchClause: ["param", "body"],
+    ChainExpression: ["expression"],
+    ClassBody: ["body"],
+    ClassDeclaration: ["id", "superClass", "body"],
+    ClassExpression: ["id", "superClass", "body"],
+    ConditionalExpression: ["test", "consequent", "alternate"],
+    ContinueStatement: ["label"],
+    DebuggerStatement: [],
+    DoWhileStatement: ["body", "test"],
+    EmptyStatement: [],
+    ExperimentalRestProperty: ["argument"],
+    ExperimentalSpreadProperty: ["argument"],
+    ExportAllDeclaration: ["exported", "source"],
+    ExportDefaultDeclaration: ["declaration"],
+    ExportNamedDeclaration: ["declaration", "specifiers", "source"],
+    ExportSpecifier: ["exported", "local"],
+    ExpressionStatement: ["expression"],
+    ForInStatement: ["left", "right", "body"],
+    ForOfStatement: ["left", "right", "body"],
+    ForStatement: ["init", "test", "update", "body"],
+    FunctionDeclaration: ["id", "params", "body"],
+    FunctionExpression: ["id", "params", "body"],
+    Identifier: [],
+    IfStatement: ["test", "consequent", "alternate"],
+    ImportDeclaration: ["specifiers", "source"],
+    ImportDefaultSpecifier: ["local"],
+    ImportExpression: ["source"],
+    ImportNamespaceSpecifier: ["local"],
+    ImportSpecifier: ["imported", "local"],
+    JSXAttribute: ["name", "value"],
+    JSXClosingElement: ["name"],
+    JSXClosingFragment: [],
+    JSXElement: ["openingElement", "children", "closingElement"],
+    JSXEmptyExpression: [],
+    JSXExpressionContainer: ["expression"],
+    JSXFragment: ["openingFragment", "children", "closingFragment"],
+    JSXIdentifier: [],
+    JSXMemberExpression: ["object", "property"],
+    JSXNamespacedName: ["namespace", "name"],
+    JSXOpeningElement: ["name", "attributes"],
+    JSXOpeningFragment: [],
+    JSXSpreadAttribute: ["argument"],
+    JSXSpreadChild: ["expression"],
+    JSXText: [],
+    LabeledStatement: ["label", "body"],
+    Literal: [],
+    LogicalExpression: ["left", "right"],
+    MemberExpression: ["object", "property"],
+    MetaProperty: ["meta", "property"],
+    MethodDefinition: ["key", "value"],
+    NewExpression: ["callee", "arguments"],
+    ObjectExpression: ["properties"],
+    ObjectPattern: ["properties"],
+    PrivateIdentifier: [],
+    Program: ["body"],
+    Property: ["key", "value"],
+    PropertyDefinition: ["key", "value"],
+    RestElement: ["argument"],
+    ReturnStatement: ["argument"],
+    SequenceExpression: ["expressions"],
+    SpreadElement: ["argument"],
+    StaticBlock: ["body"],
+    Super: [],
+    SwitchCase: ["test", "consequent"],
+    SwitchStatement: ["discriminant", "cases"],
+    TaggedTemplateExpression: ["tag", "quasi"],
+    TemplateElement: [],
+    TemplateLiteral: ["quasis", "expressions"],
+    ThisExpression: [],
+    ThrowStatement: ["argument"],
+    TryStatement: ["block", "handler", "finalizer"],
+    UnaryExpression: ["argument"],
+    UpdateExpression: ["argument"],
+    VariableDeclaration: ["declarations"],
+    VariableDeclarator: ["id", "init"],
+    WhileStatement: ["test", "body"],
+    WithStatement: ["object", "body"],
+    YieldExpression: ["argument"]
+};
+
+const NODE_TYPES = Object.keys(KEYS);
+
+for (const type of NODE_TYPES) {
+    Object.freeze(KEYS[type]);
+}
+Object.freeze(KEYS);
+
+const KEY_BLACKLIST = new Set(["parent", "leadingComments", "trailingComments"]);
+
+function filterKey(key) {
+    return !KEY_BLACKLIST.has(key) && key[0] !== "_";
+}
+
+function getKeys(node) {
+    return Object.keys(node).filter(filterKey);
+}
+
+function unionWith(additionalKeys) {
+    const retv = /** @type {{ [type: string]: ReadonlyArray<string> }} */ (Object.assign({}, KEYS));
+
+    for (const type of Object.keys(additionalKeys)) {
+        if (Object.hasOwn(retv, type)) {
+            const keys = new Set(additionalKeys[type]);
+
+            for (const key of retv[type]) {
+                keys.add(key);
+            }
+
+            retv[type] = Object.freeze(Array.from(keys));
+        } else {
+            retv[type] = Object.freeze(Array.from(additionalKeys[type]));
+        }
+    }
+
+    return Object.freeze(retv);
+}
+
+exports.KEYS = KEYS;
+exports.getKeys = getKeys;
+exports.unionWith = unionWith;
+```

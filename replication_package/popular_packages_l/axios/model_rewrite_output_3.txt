@@ -1,0 +1,90 @@
+The provided Node.js code implements a simplified version of Axios, a popular HTTP client library. This code defines a custom Axios class that can make HTTP or HTTPS requests using Node's built-in `http` and `https` modules. It includes methods for making GET and POST requests and allows configuration of request settings such as method, timeout, and headers.
+
+### Functionality:
+1. **Constructor Configuration**: The `Axios` class constructor accepts a configuration object with default settings that can override the default HTTP method (`GET`), timeout, and headers.
+
+2. **Request Method**: The `request` method combines default and specific configurations, parses the URL, selects the appropriate transport protocol (`http` or `https`), and makes the HTTP request. It returns a Promise that resolves with the parsed JSON response or resolves with the raw response text if parsing fails, and rejects on error or timeout.
+
+3. **GET and POST Methods**: Convenience methods `get` and `post` are provided to perform GET and POST requests respectively, by passing their specific configurations to the `request` method.
+
+4. **Example Usage**: An instance of the `Axios` class is created and used to make a GET request to an example URL, demonstrating how to use this custom HTTP client.
+
+Here is a possible rewrite of the code according to the explanation:
+
+```javascript
+const http = require('http');
+const https = require('https');
+const url = require('url');
+
+class Axios {
+  constructor(config = {}) {
+    this.defaults = {
+      method: 'get',
+      timeout: 0,
+      headers: {},
+      ...config
+    };
+  }
+
+  request(config) {
+    const finalConfig = {...this.defaults, ...config};
+    const { method, data, timeout, headers } = finalConfig;
+    const parsedUrl = url.parse(finalConfig.url);
+    const options = {
+      method: method.toUpperCase(),
+      hostname: parsedUrl.hostname,
+      path: parsedUrl.path,
+      headers: headers,
+      timeout: timeout
+    };
+
+    const transport = parsedUrl.protocol === 'https:' ? https : http;
+
+    return new Promise((resolve, reject) => {
+      const req = transport.request(options, (res) => {
+        let response = '';
+
+        res.on('data', (chunk) => {
+          response += chunk;
+        });
+
+        res.on('end', () => {
+          try {
+            const data = JSON.parse(response);
+            resolve(data);
+          } catch {
+            resolve(response);
+          }
+        });
+      });
+
+      req.on('error', reject);
+      req.on('timeout', () => reject(new Error('Request timed out')));
+
+      if (data) {
+        req.write(typeof data === 'object' ? JSON.stringify(data) : data);
+      }
+
+      req.end();
+    });
+  }
+
+  get(url, config) {
+    return this.request({...config, method: 'get', url: url});
+  }
+
+  post(url, data, config) {
+    return this.request({...config, method: 'post', url: url, data: data});
+  }
+}
+
+// Instantiate Axios
+const axios = new Axios();
+
+// Example usage
+axios.get('http://jsonplaceholder.typicode.com/posts/1')
+  .then(console.log)
+  .catch(console.error);
+
+module.exports = Axios;
+```

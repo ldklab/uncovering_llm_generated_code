@@ -1,0 +1,170 @@
+The provided Node.js code defines a utility class named `ESUtils` that provides several static methods for working with ECMAScript (JavaScript) Abstract Syntax Trees (AST), character codes, and keywords/reserved words. Here's a breakdown of its key functionalities:
+
+1. **AST Methods:**
+   - `isExpression(node)`: Checks if a given node in the AST represents an expression by comparing its type against a list of expression types.
+   - `isStatement(node)`: Determines if a node is a statement by checking against a list of statement types.
+   - `isIterationStatement(node)`: Identifies if a node is a looping construct such as `for` or `while`.
+   - `isSourceElement(node)`: Checks if a node is either a statement or a function declaration.
+   - `trailingStatement(node)`: Returns the `consequent` of an `IfStatement`, which is typically the block or single statement executed if the condition is true.
+   - `isProblematicIfStatement(node)`: Determines if an `IfStatement` is potentially problematic by having a structure involving `WithStatement` and leading to an `EmptyStatement`.
+
+2. **Character Code Methods:**
+   - Methods to check if a given character code corresponds to decimal, hexadecimal, or octal digits, whitespace, line terminators, and parts of identifiers (`isIdentifierStart`, `isIdentifierPart`).
+
+3. **Keyword Methods:**
+   - Methods that determine if a given string is a reserved keyword or identifier name in ECMAScript 5 (ES5) or ECMAScript 6 (ES6), including checks for strict mode contexts (`isKeywordES5`, `isKeywordES6`, `isReservedWordES5`, `isReservedWordES6`, `isRestrictedWord`, etc.).
+
+The code is organized into three main sections within the `ESUtils` class: `ast`, `code`, and `keyword`, each grouping relevant methods together. The class is exported as a module, making it usable in other parts of a Node.js application.
+
+Here is a rewritten version of the code:
+
+```javascript
+class ESUtils {
+
+    static ast = {
+        isExpression(node) {
+            const expressions = [
+                'ArrayExpression', 'AssignmentExpression', 'BinaryExpression',
+                'CallExpression', 'ConditionalExpression', 'FunctionExpression',
+                'Identifier', 'LogicalExpression', 'MemberExpression', 'NewExpression',
+                'ObjectExpression', 'SequenceExpression', 'ThisExpression',
+                'UnaryExpression', 'UpdateExpression'
+            ];
+            return expressions.includes(node.type);
+        },
+
+        isStatement(node) {
+            const statements = [
+                'BlockStatement', 'BreakStatement', 'ContinueStatement',
+                'DebuggerStatement', 'DoWhileStatement', 'EmptyStatement',
+                'ExpressionStatement', 'ForInStatement', 'ForStatement', 'IfStatement',
+                'LabeledStatement', 'ReturnStatement', 'SwitchStatement',
+                'ThrowStatement', 'TryStatement', 'VariableDeclaration', 'WhileStatement',
+                'WithStatement'
+            ];
+            return statements.includes(node.type);
+        },
+
+        isIterationStatement(node) {
+            const iterationStatements = [
+                'DoWhileStatement', 'ForInStatement', 'ForStatement', 'WhileStatement'
+            ];
+            return iterationStatements.includes(node.type);
+        },
+
+        isSourceElement(node) {
+            return ESUtils.ast.isStatement(node) || node.type === 'FunctionDeclaration';
+        },
+
+        trailingStatement(node) {
+            return node.type === 'IfStatement' ? node.consequent : null;
+        },
+
+        isProblematicIfStatement(node) {
+            return node.type === 'IfStatement' &&
+                   node.consequent?.type === 'WithStatement' &&
+                   node.consequent.body?.type === 'IfStatement' &&
+                   node.consequent.body.consequent.type === 'EmptyStatement' &&
+                   node.alternate.type === 'EmptyStatement';
+        }
+    };
+
+    static code = {
+        isDecimalDigit(code) {
+            return code >= 48 && code <= 57;  // ASCII codes for '0'-'9'
+        },
+
+        isHexDigit(code) {
+            return (code >= 48 && code <= 57) ||  // '0'-'9'
+                   (code >= 65 && code <= 70) ||  // 'A'-'F'
+                   (code >= 97 && code <= 102);   // 'a'-'f'
+        },
+
+        isOctalDigit(code) {
+            return code >= 48 && code <= 55;  // '0'-'7'
+        },
+
+        isWhiteSpace(code) {
+            return code === 32 ||  // space
+                   code === 9 ||   // tab
+                   code === 0xB || // vertical tab
+                   code === 0xC || // form feed
+                   code === 160 || // non-breaking space
+                   (code >= 5760 && code <= 6158);  // other unicode whitespaces
+        },
+
+        isLineTerminator(code) {
+            return [10, 13, 0x2028, 0x2029].includes(code);
+        },
+
+        isIdentifierStart(code) {
+            return code === 36 ||  // '$'
+                   code === 95 ||  // '_'
+                   (code >= 65 && code <= 90) ||    // 'A'-'Z'
+                   (code >= 97 && code <= 122);     // 'a'-'z'
+        },
+
+        isIdentifierPart(code) {
+            return ESUtils.code.isIdentifierStart(code) || ESUtils.code.isDecimalDigit(code);
+        }
+    };
+
+    static keyword = {
+        isKeywordES5(id, strict) {
+            const keywords = [
+                'break', 'case', 'catch', 'continue', 'debugger', 'default', 'delete', 
+                'do', 'else', 'finally', 'for', 'function', 'if', 'in', 'instanceof', 
+                'new', 'return', 'switch', 'this', 'throw', 'try', 'typeof', 'var', 
+                'void', 'while', 'with'
+            ];
+            const strictKeywords = ['implements', 'interface', 'package', 'private', 
+                'protected', 'public', 'static', 'yield'];
+
+            return keywords.includes(id) || (strict && strictKeywords.includes(id));
+        },
+
+        isKeywordES6(id, strict) {
+            const keywords = [
+                'break', 'case', 'catch', 'class', 'const', 'continue', 'debugger', 'default',
+                'delete', 'do', 'else', 'export', 'extends', 'finally', 'for', 'function',
+                'if', 'import', 'in', 'instanceof', 'new', 'return', 'super', 'switch',
+                'this', 'throw', 'try', 'typeof', 'var', 'void', 'while', 'with', 'yield'
+            ];
+            const strictKeywords = ['await', 'implements', 'interface', 'package', 'private', 
+                'protected', 'public', 'static', 'yield'];
+
+            return keywords.includes(id) || (strict && strictKeywords.includes(id));
+        },
+
+        isReservedWordES5(id, strict) {
+            return ESUtils.keyword.isKeywordES5(id, strict);
+        },
+
+        isReservedWordES6(id, strict) {
+            return ESUtils.keyword.isKeywordES6(id, strict);
+        },
+
+        isRestrictedWord(id) {
+            return ['eval', 'arguments'].includes(id);
+        },
+
+        isIdentifierNameES5(id) {
+            return /^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(id);
+        },
+
+        isIdentifierNameES6(id) {
+            return /^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(id);
+        },
+
+        isIdentifierES5(id, strict) {
+            return ESUtils.keyword.isIdentifierNameES5(id) && !ESUtils.keyword.isKeywordES5(id, strict);
+        },
+
+        isIdentifierES6(id, strict) {
+            return ESUtils.keyword.isIdentifierNameES6(id) && !ESUtils.keyword.isKeywordES6(id, strict);
+        }
+    };
+}
+
+module.exports = ESUtils;
+```

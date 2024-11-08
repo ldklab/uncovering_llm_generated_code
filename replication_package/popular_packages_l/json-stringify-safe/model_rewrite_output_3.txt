@@ -1,0 +1,72 @@
+The Node.js code defines a utility function `jsonStringifySafe` that safely serializes a JavaScript object into a JSON string, handling circular references by replacing them with a placeholder value ('[Circular]'). It also includes an optional custom serializer and indentation functionality. 
+
+Here's the functionality explained in steps:
+1. **Circular Reference Handling**: If the object contains circular references, they are replaced with '[Circular]' or a custom value using the provided `decycler` function.
+2. **Custom Serializer**: Allows specifying a custom `serializer` function to process each value before serialization.
+3. **Indentation**: Supports pretty-printing the JSON output with indentation.
+
+The function utilizes a closure to maintain the `stack` and `keys` of traversed objects, helping to detect circular structures. It also provides a `getSerialize` method to generate the serializer function for use in environments where `JSON.stringify` directly isn't suitable.
+
+Here's a possible rewrite of the code:
+
+```javascript
+'use strict';
+
+function jsonStringifySafe(obj, customSerializer = null, indent = 0, customDecycler = null) {
+    const stack = [];
+    const keys = [];
+    
+    const defaultDecycler = () => '[Circular]';
+    const decycler = customDecycler || defaultDecycler;
+
+    function serializerWrapper(key, value) {
+        if (stack.length) {
+            const thisIndex = stack.indexOf(this);
+            if (~thisIndex) {
+                stack.splice(thisIndex + 1);
+                keys.splice(thisIndex, Infinity, key);
+            } else {
+                stack.push(this);
+                keys.push(key);
+            }
+            if (~stack.indexOf(value)) {
+                value = decycler.call(this, key, value);
+            }
+        } else {
+            stack.push(value);
+        }
+        return customSerializer ? customSerializer.call(this, key, value) : value;
+    }
+
+    return JSON.stringify(obj, serializerWrapper, indent);
+}
+
+jsonStringifySafe.getSerialize = function(customSerializer = null, customDecycler = null) {
+    const stack = [];
+    const keys = [];
+    
+    const defaultDecycler = () => '[Circular]';
+    const decycler = customDecycler || defaultDecycler;
+
+    return function(key, value) {
+        if (stack.length) {
+            const thisIndex = stack.indexOf(this);
+            if (~thisIndex) {
+                stack.splice(thisIndex + 1);
+                keys.splice(thisIndex, Infinity, key);
+            } else {
+                stack.push(this);
+                keys.push(key);
+            }
+            if (~stack.indexOf(value)) {
+                value = decycler.call(this, key, value);
+            }
+        } else {
+            stack.push(value);
+        }
+        return customSerializer ? customSerializer.call(this, key, value) : value;
+    };
+};
+
+module.exports = jsonStringifySafe;
+```

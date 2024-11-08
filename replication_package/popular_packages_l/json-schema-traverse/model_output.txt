@@ -1,0 +1,67 @@
+The `json-schema-traverse` package is designed for traversing through a JSON Schema, allowing you to interact with each schema object through a callback function. It can handle complex JSON Schemas by recursively traversing properties and other structures defined within the JSON Schema. 
+
+Key features of the package include:
+
+1. **Traversal Process**: 
+   - It performs a pre-order traversal starting from the root schema and moves through its nested schema objects. The package doesn't resolve `$ref` references, meaning they are passed as is to the callback.
+   - You can specify a `cb` (callback) function that will execute on each schema object.
+
+2. **Callback Execution**: 
+   - The callback is called with several parameters including the current schema object, JSON pointers for the current schema, the root schema, and additional contextual information like the parent schema and keyword, if applicable.
+   - The library also provides flexibility to execute `pre` and `post` callback functions if the `cb` parameter is passed as an object containing these functions. The `pre` function is invoked before child elements are traversed, and the `post` function is called after all child elements have been traversed.
+
+3. **Handling All Keywords**: 
+   - By default, the callback is not invoked for schemas in unrecognized locations. However, by setting the `allKeys` option to `true`, you can change this behavior to ensure the callback is called at every schema object found in any key.
+
+Below is the code implementation of this functionality:
+
+```javascript
+// json-schema-traverse.js
+
+function traverse(schema, options) {
+  const { cb, allKeys } = options;
+  const pre = (typeof cb === 'function') ? cb : cb.pre;
+  const post = cb.post;
+
+  function _traverse(schema, jsonPtr = '', parentJsonPtr = '', parentKeyword, parentSchema, keyIndex) {
+    let currentPtr = jsonPtr;
+    
+    if (allKeys || (schema && typeof schema === 'object' && (schema.hasOwnProperty('properties') || schema.hasOwnProperty('items')))) {
+      if (pre) pre(schema, currentPtr, rootSchema, parentJsonPtr, parentKeyword, parentSchema, keyIndex);
+    
+      for (const key in schema) {
+        const subschema = schema[key];
+        if (subschema && typeof subschema === 'object') {
+          const currentJsonPtr = `${jsonPtr}/${key}`;
+          _traverse(subschema, currentJsonPtr, jsonPtr, key, schema, key);
+        }
+      }
+      
+      if (post) post(schema, currentPtr, rootSchema, parentJsonPtr, parentKeyword, parentSchema, keyIndex);
+    }
+  }
+  
+  const rootSchema = schema;
+  _traverse(schema, '', '', null, null, null);
+}
+
+module.exports = traverse;
+
+// Usage example:
+
+const traverse = require('./json-schema-traverse');
+
+const schemaExample = {
+  properties: {
+    foo: {type: 'string'},
+    bar: {type: 'integer'}
+  }
+};
+
+const cb = {
+  pre: (schema) => console.log("Pre:", schema),
+  post: (schema) => console.log("Post:", schema)
+};
+
+traverse(schemaExample, {cb});
+```

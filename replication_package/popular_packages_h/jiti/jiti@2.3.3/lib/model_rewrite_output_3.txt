@@ -1,0 +1,47 @@
+The provided Node.js code defines a module that exports a function called `createJiti`. This function is designed to create a customized CommonJS-like module loader using an internal function `_createJiti`. Here’s a breakdown of the functionality:
+
+1. **Imports**:
+   - `createRequire` from the Node.js `module` package to enable the creation of a `require` function from a specific directory.
+   - `jiti` and `babel` transformations are imported from the local files `jiti.cjs` and `babel.cjs`.
+
+2. **Error Handling**:
+   - Defines an `onError` function that simply rethrows an error received. It's intended for custom handling during module loading.
+
+3. **Native Import**:
+   - A `nativeImport` function using dynamic `import()` to load ES modules.
+
+4. **createJiti Function**:
+   - Accepts an `id` and an optional `opts` object.
+   - If `opts` doesn't already include a transformation function, it overrides `opts.transform` with the `transform` function from `babel.cjs`.
+   - Calls `_createJiti` with `id`, modified options, and additional configuration (error handler, native import method, and `createRequire`).
+
+5. **Exports**:
+   - Exports `createJiti` as both the default export and a named export.
+
+The main purpose of the module is to conveniently set up a JITI (Just-In-Time Import) powered module loader with enhanced capabilities like Babel transformations and custom error handling.
+
+```javascript
+const { createRequire } = require("node:module");
+const jiti = require("../dist/jiti.cjs");
+const babelTransform = require("../dist/babel.cjs");
+
+function handleError(err) {
+  throw err; // Pass the error for stack trace inspection
+}
+
+const dynamicImport = async (id) => import(id);
+
+function initializeJiti(id, options = {}) {
+  if (!options.transform) {
+    options = { ...options, transform: babelTransform };
+  }
+  return jiti(id, options, {
+    onError: handleError,
+    nativeImport: dynamicImport,
+    createRequire,
+  });
+}
+
+module.exports = initializeJiti;
+module.exports.initializeJiti = initializeJiti;
+```

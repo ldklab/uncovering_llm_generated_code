@@ -1,0 +1,81 @@
+The functionality of the Node.js code is to create a file watching utility using the `fs.watch` API for monitoring directories. It extends the `EventEmitter` class to provide event-driven notifications when files in specified directories change. The `Watchpack` class has the following key features:
+
+1. **Initialization**: It initializes watching with configurable options including aggregate timeout.
+2. **Watch Functionality**: It can watch multiple directories for file changes (additions, modifications), detecting events like 'rename' and 'change'.
+3. **Change Notification**: On any detected file change, it registers the change and emits a "change" event with details about what changed and when.
+4. **Aggregation**: Optionally, it aggregates changes over a specified timeout if `aggregateTimeout` is set, ultimately emitting an "aggregated" event.
+5. **Pause and Close**: Provides functionality to pause all watchers or close them completely.
+6. **Retrieving Aggregated Changes**: Users can access the currently tracked aggregated changes.
+
+Based on this explanation, here is a rewrite of the Node.js code:
+
+```javascript
+const EventEmitter = require('events');
+const fs = require('fs');
+const path = require('path');
+
+class Watchpack extends EventEmitter {
+  constructor(options = {}) {
+    super();
+    this.options = options;
+    this.watchers = new Map();
+    this.aggregatedChanges = new Set();
+    this.aggregatedRemovals = new Set();
+    this.aggregateTimeout = options.aggregateTimeout || 0;
+    this.aggregationTimer = null;
+  }
+
+  watch({ files = [], directories = [], missing = [], startTime = Date.now() } = {}) {
+    this.close(); // Clear existing watchers
+    directories.forEach(dir => this._watchDirectory(dir)); // Setup new watchers for directories
+  }
+
+  _watchDirectory(dir) {
+    if (!this.watchers.has(dir)) {
+      const watcher = fs.watch(dir, (eventType, filename) => {
+        if (filename) {
+          this._handleFileChange(path.join(dir, filename), eventType);
+        }
+      });
+      this.watchers.set(dir, watcher);
+    }
+  }
+
+  _handleFileChange(filePath, eventType) {
+    const stats = fs.statSync(filePath);
+    const mtime = stats.mtimeMs;
+    
+    if (eventType === 'rename' || eventType === 'change') {
+      this.aggregatedChanges.add(filePath);
+      this.emit("change", filePath, mtime, `Detected ${eventType}`);
+    }
+    
+    if (this.aggregateTimeout) {
+      clearTimeout(this.aggregationTimer);
+      this.aggregationTimer = setTimeout(() => {
+        this.emit("aggregated", this.aggregatedChanges, this.aggregatedRemovals);
+        this.aggregatedChanges.clear();
+        this.aggregatedRemovals.clear();
+      }, this.aggregateTimeout);
+    }
+  }
+
+  pause() {
+    this.watchers.forEach((watcher) => watcher.close());
+  }
+
+  close() {
+    this.pause();
+    this.watchers.clear();
+  }
+
+  getAggregated() {
+    return {
+      changes: new Set(this.aggregatedChanges),
+      removals: new Set(this.aggregatedRemovals)
+    };
+  }
+}
+
+module.exports = Watchpack;
+```

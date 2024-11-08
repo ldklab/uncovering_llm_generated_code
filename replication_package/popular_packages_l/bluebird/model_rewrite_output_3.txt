@@ -1,0 +1,149 @@
+The Node.js code is a custom implementation of a promise library called `BluebirdLite`. It follows the promise design pattern to handle asynchronous operations, along with additional features such as cancellation. Here's how it works:
+
+1. **Constructor and State Management**:
+   - The `BluebirdLite` class constructor accepts an executor function which receives `resolve` and `reject` as parameters for handling successful and erroneous completion of asynchronous tasks.
+   - The promise state is managed internally with states: `pending`, `fulfilled`, `rejected`, and introduces `cancelled` for promise cancellations.
+   - Handlers are stored for later execution once the promise is completed.
+
+2. **State Update and Handler Execution**:
+   - `updateState` method changes the internal promise state and executes handler functions based on the current state.
+   - `handle` method is responsible for managing the callbacks for fulfillment (`onFulfilled`) or rejection (`onRejected`), executing them appropriately once the promise is settled.
+
+3. **Promise Methods**:
+   - `then`: Allows chaining with defined `onFulfilled` and `onRejected` callbacks, returning a new promise for chaining.
+   - `catch`: Shorthand for handling rejection, essentially a `then` with only a rejection handler.
+   - `cancel`: Allows stopping the promise from being fulfilled or rejected, switching it to a `cancelled` state if it’s still pending.
+
+4. **Static Methods**:
+   - `resolve` and `reject`: Facilitate creating resolved or rejected promises quickly.
+   - `all`: Takes an array of promises and resolves to an array of results once all input promises are fulfilled, or rejects if any promise is rejected.
+
+5. **Example Usage**:
+   - Demonstrates creating and resolving promises, handling results via `all`, and logging them to the console.
+
+Here’s a possible rewrite of the Node.js code:
+
+```javascript
+// bluebird-lite.js
+class BluebirdLite {
+  constructor(executor) {
+    this.state = 'pending';
+    this.value = undefined;
+    this.handlers = [];
+    this.cancelRequested = false;
+
+    const resolve = (value) => {
+      if (!this.cancelRequested) {
+        this.updateState('fulfilled', value);
+      }
+    };
+
+    const reject = (reason) => {
+      if (!this.cancelRequested) {
+        this.updateState('rejected', reason);
+      }
+    };
+
+    try {
+      executor(resolve, reject);
+    } catch (error) {
+      reject(error);
+    }
+  }
+
+  updateState(state, value) {
+    if (this.state !== 'pending') return;
+    this.state = state;
+    this.value = value;
+    this.handlers.forEach(handler => this.handle(handler));
+  }
+
+  handle(handler) {
+    if (this.state === 'pending') {
+      this.handlers.push(handler);
+    } else {
+      let callback = this.state === 'fulfilled' ? handler.onFulfilled : handler.onRejected;
+      if (!callback) {
+        callback = this.state === 'fulfilled' ? handler.resolve : handler.reject;
+        return callback(this.value);
+      }
+
+      try {
+        const result = callback(this.value);
+        handler.resolve(result);
+      } catch (error) {
+        handler.reject(error);
+      }
+    }
+  }
+
+  then(onFulfilled, onRejected) {
+    return new BluebirdLite((resolve, reject) => {
+      this.handle({
+        onFulfilled,
+        onRejected,
+        resolve,
+        reject,
+      });
+    });
+  }
+
+  catch(onRejected) {
+    return this.then(null, onRejected);
+  }
+
+  cancel() {
+    if (this.state === 'pending') {
+      this.cancelRequested = true;
+      this.updateState('cancelled', 'Promise was cancelled');
+    }
+  }
+
+  static resolve(value) {
+    return new BluebirdLite(resolve => resolve(value));
+  }
+
+  static reject(reason) {
+    return new BluebirdLite((_, reject) => reject(reason));
+  }
+
+  static all(promises) {
+    return new BluebirdLite((resolve, reject) => {
+      const results = [];
+      let fulfilledCount = 0;
+      if (promises.length === 0) resolve([]);
+
+      const addResult = (index, value) => {
+        results[index] = value;
+        fulfilledCount += 1;
+        if (fulfilledCount === promises.length) {
+          resolve(results);
+        }
+      };
+
+      promises.forEach((promise, index) => {
+        promise.then(value => addResult(index, value))
+               .catch(reject);
+      });
+    });
+  }
+}
+
+module.exports = BluebirdLite;
+
+// Usage example
+const { log } = console;
+const BluebirdLite = require('./bluebird-lite');
+
+const promise1 = new BluebirdLite((resolve) => {
+  setTimeout(() => resolve('Result 1'), 1000);
+});
+
+const promise2 = BluebirdLite.resolve('Result 2');
+
+BluebirdLite.all([promise1, promise2]).then(results => {
+  log(results); // Expected output: ['Result 1', 'Result 2']
+}).catch(err => {
+  log('Error:', err);
+});
+```

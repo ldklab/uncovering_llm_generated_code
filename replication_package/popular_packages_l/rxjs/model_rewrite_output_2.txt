@@ -1,0 +1,99 @@
+```javascript
+// observable.js
+class Observable {
+  constructor(subscribe) {
+    this._subscribe = subscribe;
+  }
+
+  subscribe(observer) {
+    const safeObserver = {
+      next: (v) => {
+        if (observer.next) observer.next(v);
+      },
+      error: (e) => {
+        if (observer.error) observer.error(e);
+        else throw e;
+      },
+      complete: () => {
+        if (observer.complete) observer.complete();
+      }
+    };
+    this._subscribe(safeObserver);
+  }
+
+  pipe(...operators) {
+    return operators.reduce((prev, fn) => fn(prev), this);
+  }
+}
+
+// operators.js
+const filter = (predicate) => (source) => {
+  return new Observable((observer) => {
+    return source.subscribe({
+      next: (value) => {
+        if (predicate(value)) observer.next(value);
+      },
+      error: (err) => observer.error(err),
+      complete: () => observer.complete()
+    });
+  });
+};
+
+const map = (transform) => (source) => {
+  return new Observable((observer) => {
+    return source.subscribe({
+      next: (value) => observer.next(transform(value)),
+      error: (err) => observer.error(err),
+      complete: () => observer.complete()
+    });
+  });
+};
+
+// range.js
+function range(start, count) {
+  return new Observable((observer) => {
+    for (let i = start; i < start + count; i++) {
+      observer.next(i);
+    }
+    observer.complete();
+  });
+}
+
+// index.js
+const { Observable } = require('./observable');
+const { filter, map } = require('./operators');
+const { range } = require('./range');
+
+range(1, 200).pipe(
+  filter(x => x % 2 === 1),
+  map(x => x * 2)
+).subscribe({
+  next: x => console.log(x),
+  error: err => console.error('Error:', err),
+  complete: () => console.log('Completed!')
+});
+```
+
+**Explanation:**
+The provided Node.js code implements a simple RxJS-like library with `Observable` class, two operators (`filter` and `map`), and a method to create a range of numbers as observables.
+
+1. **Observable Class**: 
+   - This serves as the base class for creating new observable sequences.
+   - It takes a `subscribe` function which is executed when the observable is subscribed to.
+   - The class has a `subscribe` method which takes an observer object containing `next`, `error`, and `complete` handlers.
+   - A `pipe` method allows chaining of operators to transform the observable sequence.
+
+2. **Operators**:
+   - **filter**: Takes a predicate function and returns an observable emitting only those values that satisfy the predicate.
+   - **map**: Takes a transform function and returns an observable emitting values transformed by the function.
+
+3. **Range Function**:
+   - Generates a sequence of numbers as an observable starting from `start` for `count` numbers.
+   - Issues `next` notifications for each number in the range and completes the sequence.
+
+4. **Example Usage**:
+   - Creates an observable of numbers from 1 to 200.
+   - Uses `pipe` to chain `filter` and `map` operators.
+   - `filter`: Only allows odd numbers through.
+   - `map`: Doubles each passed value.
+   - Finally, subscribes to log these transformed values to the console.

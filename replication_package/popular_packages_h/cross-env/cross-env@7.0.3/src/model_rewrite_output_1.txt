@@ -1,0 +1,116 @@
+The Node.js code provided is designed to set up environment variables from a set of arguments, and then execute a command with those environment variables. Let's break down the core functionalities:
+
+1. **Variable Parsing and Setting**: 
+   - The code uses a regular expression to identify and parse environment variable declarations from input arguments. For instance, "VAR=value" is parsed and stored.
+   
+2. **Command Execution**:
+   - After parsing environment variables, it separates the command and its arguments from the remaining input.
+   
+3. **Environment and Command Normalization**:
+   - It adjusts the command and its arguments for cross-platform compatibility using helper functions `commandConvert` and `varValueConvert`.
+   
+4. **Process Spawning**:
+   - The `child_process.spawn` method from `cross-spawn` is used to execute the command in a child process with the specified environment variables.
+   
+5. **Signal Handling**:
+   - The code handles process signals like SIGTERM, SIGINT, to ensure the spawned process gets terminated gracefully upon interruption.
+   
+6. **Exit Code Handling**:
+   - It exits with the same exit code as the child process or modifies the exit code based on the signal received (e.g., SIGINT results in exit code 0).
+
+Here's a rewritten version of the provided code:
+
+```javascript
+const { spawn } = require('cross-spawn');
+const commandConvert = require('./command');
+const varValueConvert = require('./variable');
+
+module.exports = crossEnv;
+
+const envSetterRegex = /(\w+)=('(.*)'|"(.*)"|(.*))/;
+
+function crossEnv(args, options = {}) {
+  const [envSetters, command, commandArgs] = parseCommand(args);
+  const env = prepareEnvironment(envSetters);
+
+  if (command) {
+    const proc = spawn(
+      commandConvert(command, env, true), 
+      commandArgs.map(arg => commandConvert(arg, env)), 
+      {
+        stdio: 'inherit',
+        shell: options.shell,
+        env,
+      }
+    );
+
+    handleProcessSignals(proc);
+    proc.on('exit', (code, signal) => {
+      process.exit(getExitCode(code, signal));
+    });
+
+    return proc;
+  }
+
+  return null;
+}
+
+function parseCommand(args) {
+  const envSetters = {};
+  let command = null;
+  let commandArgs = [];
+
+  for (let i = 0; i < args.length; i++) {
+    const match = envSetterRegex.exec(args[i]);
+    if (match) {
+      envSetters[match[1]] = getValueFromMatch(match);
+    } else {
+      [command, ...commandArgs] = normalizeCommandArgs(args.slice(i));
+      break;
+    }
+  }
+
+  return [envSetters, command, commandArgs];
+}
+
+function getValueFromMatch(match) {
+  if (typeof match[3] !== 'undefined') return match[3];
+  if (typeof match[4] !== 'undefined') return match[4];
+  return match[5];
+}
+
+function normalizeCommandArgs(commandArgs) {
+  const regex = /\\\\|(\\)?'|([\\])(?=[$"\\])/g;
+  return commandArgs.map(arg =>
+    arg.replace(regex, m => {
+      if (m === '\\\\') return '\\';
+      if (m === "\\'") return "'";
+      return '';
+    })
+  );
+}
+
+function prepareEnvironment(envSetters) {
+  const envVars = { ...process.env };
+  if (process.env.APPDATA) {
+    envVars.APPDATA = process.env.APPDATA;
+  }
+  Object.keys(envSetters).forEach(varName => {
+    envVars[varName] = varValueConvert(envSetters[varName], varName);
+  });
+  return envVars;
+}
+
+function handleProcessSignals(proc) {
+  ['SIGTERM', 'SIGINT', 'SIGBREAK', 'SIGHUP'].forEach(signal => {
+    process.on(signal, () => proc.kill(signal));
+  });
+}
+
+function getExitCode(code, signal) {
+  if (code === null) {
+    return signal === 'SIGINT' ? 0 : 1;
+  }
+  return code;
+}
+```

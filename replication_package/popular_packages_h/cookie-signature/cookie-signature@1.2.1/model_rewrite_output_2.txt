@@ -1,0 +1,48 @@
+The Node.js code defines two exported functions, `sign` and `unsign`, which are used to create and verify signed values. These functions ensure data integrity by using cryptographic operations:
+
+1. **`sign(val, secret)`**:
+   - Takes a value (`val`) and a secret key (`secret`).
+   - Uses HMAC with SHA-256 to create a signature of `val` combined with `secret`.
+   - Appends the base64-encoded signature to `val` separated by a period (`.`), and returns this signed string.
+
+2. **`unsign(input, secret)`**:
+   - Takes a signed input and a secret key (`secret`).
+   - Extracts the original value from the input by removing the signature part.
+   - Recomputes the signature for this extracted value using the same secret.
+   - Compares the recomputed signature with the signature from the input using a timing-safe comparison.
+   - Returns the original value if the validation is successful, otherwise returns `false`.
+
+```javascript
+const crypto = require('crypto');
+
+function sign(val, secret) {
+  if (typeof val !== 'string') throw new TypeError("Cookie value must be provided as a string.");
+  if (secret == null) throw new TypeError("Secret key must be provided.");
+  
+  const hmac = crypto.createHmac('sha256', secret);
+  const signature = hmac.update(val).digest('base64').replace(/=+$/, '');
+  
+  return `${val}.${signature}`;
+}
+
+function unsign(input, secret) {
+  if (typeof input !== 'string') throw new TypeError("Signed cookie string must be provided.");
+  if (secret == null) throw new TypeError("Secret key must be provided.");
+  
+  const lastDotIndex = input.lastIndexOf('.');
+  if (lastDotIndex === -1) return false;
+  
+  const tentativeValue = input.slice(0, lastDotIndex);
+  const expectedInput = sign(tentativeValue, secret);
+  
+  const expectedBuffer = Buffer.from(expectedInput);
+  const inputBuffer = Buffer.from(input);
+  
+  if (expectedBuffer.length !== inputBuffer.length) return false;
+  
+  return crypto.timingSafeEqual(expectedBuffer, inputBuffer) ? tentativeValue : false;
+}
+
+exports.sign = sign;
+exports.unsign = unsign;
+```

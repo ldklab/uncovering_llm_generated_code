@@ -1,0 +1,132 @@
+The provided Node.js code defines a `ModuleMocker` class designed to create mock functions—useful during testing. Here's a summary of its functionality:
+
+1. **Constructor (`constructor`)**: Sets up initial properties, including a global reference, a call order tracker, and a map to track mock instances.
+
+2. **`generateFromMetadata` Method**: Given metadata, this method produces a mock function. If metadata indicates that the target is a function, it creates a mock using `fn()` and copies any members (like properties and prototype functions) recursively.
+
+3. **`getMetadata` Method**: Determines and returns the metadata type (e.g., function, array, object) of a given component.
+
+4. **`fn` Method**: Constructs a mock function with capabilities to track calls, define return values, and support different implementations. It offers methods to:
+   - Store calls and instances in `mock` properties.
+   - Define a default return value or return specific values with `mockReturnValueOnce`.
+   - Provide a default implementation using `mockImplementation`.
+   - Return `this` using `mockReturnThis`.
+   - Temporarily override and restore implementations using `withImplementation`.
+
+5. **Helper Method `_generateMockPrototype`**: Recursively generates a mock object for prototype members based on the provided metadata.
+
+Below is a rewritten version of this code:
+
+```javascript
+class ModuleMocker {
+  constructor(global) {
+    this.global = global;
+    this.callOrderTracker = 1;
+    this.mockInstances = new Map();
+  }
+
+  generateFromMetadata(metadata) {
+    if (metadata.type !== 'function') {
+      return () => {};
+    }
+
+    const mockFunction = this.createMockFunction();
+    if (metadata.members) {
+      for (const [member, memberMetadata] of Object.entries(metadata.members)) {
+        if (member === 'prototype') {
+          mockFunction.prototype = this.createMockPrototype(memberMetadata);
+        } else {
+          mockFunction[member] = this.generateFromMetadata(memberMetadata);
+        }
+      }
+    }
+    return mockFunction;
+  }
+
+  getMetadata(component) {
+    if (Array.isArray(component)) {
+      return { type: 'array' };
+    }
+    if (typeof component === 'function') {
+      return { type: 'function' };
+    }
+    if (typeof component === 'object') {
+      return { type: 'object', members: {} };
+    }
+    return { type: 'ref' };
+  }
+
+  createMockFunction(implementation = () => {}) {
+    const mockFunction = (...args) => {
+      const { calls, instances, invocationOrder } = mockFunction.mockData;
+      calls.push(args);
+      instances.push(this);
+      invocationOrder.push(this.callOrderTracker++);
+      const returnValueQueue = mockFunction.returnValueQueue;
+      const returnValue = returnValueQueue.length ? returnValueQueue.shift() : mockFunction.defaultReturnValue;
+      return returnValue !== undefined ? returnValue : mockFunction.defaultImplementation(...args);
+    };
+
+    mockFunction.mockData = {
+      calls: [],
+      instances: [],
+      invocationOrder: [],
+    };
+    mockFunction.defaultImplementation = implementation;
+    mockFunction.defaultReturnValue = undefined;
+    mockFunction.returnValueQueue = [];
+    mockFunction.implementationQueue = [];
+
+    mockFunction.setReturnValueOnce = (value) => {
+      mockFunction.returnValueQueue.push(value);
+      return mockFunction;
+    };
+
+    mockFunction.setReturnValue = (value) => {
+      mockFunction.defaultReturnValue = value;
+      return mockFunction;
+    };
+
+    mockFunction.setImplementationOnce = (fn) => {
+      mockFunction.implementationQueue.push(fn);
+      return mockFunction;
+    };
+
+    mockFunction.setImplementation = (fn) => {
+      mockFunction.defaultImplementation = fn;
+      return mockFunction;
+    };
+
+    mockFunction.returnThis = () => {
+      return mockFunction.setImplementation(function() {
+        return this;
+      });
+    };
+
+    mockFunction.withTemporaryImplementation = (fn, callback) => {
+      const originalImplementation = mockFunction.defaultImplementation;
+      mockFunction.setImplementation(fn);
+      const result = callback();
+      if (result && typeof result.then === 'function') {
+        return result.finally(() => mockFunction.setImplementation(originalImplementation));
+      }
+      mockFunction.setImplementation(originalImplementation);
+      return result;
+    };
+
+    return mockFunction;
+  }
+
+  createMockPrototype(protoMetadata) {
+    const prototypeMock = {};
+    if (protoMetadata.members) {
+      for (const [member, memberMetadata] of Object.entries(protoMetadata.members)) {
+        prototypeMock[member] = this.generateFromMetadata(memberMetadata);
+      }
+    }
+    return prototypeMock;
+  }
+}
+
+export { ModuleMocker };
+```

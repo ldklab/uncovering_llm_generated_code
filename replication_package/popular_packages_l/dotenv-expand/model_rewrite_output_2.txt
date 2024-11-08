@@ -1,0 +1,71 @@
+The provided Node.js code is a custom implementation to load and expand environment variables from a `.env` file using the `dotenv` package and custom variable parsing logic. The code does the following:
+
+1. **Variable Expansion Logic (`expand` function):**
+   - It uses a regular expression to find placeholders in the format `${VAR_NAME}` or `$VAR_NAME` within the environment variables.
+   - It replaces these placeholders with values from the process environment variables (`process.env`).
+   - If the placeholder has a `:-` default syntax like `${VAR_NAME:-default}`, it uses `default` if `VAR_NAME` is not set.
+
+2. **Config Loading and Expanding (`config` function):**
+   - Reads a `.env` file from the current working directory by default and parses it using `dotenv.parse`.
+   - Calls the `expand` function to apply variable expansion on the parsed environment variables.
+   - Returns the expanded environment variables or an error object if reading the file fails.
+
+3. **Exports and Usage:**
+   - Exports the `expand` and `config` functions for use in other modules.
+   - If the script is run directly, it calls the `config` function and logs the expanded environment variables to the console.
+
+Here is the rewrite of the provided code:
+
+```javascript
+// dotenv-variable-expander.js
+
+const path = require('path');
+const fs = require('fs');
+const dotenv = require('dotenv');
+
+// Function to expand variables in environment configurations
+function expandVariables(env) {
+  const replaceVariables = (input) => {
+    const variablePattern = /\$(?:\{([^}]+)\}|([A-Z0-9_]+))/gi;
+    return input.replace(variablePattern, (_, fullMatch, shortMatch) => {
+      const variableName = fullMatch ? fullMatch.split(':-')[0] : shortMatch;
+      const defaultValue = fullMatch ? fullMatch.split(':-')[1] : '';
+      return process.env[variableName] || defaultValue || '';
+    });
+  };
+
+  if (env.parsed) {
+    for (const key in env.parsed) {
+      if (Object.hasOwnProperty.call(env.parsed, key)) {
+        env.processEnv[key] = replaceVariables(env.parsed[key]);
+      }
+    }
+  }
+  return env;
+}
+
+// Main config function to parse and expand environment variables
+function loadConfig(options = {}) {
+  const configOptions = {
+    path: path.resolve(process.cwd(), '.env'),
+    encoding: 'utf8',
+    processEnv: process.env,
+    ...options
+  };
+
+  try {
+    const parsed = dotenv.parse(fs.readFileSync(configOptions.path, { encoding: configOptions.encoding }));
+    return expandVariables({ parsed, processEnv: configOptions.processEnv });
+  } catch (error) {
+    return { error };
+  }
+}
+
+module.exports = { expandVariables, loadConfig };
+
+// Execute with CLI for testing purposes
+if (require.main === module) {
+  const expandedEnv = loadConfig();
+  console.log(expandedEnv.processEnv); // Outputs expanded environment variables
+}
+```

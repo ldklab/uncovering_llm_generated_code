@@ -1,0 +1,89 @@
+The `babel-plugin-istanbul` is a Babel plugin designed to instrument JavaScript code using Istanbul's coverage tool. Here's a breakdown of its functionality:
+
+1. **Installation and Setup**:
+   - Users can install the plugin using npm.
+   - It is primarily configured through the Babel settings (`.babelrc` or Babel settings in `package.json`).
+
+2. **Environment Configuration**:
+   - The plugin should be added under the "test" environment in Babel's configuration. This is to ensure that instrumentation is performed only during testing.
+
+3. **Instrumenting Code**:
+   - It does not generate coverage reports or save data. Instead, it integrates instrumenting code into the JavaScript source code, preparing it for coverage analysis.
+
+4. **Integration with Test Runners**:
+   - Works seamlessly with Karma when the code is already transpiled by Babel.
+   - For Mocha, it requires integration with NYC to generate coverage reports, and NYC should be configured not to instrument the code again.
+
+5. **Ignoring Specific Files**:
+   - Users can specify which files to exclude from instrumentation using plugin options that match NYC's exclude/include rules.
+   - It's important to exclude test files from coverage to avoid skewed results.
+
+6. **Source Map Handling**:
+   - By default, the plugin reads inline source maps to remap coverage to original sources, which can be turned off for better performance.
+
+7. **Programmatic Instrumentation**:
+   - The plugin can be used programmatically, allowing explicit source map passing.
+
+Here is the implementation in Node.js:
+
+```js
+// index.js
+const babel = require('@babel/core');
+
+function babelPluginIstanbul(babel) {
+  const { types: t } = babel;
+
+  return {
+    visitor: {
+      Program(path, state) {
+        // Skip files based on the exclude options.
+        if (shouldExcludeFile(state.file.opts.filename, state.opts.exclude)) return;
+
+        // Instrument code here by inserting coverage counters.
+        const coverageIdentifier = createCoverageIdentifier();
+
+        // Insert initialization and function call to increment counters.
+        path.node.body.unshift(
+          t.expressionStatement(
+            t.callExpression(
+              t.memberExpression(t.identifier('global'), t.identifier(coverageIdentifier)),
+              []
+            )
+          )
+        );
+      },
+    },
+  };
+}
+
+function shouldExcludeFile(filename, excludePatterns) {
+  if (!excludePatterns) return false;
+  return excludePatterns.some(pattern => new RegExp(pattern).test(filename));
+}
+
+function createCoverageIdentifier() {
+  // This function should create a unique identifier for each file to track coverage.
+  return '__coverage__';
+}
+
+// Usage programmatically
+function instrument(sourceCode, sourceMap, filename) {
+  return babel.transform(sourceCode, {
+    filename,
+    plugins: [
+      [babelPluginIstanbul, {
+        inputSourceMap: sourceMap,
+      }],
+    ],
+  });
+}
+
+module.exports = babelPluginIstanbul;
+
+// Programmatic usage example
+const sourceCode = 'function hello() { return "Hello World"; }';
+const { code } = instrument(sourceCode, null, 'hello.js');
+console.log(code);
+```
+
+This code defines a Babel plugin that modifies JavaScript code to include Istanbul instrumentation. It includes capabilities for excluding specific files and handling source maps, as described in the README.

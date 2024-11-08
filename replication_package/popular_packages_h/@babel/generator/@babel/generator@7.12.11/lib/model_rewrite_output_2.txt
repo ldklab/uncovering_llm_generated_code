@@ -1,0 +1,114 @@
+The Node.js code provided defines a module for generating code from an Abstract Syntax Tree (AST). It includes handling of source maps and configurable output formatting options. Here's a breakdown of the functionality:
+
+1. **Generator Class**: 
+   - Inherits from a `Printer` class (imported as `_printer`).
+   - Constructs with an AST, options, and optionally original source code. 
+   - Initializes formatting options from `normalizeOptions` and potentially a source map.
+   - The `generate` method is a wrapper around the inherited generate method from `Printer`.
+
+2. **normalizeOptions Function**:
+   - Takes the original code and options object to create a `format` object with default values (e.g., indentation style, comment handling).
+   - Adjusts the options based on whether the output should be compact or retain certain features.
+   - Handles conditional logic for formatting, such as compactness and comment inclusion based on specific conditions like code length.
+
+3. **CodeGenerator Class**:
+   - Provides a higher-level interface for clients to generate code by composing a `Generator` object.
+   - The `generate` method calls the `generate` function of the `Generator`.
+
+4. **_default Function**:
+   - A default export function that creates and uses a `Generator` to generate code from an AST considering options and source code.
+
+Now, here is a reorganized and potentially rewritten code based on the above explanation:
+
+```javascript
+"use strict";
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+
+exports.default = generateFromAST;
+exports.CodeGenerator = CodeGenerator;
+
+const SourceMap = require("./source-map").default;
+const Printer = require("./printer").default;
+
+class Generator extends Printer {
+  constructor(ast, options = {}, code) {
+    const formatOptions = configureFormat(code, options);
+    const sourceMap = options.sourceMaps ? new SourceMap(options, code) : null;
+    super(formatOptions, sourceMap);
+    this.ast = ast;
+  }
+
+  generate() {
+    return super.generate(this.ast);
+  }
+}
+
+function configureFormat(code, options) {
+  const format = {
+    auxiliaryCommentBefore: options.auxiliaryCommentBefore,
+    auxiliaryCommentAfter: options.auxiliaryCommentAfter,
+    shouldPrintComment: options.shouldPrintComment,
+    retainLines: options.retainLines,
+    retainFunctionParens: options.retainFunctionParens,
+    comments: options.comments != null ? options.comments : true,
+    compact: options.compact,
+    minified: options.minified,
+    concise: options.concise,
+    indent: {
+      adjustMultilineComment: true,
+      style: "  ",
+      base: 0
+    },
+    decoratorsBeforeExport: !!options.decoratorsBeforeExport,
+    jsescOption: {
+      quotes: "double",
+      wrap: true,
+      ...options.jsescOption
+    },
+    recordAndTupleSyntaxType: options.recordAndTupleSyntaxType
+  };
+
+  format.jsonCompatibleStrings = options.jsonCompatibleStrings;
+
+  if (format.minified) {
+    format.compact = true;
+    format.shouldPrintComment = format.shouldPrintComment || (() => format.comments);
+  } else {
+    format.shouldPrintComment = format.shouldPrintComment || ((value) => {
+      return format.comments || value.includes("@license") || value.includes("@preserve");
+    });
+  }
+
+  if (format.compact === "auto") {
+    format.compact = code.length > 500000;
+
+    if (format.compact) {
+      console.error(`[BABEL] Note: The code generator has deoptimized the styling of ${options.filename} as it exceeds the max of 500KB.`);
+    }
+  }
+
+  if (format.compact) {
+    format.indent.adjustMultilineComment = false;
+  }
+
+  return format;
+}
+
+class CodeGenerator {
+  constructor(ast, options, code) {
+    this.generator = new Generator(ast, options, code);
+  }
+
+  generate() {
+    return this.generator.generate();
+  }
+}
+
+function generateFromAST(ast, options, code) {
+  const generator = new Generator(ast, options, code);
+  return generator.generate();
+}
+```

@@ -1,0 +1,235 @@
+The provided Node.js code defines a function `fastqueue` which creates and manages a task queue with concurrency control. This implementation allows for tasks to be pushed into the queue and automatically processed concurrently up to a specified limit. Here's a breakdown of its functionality:
+
+1. **Initialization**:
+   - The `fastqueue` function initializes a queue with functions to manage the task flow, such as `push`, `unshift`, `pause`, `resume`, and others.
+   - It accepts a `context`, a `worker` function to process tasks, and a `concurrency` level limiting the number of tasks processed concurrently.
+   - If `concurrency` is less than 1, an error is thrown.
+
+2. **Queue Management**:
+   - A `Task` is a reusable object representing a unit of work. These tasks are managed using the `reusify` library, which helps in recycling objects for performance efficiency.
+   - Tasks can be added to the queue using the `push` method (adding to the end) or `unshift` method (adding to the beginning).
+   - The queue maintains a linked list structure with `queueHead` and `queueTail` nodes to manage the tasks.
+
+3. **Task Processing**:
+   - When tasks are added with `push` or `unshift`, they are processed if the running count is below the concurrency limit.
+   - Each task is processed using the provided `worker` function.
+   - The `release` function ensures tasks are dequeued correctly once they are completed.
+
+4. **Control Functions**:
+   - `pause`: Stops further task processing.
+   - `resume`: Resumes task execution if paused.
+   - `kill`: Clears the queue without draining.
+   - `killAndDrain`: Clears the queue and executes the drain callback when complete.
+   - `error`: Sets a custom error handler for tasks.
+
+5. **State Functions**:
+   - `running`, `idle`, `length`: Provide metrics about the queue state (e.g., number of running tasks, if the queue is idle, total tasks).
+
+6. **Callbacks**:
+   - The queue can accept optional `callback` functions when pushing tasks to be executed once task processing is completed.
+
+Here's a possible rewrite of this Node.js code:
+
+```javascript
+'use strict';
+
+const reusify = require('reusify');
+
+function fastqueue(context, worker, concurrency) {
+  if (typeof context === 'function') {
+    [context, worker, concurrency] = [null, context, worker];
+  }
+
+  if (concurrency < 1) {
+    throw new Error('fastqueue concurrency must be greater than 1');
+  }
+
+  const cache = reusify(Task);
+  let queueHead = null;
+  let queueTail = null;
+  let _running = 0;
+  let errorHandler = null;
+
+  const self = {
+    push,
+    drain: noop,
+    saturated: noop,
+    pause,
+    paused: false,
+    concurrency,
+    running,
+    resume,
+    idle,
+    length,
+    getQueue,
+    unshift,
+    empty: noop,
+    kill,
+    killAndDrain,
+    error: setError
+  };
+
+  return self;
+
+  function running() {
+    return _running;
+  }
+
+  function pause() {
+    self.paused = true;
+  }
+
+  function length() {
+    let current = queueHead;
+    let counter = 0;
+
+    while (current) {
+      current = current.next;
+      counter++;
+    }
+
+    return counter;
+  }
+
+  function getQueue() {
+    let current = queueHead;
+    const tasks = [];
+
+    while (current) {
+      tasks.push(current.value);
+      current = current.next;
+    }
+
+    return tasks;
+  }
+
+  function resume() {
+    if (!self.paused) return;
+    self.paused = false;
+    for (let i = 0; i < self.concurrency; i++) {
+      _running++;
+      release();
+    }
+  }
+
+  function idle() {
+    return _running === 0 && self.length() === 0;
+  }
+
+  function push(value, done) {
+    const current = cache.get();
+
+    current.context = context;
+    current.release = release;
+    current.value = value;
+    current.callback = done || noop;
+    current.errorHandler = errorHandler;
+
+    if (_running === self.concurrency || self.paused) {
+      if (queueTail) {
+        queueTail.next = current;
+        queueTail = current;
+      } else {
+        queueHead = current;
+        queueTail = current;
+        self.saturated();
+      }
+    } else {
+      _running++;
+      worker.call(context, current.value, current.worked);
+    }
+  }
+
+  function unshift(value, done) {
+    const current = cache.get();
+
+    current.context = context;
+    current.release = release;
+    current.value = value;
+    current.callback = done || noop;
+
+    if (_running === self.concurrency || self.paused) {
+      if (queueHead) {
+        current.next = queueHead;
+        queueHead = current;
+      } else {
+        queueHead = current;
+        queueTail = current;
+        self.saturated();
+      }
+    } else {
+      _running++;
+      worker.call(context, current.value, current.worked);
+    }
+  }
+
+  function release(holder) {
+    if (holder) {
+      cache.release(holder);
+    }
+    const next = queueHead;
+    if (next) {
+      if (!self.paused) {
+        if (queueTail === queueHead) {
+          queueTail = null;
+        }
+        queueHead = next.next;
+        next.next = null;
+        worker.call(context, next.value, next.worked);
+        if (queueTail === null) {
+          self.empty();
+        }
+      } else {
+        _running--;
+      }
+    } else if (--_running === 0) {
+      self.drain();
+    }
+  }
+
+  function kill() {
+    queueHead = null;
+    queueTail = null;
+    self.drain = noop;
+  }
+
+  function killAndDrain() {
+    queueHead = null;
+    queueTail = null;
+    self.drain();
+    self.drain = noop;
+  }
+
+  function setError(handler) {
+    errorHandler = handler;
+  }
+}
+
+function noop() {}
+
+function Task() {
+  this.value = null;
+  this.callback = noop;
+  this.next = null;
+  this.release = noop;
+  this.context = null;
+  this.errorHandler = null;
+
+  const self = this;
+
+  this.worked = function worked(err, result) {
+    const callback = self.callback;
+    const errorHandler = self.errorHandler;
+    const val = self.value;
+    self.value = null;
+    self.callback = noop;
+    if (self.errorHandler) {
+      errorHandler(err, val);
+    }
+    callback.call(self.context, err, result);
+    self.release(self);
+  };
+}
+
+module.exports = fastqueue;
+```

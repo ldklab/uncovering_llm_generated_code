@@ -1,0 +1,214 @@
+The provided Node.js code is a utility library containing various helper functions and classes. Below is the functionality of each component in the code:
+
+1. **ErrorWithStack Class**: This class extends the built-in `Error` class to include a custom stack trace limit when an error is thrown.
+
+2. **clearLine Function**: Clears the current line in the terminal if the output is a TTY (teletypewriter interface).
+
+3. **convertDescriptorToString Function**: Converts different data types (functions, numbers, strings, undefined) to a string representation.
+
+4. **createDirectory Function**: An asynchronous function that creates a directory at the specified path, including all intermediate directories.
+
+5. **deepCyclicCopy Function**: Performs a deep copy of an object, handling cycles in the object graph and ignoring blacklisted properties. It can also preserve the object's prototype.
+
+6. **formatTime Function**: Converts a time value into a human-readable string with appropriate units (milliseconds, microseconds, nanoseconds).
+
+7. **globsToMatcher Function**: Converts an array of glob patterns into a function that can test if a string matches any of the patterns.
+
+8. **installCommonGlobals Function**: Installs global variables into a given global context.
+
+9. **interopRequireDefault Function**: Ensures compatibility by using `default` exports for modules that are ES6 modules.
+
+10. **invariant Function**: Throws an error if a given condition is false, providing a custom error message.
+
+11. **isInteractive Function**: Checks if the process outputs to a TTY, indicating an interactive session.
+
+12. **isNonNullable Function**: Checks if a value is neither null nor undefined.
+
+13. **isPromise Function**: Determines if a given value is a Promise by checking for a `then` method.
+
+14. **pluralize Function**: Returns the plural form of a word based on a count.
+
+15. **preRunMessage Function**: Displays a message in the console if running in interactive mode.
+
+16. **replacePathSepForGlob Function**: Normalizes file paths to use forward slashes.
+
+17. **requireOrImportModule Function**: Attempts to `require` a module, and if it fails, falls back to `import`.
+
+18. **setGlobal Function**: Assigns a value to a specified global variable.
+
+19. **specialChars Object**: Contains platform-specific information, such as whether the current OS is Windows.
+
+20. **testPathPatternToRegExp Function**: Converts a test path pattern (with wildcards) into a regular expression.
+
+21. **tryRealpath Function**: Asynchronously attempts to resolve the real path of a given path, reverting to the original path on error.
+
+The module exports all the above functionalities for use in other files.
+
+```javascript
+// utils.js
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
+const { promisify } = require('util');
+
+class ErrorWithStack extends Error {
+  constructor(message, { stackTraceLimit = 10 } = {}) {
+    super(message);
+    Error.captureStackTrace(this, this.constructor);
+    if (stackTraceLimit) {
+      Error.stackTraceLimit = stackTraceLimit;
+    }
+  }
+}
+
+function clearLine() {
+  if (process.stdout.isTTY) {
+    process.stdout.clearLine(0);
+    process.stdout.cursorTo(0);
+  }
+}
+
+function convertDescriptorToString(descriptor) {
+  switch (typeof descriptor) {
+    case 'function':
+      return `[Function ${(descriptor.name || 'anonymous')}]`;
+    case 'number':
+    case 'string':
+    case 'undefined':
+      return JSON.stringify(descriptor);
+    default:
+      throw new Error(`Unsupported descriptor type: ${typeof descriptor}`);
+  }
+}
+
+async function createDirectory(directoryPath) {
+  await fs.promises.mkdir(directoryPath, { recursive: true });
+}
+
+function deepCyclicCopy(obj, opts = { blacklist: [], preservePrototypes: true }) {
+  const seen = new WeakMap();
+  const copy = (value) => {
+    if (value !== Object(value) || typeof value === 'function') return value;
+    if (seen.has(value)) return seen.get(value);
+    let clone;
+    if (Array.isArray(value)) {
+      clone = [];
+      seen.set(value, clone);
+      value.forEach((item, index) => (clone[index] = copy(item)));
+    } else {
+      clone = Object.create(opts.preservePrototypes ? Object.getPrototypeOf(value) : {});
+      seen.set(value, clone);
+      for (const key in value) {
+        if (!opts.blacklist.includes(key)) clone[key] = copy(value[key]);
+      }
+    }
+    return clone;
+  };
+  return copy(obj);
+}
+
+function formatTime(time) {
+  const units = ['ms', 'µs', 'ns'];
+  let i = 0;
+  while (i < units.length - 1 && time < 1) {
+    time *= 1000;
+    i++;
+  }
+  return `${time.toFixed(2)} ${units[i]}`;
+}
+
+function globsToMatcher(globs) {
+  const patterns = globs.map(glob => new RegExp(glob.replace('*', '.*')));
+  return str => patterns.some(pattern => pattern.test(str));
+}
+
+function installCommonGlobals(targetGlobal, globalsToInstall) {
+  Object.entries(globalsToInstall).forEach(([key, value]) => {
+    targetGlobal[key] = value;
+  });
+}
+
+function interopRequireDefault(module) {
+  return module.__esModule ? module.default : module;
+}
+
+function invariant(condition, message) {
+  if (!condition) {
+    throw new Error(`Invariant failed: ${message}`);
+  }
+}
+
+function isInteractive() {
+  return process.stdout.isTTY && process.stdin.isTTY;
+}
+
+function isNonNullable(value) {
+  return value != null;
+}
+
+function isPromise(value) {
+  return !!value && typeof value.then === 'function';
+}
+
+function pluralize(word, count) {
+  return count === 1 ? word : `${word}s`;
+}
+
+function preRunMessage(message) {
+  if (isInteractive()) {
+    console.log(message);
+  }
+}
+
+function replacePathSepForGlob(filePath) {
+  return filePath.replace(/\\/g, '/');
+}
+
+async function requireOrImportModule(modulePath) {
+  try {
+    return require(modulePath);
+  } catch (err) {
+    return import(modulePath);
+  }
+}
+
+function setGlobal(global, key, value) {
+  global[key] = value;
+}
+
+const specialChars = {
+  isWindows: os.platform() === 'win32'
+};
+
+function testPathPatternToRegExp(pattern) {
+  return new RegExp(pattern.replace('*', '.*'));
+}
+
+function tryRealpath(p) {
+  return promisify(fs.realpath)(p).catch(() => p);
+}
+
+module.exports = {
+  ErrorWithStack,
+  clearLine,
+  convertDescriptorToString,
+  createDirectory,
+  deepCyclicCopy,
+  formatTime,
+  globsToMatcher,
+  installCommonGlobals,
+  interopRequireDefault,
+  invariant,
+  isInteractive,
+  isNonNullable,
+  isPromise,
+  pluralize,
+  preRunMessage,
+  replacePathSepForGlob,
+  requireOrImportModule,
+  setGlobal,
+  specialChars,
+  testPathPatternToRegExp,
+  tryRealpath
+};
+```

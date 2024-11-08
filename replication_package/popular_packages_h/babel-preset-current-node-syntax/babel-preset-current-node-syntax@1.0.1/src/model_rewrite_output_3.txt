@@ -1,0 +1,45 @@
+The functionality of this Node.js code is to determine which JavaScript syntax features are supported by the current Node.js runtime and load the corresponding Babel plugins for those features. The code defines a set of ECMAScript features categorized by their release in different ECMAScript versions or proposal stages. It then checks if the current runtime supports each feature by testing the syntax in a non-executing function wrapper using `eval`. If a feature is supported, its corresponding Babel plugin is added to a `plugins` array. Additionally, the code checks for support of `import.meta` and top-level await based on the Node.js version and adds related plugins if supported. Finally, it exports a function that returns an object containing the array of plugins.
+
+```javascript
+const tests = {
+  "object-rest-spread": ["({ ...{} })", "({ ...x } = {})"],
+  "async-generators": ["async function* f() {}"],
+  "optional-catch-binding": ["try {} catch {}"],
+  "json-strings": ["'\\u2028'"],
+  "bigint": ["1n"],
+  "optional-chaining": ["a?.b"],
+  "nullish-coalescing-operator": ["a ?? b"],
+  "numeric-separator": ["1_2"],
+  "class-properties": ["(class { x = 1 })", "(class { #x = 1 })", "(class { #x() {} })"],
+  "logical-assignment-operators": ["a ||= b", "a &&= b", "a ??= c"],
+};
+
+const plugins = [];
+const supportsSyntax = (test) => {
+  try {
+    (0, eval)(`(() => { ${test} })`);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+for (const [feature, cases] of Object.entries(tests)) {
+  if (cases.some(supportsSyntax)) {
+    plugins.push(require.resolve(`@babel/plugin-syntax-${feature}`));
+  }
+}
+
+const nodeVersion = process.versions.node.split('.').map(Number);
+const [major, minor] = nodeVersion;
+
+if (major > 10 || (major === 10 && minor >= 4)) {
+  plugins.push(require.resolve("@babel/plugin-syntax-import-meta"));
+}
+
+if (major > 14 || (major === 14 && minor >= 3)) {
+  plugins.push(require.resolve("@babel/plugin-syntax-top-level-await"));
+}
+
+module.exports = () => ({ plugins });
+```

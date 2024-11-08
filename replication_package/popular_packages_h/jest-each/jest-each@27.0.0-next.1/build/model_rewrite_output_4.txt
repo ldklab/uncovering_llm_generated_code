@@ -1,0 +1,103 @@
+The given Node.js code is a module that provides a mechanism for parameterized testing, essentially allowing tests to be defined in a table-driven fashion. This is typically useful in testing frameworks like Jest, where you might want to run the same test multiple times with different data inputs.
+
+Here's a breakdown of the functionality:
+
+1. **Module Exports and Dependencies:**
+   - The module exports an `each` function as its default export, enabling it to provide parameterized tests.
+   - It imports a `bind` function from a local module `./bind`, which is used to create bound versions of testing functions.
+
+2. **Installation Logic:**
+   - The `install` function is central to setting up the parameterized tests. It takes `g` (presumably global test functions like `test`, `it`, etc.), a `table` of test cases, and any additional data.
+   - It checks if the test cases are provided correctly, either as an array or a tagged template literal.
+   - It configures wrapped versions of `test`, `it`, and `describe` methods and their various modifiers (`skip`, `only`, `concurrent`, etc.) by binding them to the provided `table` of data.
+
+3. **Functionality Wrapping:**
+   - Various global test functions (`test`, `it`, `describe`, and their variants) are wrapped using the `bind` function to attach the test data source (`table` and `data`) to them.
+   - This wrapping allows each test case in the table to be executed as an individual test with its data.
+
+4. **`each` Functionality:**
+   - The `each` function takes a table of test data and optional additional data, and then calls `install` with the Node.js global object to set up the tests.
+   - It also provides `each.withGlobal` to allow specifying a different global object.
+
+This code is useful in contexts where you want to loop over sets of data and apply the same series of tests, ensuring DRY (Don't Repeat Yourself) principles are adhered to.
+
+Below is a possible rewrite of the provided code:
+
+```javascript
+'use strict';
+
+Object.defineProperty(exports, '__esModule', {
+  value: true
+});
+Object.defineProperty(exports, 'bind', {
+  enumerable: true,
+  get: function () {
+    return _bind.default;
+  }
+});
+exports.default = void 0;
+
+var _bind = _interopRequireDefault(require('./bind'));
+
+function _interopRequireDefault(obj) {
+  return obj && obj.__esModule ? obj : { default: obj };
+}
+
+// Core functionality for setting up parameterized tests.
+const install = (g, table, ...data) => {
+  const isBindingWithArray = data.length === 0;
+  const isBindingWithTemplate = Array.isArray(table) && !!table.raw;
+
+  if (!isBindingWithArray && !isBindingWithTemplate) {
+    throw new Error('`.each` must only be called with an Array or Tagged Template Literal.');
+  }
+
+  // Parameterized test definition for `test`.
+  const test = (title, fn, timeout) => 
+    (0, _bind.default)(g.test)(table, ...data)(title, fn, timeout);
+  test.skip = (0, _bind.default)(g.test.skip)(table, ...data);
+  test.only = (0, _bind.default)(g.test.only)(table, ...data);
+
+  // Parameterized test definition for `test.concurrent`.
+  const testConcurrent = (title, fn, timeout) => 
+    (0, _bind.default)(g.test.concurrent)(table, ...data)(title, fn, timeout);
+  test.concurrent = testConcurrent;
+  testConcurrent.skip = (0, _bind.default)(g.test.concurrent.skip)(table, ...data);
+  testConcurrent.only = (0, _bind.default)(g.test.concurrent.only)(table, ...data);
+
+  // Parameterized test definition for `it`.
+  const it = (title, fn, timeout) => 
+    (0, _bind.default)(g.it)(table, ...data)(title, fn, timeout);
+  it.skip = (0, _bind.default)(g.it.skip)(table, ...data);
+  it.only = (0, _bind.default)(g.it.only)(table, ...data);
+  it.concurrent = testConcurrent;
+
+  // Parameterized test definitions for other functions.
+  const xit = (0, _bind.default)(g.xit)(table, ...data);
+  const fit = (0, _bind.default)(g.fit)(table, ...data);
+  const xtest = (0, _bind.default)(g.xtest)(table, ...data);
+
+  // Parameterized suite definition for `describe`.
+  const describe = (title, suite, timeout) => 
+    (0, _bind.default)(g.describe, false)(table, ...data)(title, suite, timeout);
+  describe.skip = (0, _bind.default)(g.describe.skip, false)(table, ...data);
+  describe.only = (0, _bind.default)(g.describe.only, false)(table, ...data);
+  
+  const fdescribe = (0, _bind.default)(g.fdescribe, false)(table, ...data);
+  const xdescribe = (0, _bind.default)(g.xdescribe, false)(table, ...data);
+
+  return {
+    describe, fdescribe, fit, it, test, xdescribe, xit, xtest
+  };
+};
+
+// Main function for attaching the parameterized testing utilities to the global context.
+const each = (table, ...data) => install(global, table, ...data);
+
+// Allows configuration with a custom global context.
+each.withGlobal = g => (table, ...data) => install(g, table, ...data);
+
+// Default export for the module.
+var _default = each;
+exports.default = _default;
+```

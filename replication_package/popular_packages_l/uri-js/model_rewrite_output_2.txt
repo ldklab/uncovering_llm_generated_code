@@ -1,0 +1,93 @@
+The provided Node.js code implements a `URI` class that contains methods to handle various URI (Uniform Resource Identifier) operations. Here's a breakdown of the functionalities:
+
+1. **parse:** This method takes a URI string as input and breaks it down into its components (scheme, userinfo, host, port, path, query, and fragment) using a regular expression. It returns an object containing these components.
+
+2. **serialize:** This method constructs a URI string from an object containing its components. It optionally allows for customization through an options parameter (not currently used in the function).
+
+3. **resolve:** This method computes an absolute URI from a base URI and a relative URI by combining their path components. The resolving logic is simplified in this demonstration and mainly focuses on path concatenation.
+
+4. **normalize:** This method parses a URI, normalizes its components (like lower casing the scheme and host), and then serializes it back to a URI string, ensuring a standard representation for comparison.
+
+5. **equal:** This method checks if two URIs are equivalent by normalizing them and comparing the resulting strings.
+
+6. **normalizeIP:** This method demonstrates a simplified example of normalizing IP addresses by removing leading zeros.
+
+7. **parseMailto:** This method is a specialized parser for `mailto:` URIs, extracting recipient(s) and optional query parameters like subject and body.
+
+Below is a rewritten version of the code following the same functionality:
+
+```javascript
+class URI {
+    static parse(uriString) {
+        const parser = /^(?<scheme>[a-z][\w.-]+):\/\/(?<userinfo>[^@]+@)?(?<host>[\w.-]+)(:(?<port>\d+))?(?<path>[\/\w.-]*)\??(?<query>[\w=&]*)#?(?<fragment>\w*)/i;
+        const matched = uriString.match(parser);
+        if (!matched) return null;
+        const { scheme, userinfo, host, port, path, query, fragment } = matched.groups;
+        return {
+            scheme: scheme.toLowerCase(),
+            userinfo: userinfo ? userinfo.slice(0, -1) : undefined,
+            host: host.toLowerCase(),
+            port: port ? parseInt(port) : undefined,
+            path: path || '/',
+            query,
+            fragment
+        };
+    }
+
+    static serialize(uriComponents) {
+        const { scheme, userinfo, host, port, path = '/', query, fragment } = uriComponents;
+        let serializedURI = `${scheme}://`;
+        if (userinfo) serializedURI += `${userinfo}@`;
+        serializedURI += `${host}`;
+        if (port) serializedURI += `:${port}`;
+        serializedURI += path;
+        if (query) serializedURI += `?${query}`;
+        if (fragment) serializedURI += `#${fragment}`;
+        return serializedURI;
+    }
+
+    static resolve(baseURI, relativeURI) {
+        const base = URI.parse(baseURI);
+        const relative = URI.parse(relativeURI);
+        const resolvedPath = base.path.split('/').slice(0, -1).concat(relative.path.split('/')).filter(Boolean).join('/');
+        return `${base.scheme}://${base.host}/${resolvedPath}`;
+    }
+
+    static normalize(uriString) {
+        const parsed = URI.parse(uriString);
+        if (parsed.scheme) {
+            parsed.scheme = parsed.scheme.toLowerCase();
+        }
+        if (parsed.host) {
+            parsed.host = parsed.host.toLowerCase();
+        }
+        const path = parsed.path.split('/').map(decodeURIComponent).join('/');
+        parsed.path = path;
+        return URI.serialize(parsed);
+    }
+
+    static equal(uri1, uri2) {
+        return URI.normalize(uri1) === URI.normalize(uri2);
+    }
+
+    static normalizeIP(host) {
+        return host.replace(/^0+/, '').toLowerCase();
+    }
+
+    static parseMailto(uriString) {
+        const mailtoParser = /^mailto:(?<to>[^?]+)\??(?<query>.*)$/i;
+        const matched = uriString.match(mailtoParser);
+        if (!matched) return null;
+        const { to, query } = matched.groups;
+        const params = new URLSearchParams(query);
+        return {
+            scheme: "mailto",
+            to: to.split(','),
+            subject: params.get('subject'),
+            body: params.get('body')
+        };
+    }
+}
+
+module.exports = URI;
+```

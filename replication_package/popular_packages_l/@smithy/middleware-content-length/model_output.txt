@@ -1,0 +1,67 @@
+The `@smithy/middleware-content-length` package is a middleware used in the context of HTTP requests within a Node.js application. The primary function of this middleware is to calculate and set the `Content-Length` header for outgoing HTTP requests. This header indicates the size of the request body in bytes and is important for ensuring that the server receiving the request knows exactly how much data to expect.
+
+When included in an HTTP request pipeline, this middleware will inspect the request body and determine its length. It will then automatically populate the `Content-Length` header with this value before the request is sent. This functionality is useful for ensuring consistency and correctness in HTTP communications, particularly in scenarios where data integrity and proper resource allocation on the server side depend on accurate content length specifications.
+
+Now, here is the simple implementation of the described functionality:
+
+```javascript
+const http = require('http');
+
+/**
+ * Middleware function to calculate and set the Content-Length header for HTTP requests.
+ * @param {Object} request - The HTTP request object
+ * @param {Function} next - The next middleware function in the stack
+ */
+function contentLengthMiddleware(request, next) {
+  if (request.body && !request.headers['Content-Length']) {
+    // Convert body to a Buffer if necessary
+    let bodyBuffer;
+    if (Buffer.isBuffer(request.body)) {
+      bodyBuffer = request.body;
+    } else if (typeof request.body === 'string') {
+      bodyBuffer = Buffer.from(request.body, 'utf-8');
+    } else if (typeof request.body.pipe === 'function') {
+      // Handle streams if needed (not implemented here for simplicity)
+      throw new Error('Stream body not supported in this simple middleware implementation.');
+    } else {
+      // Convert JSON objects or other types to a string buffer
+      bodyBuffer = Buffer.from(JSON.stringify(request.body), 'utf-8');
+    }
+
+    // Set the Content-Length header
+    request.headers['Content-Length'] = bodyBuffer.length;
+  }
+
+  // Call the next middleware in the stack
+  next();
+}
+
+// Example usage of the middleware
+const request = {
+  method: 'POST',
+  headers: {},
+  body: JSON.stringify({ name: 'John Doe' })
+};
+
+const next = () => {
+  const options = {
+    method: request.method,
+    headers: request.headers,
+  };
+
+  const req = http.request('http://example.com', options, (res) => {
+    res.on('data', (d) => {
+      process.stdout.write(d);
+    });
+  });
+
+  req.on('error', (e) => {
+    console.error(e);
+  });
+
+  req.write(request.body);
+  req.end();
+};
+
+contentLengthMiddleware(request, next);
+```

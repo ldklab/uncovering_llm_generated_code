@@ -1,0 +1,66 @@
+The `makeerror` package provides a utility to create custom error constructor functions in Node.js. This utility allows for defining error types with customized messages and data, along with providing support for prototype hierarchies. Here's how the functionality breaks down:
+
+1. **Custom Error Constructors**: You can create an error constructor with a specified name and an optional default message. When an instance of this error is created, it will properly be an instance of both the custom error type and the built-in `Error`.
+
+2. **Templatized Messages**: The error messages can include placeholders, which can be replaced with actual data when the error is instantiated. This allows dynamic messages based on provided data fields.
+
+3. **Prototype Hierarchies**: You can create an error type that is a subclass of another custom error. This establishes a prototype chain that allows instances of the child error to also be instances of the parent error, supporting inheritance.
+
+Here's the code implementation:
+
+```javascript
+// makeerror.js
+module.exports = function makeError(name, defaultMessage, options = {}) {
+  function CustomError(messageOrData, data = {}) {
+    if (typeof messageOrData !== 'string') {
+      data = messageOrData || {};
+      messageOrData = formatMessage(defaultMessage, data);
+    }
+    let message = formatMessage(messageOrData || defaultMessage, data);
+    const error = new Error(message);
+    Object.setPrototypeOf(error, CustomError.prototype);
+    Object.assign(error, data);
+    error.name = name;
+    return error;
+  }
+
+  function formatMessage(template, data) {
+    return template.replace(/{(\w+)}/g, (_, key) => {
+      return data[key] || `{${key}}`;
+    });
+  }
+
+  CustomError.prototype = Object.create((options.proto || Error.prototype));
+  CustomError.prototype.constructor = CustomError;
+  return CustomError;
+};
+
+// Usage Example
+const makeError = require('./makeerror');
+
+// Defined Error
+const UnknownFileTypeError = makeError(
+  'UnknownFileTypeError',
+  'The specified type "{type}" is not known.'
+);
+
+const er = UnknownFileTypeError({ type: 'bmp' });
+console.log(er.message); // "The specified type "bmp" is not known."
+console.log(er instanceof UnknownFileTypeError); // true
+console.log(er instanceof Error); // true
+
+// Prototype Hierarchy
+const ParentError = makeError('ParentError');
+const ChildError = makeError(
+  'ChildError',
+  'The child error.',
+  { proto: ParentError().prototype }
+);
+
+const childErrorInstance = ChildError();
+console.log(childErrorInstance instanceof ChildError); // true
+console.log(childErrorInstance instanceof ParentError); // true
+console.log(childErrorInstance instanceof Error); // true
+```
+
+This code provides a structured approach to define and manage errors. You can specify names, messages, and inheritance structures seamlessly using the `makeError` utility.

@@ -1,0 +1,81 @@
+The given Node.js code defines a module that exports a function named `parseUrl`. Here's a breakdown of the functionality:
+
+1. **Utility Functions and Variables**:
+   - `__defProp`, `__getOwnPropDesc`, and `__getOwnPropNames` are aliases for standard JavaScript methods used to define object properties and retrieve property descriptors and names.
+   - `__name` function is used to set a configurable "name" property on a function, useful for debugging and introspection.
+   - `__export` is a utility designed to expose functions or values from a module with properties that are enumerable and can be easily accessed.
+   - `__copyProps` copies properties from one object to another, with options to skip certain properties and define property descriptors.
+   - `__toCommonJS` transforms a module object into a CommonJS-compatible format by defining the `__esModule` property.
+
+2. **Exported Function `parseUrl`**:
+   - The `parseUrl` function parses URLs. It accepts a string representing a URL or an already constructed URL object.
+   - If the input is a string, it converts it into a `URL` object.
+   - It extracts and returns the URL's components: `hostname`, `port`, `protocol`, `path`, and `query`.
+   - The `query` object is parsed using the `parseQueryString` method from the `@smithy/querystring-parser` package, imported at the top of the module.
+   - `parseUrl` is exported from the module for use elsewhere.
+
+Here’s the rewritten code:
+
+```javascript
+var defProp = Object.defineProperty;
+var getOwnPropDesc = Object.getOwnPropertyDescriptor;
+var getOwnPropNames = Object.getOwnPropertyNames;
+var hasOwnProp = Object.prototype.hasOwnProperty;
+
+// Set the name property of a function
+var setName = (target, value) => defProp(target, "name", { value, configurable: true });
+
+// Export functions or values from a module
+var exportModule = (target, all) => {
+  for (var name in all)
+    defProp(target, name, { get: all[name], enumerable: true });
+};
+
+// Copy properties from one object to another, with options
+var copyProps = (to, from, except, desc) => {
+  if (from && (typeof from === "object" || typeof from === "function")) {
+    for (let key of getOwnPropNames(from))
+      if (!hasOwnProp.call(to, key) && key !== except)
+        defProp(to, key, {
+          get: () => from[key],
+          enumerable: !(desc = getOwnPropDesc(from, key)) || desc.enumerable
+        });
+  }
+  return to;
+};
+
+// Convert a module to a CommonJS-compatible format
+var toCommonJSModule = (mod) => copyProps(defProp({}, "__esModule", { value: true }), mod);
+
+// src/index.ts
+var exports = {};
+exportModule(exports, {
+  parseUrl: () => parseUrl
+});
+module.exports = toCommonJSModule(exports);
+
+// Import necessary function
+var querystringParser = require("@smithy/querystring-parser");
+
+// Define the parseUrl function
+var parseUrl = setName((url) => {
+  if (typeof url === "string") {
+    return parseUrl(new URL(url));
+  }
+  const { hostname, pathname, port, protocol, search } = url;
+  let query;
+  if (search) {
+    query = querystringParser.parseQueryString(search);
+  }
+  return {
+    hostname,
+    port: port ? parseInt(port) : void 0,
+    protocol,
+    path: pathname,
+    query
+  };
+}, "parseUrl");
+
+// Export CommonJS module
+0 && (module.exports = { parseUrl });
+```

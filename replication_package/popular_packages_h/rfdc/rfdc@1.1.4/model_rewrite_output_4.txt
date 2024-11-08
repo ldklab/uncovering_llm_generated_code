@@ -1,0 +1,154 @@
+The provided Node.js code defines a module for performing deep cloning of JavaScript objects and arrays. The main function, `rfdc`, accepts options that influence how the cloning is performed. It differentiates between objects with circular references and regular objects, and it also provides an option to clone the prototype chain (`opts.proto`).
+
+The cloning process handles objects, arrays, and `Date` objects specifically, ensuring that `Date` instances are copied correctly. The `clone` and `cloneProto` functions within `rfdc` are used to handle the cloning depending on the `opts.proto` flag, while the functions within `rfdcCircles` handle cases where circular references might exist in the input data.
+
+```javascript
+'use strict';
+
+module.exports = function rfdc(opts = {}) {
+  if (opts.circles) return cloneWithCircles(opts);
+  return opts.proto ? clonePrototype : cloneStandard;
+
+  function cloneArray(array, cloneFunc) {
+    const keys = Object.keys(array);
+    const newArray = new Array(keys.length);
+    for (let i = 0; i < keys.length; i++) {
+      const key = keys[i];
+      const current = array[key];
+      if (typeof current !== 'object' || current === null) {
+        newArray[key] = current;
+      } else if (current instanceof Date) {
+        newArray[key] = new Date(current);
+      } else {
+        newArray[key] = cloneFunc(current);
+      }
+    }
+    return newArray;
+  }
+
+  function cloneStandard(object) {
+    if (typeof object !== 'object' || object === null) return object;
+    if (object instanceof Date) return new Date(object);
+    if (Array.isArray(object)) return cloneArray(object, cloneStandard);
+
+    const newObj = {};
+    for (const key in object) {
+      if (!Object.hasOwnProperty.call(object, key)) continue;
+      const current = object[key];
+      if (typeof current !== 'object' || current === null) {
+        newObj[key] = current;
+      } else if (current instanceof Date) {
+        newObj[key] = new Date(current);
+      } else {
+        newObj[key] = cloneStandard(current);
+      }
+    }
+    return newObj;
+  }
+
+  function clonePrototype(object) {
+    if (typeof object !== 'object' || object === null) return object;
+    if (object instanceof Date) return new Date(object);
+    if (Array.isArray(object)) return cloneArray(object, clonePrototype);
+
+    const newObj = {};
+    for (const key in object) {
+      const current = object[key];
+      if (typeof current !== 'object' || current === null) {
+        newObj[key] = current;
+      } else if (current instanceof Date) {
+        newObj[key] = new Date(current);
+      } else {
+        newObj[key] = clonePrototype(current);
+      }
+    }
+    return newObj;
+  }
+}
+
+function cloneWithCircles(opts) {
+  const refs = [];
+  const refsNew = [];
+
+  return opts.proto ? cloneProto : cloneStandard;
+
+  function cloneArray(array, cloneFunc) {
+    const keys = Object.keys(array);
+    const newArray = new Array(keys.length);
+    for (let i = 0; i < keys.length; i++) {
+      const key = keys[i];
+      const current = array[key];
+      if (typeof current !== 'object' || current === null) {
+        newArray[key] = current;
+      } else if (current instanceof Date) {
+        newArray[key] = new Date(current);
+      } else {
+        const index = refs.indexOf(current);
+        if (index !== -1) {
+          newArray[key] = refsNew[index];
+        } else {
+          newArray[key] = cloneFunc(current);
+        }
+      }
+    }
+    return newArray;
+  }
+
+  function cloneStandard(object) {
+    if (typeof object !== 'object' || object === null) return object;
+    if (object instanceof Date) return new Date(object);
+    if (Array.isArray(object)) return cloneArray(object, cloneStandard);
+
+    const newObj = {};
+    refs.push(object);
+    refsNew.push(newObj);
+    for (const key in object) {
+      if (!Object.hasOwnProperty.call(object, key)) continue;
+      const current = object[key];
+      if (typeof current !== 'object' || current === null) {
+        newObj[key] = current;
+      } else if (current instanceof Date) {
+        newObj[key] = new Date(current);
+      } else {
+        const i = refs.indexOf(current);
+        if (i !== -1) {
+          newObj[key] = refsNew[i];
+        } else {
+          newObj[key] = cloneStandard(current);
+        }
+      }
+    }
+    refs.pop();
+    refsNew.pop();
+    return newObj;
+  }
+
+  function cloneProto(object) {
+    if (typeof object !== 'object' || object === null) return object;
+    if (object instanceof Date) return new Date(object);
+    if (Array.isArray(object)) return cloneArray(object, cloneProto);
+
+    const newObj = {};
+    refs.push(object);
+    refsNew.push(newObj);
+    for (const key in object) {
+      const current = object[key];
+      if (typeof current !== 'object' || current === null) {
+        newObj[key] = current;
+      } else if (current instanceof Date) {
+        newObj[key] = new Date(current);
+      } else {
+        const i = refs.indexOf(current);
+        if (i !== -1) {
+          newObj[key] = refsNew[i];
+        } else {
+          newObj[key] = cloneProto(current);
+        }
+      }
+    }
+    refs.pop();
+    refsNew.pop();
+    return newObj;
+  }
+}
+```

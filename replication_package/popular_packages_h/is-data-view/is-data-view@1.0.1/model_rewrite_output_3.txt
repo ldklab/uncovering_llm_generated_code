@@ -1,0 +1,42 @@
+The Node.js code is designed to determine if a given object is an instance of `DataView`. It begins by importing necessary intrinsic objects and utility functions like `ArrayBuffer`, `DataView`, and a function to bind methods. The module exports a function `isDataView`, which takes an input `x` and checks if it is an object and not a typed array or any falsy value. If the browser environment or Node.js version supports accessing the `buffer` property of a `DataView` using the `callBound` method, it tries to access this property to confirm if the object is a `DataView`, catching errors to return `false` if an exception occurs. If the above method isn't possible, it checks for the presence and equality of the `getInt8` method on the object, comparing it with a newly created `DataView` as a last resort.
+
+Here is a possible rewrite of this code:
+
+```javascript
+'use strict';
+
+const GetIntrinsic = require('get-intrinsic');
+
+const $ArrayBuffer = GetIntrinsic('%ArrayBuffer%');
+const $DataView = GetIntrinsic('%DataView%', true);
+
+const callBound = require('call-bind/callBound');
+const $dataViewBuffer = callBound('DataView.prototype.buffer', true);
+
+const isTypedArray = require('is-typed-array');
+
+module.exports = function isDataView(obj) {
+	if (!obj || typeof obj !== 'object' || !$DataView || isTypedArray(obj)) {
+		return false;
+	}
+
+	if ($dataViewBuffer) {
+		try {
+			$dataViewBuffer(obj);
+			return true;
+		} catch {
+			return false;
+		}
+	}
+
+	if (
+		('getInt8' in obj) &&
+		typeof obj.getInt8 === 'function' &&
+		obj.getInt8 === new $DataView(new $ArrayBuffer(1)).getInt8
+	) {
+		return true;
+	}
+
+	return false;
+};
+```

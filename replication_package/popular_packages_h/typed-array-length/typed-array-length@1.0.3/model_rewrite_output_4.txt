@@ -1,0 +1,103 @@
+The provided Node.js code defines a function `typedArrayLength` that checks if a given value is a typed array, and if it is, it retrieves and returns the "length" property of that typed array using an appropriate getter method. Here's a breakdown of its functionality:
+
+1. **Imports and Setup:**
+   - It imports `forEach` and `callBind` utilities. The `forEach` function is used to iterate over arrays, and `callBind` is used to create bound functions.
+   - An array `typedArrays` lists all the standard typed array constructors available in JavaScript.
+
+2. **Configuration Detection:**
+   - Checks if the JavaScript environment supports `__proto__` by asserting if an empty array's prototype is `Array.prototype`.
+
+3. **Property Descriptor Fetching:**
+   - If `Object.getOwnPropertyDescriptor` is available, it is used to get the property descriptor of the "length" property from the prototype of each typed array constructor.
+   - If getter functions for "length" properties are detected, they are stored in the `getters` object for each respective typed array.
+
+4. **Handling Edge Cases:**
+   - For environments with unique behaviors (e.g., Safari and Opera), additional checks ensure the getter is properly set or define if a direct length access method should be used.
+
+5. **Application Logic:**
+   - `tryTypedArrays` is a function that attempts to use each stored getter to fetch the length of the typed array and returns the length if found.
+
+6. **Typed Array Validation:**
+   - Uses the `is-typed-array` module to validate that a given value is indeed a typed array.
+
+7. **Exported Function:**
+   - The exported function `typedArrayLength` combines the above logic to verify if a value is a typed array and to return its length using one of the configured getters or methods.
+
+Below is the refactored version of the original code:
+
+```javascript
+'use strict';
+
+const forEach = require('foreach');
+const callBind = require('call-bind');
+const isTypedArray = require('is-typed-array');
+
+const typedArrays = [
+  'Float32Array',
+  'Float64Array',
+  'Int8Array',
+  'Int16Array',
+  'Int32Array',
+  'Uint8Array',
+  'Uint8ClampedArray',
+  'Uint16Array',
+  'Uint32Array',
+  'BigInt64Array',
+  'BigUint64Array'
+];
+
+const getters = {};
+const hasProto = [].__proto__ === Array.prototype;
+const gOPD = Object.getOwnPropertyDescriptor;
+const oDP = Object.defineProperty;
+
+if (gOPD) {
+  const getLength = (x) => x.length;
+  forEach(typedArrays, (typedArray) => {
+    const constructor = global[typedArray];
+    if (typeof constructor === 'function' || typeof constructor === 'object') {
+      const Proto = constructor.prototype;
+      let descriptor = gOPD(Proto, 'length');
+      if (!descriptor && hasProto) {
+        const superProto = Proto.__proto__;
+        descriptor = gOPD(superProto, 'length');
+      }
+
+      if (descriptor?.get) {
+        getters[typedArray] = callBind(descriptor.get);
+      } else if (oDP) {
+        const arr = new constructor(2);
+        descriptor = gOPD(arr, 'length');
+        if (descriptor?.configurable) {
+          oDP(arr, 'length', { value: 3 });
+        }
+        if (arr.length === 2) {
+          getters[typedArray] = getLength;
+        }
+      }
+    }
+  });
+}
+
+const tryTypedArrays = (value) => {
+  let foundLength;
+  forEach(getters, (getter) => {
+    if (typeof foundLength !== 'number') {
+      try {
+        const length = getter(value);
+        if (typeof length === 'number') {
+          foundLength = length;
+        }
+      } catch (e) {}
+    }
+  });
+  return foundLength;
+};
+
+module.exports = function typedArrayLength(value) {
+  if (!isTypedArray(value)) {
+    return false;
+  }
+  return tryTypedArrays(value);
+};
+```

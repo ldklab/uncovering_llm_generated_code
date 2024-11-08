@@ -1,0 +1,93 @@
+The "Resolve URL Loader" is a Webpack loader designed to help manage asset resolution in complex SCSS/SASS setups. It addresses the scenario where you have SCSS files and related assets (like images) spread across various locations rather than centralized in a single directory. Here’s a summary of the key functionalities and use cases:
+
+1. **Asset Organization:** This loader assists developers who organize their SCSS and assets by feature, allowing assets to be placed next to SCSS files instead of in a single centralized directory.
+
+2. **Handling SCSS Imports:** Supports complex SASS compositions where partial SCSS files import other partials, and where asset paths might be dynamically constructed using SASS functions or `@mixin`s.
+
+3. **Resolving Paths:** Focuses on resolving fully relative paths specified in `url()` statements within the SCSS files. This loader will correct these paths, so Webpack can locate the assets even if they are in subdirectories relative to the importing SCSS file.
+
+4. **Webpack Errors Mitigation:** Addresses common Webpack errors relating to asset path resolution when using nested SCSS files.
+
+5. **Usage Configuration:** Should be used between `sass-loader` and `css-loader` in Webpack configuration, with source-maps enabled for preceding loaders.
+
+The loader doesn't require configuration but provides options for generating source maps, handling carriage returns on Windows, enabling debug mode, silencing warnings, appending a root string to absolute URIs, and custom path joining logic.
+
+```javascript
+// resolve-url-loader/index.js
+
+const path = require('path');
+const loaderUtils = require('loader-utils');
+const validateOptions = require('schema-utils');
+const schema = {
+    type: 'object',
+    properties: {
+        sourceMap: { type: 'boolean' },
+        removeCR: { type: 'boolean' },
+        debug: { type: 'boolean' },
+        silent: { type: 'boolean' },
+        root: { type: 'string' },
+        join: { instanceof: 'Function' }
+    },
+    additionalProperties: false
+};
+
+module.exports = function (source, inputSourceMap) {
+    const options = loaderUtils.getOptions(this) || {};
+    validateOptions(schema, options, 'Resolve URL Loader');
+
+    const callback = this.async();
+    const sourceMapConsumer = inputSourceMap ? new SourceMapConsumer(inputSourceMap) : null;
+
+    if (options.debug) {
+        console.info('Starting resolve-url-loader with options:', options);
+    }
+
+    const resolvedSource = source.replace(/url\(\s*['"]?([^'"\)]*)['"]?\s*\)/g, (match, url) => {
+        if (url.startsWith('http') || url.startsWith('data:')) {
+            return match;
+        }
+        
+        const dir = path.dirname(this.resourcePath);
+        const resolvedPath = path.resolve(dir, url);
+
+        if (this.fs.existsSync(resolvedPath)) {
+            const correctedUrl = path.relative(this.context, resolvedPath).replace(/\\/g, '/');
+            if (options.debug) {
+                console.info(`Resolved: ${url} -> ${correctedUrl}`);
+            }
+            return `url(${correctedUrl})`;
+        } else {
+            const warning = `Cannot resolve '${url}' in '${this.resourcePath}'`;
+            if (!options.silent) {
+                this.emitWarning(new Error(warning));
+            }
+            return match;
+        }
+    });
+
+    if (options.sourceMap && sourceMapConsumer) {
+        const sourceMapGenerator = SourceMapGenerator.fromSourceMap(sourceMapConsumer);
+        callback(null, resolvedSource, sourceMapGenerator.toJSON());
+    } else {
+        callback(null, resolvedSource);
+    }
+};
+
+// Webpack Configuration Example Usage
+
+module.exports = {
+    module: {
+        rules: [
+            {
+                test: /\.scss$/,
+                use: [
+                    { loader: 'css-loader', options: { sourceMap: true } },
+                    { loader: 'resolve-url-loader', options: { sourceMap: true, debug: true } },
+                    { loader: 'sass-loader', options: { sourceMap: true } }
+                ]
+            }
+        ]
+    }
+};
+```
+In the above code, we define a Webpack loader that resolves asset paths within SCSS files by adjusting them to be relative to a project context rather than relative to the SCSS file location. It does this by parsing the `url()` functions and checking if the asset exists in the filesystem, then replacing the paths accordingly. The loader is configurable to support source maps, debugging, and different handling of paths on various operating systems.

@@ -1,0 +1,39 @@
+The functionality of the provided Node.js code is to create a custom exit function that ensures all specified output streams are fully drained (i.e., all data has been written) before the process exits. The function takes an `exitCode` and an optional array of `streams` (defaulting to `process.stdout` and `process.stderr`). It monitors the `bufferSize` of each stream to determine if it's fully drained; if not drained, it writes an empty string to the stream and waits for the callback, which increments the `drainCount`. The process will exit with the specified `exitCode` only after all streams are confirmed to be drained. Additionally, it includes a workaround for Windows, where it ensures the correct exitCode is used when shutting down the program.
+
+Here's a possible rewrite of the code:
+
+```javascript
+'use strict';
+
+module.exports = function customExit(exitCode, streams = [process.stdout, process.stderr]) {
+  let drainedStreamsCount = 0;
+
+  function checkAllStreamsDrained() {
+    if (drainedStreamsCount === streams.length) {
+      process.exit(exitCode);
+    }
+  }
+
+  streams.forEach((stream) => {
+    if (stream.bufferSize === 0) {
+      drainedStreamsCount++;
+    } else {
+      stream.write('', 'utf-8', () => {
+        drainedStreamsCount++;
+        checkAllStreamsDrained();
+      });
+    }
+
+    // Override write to prevent further data writing to the stream.
+    stream.write = function() {};
+  });
+
+  // Check if already drained at the start.
+  checkAllStreamsDrained();
+
+  // Ensures the correct exit code on Windows systems.
+  process.on('exit', () => {
+    process.exit(exitCode);
+  });
+};
+```

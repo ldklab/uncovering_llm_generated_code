@@ -1,0 +1,85 @@
+The `EventEmitter3` package described above is a high-performance implementation of an event management system for Node.js and browsers, providing a fast alternative to the built-in Node.js `EventEmitter`. Here’s a breakdown of its functionality:
+
+1. **Compatibility and Performance**: It maintains compatibility with Node.js's `EventEmitter` but eliminates some features to enhance performance. It is micro-optimized to provide one of the fastest event emitters available.
+
+2. **Feature Differences**:
+   - **No Domain Support**: It omits the support for domains.
+   - **Error Event**: Unlike Node.js's `EventEmitter`, it does not throw an error when no listener is attached for an emitted `error` event.
+   - **Listener Events**: Removes the `newListener` and `removeListener` events which are considered less commonly necessary.
+   - **Max Listeners Methods Removed**: The `setMaxListeners`, `getMaxListeners`, `prependListener`, and `prependOnceListener` methods are not available.
+   - **Context Support**: Supports a custom context without needing to bind functions to achieve a custom `this` value during emission. The `on`, `once`, and `removeListener` methods accept an extra `context` parameter.
+   - **Remove Listener**: The `removeListener` method is enhanced to remove all matching listeners instead of just the first occurrence.
+
+3. **Usage**:
+   - You can create instances of `EventEmitter3` and use them similarly to Node.js's `EventEmitter`.
+   - The `context` argument allows specifying what `this` should refer to when a listener is called.
+
+The primary purpose of `EventEmitter3` is to serve as a faster, drop-in replacement for existing event emitters with some API restrictions and additional functionality, such as custom context for event handlers.
+
+Here's how you would implement EventEmitter3's functionality in a single Node.js file:
+
+```js
+class EventEmitter {
+  constructor() {
+    this.events = {};
+  }
+
+  on(event, fn, context = null) {
+    if (!this.events[event]) this.events[event] = [];
+    this.events[event].push({ fn, context });
+    return this;
+  }
+
+  once(event, fn, context = null) {
+    const self = this;
+    function handler() {
+      self.removeListener(event, handler);
+      fn.apply(context, arguments);
+    }
+    handler.fn = fn; 
+    this.on(event, handler, context);
+    return this;
+  }
+
+  emit(event, ...args) {
+    if (!this.events[event]) return false;
+    this.events[event].forEach(listener => {
+      listener.fn.apply(listener.context, args);
+    });
+    return true;
+  }
+
+  removeListener(event, fn, context = null) {
+    if (!this.events[event]) return this;
+
+    this.events[event] = this.events[event].filter(listener => {
+      return listener.fn !== fn || listener.context !== context;
+    });
+
+    return this;
+  }
+
+  removeAllListeners(event) {
+    if (event) {
+      delete this.events[event];
+    } else {
+      this.events = {};
+    }
+    return this;
+  }
+}
+
+module.exports = EventEmitter;
+
+// Usage example
+const EE = new EventEmitter();
+const context = { foo: 'bar' };
+
+function listener() {
+  console.log(this === context); // true
+}
+
+EE.once('my-event', listener, context);
+EE.emit('my-event');  // Logs: true
+EE.emit('my-event');  // Does nothing as it's once
+```

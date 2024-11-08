@@ -1,0 +1,57 @@
+The Node.js code defines a plugin for the AJV (Another JSON Validator) library that adds additional format validation to AJV's validations. The plugin supports two modes: "full" and "fast", selecting between two different sets of formats. The plugin can accept either an array of formats or an options object to define the mode and whether to add specific validation keywords.
+
+- `formatsPlugin` is the main function that registers the formats with an AJV instance. It checks the type of the options passed. If an array is provided, it adds full formats to AJV. If an object is provided, it selects formats based on the mode ("fast" or "full"). It also conditionally adds keywords using a separate module `limit`.
+- `formatsPlugin.get` is a utility function to retrieve specific format validations by name depending on the mode.
+- `addFormats` is a helper function that takes the AJV instance, a list of format names, format definitions, and an export name. It adds the formats to AJV using the `addFormat` method.
+- The module exports `formatsPlugin` as both the default export and a CommonJS-style export for compatibility.
+
+Here's a possible rewritten version of the initial code:
+
+```javascript
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+
+const { fullFormats, fastFormats, formatNames } = require("./formats");
+const applyLimit = require("./limit").default;
+const { Name, _ } = require("ajv/dist/compile/codegen");
+
+const fullName = new Name("fullFormats");
+const fastName = new Name("fastFormats");
+
+const formatsPlugin = (ajv, opts = { keywords: true }) => {
+    if (Array.isArray(opts)) {
+        addFormats(ajv, opts, fullFormats, fullName);
+        return ajv;
+    }
+
+    const [selectedFormats, exportName] = opts.mode === "fast" ? [fastFormats, fastName] : [fullFormats, fullName];
+    const list = opts.formats || formatNames;
+    addFormats(ajv, list, selectedFormats, exportName);
+
+    if (opts.keywords) applyLimit(ajv);
+    return ajv;
+};
+
+formatsPlugin.get = (name, mode = "full") => {
+    const selectedFormats = mode === "fast" ? fastFormats : fullFormats;
+    const format = selectedFormats[name];
+
+    if (!format) {
+        throw new Error(`Unknown format "${name}"`);
+    }
+    return format;
+};
+
+function addFormats(ajv, list, formats, exportName) {
+    var _a, _b;
+    (_a = (_b = ajv.opts.code).formats) === null || _a === void 0 ? _a : (_b.formats = _`require("ajv-formats/dist/formats").${exportName}`);
+
+    for (const format of list) {
+        ajv.addFormat(format, formats[format]);
+    }
+}
+
+module.exports = exports = formatsPlugin;
+exports.default = formatsPlugin;
+```
+

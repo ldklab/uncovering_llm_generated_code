@@ -1,0 +1,176 @@
+The provided Node.js code is a module that defines a Babel plugin for automatic polyfilling using `core-js`. This plugin helps facilitate the use of newer JavaScript features that may not be supported in older environments by automatically injecting appropriate polyfills during code transformation. Here's a breakdown of its functionalities:
+
+1. **Ecosystem Setup**: It imports necessary modules such as `core-js-compat` and Babel utilities to aid in determining what polyfills are required.
+
+2. **Polyfill Provider Initialization**: The primary export is initialized using `@babel/helper-define-polyfill-provider`, which sets the foundation for managing polyfills in Babel.
+
+3. **Configuration Options**: It configures options like which version of `core-js` to use, proposal schemes, and other user-defined settings.
+
+4. **Polyfill Management**: The plugin determines if specific polyfills need to be injected (globally or in a "pure" fashion) using helper functions. This is based on the appearance of certain JavaScript features in the code.
+
+5. **Webpack Handling**: There is special handling for when this plugin is used with Webpack, considering dynamic imports and async functions.
+
+6. **Visitor Implementation**: It provides various visitor functions that determine the usage of different JavaScript features (like async functions, for-of loops, etc.) to decide which polyfills are necessary and inject them into the output code accordingly.
+
+7. **Filtering and Debugging**: Features a mechanism for filtering applicable polyfills through functions like `filterPolyfills` and supports debugging by logging information when polyfills are injected.
+
+Here's a possible rewrite of the code:
+
+```javascript
+"use strict";
+
+exports.__esModule = true;
+exports.default = void 0;
+
+const coreJsCompatData = require("core-js-compat/data").default;
+const shippedProposals = require("./shipped-proposals").default;
+const getModulesListForTargetVersion = require("core-js-compat/get-modules-list-for-target-version").default;
+const { BuiltIns, StaticProperties, InstanceProperties, CommonInstanceDependencies, PromiseDependencies, PromiseDependenciesWithIterators, CommonIterators } = require("./built-in-definitions");
+const { types, helperDefinePolyfillProvider } = require("@babel/core");
+const { coreJSModule, isCoreJSSource, callMethod } = require("./utils");
+
+const babelPluginCoreJS3 = helperDefinePolyfillProvider((babelAPI, options) => {
+  const { getUtils, method, shouldInjectPolyfill, createMetaResolver, debug, babel } = babelAPI;
+  const { version = 3, proposals, shippedProposals: sp } = options;
+  
+  const isWebpack = babel.caller((caller) => caller?.name === "babel-loader");
+  const resolve = createMetaResolver({
+    global: BuiltIns,
+    static: StaticProperties,
+    instance: InstanceProperties,
+  });
+
+  const available = new Set(getModulesListForTargetVersion(version));
+  const coreJSPureBase = proposals ? "core-js-pure/features" : "core-js-pure/stable";
+
+  const maybeInjectGlobal = (names, utils) => {
+    names.forEach((name) => {
+      if (shouldInjectPolyfill(name)) {
+        debug(name);
+        utils.injectGlobalImport(coreJSModule(name));
+      }
+    });
+  };
+
+  const maybeInjectPure = (desc, hint, utils, object) => {
+    if (desc.pure && (!object || !desc.exclude?.includes(object)) && shouldInjectPolyfill(desc.name)) {
+      return utils.injectDefaultImport(`${coreJSPureBase}/${desc.pure}.js`, hint);
+    }
+  };
+
+  return {
+    name: "corejs3",
+    polyfills: coreJsCompatData,
+
+    filterPolyfills(name) {
+      if (!available.has(name)) return false;
+      return proposals || method === "entry-global" || 
+             (sp && shippedProposals.has(name)) || 
+             !name.startsWith("esnext.");
+    },
+
+    entryGlobal(meta, utils, path) {
+      if (meta.kind !== "import") return;
+
+      const modules = isCoreJSSource(meta.source);
+      if (!modules) return;
+
+      if (modules.length === 1 && meta.source === coreJSModule(modules[0]) && shouldInjectPolyfill(modules[0])) {
+        debug(null);
+        return;
+      }
+
+      maybeInjectGlobal(modules, utils);
+      path.remove();
+    },
+
+    usageGlobal(meta, utils) {
+      const resolved = resolve(meta);
+      if (!resolved) return;
+
+      let { global: deps } = resolved.desc;
+
+      if (resolved.kind !== "global" && meta.object && meta.placement === "prototype") {
+        const objName = meta.object.toLowerCase();
+        deps = deps.filter((m) => m.includes(objName) || CommonInstanceDependencies.has(m));
+      }
+
+      maybeInjectGlobal(deps, utils);
+    },
+
+    usagePure(meta, utils, path) {
+      if (meta.kind === "in") {
+        if (meta.key === "Symbol.iterator") {
+          path.replaceWith(types.callExpression(utils.injectDefaultImport(coreJSModule("is-iterable"), "isIterable"), [path.node.right]));
+        }
+        return;
+      }
+
+      let isCall;
+
+      if (meta.kind === "property") {
+        if (!path.isMemberExpression() || !path.isReferenced()) return;
+        isCall = path.parentPath.isCallExpression({ callee: path.node });
+
+        if (meta.key === "Symbol.iterator") {
+          if (!shouldInjectPolyfill("es.symbol.iterator")) return;
+
+          const id = isCall 
+            ? utils.injectDefaultImport(coreJSModule("get-iterator-method"), "getIteratorMethod") 
+            : utils.injectDefaultImport(coreJSModule("get-iterator"), "getIterator");
+          
+          path.replaceWith(types.callExpression(id, isCall ? [path.node.object] : [path.object]));
+          return;
+        }
+      }
+
+      const resolved = resolve(meta);
+      if (!resolved) return;
+
+      const { kind, desc } = resolved;
+      const id = maybeInjectPure(desc, kind === "instance" ? `${resolved.name}InstanceProperty` : resolved.name, utils, meta.object);
+
+      if (!id) return;
+
+      if (kind === "global" || kind === "static") {
+        path.replaceWith(id);
+      } else if (kind === "instance") {
+        isCall ? callMethod(path, id) : path.replaceWith(types.callExpression(id, [path.node.object]));
+      }
+    },
+
+    visitor: method === "usage-global" && {
+      CallExpression(path) {
+        if (path.get("callee").isImport()) {
+          const utils = getUtils(path);
+          maybeInjectGlobal(isWebpack ? PromiseDependenciesWithIterators : PromiseDependencies, utils);
+        }
+      },
+
+      Function(path) {
+        if (path.node.async) {
+          maybeInjectGlobal(PromiseDependencies, getUtils(path));
+        }
+      },
+
+      "ForOfStatement|ArrayPattern"(path) {
+        maybeInjectGlobal(CommonIterators, getUtils(path));
+      },
+
+      SpreadElement(path) {
+        if (!path.parentPath.isObjectExpression()) {
+          maybeInjectGlobal(CommonIterators, getUtils(path));
+        }
+      },
+
+      YieldExpression(path) {
+        if (path.node.delegate) {
+          maybeInjectGlobal(CommonIterators, getUtils(path));
+        }
+      }
+    }
+  };
+});
+
+exports.default = babelPluginCoreJS3;
+```

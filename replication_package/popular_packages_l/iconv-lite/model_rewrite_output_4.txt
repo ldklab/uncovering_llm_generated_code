@@ -1,0 +1,61 @@
+The Node.js code defines a simple implementation of character encoding conversion functionality, similar to what the `iconv-lite` library provides. It offers methods to encode and decode buffers and strings, check encoding existence, and create encoding/decoding transform streams. Here's a breakdown of the main components:
+
+1. **Encodings Map**: Maps simplified encoding names to standard encoding names.
+2. **IconvLite Class**: Contains static methods for encoding, decoding, checking encoding existence, and creating transform streams.
+   - **`decode`**: Converts a buffer to a string using a specified encoding, with support for encoding alias.
+   - **`encode`**: Converts a string to a buffer using a specified encoding, with support for encoding alias.
+   - **`encodingExists`**: Checks if a given encoding is supported based on the encodings map.
+   - **`decodeStream`**: Returns a transform stream that decodes chunks using a specified encoding.
+   - **`encodeStream`**: Returns a transform stream that encodes chunks to a specified encoding.
+3. **Module Export**: The `iconvLite` object is exported for use in other parts of a Node.js application.
+
+Below is a possible rewrite of the code:
+
+```javascript
+const { Transform } = require('stream');
+
+class IconvLite {
+    static ENCODINGS = {
+        'win1251': 'cp1251',
+        'utf8': 'utf-8',
+        'ucs2': 'utf-16le',
+        'ascii': 'ascii'
+    };
+
+    static decode(buffer, encoding) {
+        const normalizedEncoding = IconvLite.ENCODINGS[encoding.toLowerCase()] || encoding;
+        return buffer.toString(normalizedEncoding);
+    }
+
+    static encode(string, encoding) {
+        const normalizedEncoding = IconvLite.ENCODINGS[encoding.toLowerCase()] || encoding;
+        return Buffer.from(string, normalizedEncoding);
+    }
+
+    static encodingExists(encoding) {
+        return !!IconvLite.ENCODINGS[encoding.toLowerCase()];
+    }
+
+    static decodeStream(encoding) {
+        const normalizedEncoding = IconvLite.ENCODINGS[encoding.toLowerCase()] || encoding;
+        return new Transform({
+            transform(chunk, _, callback) {
+                this.push(chunk.toString(normalizedEncoding));
+                callback();
+            }
+        });
+    }
+
+    static encodeStream(encoding) {
+        const normalizedEncoding = IconvLite.ENCODINGS[encoding.toLowerCase()] || encoding;
+        return new Transform({
+            transform(chunk, _, callback) {
+                this.push(Buffer.from(chunk.toString(), normalizedEncoding));
+                callback();
+            }
+        });
+    }
+}
+
+module.exports = (() => IconvLite)();
+```

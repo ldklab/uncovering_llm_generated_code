@@ -1,0 +1,92 @@
+The Node.js code is a module that determines the `byteLength` of a given typed array instance. Here's a breakdown of its functionality:
+
+1. **Imports and Utilities**:
+   - It imports various utility modules such as `call-bind`, `for-each`, `gopd`, and others.
+   - It determines the available typed array constructors via `available-typed-arrays` and checks if the environment supports prototypes using `has-proto`.
+
+2. **Type Definitions**:
+   - It defines TypeScript type annotations for typed arrays and corresponding names for better code clarity and type-checking.
+
+3. **Getter Functions**:
+   - It creates a `getters` object to map typed array names to their `byteLength` getter functions.
+   - If the environment provides `Object.getOwnPropertyDescriptor` (`gOPD`), it will define a function `getByteLength` to get the `byteLength` of arrays.
+   - For each available typed array, it checks if the `byteLength` property has a getter at the prototype or super prototype levels. If so, it binds the getter using `call-bind`.
+   - If instances have a `byteLength` property (but no getter), it defines it directly for engines with a magic `byteLength` data property.
+
+4. **Byte Length Extraction**:
+   - A function `tryTypedArrays` is defined to iterate over registered getters and return the byte length if available.
+
+5. **Exported Function**:
+   - The main function `typedArrayByteLength` checks if the input is a valid typed array using `isTypedArray`. If it is, it uses `tryTypedArrays` to return the byte length; otherwise, it returns `false`.
+
+Here's the rewritten code:
+
+```javascript
+'use strict';
+
+const callBind = require('call-bind');
+const forEach = require('for-each');
+const gOPD = require('gopd');
+const hasProto = require('has-proto')();
+const isTypedArray = require('is-typed-array');
+
+const typedArrays = require('available-typed-arrays')();
+
+// Object storing getters for byteLength of each TypedArray type
+const getters = {};
+
+const oDP = Object.defineProperty;
+
+if (gOPD) {
+    const getByteLength = (x) => x.byteLength;
+
+    forEach(typedArrays, (typedArray) => {
+        if (typeof global[typedArray] === 'function' || typeof global[typedArray] === 'object') {
+            const Proto = global[typedArray].prototype;
+            let descriptor = gOPD(Proto, 'byteLength');
+
+            if (!descriptor && hasProto) {
+                const superProto = Proto.__proto__;
+                descriptor = gOPD(superProto, 'byteLength');
+            }
+
+            if (descriptor && descriptor.get) {
+                getters[typedArray] = callBind(descriptor.get);
+            } else if (oDP) {
+                const arr = new global[typedArray](2);
+                descriptor = gOPD(arr, 'byteLength');
+                
+                if (descriptor && descriptor.configurable) {
+                    oDP(arr, 'length', { value: 3 });
+                }
+                
+                if (arr.length === 2) {
+                    getters[typedArray] = getByteLength;
+                }
+            }
+        }
+    });
+}
+
+const tryTypedArrays = (value) => {
+    let foundByteLength;
+    forEach(getters, (getter) => {
+        if (typeof foundByteLength !== 'number') {
+            try {
+                const byteLength = getter(value);
+                if (typeof byteLength === 'number') {
+                    foundByteLength = byteLength;
+                }
+            } catch (e) {}
+        }
+    });
+    return foundByteLength;
+};
+
+module.exports = function typedArrayByteLength(value) {
+    if (!isTypedArray(value)) {
+        return false;
+    }
+    return tryTypedArrays(value);
+};
+```

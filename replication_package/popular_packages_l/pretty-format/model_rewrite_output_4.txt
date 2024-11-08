@@ -1,0 +1,100 @@
+The provided Node.js code is an implementation of a pretty formatter, which is used to convert JavaScript values into a human-readable string format. The code handles various types of values, such as arrays, objects, and primitive types like strings, numbers, and functions. It also supports custom formatting with plugins. Here's a detailed explanation of its functionality:
+
+1. **Default Theme:** Sets default colors for different parts of the string representation, although these colors are not actively used in the formatting functions provided.
+
+2. **Format Function:** The main entry point of the code, which takes a value and optional configuration settings. By default, it formats the value with an indentation of 2 spaces and prints function names.
+
+3. **Stringify Function:** A recursive function that traverses through the value to format each type appropriately. It handles circular references by marking them as `[Circular]`.
+
+4. **Format Array and Format Object:** Helper functions for formatting arrays and objects. Arrays are formatted with each element on a new line with increased indentation. Objects are formatted with each key-value pair on a new line with increased indentation.
+
+5. **Format Primitive:** Converts primitive values to strings. Special handling is provided for strings, numbers, booleans, functions, and `null`.
+
+6. **Custom Plugin Support:** Demonstrates how you can create a custom plugin to handle specific value types. In this case, the plugin formats functions with their name and argument count.
+
+7. **Plugin Integration:** Shows an example of using the formatter with a custom plugin to format an object containing function properties. The custom plugin changes how functions are represented in the output.
+
+Here's a possible simplified and organized rewrite of this code:
+
+```javascript
+const defaultTheme = {
+  comment: 'gray',
+  content: 'reset',
+  prop: 'yellow',
+  tag: 'cyan',
+  value: 'green',
+};
+
+function format(value, options = {}) {
+  options = { indent: 2, printFunctionName: true, ...options };
+  return stringify(value, options, '', 0, []);
+}
+
+function stringify(value, options, indentation, depth, refs) {
+  if (refs.includes(value)) return `[Circular]`;
+
+  if (Array.isArray(value)) {
+    return formatArray(value, options, indentation, depth, refs);
+  } else if (typeof value === 'object' && value !== null) {
+    refs.push(value);
+    return formatObject(value, options, indentation, depth, refs);
+  } else {
+    return formatPrimitive(value, options);
+  }
+}
+
+function formatArray(array, options, indentation, depth, refs) {
+  const newIndentation = indentation + ' '.repeat(options.indent);
+  const elements = array.map(
+    item => newIndentation + stringify(item, options, newIndentation, depth + 1, refs)
+  );
+  return `[\n${elements.join(',\n')}\n${indentation}]`;
+}
+
+function formatObject(object, options, indentation, depth, refs) {
+  const newIndentation = indentation + ' '.repeat(options.indent);
+  const entries = Object.entries(object).map(
+    ([key, value]) => 
+      `${newIndentation}${JSON.stringify(key)}: ${stringify(value, options, newIndentation, depth + 1, refs)}`
+  );
+  return `{\n${entries.join(',\n')}\n${indentation}}`;
+}
+
+function formatPrimitive(value, options) {
+  if (value === null) {
+    return 'null';
+  }
+  switch (typeof value) {
+    case 'string':
+      return JSON.stringify(value);
+    case 'number':
+    case 'boolean':
+      return String(value);
+    case 'function':
+      return options.printFunctionName && value.name ? `[Function ${value.name}]` : '[Function]';
+    default:
+      return String(value);
+  }
+}
+
+module.exports = { format };
+
+const customPlugin = {
+  test(val) {
+    return typeof val === 'function';
+  },
+  serialize(val) {
+    return `[Function ${val.name || 'anonymous'} ${val.length}]`;
+  }
+};
+
+const { format: prettyFormat } = require('./pretty-format');
+const val = {
+  onClick: function(event) {},
+  render: function() {},
+};
+
+console.log(prettyFormat(val, {
+  plugins: [customPlugin]
+}));
+```

@@ -1,0 +1,86 @@
+The `tree-kill` package provides functionality to terminate a given process and all of its child processes. It is designed to work across different operating systems including Linux, macOS (Darwin), and Windows. Here's a breakdown of its features:
+
+- **Basic Functionality**: The core function allows you to kill a process tree by specifying the PID (process ID). By default, it sends the SIGTERM signal, but you can specify different signals such as SIGKILL.
+  
+- **Cross-Platform Support**:
+  - **Linux**: Uses `ps` command to list child processes and then kills them.
+  - **macOS**: Uses `pgrep` to identify child processes based on parent PID.
+  - **Windows**: Uses the `taskkill` command to terminate the process tree.
+  
+- **Callback Support**: Users can provide a callback function to be executed after the killing process completes. This callback receives an error if one occurs during the execution.
+
+- **Command-Line Interface**: When installed globally, `tree-kill` can be used as a command-line tool to kill processes directly from the terminal.
+
+- **Security and Improvements**: The package has undergone updates to improve security, add TypeScript definitions, and included a command-line tool.
+
+Here's the implementation of the described functionality in a Node.js package:
+
+```javascript
+// tree-kill.js
+const { exec } = require('child_process');
+
+function treeKill(pid, signal = 'SIGTERM', callback) {
+  if (typeof signal === 'function') {
+    callback = signal;
+    signal = 'SIGTERM';
+  }
+
+  if (typeof callback !== 'function') {
+    callback = function() {};
+  }
+
+  // Sanitize input to avoid code injection vulnerability
+  pid = parseInt(pid, 10);
+  if (isNaN(pid)) {
+    return process.nextTick(() => callback(new Error('Invalid PID')));
+  }
+
+  const platform = process.platform;
+  let cmd;
+
+  if (platform === 'win32') {
+    // Windows command to kill a process tree
+    cmd = `taskkill /pid ${pid} /T /F`;
+  } else if (platform === 'darwin') {
+    // MacOS command to find and kill child processes
+    cmd = `pgrep -P ${pid} | xargs kill -s ${signal}`;
+  } else if (platform === 'linux') {
+    // Linux command to find and kill child processes
+    cmd = `ps -o pid --no-headers --ppid ${pid} | xargs kill -s ${signal}`;
+  } else {
+    return process.nextTick(() => callback(new Error('Unsupported platform')));
+  }
+
+  exec(cmd, (err, stdout, stderr) => {
+    if (err) {
+      return callback(err);
+    }
+    exec(`kill -s ${signal} ${pid}`, callback);
+  });
+}
+
+module.exports = treeKill;
+
+// CLI Interface
+if (require.main === module) {
+  const args = process.argv.slice(2);
+  if (args.length < 1) {
+    console.error('Usage: tree-kill <pid> [signal]');
+    process.exit(1);
+  }
+
+  const pid = args[0];
+  const signal = args[1] || 'SIGTERM';
+
+  treeKill(pid, signal, (err) => {
+    if (err) {
+      console.error(`Failed to kill process tree with PID ${pid}:`, err);
+      process.exit(1);
+    } else {
+      console.log(`Successfully killed process tree with PID ${pid}`);
+    }
+  });
+}
+```
+
+This implementation provides the functionality as described, making it possible to kill processes and their children across different operating systems using Node.js.

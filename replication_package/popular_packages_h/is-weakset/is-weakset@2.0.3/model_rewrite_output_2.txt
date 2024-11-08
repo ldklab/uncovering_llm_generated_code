@@ -1,0 +1,47 @@
+```javascript
+'use strict';
+
+var GetIntrinsic = require('get-intrinsic');
+var callBound = require('call-bind/callBound');
+
+// Get the intrinsic WeakSet constructor, if available
+var $WeakSet = GetIntrinsic('%WeakSet%', true);
+
+// Get the intrinsic methods if available
+var $setHas = callBound('WeakSet.prototype.has', true);
+
+if ($setHas) {
+    var $mapHas = callBound('WeakMap.prototype.has', true);
+
+    // Export a function to check if an object is a WeakSet
+    module.exports = function isWeakSet(x) {
+        // Check if `x` is not an object
+        if (!x || typeof x !== 'object') {
+            return false;
+        }
+        try {
+            // Try using the WeakSet's `has` method on `x`
+            $setHas(x, $setHas);
+            if ($mapHas) {
+                try {
+                    // If WeakMap's `has` method exists, use it to further check `x`
+                    $mapHas(x, $mapHas);
+                } catch (e) {
+                    // If using WeakMap's `has` method throws, `x` is a WeakSet
+                    return true;
+                }
+            }
+            // Check if `x` is an instance of WeakSet
+            return x instanceof $WeakSet; // core-js workaround, pre-v3
+        } catch (e) {}
+        // Any errors mean `x` is not a WeakSet
+        return false;
+    };
+} else {
+    // Export a function that returns false if WeakSet is not available
+    module.exports = function isWeakSet(x) {
+        // `WeakSet` does not exist, or does not have a `has` method
+        return false;
+    };
+}
+```

@@ -1,0 +1,192 @@
+The provided Node.js code is a partial implementation of the CSSOM (CSS Object Model) library, specifically focusing on the `CSSStyleDeclaration` object, which represents a CSS declaration block. This block allows for the storage, access, modification, and removal of CSS properties and their values within a JavaScript environment. The code includes a custom constructor `CSSStyleDeclaration` that initializes internal properties that store CSS styles and their priorities. 
+
+Key functionalities include:
+
+1. **Adding and Removing CSS Properties:** 
+   - `setProperty(name, value, priority)`: Adds a CSS property to the declaration block, or updates its value if it already exists. Handles both standard and custom (`--*`) CSS properties.
+   - `removeProperty(name)`: Removes a specified CSS property from the declaration block and returns its previous value.
+
+2. **Property Value and Priority Handling:**
+   - `getPropertyValue(name)`: Retrieves the value of a specified CSS property.
+   - `getPropertyPriority(name)`: Returns the priority of a specified CSS property, or an empty string if it has none.
+
+3. **Utility Methods:**
+   - Methods like `item(index)`, `getPropertyCSSValue()`, `getPropertyShorthand()`, and `isPropertyImplicit()` are placeholders or provide specific functionalities related to property retrieval or manipulation.
+
+4. **Handling CSS Text:**
+   - The `cssText` property allows getting and setting the serialized form of the CSS declaration block. Setting `cssText` parses the input string and updates internal properties accordingly.
+
+5. **Helper Functions:**
+   - Properties specific to CSS are checked against predefined lists (`allProperties`, `allExtraProperties`, etc.) to ensure only recognized properties are processed. Helper modules handle parsing and conversion of property names.
+
+6. **Dynamic Property Definitions:**
+   - The code uses `Object.defineProperty` to dynamically add properties to `CSSStyleDeclaration` based on the content in `allProperties` and `allExtraProperties`.
+
+Here is a possible rewrite: 
+
+```javascript
+'use strict';
+const CSSOM = require('cssom');
+const allProperties = require('./allProperties');
+const allExtraProperties = require('./allExtraProperties');
+const implementedProperties = require('./implementedProperties');
+const { dashedToCamelCase } = require('./parsers');
+const getBasicPropertyDescriptor = require('./utils/getBasicPropertyDescriptor');
+
+class CSSStyleDeclaration {
+  constructor(onChangeCallback) {
+    this._values = {};
+    this._importants = {};
+    this._length = 0;
+    this._onChange = onChangeCallback || (() => {});
+  }
+
+  getPropertyValue(name) {
+    return this._values.hasOwnProperty(name) ? this._values[name].toString() : '';
+  }
+
+  setProperty(name, value, priority) {
+    if (value === undefined) return;
+
+    if (value === null || value === '') {
+      this.removeProperty(name);
+      return;
+    }
+
+    const isCustomProperty = name.startsWith('--');
+    if (isCustomProperty) {
+      this._setProperty(name, value, priority);
+      return;
+    }
+
+    const lowercaseName = name.toLowerCase();
+    if (!allProperties.has(lowercaseName) && !allExtraProperties.has(lowercaseName)) return;
+
+    this[lowercaseName] = value;
+    this._importants[lowercaseName] = priority;
+  }
+
+  _setProperty(name, value, priority) {
+    if (value === undefined) return;
+
+    if (value === null || value === '') {
+      this.removeProperty(name);
+      return;
+    }
+
+    if (this._values[name]) {
+      const index = Array.prototype.indexOf.call(this, name);
+      if (index < 0) {
+        this[this._length] = name;
+        this._length++;
+      }
+    } else {
+      this[this._length] = name;
+      this._length++;
+    }
+
+    this._values[name] = value;
+    this._importants[name] = priority;
+    this._onChange(this.cssText);
+  }
+
+  removeProperty(name) {
+    if (!this._values.hasOwnProperty(name)) return '';
+
+    const prevValue = this._values[name];
+    delete this._values[name];
+    delete this._importants[name];
+
+    const index = Array.prototype.indexOf.call(this, name);
+    if (index < 0) return prevValue;
+
+    Array.prototype.splice.call(this, index, 1);
+    this._onChange(this.cssText);
+    return prevValue;
+  }
+
+  getPropertyPriority(name) {
+    return this._importants[name] || '';
+  }
+
+  getPropertyCSSValue() { return; }
+
+  getPropertyShorthand() { return; }
+
+  isPropertyImplicit() { return; }
+
+  item(index) {
+    index = parseInt(index, 10);
+    return (index < 0 || index >= this._length) ? '' : this[index];
+  }
+
+  get cssText() {
+    const properties = [];
+    for (let i = 0; i < this._length; i++) {
+      const name = this[i];
+      const value = this.getPropertyValue(name);
+      let priority = this.getPropertyPriority(name);
+      priority = (priority !== '') ? ' !' + priority : '';
+
+      properties.push([name, ': ', value, priority, ';'].join(''));
+    }
+    return properties.join(' ');
+  }
+
+  set cssText(value) {
+    this._values = {};
+    Array.prototype.splice.call(this, 0, this._length);
+    this._importants = {};
+
+    try {
+      const dummyRule = CSSOM.parse('#bogus{' + value + '}').cssRules[0].style;
+      const ruleLength = dummyRule.length;
+      
+      for (let i = 0; i < ruleLength; ++i) {
+        const name = dummyRule[i];
+        this.setProperty(name, dummyRule.getPropertyValue(name), dummyRule.getPropertyPriority(name));
+      }
+      this._onChange(this.cssText);
+    } catch (err) {
+      // malformed css, do nothing
+    }
+  }
+
+  get parentRule() { return null; }
+
+  get length() { return this._length; }
+
+  set length(value) {
+    for (let i = value; i < this._length; i++) {
+      delete this[i];
+    }
+    this._length = value;
+  }
+}
+
+Object.defineProperties(CSSStyleDeclaration.prototype, {
+  parentRule: { enumerable: true, configurable: true },
+  length: { enumerable: true, configurable: true },
+  cssText: { enumerable: true, configurable: true }
+});
+
+require('./properties')(CSSStyleDeclaration.prototype);
+
+allProperties.forEach(property => {
+  if (!implementedProperties.has(property)) {
+    const declaration = getBasicPropertyDescriptor(property);
+    Object.defineProperty(CSSStyleDeclaration.prototype, property, declaration);
+    Object.defineProperty(CSSStyleDeclaration.prototype, dashedToCamelCase(property), declaration);
+  }
+});
+
+allExtraProperties.forEach(property => {
+  if (!implementedProperties.has(property)) {
+    const declaration = getBasicPropertyDescriptor(property);
+    Object.defineProperty(CSSStyleDeclaration.prototype, property, declaration);
+    Object.defineProperty(CSSStyleDeclaration.prototype, dashedToCamelCase(property), declaration);
+  }
+});
+
+exports.CSSStyleDeclaration = CSSStyleDeclaration;
+```

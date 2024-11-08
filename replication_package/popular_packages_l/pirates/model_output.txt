@@ -1,0 +1,55 @@
+The "Pirates" Node.js package provides a way to hook into the `require` function, allowing developers to modify the code of modules as they are loaded. This is useful in certain scenarios, such as transpilation (e.g., Babel) or instrumentation (e.g., Istanbul), where the code needs to be transformed before execution.
+
+Here is a breakdown of the functionality:
+
+1. **`addHook` function**: This is the core function provided by the package. It allows you to add a transformation function (hook) that takes the code of a module and potentially modifies it before it's executed. The hook function receives two arguments: the code of the module and the filename of the module.
+
+2. **Options object `opts`**:
+   - `matcher`: A predicate function that receives a filename and returns true if the file should be transformed and false otherwise. By default, it returns true for all files.
+   - `exts`: An array of file extensions (e.g., `['.js']`) that the hook should be applied to. By default, it applies to `.js` files.
+   - `ignoreNodeModules`: A boolean that, when true, ignores files within `node_modules` directories, preventing them from being transformed. The default value is true.
+
+3. **Revert functionality**: The `addHook` function returns a revert function. When called, this revert function removes the added hook, essentially "undoing" the modification to `require`.
+
+Here is the implementation for the Pirates package:
+
+```javascript
+// index.js
+const Module = require('module');
+const originalLoad = Module._load;
+
+function addHook(hook, opts = {}) {
+  const matcher = opts.matcher || (() => true);
+  const exts = opts.exts || ['.js'];
+  const ignoreNodeModules = opts.ignoreNodeModules !== undefined ? opts.ignoreNodeModules : true;
+
+  const shouldHook = (filename) => {
+    if (ignoreNodeModules && /node_modules/.test(filename)) {
+      return false;
+    }
+    return matcher(filename);
+  };
+
+  function loader(module, filename) {
+    const ext = `.${filename.split('.').pop()}`;
+    if (exts.includes(ext) && shouldHook(filename)) {
+      const _compile = module._compile;
+      module._compile = function (code, filename) {
+        const newCode = hook(code, filename);
+        return _compile.call(this, newCode, filename);
+      };
+    }
+    return originalLoad.apply(this, arguments);
+  }
+
+  Module._load = loader;
+
+  return function revert() {
+    Module._load = originalLoad;
+  };
+}
+
+module.exports.addHook = addHook;
+```
+
+To use this module, after installing via `npm install --save pirates`, you can import it and utilize the `addHook` function as specified in the usage instructions given in the README. This allows the transformation or instrumentation of module code at load time, as desired by the logic defined in the hook function.

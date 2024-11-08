@@ -1,0 +1,201 @@
+The provided Node.js code is a custom implementation of an event emitter, similar to Node.js' built-in `EventEmitter`. It allows objects to subscribe to events, emit events, and manage event listeners. Here's a breakdown of the features and functionality:
+
+1. **Storage for Events**: The `Events` constructor creates a storage object for event names and their listeners. Instead of inheriting from `Object.prototype`, it creates an object with no prototype using `Object.create(null)`, which is faster in some environments and prevents conflicts with built-in object properties.
+
+2. **Event Listener Representation**: The `EE` constructor represents individual event listeners, storing the function, context, and a flag indicating if it's a one-time listener.
+
+3. **Add Event Listener**: The `addListener` function adds a listener to a specific event. It ensures the listener is a function, creates an `EE` instance, and stores it in the `_events` object of the emitter.
+
+4. **Event Management**: 
+   - `EventEmitter.prototype.emit` emits an event, executing all associated listeners.
+   - `EventEmitter.prototype.on` and `EventEmitter.prototype.addListener` add listeners for events.
+   - `EventEmitter.prototype.once` adds one-time listeners that are removed after the first execution.
+   - `EventEmitter.prototype.removeListener` and `EventEmitter.prototype.off` remove listeners.
+   - `EventEmitter.prototype.removeAllListeners` removes all listeners for a specific event or all events.
+   - `EventEmitter.prototype.eventNames` returns the list of event names that have listeners registered.
+   - `EventEmitter.prototype.listeners` and `EventEmitter.prototype.listenerCount` return information about listeners for a given event.
+
+5. **Exports**: The `EventEmitter` is set to be exported for use as a module.
+
+Here's a possible rewrite of the code:
+
+```javascript
+'use strict';
+
+class Events {
+  constructor() {
+    if (Object.create) {
+      return Object.create(null);
+    }
+    return {};
+  }
+}
+
+class EE {
+  constructor(fn, context, once = false) {
+    this.fn = fn;
+    this.context = context;
+    this.once = once;
+  }
+}
+
+function addListener(emitter, event, fn, context, once) {
+  if (typeof fn !== 'function') {
+    throw new TypeError('The listener must be a function');
+  }
+
+  const listener = new EE(fn, context || emitter, once);
+  const evt = EventEmitter.prefixed ? EventEmitter.prefixed + event : event;
+
+  if (!emitter._events[evt]) {
+    emitter._events[evt] = listener;
+    emitter._eventsCount++;
+  } else if (!emitter._events[evt].fn) {
+    emitter._events[evt].push(listener);
+  } else {
+    emitter._events[evt] = [emitter._events[evt], listener];
+  }
+
+  return emitter;
+}
+
+function clearEvent(emitter, evt) {
+  if (--emitter._eventsCount === 0) {
+    emitter._events = new Events();
+  } else {
+    delete emitter._events[evt];
+  }
+}
+
+class EventEmitter {
+  constructor() {
+    this._events = new Events();
+    this._eventsCount = 0;
+  }
+
+  eventNames() {
+    const names = [];
+    if (this._eventsCount === 0) return names;
+
+    for (const name in this._events) {
+      if (has.call(this._events, name)) {
+        names.push(EventEmitter.prefixed ? name.slice(1) : name);
+      }
+    }
+    if (Object.getOwnPropertySymbols) {
+      return names.concat(Object.getOwnPropertySymbols(this._events));
+    }
+    return names;
+  }
+
+  listeners(event) {
+    const evt = EventEmitter.prefixed ? EventEmitter.prefixed + event : event;
+    const handlers = this._events[evt];
+    if (!handlers) return [];
+    if (handlers.fn) return [handlers.fn];
+
+    const ee = new Array(handlers.length);
+    for (let i = 0; i < handlers.length; i++) {
+      ee[i] = handlers[i].fn;
+    }
+    return ee;
+  }
+
+  listenerCount(event) {
+    const evt = EventEmitter.prefixed ? EventEmitter.prefixed + event : event;
+    const listeners = this._events[evt];
+    if (!listeners) return 0;
+    if (listeners.fn) return 1;
+    return listeners.length;
+  }
+
+  emit(event, ...args) {
+    const evt = EventEmitter.prefixed ? EventEmitter.prefixed + event : event;
+    if (!this._events[evt]) return false;
+
+    const listeners = this._events[evt];
+    if (listeners.fn) {
+      if (listeners.once) {
+        this.removeListener(event, listeners.fn, undefined, true);
+      }
+      listeners.fn.apply(listeners.context, args);
+    } else {
+      for (let i = 0; i < listeners.length; i++) {
+        if (listeners[i].once) {
+          this.removeListener(event, listeners[i].fn, undefined, true);
+        }
+        listeners[i].fn.apply(listeners[i].context, args);
+      }
+    }
+
+    return true;
+  }
+
+  on(event, fn, context) {
+    return addListener(this, event, fn, context, false);
+  }
+
+  once(event, fn, context) {
+    return addListener(this, event, fn, context, true);
+  }
+
+  removeListener(event, fn, context, once) {
+    const evt = EventEmitter.prefixed ? EventEmitter.prefixed + event : event;
+    if (!this._events[evt]) return this;
+
+    if (!fn) {
+      clearEvent(this, evt);
+      return this;
+    }
+
+    const listeners = this._events[evt];
+    if (listeners.fn) {
+      if (
+        listeners.fn === fn &&
+        (!once || listeners.once) &&
+        (!context || listeners.context === context)
+      ) {
+        clearEvent(this, evt);
+      }
+    } else {
+      const events = [];
+      for (let i = 0; i < listeners.length; i++) {
+        if (
+          listeners[i].fn !== fn ||
+          (once && !listeners[i].once) ||
+          (context && listeners[i].context !== context)
+        ) {
+          events.push(listeners[i]);
+        }
+      }
+
+      if (events.length) {
+        this._events[evt] = events.length === 1 ? events[0] : events;
+      } else {
+        clearEvent(this, evt);
+      }
+    }
+
+    return this;
+  }
+
+  removeAllListeners(event) {
+    if (event) {
+      const evt = EventEmitter.prefixed ? EventEmitter.prefixed + event : event;
+      if (this._events[evt]) clearEvent(this, evt);
+    } else {
+      this._events = new Events();
+      this._eventsCount = 0;
+    }
+    return this;
+  }
+}
+
+EventEmitter.prototype.off = EventEmitter.prototype.removeListener;
+EventEmitter.prototype.addListener = EventEmitter.prototype.on;
+EventEmitter.prefixed = typeof Object.create === 'function' ? '~' : false;
+
+if (typeof module !== 'undefined') {
+  module.exports = EventEmitter;
+}
+```

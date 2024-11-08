@@ -1,0 +1,64 @@
+The provided Node.js code defines a module that handles abstract syntax trees (AST) for JavaScript using the `ast-types` library. It implements functionalities for parsing, visiting, and printing ASTs. Here is the breakdown of what each part does:
+
+1. **Imports and Exports**: The code imports modules necessary for file operations (`fs`), AST manipulation (`ast-types`), and custom modules (`parser` and `printer`). It exports functions such as `parse`, `visit`, `print`, `prettyPrint`, and `run`.
+
+2. **Parse and Visit**: It provides functionality to parse and traverse ASTs. `parse` lets you obtain an AST from source code, while `visit` allows you to traverse and potentially modify an AST using a specified visitor pattern.
+
+3. **Print and Pretty Print**: These functions are used to print the AST back to code form. `print` attempts to retain as much of the original formatting as possible, while `prettyPrint` generates a standardized format without reusing the original style.
+
+4. **Running Transformers**: It provides a `run` function to handle transformations on JavaScript files specified via command-line arguments. The transformation involves parsing the code, applying the provided transformer function to manipulate the AST, and then outputting the modified code.
+
+Below is the rewritten code:
+
+```js
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.run = exports.prettyPrint = exports.print = exports.visit = exports.types = exports.parse = void 0;
+
+const fs = require("fs");
+const types = require("ast-types");
+exports.types = types;
+
+const { parse } = require("./lib/parser");
+exports.parse = parse;
+
+const { Printer } = require("./lib/printer");
+const { visit } = require("ast-types");
+exports.visit = visit;
+
+function print(node, options) {
+    return new Printer(options).print(node);
+}
+exports.print = print;
+
+function prettyPrint(node, options) {
+    return new Printer(options).printGenerically(node);
+}
+exports.prettyPrint = prettyPrint;
+
+function run(transformer, options) {
+    return runFile(process.argv[2], transformer, options);
+}
+exports.run = run;
+
+function runFile(path, transformer, options) {
+    fs.readFile(path, "utf-8", function (err, code) {
+        if (err) {
+            console.error(err);
+            return;
+        }
+        runString(code, transformer, options);
+    });
+}
+
+function defaultWriteback(output) {
+    process.stdout.write(output);
+}
+
+function runString(code, transformer, options) {
+    const writeback = (options && options.writeback) || defaultWriteback;
+    transformer(parse(code, options), function (node) {
+        writeback(print(node, options).code);
+    });
+}
+```

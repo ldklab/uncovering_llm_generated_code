@@ -1,0 +1,99 @@
+The provided Node.js code consists of a package.json and two JavaScript files (index.js and tests.js). It forms a small library that helps determine JavaScript feature support based on browser targets using Babel and MDN browser compatibility data.
+
+1. **package.json**: Contains metadata for the package:
+   - Name, version, and description of the package.
+   - Test script to run tests.js.
+   - Specifies MIT as the license.
+
+2. **index.js**:
+   - Imports dependencies: `browserslist` to determine which browsers a given query targets, and MDN's `browser-compat-data` to check JavaScript feature availability across different browsers.
+   - `getCompilationTargets(query)`: Uses `browserslist` to return a list of browsers that match the given query.
+   - `isFeatureSupported(feature, query)`: Checks if a specific JavaScript feature is supported by all browsers in the provided query. It throws an error if the feature is unknown.
+   - `listSupportedFeatures(query)`: Lists all features that are supported by all browsers defined in the query.
+
+3. **tests.js**:
+   - Demonstrates the usage of the functions by:
+     - Getting compilation targets for a specified query.
+     - Checking if a feature ('arrow-functions') is supported.
+     - Listing all supported features for the provided query.
+
+Here is the rewritten code block:
+
+```json
+// package.json
+{
+  "name": "@babel/helper-compilation-targets",
+  "version": "1.0.0",
+  "main": "index.js",
+  "description": "Helper functions on Babel compilation targets",
+  "scripts": {
+    "test": "node tests.js"
+  },
+  "author": "",
+  "license": "MIT"
+}
+```
+
+```javascript
+// index.js
+const browserslist = require('browserslist');
+const compatData = require('@mdn/browser-compat-data');
+const { features } = compatData.javascript;
+
+/**
+ * Get a list of compilation targets based on the provided query.
+ * @param {string} query - The browserslist query.
+ * @returns {string[]} - An array of browser targets.
+ */
+function getCompilationTargets(query) {
+  return browserslist(query);
+}
+
+/**
+ * Check if a specific JavaScript feature is supported by the given browser targets.
+ * @param {string} feature - The feature to check support for.
+ * @param {string} query - The browserslist query.
+ * @returns {boolean} - True if supported, otherwise false.
+ */
+function isFeatureSupported(feature, query) {
+  const targets = getCompilationTargets(query);
+  
+  if (!(feature in features)) {
+    throw new Error(`Unknown feature: ${feature}`);
+  }
+  
+  return targets.every(target => {
+    const [browser, version] = target.split(' ');
+    const supportInfo = features[feature].__compat.support[browser];
+    return supportInfo && supportInfo.version_added <= parseFloat(version);
+  });
+}
+
+/**
+ * List all the JavaScript features supported by the given browser targets.
+ * @param {string} query - The browserslist query.
+ * @returns {string[]} - An array of supported features.
+ */
+function listSupportedFeatures(query) {
+  return Object.keys(features).filter(feature => isFeatureSupported(feature, query));
+}
+
+module.exports = {
+  getCompilationTargets,
+  isFeatureSupported,
+  listSupportedFeatures
+};
+
+// tests.js
+const {
+  getCompilationTargets,
+  isFeatureSupported,
+  listSupportedFeatures
+} = require('./index');
+
+const testQuery = '> 0.25%, not dead';
+
+console.log('Compilation Targets:', getCompilationTargets(testQuery));
+console.log('Is arrow functions supported:', isFeatureSupported('arrow-functions', testQuery));
+console.log('Supported features:', listSupportedFeatures(testQuery));
+```

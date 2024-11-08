@@ -1,0 +1,144 @@
+The provided Node.js code defines an implementation of the `which` command, commonly used in Unix-like environments to locate a command or executable within the system `PATH`. This JavaScript module is designed to work on various platforms including Windows, utilizing different path delimiters and file extensions based on the operating system.
+
+### Function Breakdown:
+
+1. **Platform Detection:**
+   - The `isWindows` variable determines if the host platform is Windows using `process.platform` and environment variables `OSTYPE`.
+   - `COLON` is set accordingly to be used as a path delimiter (`;` for Windows and `:` for others).
+
+2. **Helper Functions:**
+   - `getNotFoundError(cmd)` creates a custom error indicating an executable was not found.
+   - `getPathInfo(cmd, opt)` retrieves path information such as `pathEnv`, `pathExt`, and `pathExtExe` for searching the PATH or current directory.
+     - If a command contains directory separators (slashes or backslashes), `['']` is used, bypassing PATH search to directly test the file.
+
+3. **Asynchronous `which`:**
+   - Searches for the executable in provided or default PATH environments asynchronously.
+   - Uses promises and recursive stepping through PATH directories and executable extensions.
+   - Callback `cb` processes results or returns a Promise that resolves or rejects based on search success.
+
+4. **Synchronous `whichSync`:**
+   - Performs the same search as `which` but using for-loops and direct execution testing (via `isexe.sync`) to find executables.
+   - Returns the first match found or all matches if the `all` option is set.
+
+5. **Export:**
+   - The module exports `which` as default and assigns `whichSync` to `which.sync` for synchronous usage.
+
+Here is a rewritten version of the code with the same functionality:
+
+```javascript
+const path = require('path');
+const isexe = require('isexe');
+
+const isWindows = process.platform === 'win32' || 
+                  process.env.OSTYPE === 'cygwin' || 
+                  process.env.OSTYPE === 'msys';
+
+const COLON = isWindows ? ';' : ':';
+
+const getNotFoundError = (cmd) => {
+  const err = new Error(`not found: ${cmd}`);
+  err.code = 'ENOENT';
+  return err;
+};
+
+const getPathInfo = (cmd, opt) => {
+  const colon = opt.colon || COLON;
+  const pathEnv = cmd.includes('/') || (isWindows && cmd.includes('\\')) 
+    ? [''] 
+    : [
+        ...(isWindows ? [process.cwd()] : []),
+        ...(opt.path || process.env.PATH || '').split(colon),
+      ];
+  const pathExtExe = isWindows 
+    ? opt.pathExt || process.env.PATHEXT || '.EXE;.CMD;.BAT;.COM' 
+    : '';
+  const pathExt = isWindows ? pathExtExe.split(colon) : [''];
+
+  if (isWindows && cmd.includes('.') && pathExt[0] !== '') {
+    pathExt.unshift('');
+  }
+
+  return { pathEnv, pathExt, pathExtExe };
+};
+
+const which = (cmd, opt = {}, cb) => {
+  if (typeof opt === 'function') {
+    cb = opt;
+    opt = {};
+  }
+
+  const { pathEnv, pathExt, pathExtExe } = getPathInfo(cmd, opt);
+  const found = [];
+
+  const step = (i) => new Promise((resolve, reject) => {
+    if (i === pathEnv.length) {
+      return opt.all && found.length ? resolve(found) : reject(getNotFoundError(cmd));
+    }
+
+    const ppRaw = pathEnv[i];
+    const pathPart = ppRaw.startsWith('"') && ppRaw.endsWith('"') ? ppRaw.slice(1, -1) : ppRaw;
+    const pCmd = path.join(pathPart, cmd);
+    const p = !pathPart && cmd.match(/^[.\\/]/) ? cmd.slice(0, 2) + pCmd : pCmd;
+
+    resolve(subStep(p, i, 0));
+  });
+
+  const subStep = (p, i, ii) => new Promise((resolve, reject) => {
+    if (ii === pathExt.length) {
+      return resolve(step(i + 1));
+    }
+
+    const ext = pathExt[ii];
+    isexe(p + ext, { pathExt: pathExtExe }, (er, is) => {
+      if (!er && is) {
+        if (opt.all) {
+          found.push(p + ext);
+        } else {
+          return resolve(p + ext);
+        }
+      }
+      return resolve(subStep(p, i, ii + 1));
+    });
+  });
+
+  return cb ? step(0).then(res => cb(null, res), cb) : step(0);
+};
+
+const whichSync = (cmd, opt = {}) => {
+  const { pathEnv, pathExt, pathExtExe } = getPathInfo(cmd, opt);
+  const found = [];
+
+  for (let i = 0; i < pathEnv.length; i++) {
+    const ppRaw = pathEnv[i];
+    const pathPart = ppRaw.startsWith('"') && ppRaw.endsWith('"') ? ppRaw.slice(1, -1) : ppRaw;
+    const pCmd = path.join(pathPart, cmd);
+    const p = !pathPart && cmd.match(/^[.\\/]/) ? cmd.slice(0, 2) + pCmd : pCmd;
+
+    for (let j = 0; j < pathExt.length; j++) {
+      const cur = p + pathExt[j];
+      try {
+        if (isexe.sync(cur, { pathExt: pathExtExe })) {
+          if (opt.all) {
+            found.push(cur);
+          } else {
+            return cur;
+          }
+        }
+      } catch {}
+    }
+  }
+
+  if (opt.all && found.length) {
+    return found;
+  }
+
+  if (opt.nothrow) {
+    return null;
+  }
+
+  throw getNotFoundError(cmd);
+};
+
+module.exports = which;
+which.sync = whichSync;
+```

@@ -1,0 +1,79 @@
+The provided Node.js code defines a module for parsing ES module imports and exports from JavaScript source code. Here's a functional summary of the code:
+
+1. `wasmLoaded`: A boolean flag indicating whether a dummy WebAssembly module has been loaded.
+
+2. `loadWasm()`: An asynchronous function that simulates loading a WebAssembly module. It sets `wasmLoaded` to `true` after a brief delay.
+
+3. `init()`: An asynchronous initializer function that ensures the WebAssembly module is loaded by invoking `loadWasm()` if it is not already loaded.
+
+4. `parse(source, sourcename)`: A function that takes JavaScript source code and an optional source name. It throws an error if the WebAssembly module hasn't been loaded, achieved by calling `init()` prior to `parse()`. The function then uses regular expressions to identify and extract import and export statements from the `source`.
+
+   - The function uses a regex to find export statements and captures their start and end positions in the source code.
+   - Another regex is used to find import statements, capturing the module names and positions within the source code.
+   - Returns an array with lists of discovered imports and exports, as well as flags indicating if any imports or exports were found.
+
+Here's the rewritten code following the same functionality:
+
+```javascript
+// es-module-lexer.js
+
+let wasmLoaded = false;
+
+// Dummy WebAssembly implementation for the example
+async function loadWasm() {
+  return new Promise((resolve) => {
+    setTimeout(() => {
+      wasmLoaded = true;
+      resolve();
+    }, 1);
+  });
+}
+
+// Initialize the lexer
+async function init() {
+  if (!wasmLoaded) {
+    await loadWasm();
+  }
+}
+
+// Dummy implementation of parsing logic
+function parse(source, sourcename = '') {
+  if (!wasmLoaded) {
+    throw new Error('Wasm is not initialized. Call and await `init()` first.');
+  }
+
+  const exports = [];
+  const imports = [];
+  
+  const exportRegex = /export\s+(?:var|let|const|function|class|default)\s+([a-zA-Z_$][0-9a-zA-Z_$]*)/g;
+  let match;
+
+  while ((match = exportRegex.exec(source)) !== null) {
+    exports.push({
+      s: match.index,
+      e: match.index + match[1].length,
+      ls: match.index,
+      le: match.index + match[1].length,
+    });
+  }
+
+  const importRegex = /import\s+([^;'"]+)\s+from\s+(['"])(.*?)\2/g;
+
+  while ((match = importRegex.exec(source)) !== null) {
+    imports.push({
+      s: match.index + match[1].length + 7,
+      e: match.index + match[0].length - (match[2].length + 1),
+      ss: match.index,
+      se: match.index + match[0].length,
+      n: match[3],
+      t: 1, // static by default for now
+      a: -1,
+      d: -1,
+    });
+  }
+
+  return [imports, exports, false, imports.length > 0 || exports.length > 0];
+}
+
+module.exports = { init, parse };
+```

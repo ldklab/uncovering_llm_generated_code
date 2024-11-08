@@ -1,0 +1,74 @@
+```javascript
+const http = require('http');
+const https = require('https');
+const http2 = require('http2');
+
+class NodeHttpHandler {
+  constructor() {
+    this.httpAgent = new http.Agent({});
+    this.httpsAgent = new https.Agent({});
+    this.http2SessionCache = new Map();
+  }
+
+  handle(request) {
+    return new Promise((resolve, reject) => {
+      const { protocol, hostname, port, path, method, headers, body } = request;
+      const isSecureProtocol = protocol === 'https:' || protocol === 'https2:';
+      let httpRequest;
+
+      if (isSecureProtocol) {
+        if (protocol === 'https:') {
+          const options = { hostname, port, path, method, headers, agent: this.httpsAgent };
+          httpRequest = https.request(options);
+        } else if (protocol === 'https2:') {
+          let client = this.http2SessionCache.get(hostname);
+          if (!client) {
+            client = http2.connect(`https://${hostname}:${port}`);
+            this.http2SessionCache.set(hostname, client);
+          }
+          httpRequest = client.request({ ':method': method, ':path': path, ...headers });
+        }
+      } else {
+        const options = { hostname, port, path, method, headers, agent: this.httpAgent };
+        httpRequest = http.request(options);
+      }
+
+      httpRequest.on('response', (response) => {
+        const data = [];
+        response.on('data', (chunk) => data.push(chunk));
+        response.on('end', () => {
+          resolve({
+            statusCode: response.statusCode,
+            headers: response.headers,
+            body: Buffer.concat(data),
+          });
+        });
+      });
+
+      httpRequest.on('error', (err) => reject(err));
+
+      if (body) {
+        httpRequest.write(body);
+      }
+
+      httpRequest.end();
+    });
+  }
+}
+
+module.exports = { NodeHttpHandler };
+```
+
+### Explanation:
+This Node.js code defines a class `NodeHttpHandler` that provides a method `handle(request)` to manage HTTP, HTTPS, and HTTP/2 network requests. 
+
+1. **Initialization**: In the constructor, HTTP and HTTPS agent instances are created for managing socket connections, improving the efficiency of network communication. An HTTP/2 session cache helps manage connections efficiently by storing active clients.
+
+2. **Handling Requests**: 
+   - The `handle` method takes a `request` object with properties like protocol, hostname, port, path, method, headers, and body.
+   - Depending on the protocol (`http`, `https`, or `https2`), it sets up a request using the appropriate module (`http`, `https`, or `http2`).
+   - For `https2`, it maintains a session cache, storing HTTP/2 clients by hostname, minimizing the overhead of establishing new connections.
+   - Event listeners are attached to handle `response` and `error` events. The response data is collected in chunks and resolved as a consolidated buffer after all data is received.
+   - If the request includes a body, it's written to the request stream. Finally, `httpRequest.end()` is called to dispatch the request.
+
+3. **Exporting the Class**: The module exports the `NodeHttpHandler` class, allowing it to be imported and used in other files.

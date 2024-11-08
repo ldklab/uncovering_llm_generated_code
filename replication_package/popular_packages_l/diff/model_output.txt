@@ -1,0 +1,109 @@
+The `jsdiff` package is a comprehensive text differencing library for Node.js, based on the Myers' diff algorithm. It enables users to analyze the differences between two texts or data structures and provides various utilities to handle diff operations. Here is a breakdown of its key functionalities:
+
+1. **Tokenization**: The library considers both texts as arrays of "tokens" for comparison. The definition of a token can vary:
+   - `diffChars`: Each character is a token.
+   - `diffWords`: Each word or punctuation is a token.
+   - `diffLines`: Each line is a token.
+   - Custom tokenization can be achieved by directly using `diffArrays`.
+
+2. **Diff Calculation**: The central task is determining the minimum number of single-token deletions and insertions to transform the old text's token array into the new one. Users can customize this process:
+   - Options like `ignoreCase` for case-insensitive comparison.
+   - Use of `Intl.Segmenter` for language-specific tokenization in `diffWords`.
+
+3. **Change Objects**: The result is an ordered array of change objects. Each object represents:
+   - `value`: Concatenated string of changes.
+   - `added` or `removed`: Whether tokens were added or removed.
+   - `count`: How many tokens are involved.
+
+4. **API Features**: Various API methods offer specialized diff functionalities:
+   - `diffJson`, `diffCss`, `diffSentences`: Tailored for specific content types.
+   - `createTwoFilesPatch`: Generates unified diff patches for two files.
+   - `applyPatch`, `applyPatches`: Apply diff patches to content.
+   
+5. **Customization**: Users can define custom diff behaviors, adjusting tokenization or token comparison, by extending the `Diff` object.
+
+6. **Advanced Features**: Users can create patches, apply patches, and handle diffing of advanced text structures like JSON.
+
+Here's the implementation of a simple version of this library:
+
+```javascript
+class Diff {
+  constructor() {
+    this.ignoreCase = false;
+  }
+  
+  // Tokenizes input by characters
+  tokenize(value) {
+    return [...value];
+  }
+  
+  // This is the diffing function using a simplified version of Myers' algorithm
+  diff(oldStr, newStr, options = {}) {
+    this.ignoreCase = options.ignoreCase || false;
+    const oldTokens = this.tokenize(oldStr);
+    const newTokens = this.tokenize(newStr);
+  
+    const changes = [];
+    let i = 0, j = 0;
+  
+    while (i < oldTokens.length && j < newTokens.length) {
+      if (this.equals(oldTokens[i], newTokens[j])) {
+        changes.push({ value: oldTokens[i], count: 1 });
+        i++; j++;
+      } else {
+        let oldIndex = i, newIndex = j;
+        while (oldIndex < oldTokens.length && !this.contains(newTokens, oldTokens[oldIndex])) {
+          changes.push({ value: oldTokens[oldIndex], removed: true, count: 1 });
+          oldIndex++;
+        }
+        while (newIndex < newTokens.length && !this.contains(oldTokens, newTokens[newIndex])) {
+          changes.push({ value: newTokens[newIndex], added: true, count: 1 });
+          newIndex++;
+        }
+        i = oldIndex;
+        j = newIndex;
+      }
+    }
+  
+    while (i < oldTokens.length) {
+      changes.push({ value: oldTokens[i], removed: true, count: 1 });
+      i++;
+    }
+  
+    while (j < newTokens.length) {
+      changes.push({ value: newTokens[j], added: true, count: 1 });
+      j++;
+    }
+  
+    return changes;
+  }
+  
+  equals(left, right) {
+    if (this.ignoreCase) {
+      return left.toLowerCase() === right.toLowerCase();
+    }
+    return left === right;
+  }
+  
+  contains(array, item) {
+    return array.some(element => this.equals(element, item));
+  }
+  
+  // Main diff function to expose
+  static diffChars(oldStr, newStr, options = {}) {
+    const diff = new Diff();
+    return diff.diff(oldStr, newStr, options);
+  }
+}
+
+// Example Usage
+const diff = Diff.diffChars('beep boop', 'beep boob blah', { ignoreCase: false });
+diff.forEach(part => {
+  const color = part.added ? '\x1b[32m' : part.removed ? '\x1b[31m' : '\x1b[0m';
+  process.stdout.write(`${color}${part.value}\x1b[0m`);
+});
+
+module.exports = Diff;
+```
+
+This implementation focuses on `diffChars`, illustrating tokenization by characters and handling basic diff operations. Further extension can implement other diff methods (`diffWords`, `diffLines`, etc.) and advanced diff functionalities like patch creation and application.

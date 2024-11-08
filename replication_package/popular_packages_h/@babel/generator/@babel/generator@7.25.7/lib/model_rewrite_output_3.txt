@@ -1,0 +1,100 @@
+The provided Node.js code is responsible for generating code from an abstract syntax tree (AST) with customizable formatting options. It exports two main functionalities: a `generate` function and a `CodeGenerator` class that both perform similar tasks. They normalize the options, apply formatting rules, and use a `printer` to generate the final code.
+
+Here's the breakdown of the code's functionality:
+
+1. **normalizeOptions**: This function takes the source code and options, normalizes the options, and adjusts settings for formatting, such as comments (`auxiliaryCommentBefore`, `auxiliaryCommentAfter`, `shouldPrintComment`), line retention (`retainLines`), and compact mode. It ensures that compact mode triggers on large code sizes (above 500KB). It can adjust indentation styles and JS escaping options based on user-defined settings.
+
+2. **CodeGenerator Class**: This class holds the abstract syntax tree (`_ast`), formatting configuration (`_format`) via `normalizeOptions`, and a source map (`_map`) if applicable. The `generate` method of this class uses an instance of the `Printer` (imported from `printer.js`) to generate the source code from the AST.
+
+3. **generate Function**: This function is a standalone way to generate code from an AST with given options. Like the `CodeGenerator` class, it normalizes options and creates a `Printer` instance to generate the code.
+
+Below is a possible rewrite of the Node.js code:
+
+```javascript
+"use strict";
+
+import SourceMap from "./source-map.js";
+import Printer from "./printer.js";
+
+function normalizeOptions(code, opts) {
+  const format = {
+    auxiliaryCommentBefore: opts.auxiliaryCommentBefore,
+    auxiliaryCommentAfter: opts.auxiliaryCommentAfter,
+    shouldPrintComment: opts.shouldPrintComment,
+    retainLines: opts.retainLines,
+    retainFunctionParens: opts.retainFunctionParens,
+    comments: opts.comments ?? true,
+    compact: opts.compact,
+    minified: opts.minified,
+    concise: opts.concise,
+    indent: {
+      adjustMultilineComment: true,
+      style: "  "
+    },
+    jsescOption: {
+      quotes: "double",
+      wrap: true,
+      minimal: false,
+      ...opts.jsescOption
+    },
+    topicToken: opts.topicToken,
+    importAttributesKeyword: opts.importAttributesKeyword,
+    decoratorsBeforeExport: opts.decoratorsBeforeExport,
+    jsescOptionJSON: opts.jsonCompatibleStrings,
+    recordAndTupleSyntaxType: opts.recordAndTupleSyntaxType ?? "hash",
+  };
+
+  if (format.minified) {
+    format.compact = true;
+    format.shouldPrintComment = format.shouldPrintComment || (() => format.comments);
+  } else {
+    format.shouldPrintComment = format.shouldPrintComment || (value => 
+      format.comments || value.includes("@license") || value.includes("@preserve")
+    );
+  }
+
+  if (format.compact === "auto") {
+    format.compact = typeof code === "string" && code.length > 500000;
+    if (format.compact) {
+      console.error(`[BABEL] Note: The code generator has deoptimised the styling of ${opts.filename} as it exceeds the max of 500KB.`);
+    }
+  }
+
+  if (format.compact) {
+    format.indent.adjustMultilineComment = false;
+  }
+
+  if (format.auxiliaryCommentBefore && !format.shouldPrintComment(format.auxiliaryCommentBefore)) {
+    format.auxiliaryCommentBefore = undefined;
+  }
+  if (format.auxiliaryCommentAfter && !format.shouldPrintComment(format.auxiliaryCommentAfter)) {
+    format.auxiliaryCommentAfter = undefined;
+  }
+
+  return format;
+}
+
+class CodeGenerator {
+  constructor(ast, opts = {}, code) {
+    this._ast = ast;
+    this._format = normalizeOptions(code, opts);
+    this._map = opts.sourceMaps ? new SourceMap(opts, code) : null;
+  }
+
+  generate() {
+    const printer = new Printer(this._format, this._map);
+    return printer.generate(this._ast);
+  }
+}
+
+function generate(ast, opts = {}, code) {
+  const format = normalizeOptions(code, opts);
+  const map = opts.sourceMaps ? new SourceMap(opts, code) : null;
+  const printer = new Printer(format, map);
+  return printer.generate(ast);
+}
+
+export { CodeGenerator, generate as default };
+
+//# sourceMappingURL=index.js.map
+```

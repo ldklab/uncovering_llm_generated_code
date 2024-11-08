@@ -1,0 +1,388 @@
+The original code is a Node.js module define a plugin, `MiniCssExtractPlugin`, which is used in the webpack build process. This plugin extracts CSS that is imported into JavaScript files into separate CSS files. The plugin handles options to control the output of the file, runtime options for CSS handling, and module processing to efficiently sort and manage CSS modules.
+
+### Code Explanation:
+- **Imports and Definitions:** The code imports necessary modules and utilities. It also defines multiple types and constants used throughout the plugin.
+- **Types and Interfaces:** Several typedefs are used to define the expected shape of data structures used in the plugin, including options configurations, hook registrations, and module dependencies.
+- **Core Plugin Functionality:**
+  - The `MiniCssExtractPlugin` class is instantiated to initialize configuration options.
+  - `apply()` method is invoked on the webpack compiler to tap into compiler hooks and set up the necessary handling for CSS files.
+  - The plugin uses a weak cache to manage multiple CSS module instances, avoiding redundant processing.
+  - **CssModule and CssDependency Classes:** These classes are used to represent CSS modules and their dependencies within the plugin, applying logic for serialization, caching, and update handling.
+  - **Runtime Module Handling:** Contains logic to integrate CSS loading, prefetching, preloading, and hot module replacement (HMR) capabilities into the webpack runtime.
+  - **Render Content Asset Method:** This method assembles the compiled CSS content and source maps for writing to the output files.
+  
+### Rewritten Code:
+```javascript
+"use strict";
+
+const path = require("path");
+const { validate } = require("schema-utils");
+const { SyncWaterfallHook } = require("tapable");
+const schema = require("./plugin-options.json");
+const {
+  trueFn,
+  MODULE_TYPE,
+  AUTO_PUBLIC_PATH,
+  ABSOLUTE_PUBLIC_PATH,
+  SINGLE_DOT_PATH_SEGMENT,
+  compareModulesByIdentifier,
+  getUndoPath,
+  BASE_URI,
+  compileBooleanMatcher
+} = require("./utils");
+
+// Define type hints for compiler, compilation, and webpack-related entities
+// eslint-disable-next-line no-unused-vars
+class MiniCssExtractPlugin {
+  constructor(options = {}) {
+    validate(schema, options, { baseDataPath: "options" });
+
+    this._sortedModulesCache = new WeakMap();
+    this.options = {
+      filename: "[name].css",
+      ignoreOrder: false,
+      experimentalUseImportModule: undefined,
+      runtime: true,
+      ...options
+    };
+    this.runtimeOptions = {
+      insert: options.insert,
+      linkType: typeof options.linkType === "boolean" ? "text/css" : options.linkType,
+      attributes: options.attributes
+    };
+    
+    this._setChunkFilename();
+  }
+
+  // Set chunk filename to use defaults or derive from filename
+  _setChunkFilename() {
+    if (!this.options.chunkFilename) {
+      const filename = this.options.filename;
+      if (typeof filename === "string" && filename.includes("[name]")) {
+          this.options.chunkFilename = filename;
+      } else {
+          this.options.chunkFilename = "[id].css";
+      }
+    }
+  }
+
+  // Hook into the webpack compilation process
+  apply(compiler) {
+    const webpack = compiler.webpack;
+    if (this.options.experimentalUseImportModule) {
+      compiler.options.experiments.executeModule = true;
+    }
+    
+    const CssModule = MiniCssExtractPlugin.getCssModule(webpack);
+    const CssDependency = MiniCssExtractPlugin.getCssDependency(webpack);
+
+    compiler.hooks.compilation.tap(pluginName, compilation => {
+      this._setupCompilationHooks(compilation, CssDependency, CssModule, compiler, webpack);
+    });
+
+    compiler.hooks.thisCompilation.tap(pluginName, compilation => {
+      this._setupRuntimeModules(compilation, webpack, compiler);
+    });
+  }
+
+  _setupCompilationHooks(compilation, CssDependency, CssModule, compiler, webpack) {
+    const { loader: normalModuleHook } = NormalModule.getCompilationHooks(compilation);
+    normalModuleHook.tap(pluginName, loaderContext => {
+      loaderContext[pluginSymbol] = { experimentalUseImportModule: this.options.experimentalUseImportModule };
+    });
+
+    compilation.dependencyFactories.set(CssDependency, new CssModuleFactory());
+    compilation.dependencyTemplates.set(CssDependency, new CssDependencyTemplate());
+
+    compilation.hooks.renderManifest.tap(pluginName, (result, { chunk }) => {
+      const { chunkGraph } = compilation;
+      if (!chunk instanceof webpack.HotUpdateChunk) {
+        const renderedModules = Array.from(this.getChunkModules(chunk, chunkGraph)).filter(module =>
+          module.type === MODULE_TYPE
+        );
+        if (renderedModules.length > 0) {
+          result.push(this.renderContentAsset(compiler, compilation, chunk, renderedModules, compilation.runtimeTemplate.requestShortener, this.options.filename, { contentHashType: MODULE_TYPE, chunk }));
+        }
+      }
+    });
+
+    compilation.hooks.contentHash.tap(pluginName, chunk => {
+      const { outputOptions, chunkGraph } = compilation;
+      const modules = this.sortModules(compilation, chunk, chunkGraph, compilation.runtimeTemplate.requestShortener);
+      if (modules) {
+        const hash = this._createContentHash(modules, chunkGraph, chunk.runtime, outputOptions, compiler);
+        chunk.contentHash[MODULE_TYPE] = hash;
+      }
+    });
+  }
+
+  _setupRuntimeModules(compilation, webpack, compiler) {
+    if (!this.options.runtime) return;
+
+    const enabledChunks = new WeakSet();
+    const handler = (chunk, set) => {
+      if (enabledChunks.has(chunk)) return;
+      enabledChunks.add(chunk);
+
+      if (typeof this.options.chunkFilename === "string" && /\[(full)?hash(:\d+)?\]/.test(this.options.chunkFilename)) {
+        set.add(RuntimeGlobals.getFullHash);
+      }
+      
+      set.add(RuntimeGlobals.publicPath);
+
+      compilation.addRuntimeModule(chunk, new runtime.GetChunkFilenameRuntimeModule(MODULE_TYPE, "mini-css", `${RuntimeGlobals.require}.miniCssF`, referencedChunk => {
+        if (!referencedChunk.contentHash[MODULE_TYPE]) return false;
+        return referencedChunk.canBeInitial() ? this.options.filename : this.options.chunkFilename;
+      }, false));
+      
+      compilation.addRuntimeModule(chunk, new CssLoadingRuntimeModule(set, this.runtimeOptions));
+    };
+
+    compilation.hooks.runtimeRequirementInTree.for(RuntimeGlobals.ensureChunkHandlers).tap(pluginName, handler);
+    compilation.hooks.runtimeRequirementInTree.for(RuntimeGlobals.hmrDownloadUpdateHandlers).tap(pluginName, handler);
+    compilation.hooks.runtimeRequirementInTree.for(RuntimeGlobals.prefetchChunkHandlers).tap(pluginName, handler);
+    compilation.hooks.runtimeRequirementInTree.for(RuntimeGlobals.preloadChunkHandlers).tap(pluginName, handler);
+  }
+  
+  static getCssModule(webpack) {
+    if (cssModuleCache.has(webpack)) {
+      return cssModuleCache.get(webpack);
+    }
+    class CssModule extends webpack.Module {
+      constructor(dep) {
+        super(MODULE_TYPE, context);
+        this.initialize(dependency);
+      }
+
+      initialize(dependency) {
+        Object.assign(this, dependency, { _needBuild: true });
+        this.id = "";
+      }
+
+      // Placeholder module size calculation
+      size() { return this.content.length; }
+
+      identifier() {
+        return `css|${this._identifier}|${this._identifierIndex}|${this.layer || ""}|${this.supports || ""}|${this.media}}}`;
+      }
+
+      readableIdentifier(requestShortener) {
+        return `css ${requestShortener.shorten(this._identifier)}${this._identifierExtras()}`;
+      }
+
+      _identifierExtras() {
+        const extras = [];
+        if (this._identifierIndex) extras.push(` (${this._identifierIndex})`);
+        if (this.layer) extras.push(` (layer ${this.layer})`);
+        if (this.supports) extras.push(` (supports ${this.supports})`);
+        if (this.media) extras.push(` (media ${this.media})`);
+        return extras.join('');
+      }
+
+      getSourceTypes() { return TYPES; }
+      codeGeneration() { return CODE_GENERATION_RESULT; }
+      
+      nameForCondition() {
+        const resource = this._identifier.split("!").pop();
+        const idx = resource.indexOf("?");
+        return idx >= 0 ? resource.substring(0, idx) : resource;
+      }
+
+      updateCacheModule(module) {
+        if (this.contentEquals(module) || this.metaEquals(module)) return;
+        Object.assign(this, module);
+        this._needBuild = true;
+      }
+
+      contentEquals(module) {
+        return this.content.equals(module.content) && (!this.sourceMap || this.sourceMap.equals(module.sourceMap));
+      }
+
+      metaEquals(module) {
+        return this.layer === module.layer && this.supports === module.supports && this.media === module.media && this.assets === module.assets && this.assetsInfo === module.assetsInfo;
+      }
+
+      needRebuild() { return this._needBuild; }
+
+      needBuild(context, callback) {
+        callback(undefined, this._needBuild);
+      }
+
+      build(options, compilation, resolver, fileSystem, callback) {
+        this.buildInfo = {
+          assets: this.assets,
+          assetsInfo: this.assetsInfo,
+          cacheable: true,
+          hash: this._computeHash(compilation.outputOptions.hashFunction)
+        };
+        this.buildMeta = {};
+        this._needBuild = false;
+        callback();
+      }
+
+      _computeHash(hashFunction) {
+        const hash = webpack.util.createHash(hashFunction);
+        hash.update(this.content);
+
+        if (this.layer) hash.update(this.layer);
+        if (this.supports) hash.update(this.supports);
+        if (this.media) hash.update(this.media);
+        if (this.sourceMap) hash.update(this.sourceMap);
+        return hash.digest("hex");
+      }
+
+      updateHash(hash, context) {
+        super.updateHash(hash, context);
+        hash.update(this.buildInfo.hash);
+      }
+
+      serialize(context) {
+        const { write } = context;
+        [this._context, this._identifier, this._identifierIndex, this.content, this.layer, this.supports, this.media, this.sourceMap, this.assets, this.assetsInfo, this._needBuild].forEach(write);
+        super.serialize(context);
+      }
+
+      deserialize(context) {
+        const { read } = context;
+        [this._context, this._identifier, this._identifierIndex, this.content, this.layer, this.supports, this.media, this.sourceMap, this.assets, this.assetsInfo, this._needBuild] = [read, read, read, read, read, read, read, read, read, read, read];
+        super.deserialize(context);
+      }
+    }
+    cssModuleCache.set(webpack, CssModule);
+    webpack.util.serialization.register(CssModule, path.resolve(__dirname, "CssModule"), null, {
+      serialize(instance, context) { instance.serialize(context); },
+      deserialize(context) { return CssModule.deserialize(context); }
+    });
+    return CssModule;
+  }
+
+  static getCssDependency(webpack) {
+    if (cssDependencyCache.has(webpack)) {
+      return cssDependencyCache.get(webpack);
+    }
+    class CssDependency extends webpack.Dependency {
+      constructor(loaderDependency, context, identifierIndex) {
+        super();
+        Object.assign(this, loaderDependency, { context, identifierIndex });
+        this.assets = undefined;
+        this.assetsInfo = undefined;
+      }
+
+      getResourceIdentifier() {
+        return `css-module-${this.identifier}-${this.identifierIndex}`;
+      }
+
+      getModuleEvaluationSideEffectsState() {
+        return webpack.ModuleGraphConnection.TRANSITIVE_ONLY;
+      }
+
+      serialize(context) {
+        const { write } = context;
+        [this.identifier, this.content, this.layer, this.supports, this.media, this.sourceMap, this.context, this.identifierIndex, this.assets, this.assetsInfo].forEach(write);
+        super.serialize(context);
+      }
+
+      deserialize(context) { super.deserialize(context); }
+    }
+    cssDependencyCache.set(webpack, CssDependency);
+    webpack.util.serialization.register(CssDependency, path.resolve(__dirname, "CssDependency"), null, {
+      serialize(instance, context) { instance.serialize(context); },
+      deserialize(context) { return CssDependency.deserialize(context); }
+    });
+    return CssDependency;
+  }
+
+  static getCompilationHooks(compilation) {
+    let hooks = compilationHooksMap.get(compilation);
+    if (!hooks) {
+      hooks = {
+        beforeTagInsert: new SyncWaterfallHook(["source", "varNames"], "string"),
+        linkPreload: new SyncWaterfallHook(["source", "chunk"]),
+        linkPrefetch: new SyncWaterfallHook(["source", "chunk"])
+      };
+      compilationHooksMap.set(compilation, hooks);
+    }
+    return hooks;
+  }
+
+  renderContentAsset(compiler, compilation, chunk, modules, requestShortener, filenameTemplate, pathData) {
+    const usedModules = this.sortModules(compilation, chunk, modules, requestShortener);
+    const { ConcatSource, SourceMapSource, RawSource } = compiler.webpack.sources;
+    const source = new ConcatSource();
+    const externalsSource = new ConcatSource();
+    
+    for (const module of usedModules) {
+      let content = module.content.toString();
+      const readableIdentifier = module.readableIdentifier(requestShortener);
+      const startsWithAtRuleImport = /^@import url/.test(content);
+      let header;
+
+      if (compilation.outputOptions.pathinfo) {
+        header = new RawSource(`/*!****${'*'.repeat(readableIdentifier.length)}****!*\\\n  !*** ${readableIdentifier} ***!\n  \\****${'*'.repeat(readableIdentifier.length)}****/\n`);
+      }
+
+      if (startsWithAtRuleImport) {
+        if (header) externalsSource.add(header);
+        content = this._appendModuleSpecifications(content, module, compiler);
+        externalsSource.add(content);
+        externalsSource.add("\n");
+      } else {
+        if (header) source.add(header);
+        this._applySpecificationsToSource(source, module, content, compiler, chunk, filenameTemplate, pathData, requestShortener);
+      }
+    }
+
+    return new ConcatSource(externalsSource, source);
+  }
+
+  _appendModuleSpecifications(content, module, compiler) {
+    let atImportExtra = "";
+
+    if (module.media || module.supports || typeof module.layer !== "undefined") {
+      const needLayer = typeof module.layer !== "undefined";
+      if (needLayer) atImportExtra += module.layer.length > 0 ? ` layer(${module.layer})` : " layer";
+      if (module.supports) atImportExtra += ` supports(${module.supports})`;
+      if (module.media) atImportExtra += ` ${module.media}`;
+      content = content.replace(/;|\s*$/, `${atImportExtra};`);
+    }
+
+    return content;
+  }
+
+  _applySpecificationsToSource(source, module, content, compiler, chunk, filenameTemplate, pathData, requestShortener) {
+    const { path: filename } = compiler.getPathWithInfo(filenameTemplate, pathData);
+    const undoPath = getUndoPath(filename, compiler.options.output.path, false);
+
+    content = this._conductReplacements(content, undoPath, chunk.getEntryOptions(), compiler);
+    
+    if (module.supports) source.add(`@supports (${module.supports}) {\n`);
+    if (module.media) source.add(`@media ${module.media} {\n`);
+    if (typeof module.layer !== "undefined") source.add(`@layer${module.layer.length > 0 ? ` ${module.layer}` : ""} {\n`);
+
+    if (module.sourceMap) {
+      source.add(new SourceMapSource(content, module.readableIdentifier(requestShortener), module.sourceMap.toString()));
+    } else {
+      source.add(new RawSource(content));
+    }
+    source.add("\n");
+
+    if (typeof module.layer !== "undefined") source.add("}\n");
+    if (module.media) source.add("}\n");
+    if (module.supports) source.add("}\n");
+  }
+
+  _conductReplacements(content, undoPath, entryOptions, compiler) {
+    content = content.replace(new RegExp(ABSOLUTE_PUBLIC_PATH, "g"), "")
+                     .replace(new RegExp(SINGLE_DOT_PATH_SEGMENT, "g"), ".")
+                     .replace(new RegExp(AUTO_PUBLIC_PATH, "g"), undoPath);
+
+    const baseUriReplacement = (entryOptions && entryOptions.baseUri) || undoPath;
+    return content.replace(new RegExp(BASE_URI, "g"), baseUriReplacement);
+  }
+}
+
+MiniCssExtractPlugin.pluginName = "mini-css-extract-plugin";
+MiniCssExtractPlugin.pluginSymbol = Symbol(MiniCssExtractPlugin.pluginName);
+MiniCssExtractPlugin.loader = require.resolve("./loader");
+module.exports = MiniCssExtractPlugin;
+```

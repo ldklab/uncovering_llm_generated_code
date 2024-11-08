@@ -1,0 +1,64 @@
+The provided Node.js code defines a function `promiseRetry` that facilitates retrying asynchronous operations with a specified set of options, using a promise-based approach. Here's how the code operates:
+
+1. It uses two external modules: `err-code` to create error objects with codes, and `retry` to handle retry logic.
+2. A helper function `isRetryError` checks if the error is specifically a retry error, those that are marked with the code `EPROMISERETRY` and have been retried before.
+3. `promiseRetry` can take its arguments in two forms: a function `fn` followed by options, or options followed by a function `fn`.
+4. The `promiseRetry` function creates a retry operation using the given options.
+5. The function returns a Promise:
+   - Inside the promise, it attempts an operation, which is the execution of `fn`.
+   - If `fn` invokes a callback with an error, this error is wrapped in another error indicating that the function will be retried.
+   - This new error is then passed to the retry mechanism.
+   - If the error is a retry error, it checks if further retries are allowed and continues accordingly.
+   - If retries are exhausted or other errors occur, the promise is rejected with the respective error.
+
+This entire logic thus allows for seamless retries of asynchronous operations defined in the provided function `fn`.
+
+Here's a rewritten version based on the explanation:
+
+```javascript
+'use strict';
+
+const errcode = require('err-code');
+const retry = require('retry');
+
+const hasOwn = Object.prototype.hasOwnProperty;
+
+function isRetryError(err) {
+    return err && err.code === 'EPROMISERETRY' && hasOwn.call(err, 'retried');
+}
+
+function promiseRetry(fn, options) {
+    let operation;
+
+    if (typeof fn === 'object' && typeof options === 'function') {
+        // When arguments are swapped, reassign appropriately
+        [options, fn] = [fn, options];
+    }
+
+    operation = retry.operation(options);
+
+    return new Promise((resolve, reject) => {
+        operation.attempt((attemptNumber) => {
+            Promise.resolve()
+            .then(() => fn((err) => {
+                if (isRetryError(err)) {
+                    err = err.retried;
+                }
+                throw errcode(new Error('Retrying'), 'EPROMISERETRY', { retried: err });
+            }, attemptNumber))
+            .then(resolve)
+            .catch((err) => {
+                if (isRetryError(err)) {
+                    err = err.retried;
+                    if (operation.retry(err || new Error())) {
+                        return;
+                    }
+                }
+                reject(err);
+            });
+        });
+    });
+}
+
+module.exports = promiseRetry;
+```

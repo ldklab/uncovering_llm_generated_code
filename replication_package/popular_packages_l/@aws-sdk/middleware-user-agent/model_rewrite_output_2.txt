@@ -1,0 +1,66 @@
+The given Node.js code implements a middleware for AWS SDK which modifies HTTP requests by adding a custom "User-Agent" header. Here's a breakdown of the functionality:
+
+1. **UserAgentMiddleware Class**: This class is designed to inject a specified "User-Agent" string into every HTTP request made through the AWS SDK client.
+   
+2. **applyMiddleware Method**: This method adds a middleware function to a middleware stack. During the `build` step of the request lifecycle, it checks if the current request is an instance of `HttpRequest`. If so, it attaches the custom "User-Agent" header to the request.
+
+3. **Middleware Stack Usage**: An instance of `MiddlewareStack` is created, and the custom middleware is applied to it.
+   
+4. **Request Handling Example**: A simple HTTP GET request is made to "example.com", and the final "User-Agent" string is logged to the console.
+   
+5. **Module Export**: The `UserAgentMiddleware` class is exported for use in other parts of the application.
+
+Here's the rewritten code:
+
+```javascript
+const { MiddlewareStack, HttpRequest } = require("@aws-sdk/types");
+
+class UserAgentMiddleware {
+  constructor(userAgentString) {
+    this.userAgentString = userAgentString;
+  }
+
+  applyMiddleware(stack) {
+    stack.add(
+      (next, context) => async (args) => {
+        if (HttpRequest.isInstance(args.request)) {
+          args.request.headers = {
+            ...args.request.headers,
+            'User-Agent': this.userAgentString,
+          };
+        }
+        return next(args);
+      },
+      {
+        step: 'build',
+        name: 'UserAgentMiddleware',
+        override: true,
+      }
+    );
+  }
+}
+
+// Usage Example
+const stack = new MiddlewareStack();
+const customUserAgentMiddleware = new UserAgentMiddleware("Custom/UserAgent");
+customUserAgentMiddleware.applyMiddleware(stack);
+
+async function execute() {
+  const request = new HttpRequest({
+    hostname: "example.com",
+    method: "GET",
+    headers: {},
+  });
+
+  const handler = stack.resolve((next) => (args) => {
+    console.log("Final User-Agent:", args.request.headers["User-Agent"]);
+    return Promise.resolve({ response: {} });
+  }, {});
+
+  await handler({ request });
+}
+
+execute();
+
+module.exports = UserAgentMiddleware;
+```

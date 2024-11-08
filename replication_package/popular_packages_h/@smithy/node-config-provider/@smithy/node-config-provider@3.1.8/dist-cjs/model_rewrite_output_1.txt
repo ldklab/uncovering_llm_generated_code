@@ -1,0 +1,127 @@
+This Node.js code defines several utility functions and concepts for working with configuration options, particularly focusing on loading them from different sources: environment variables, shared config files, and static default values. It is structured around the following major components:
+
+1. **Utility Functions**: 
+   - `__defProp`, `__getOwnPropDesc`, `__getOwnPropNames`, and `__hasOwnProp`: Used to manage object properties.
+   - `__name`: Assigns a human-readable name to functions.
+   - `__export` and `__copyProps`: Used to export properties from modules.
+   - `__toCommonJS`: Converts a module into a CommonJS module, suitable for Node.js.
+
+2. **Configuration Loaders**:
+   - **fromEnv**: Attempts to get configuration from environment variables using a selector function. If the environment variable is not set, it throws an error.
+   - **fromSharedConfigFiles**: Loads and merges profile-based configuration from shared config or credentials files. It chooses between files based on a preference and throws an error if the desired config is not found.
+   - **fromStatic**: Provides static configuration or resolves a function to obtain a value.
+
+3. **Config Loader**: 
+   - **loadConfig**: Combines the aforementioned methods into a single chain, prioritizing environment variables, then shared files, and finally static defaults. The result is memoized for efficiency.
+
+4. **getSelectorName**: Parses function string representations to extract possible constant names that indicate configuration keys.
+
+Here is the rewritten code according to the explained functionality:
+
+```javascript
+// Utility functions for property manipulation
+const defineProperty = Object.defineProperty;
+const getOwnPropDescriptor = Object.getOwnPropertyDescriptor;
+const getOwnPropNames = Object.getOwnPropertyNames;
+const hasOwnProp = Object.prototype.hasOwnProperty;
+
+// Helper to set function names
+const setName = (fn, name) => defineProperty(fn, "name", { value: name, configurable: true });
+
+// Module and property export utilities
+const exportProps = (target, sources) => {
+  for (const key in sources) {
+    defineProperty(target, key, { get: sources[key], enumerable: true });
+  }
+};
+
+const copyProperties = (target, source, exclude) => {
+  if (source && (typeof source === 'object' || typeof source === 'function')) {
+    for (const key of getOwnPropNames(source)) {
+      if (!hasOwnProp.call(target, key) && key !== exclude) {
+        defineProperty(target, key, {
+          get: () => source[key],
+          enumerable: !(desc = getOwnPropDescriptor(source, key)) || desc.enumerable,
+        });
+      }
+    }
+  }
+  return target;
+};
+
+const toCommonJS = (module) => copyProperties(defineProperty({}, "__esModule", { value: true }), module);
+
+// Configuration utilities
+const { CredentialsProviderError, memoize, chain, fromStatic } = require("@smithy/property-provider");
+const { getProfileName, loadSharedConfigFiles } = require("@smithy/shared-ini-file-loader");
+
+// Extracts possible configuration constants
+function extractConfigConstants(fnStr) {
+  try {
+    const constants = new Set((fnStr.match(/([A-Z_]{3,})/g) || []));
+    constants.delete("CONFIG");
+    constants.delete("CONFIG_PREFIX_SEPARATOR");
+    constants.delete("ENV");
+    return Array.from(constants).join(", ");
+  } catch {
+    return fnStr;
+  }
+}
+setName(extractConfigConstants, "extractConfigConstants");
+
+// Load from environment variables
+const fromEnv = setName((envSelector, logger) => async () => {
+  try {
+    const config = envSelector(process.env);
+    if (config === undefined) throw new Error();
+    return config;
+  } catch (error) {
+    throw new CredentialsProviderError(
+      error.message || `Not found in ENV: ${extractConfigConstants(envSelector.toString())}`,
+      { logger }
+    );
+  }
+}, "fromEnv");
+
+// Load from shared config files
+const fromSharedConfigFiles = setName((configSelector, options = {}) => async () => {
+  const { preferredFile = "config", ...init } = options;
+  const profileName = getProfileName(init);
+  const { configFile, credentialsFile } = await loadSharedConfigFiles(init);
+  
+  const combinedProfile = preferredFile === "config"
+    ? { ...credentialsFile[profileName], ...configFile[profileName] }
+    : { ...configFile[profileName], ...credentialsFile[profileName] };
+
+  try {
+    const config = configSelector(combinedProfile, preferredFile === "config" ? configFile : credentialsFile);
+    if (config === undefined) throw new Error();
+    return config;
+  } catch (error) {
+    throw new CredentialsProviderError(
+      error.message || `Not found in config files w/ profile [${profileName}]: ${extractConfigConstants(configSelector.toString())}`,
+      { logger: init.logger }
+    );
+  }
+}, "fromSharedConfigFiles");
+
+// Load static configuration or resolve function for dynamic value
+const isFunction = setName((func) => typeof func === "function", "isFunction");
+const fromStaticValue = setName((defaultValue) => isFunction(defaultValue)
+  ? async () => await defaultValue()
+  : fromStatic(defaultValue), "fromStaticValue");
+
+// Master loader function combining all methods
+const loadConfiguration = setName(({ environmentVariableSelector, configFileSelector, default: defaultValue }, configuration = {}) =>
+  memoize(
+    chain(
+      fromEnv(environmentVariableSelector),
+      fromSharedConfigFiles(configFileSelector, configuration),
+      fromStaticValue(defaultValue)
+    )
+  ), "loadConfiguration");
+
+// Export the main configuration loading function
+const configExports = { loadConfiguration };
+module.exports = toCommonJS(configExports);
+```

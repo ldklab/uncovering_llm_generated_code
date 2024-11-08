@@ -1,0 +1,57 @@
+The Node.js code provided implements middleware logic for handling the "host" header in HTTP requests within an AWS SDK-like framework. The main functionalities are:
+
+1. **Configuration Resolver**: `resolveHostHeaderConfig` function simply returns its input, allowing the middleware's configuration to be established.
+
+2. **Host Header Middleware**: `hostHeaderMiddleware` is designed to modify the HTTP headers of requests. It checks if the request protocol is HTTP/2 (h2), and if so, it switches the "host" header with ":authority" as required by HTTP/2 standards. If the protocol is not HTTP/2 and no "host" header is present, it assigns the "host" from the request's hostname.
+
+3. **Middleware Options**: These specify the middleware's name, processing step (`build`), priority (`low`), and tags (`HOST`), helping to manage how it's used within the client stack.
+
+4. **Plugin Generator**: `getHostHeaderPlugin` applies the middleware to a client stack, enabling it to manipulate the host header behavior during request building.
+
+Here's a rewritten version of the code with the same functionality:
+
+```javascript
+"use strict";
+
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.getHostHeaderPlugin = exports.hostHeaderMiddlewareOptions = exports.hostHeaderMiddleware = exports.resolveHostHeaderConfig = void 0;
+const protocol_http_1 = require("@aws-sdk/protocol-http");
+
+function resolveHostHeaderConfig(input) {
+    return input;
+}
+exports.resolveHostHeaderConfig = resolveHostHeaderConfig;
+
+const hostHeaderMiddleware = (options) => (next) => async (args) => {
+    if (!protocol_http_1.HttpRequest.isInstance(args.request)) {
+        return next(args);
+    }
+    
+    const { request } = args;
+    const { handlerProtocol = "" } = options.requestHandler.metadata || {};
+    
+    if (handlerProtocol.includes("h2") && !request.headers[":authority"]) {
+        delete request.headers["host"];
+        request.headers[":authority"] = "";
+    } else if (!request.headers["host"]) {
+        request.headers["host"] = request.hostname;
+    }
+    
+    return next(args);
+};
+exports.hostHeaderMiddleware = hostHeaderMiddleware;
+
+exports.hostHeaderMiddlewareOptions = {
+    name: "hostHeaderMiddleware",
+    step: "build",
+    priority: "low",
+    tags: ["HOST"],
+};
+
+const getHostHeaderPlugin = (options) => ({
+    applyToStack: (clientStack) => {
+        clientStack.add(exports.hostHeaderMiddleware(options), exports.hostHeaderMiddlewareOptions);
+    },
+});
+exports.getHostHeaderPlugin = getHostHeaderPlugin;
+```

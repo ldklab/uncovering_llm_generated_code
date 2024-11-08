@@ -1,0 +1,90 @@
+The provided Node.js code is a module that implements functionalities to create and extract tar archives using the `tar-stream` library in conjunction with Node.js's file system and stream APIs. 
+
+- **Pack (Tar Creation):**
+  - The `pack` function creates a tar archive from a specified directory. The directory is recursively packaged into a tar archive.
+  - Entries and options such as ignoring paths, custom file modes, and transformation streams are supported.
+  - It utilizes `tar-stream`'s packing functions to iterate over directories and files, adding them to the tar archive.
+  - It offers hooks for modifying entry headers and streams.
+
+- **Extract (Tar Extraction):**
+  - The `extract` function extracts files from a tar archive into the specified output directory.
+  - It handles directories and files separately, ensuring directories are created with the correct permissions.
+  - Just like `pack`, it supports ignoring certain paths and transforming streams during extraction.
+
+Here's a rewritten version of the same functionality:
+
+```markdown
+const fs = require('fs');
+const path = require('path');
+const { pipeline } = require('stream');
+const tarStream = require('tar-stream');
+
+function pack(directory, options = {}) {
+  const packStream = tarStream.pack(options);
+  const requiredEntries = options.entries ? new Set(options.entries) : null;
+
+  function traverseDir(currentDir) {
+    const files = fs.readdirSync(currentDir);
+    files.forEach(file => {
+      const fullPath = path.join(currentDir, file);
+      const fileStat = fs.statSync(fullPath);
+
+      if (options.ignore && options.ignore(fullPath, { type: fileStat.isDirectory() ? 'directory' : 'file' })) {
+        return;
+      }
+
+      if (requiredEntries && !requiredEntries.has(path.relative(directory, fullPath))) {
+        return;
+      }
+
+      if (fileStat.isDirectory()) {
+        packStream.entry({ name: fullPath, type: 'directory', mode: options.dmode || 0o755 });
+        traverseDir(fullPath);
+      } else {
+        const header = { name: fullPath, size: fileStat.size, mode: options.fmode || 0o644 };
+        if (options.map) options.map(header);
+
+        const entry = packStream.entry(header);
+        const fileStream = fs.createReadStream(fullPath);
+        const transformedStream = options.mapStream ? options.mapStream(fileStream, header) : fileStream;
+        transformedStream.pipe(entry);
+      }
+    });
+  }
+
+  traverseDir(directory);
+  packStream.finalize();
+  return packStream;
+}
+
+function extract(outputDir, options = {}) {
+  const extractStream = tarStream.extract();
+
+  extractStream.on('entry', (header, stream, next) => {
+    const destination = path.join(outputDir, header.name);
+
+    if (options.ignore && options.ignore(destination, header)) {
+      stream.resume();
+      return next();
+    }
+
+    if (header.type === 'directory') {
+      fs.mkdirSync(destination, { recursive: true, mode: options.dmode || 0o755 });
+      stream.resume();
+    } else if (header.type === 'file') {
+      const fileOutput = fs.createWriteStream(destination, { mode: options.fmode || 0o644 });
+      const transformedStream = options.mapStream ? options.mapStream(stream, header) : stream;
+      pipeline(transformedStream, fileOutput, next);
+      return;
+    } else {
+      stream.resume();
+    }
+
+    next();
+  });
+
+  return extractStream;
+}
+
+module.exports = { pack, extract };
+```

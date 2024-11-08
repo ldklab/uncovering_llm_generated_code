@@ -1,0 +1,89 @@
+The given Node.js code provides a deep cloning utility for JavaScript objects. It provides two main functionalities: 
+
+1. **Basic Deep Clone**: The function clones an input object, handling primitive types, arrays, plain objects, and `Date` objects, while omitting any inherited properties. There are two variations: one that maintains the prototype chain (`cloneProto`) and one that does not (`clone`).
+
+2. **Circular Structure Support**: When `opts.circles` is enabled, the function can clone circular references in objects by tracking references during cloning and using these to handle cyclic structures.
+
+If `opts.proto` is set, the function keeps the prototype of the objects while cloning.
+
+Below is a simplified rewrite of the provided code:
+
+```javascript
+'use strict';
+
+module.exports = cloneDeep;
+
+function cloneDeep(options = {}) {
+  return options.circles ? cloneWithCircles(options) : (options.proto ? cloneKeepProto : cloneBasic);
+
+  function cloneBasic(obj) {
+    if (!isObject(obj)) return obj;
+    if (obj instanceof Date) return new Date(obj);
+    if (Array.isArray(obj)) return obj.map(cloneBasic);
+    
+    const newObj = {};
+    for (const key in obj) {
+      if (obj.hasOwnProperty(key)) {
+        newObj[key] = isObject(obj[key]) ? cloneBasic(obj[key]) : obj[key];
+      }
+    }
+    return newObj;
+  }
+
+  function cloneKeepProto(obj) {
+    if (!isObject(obj)) return obj;
+    if (obj instanceof Date) return new Date(obj);
+    if (Array.isArray(obj)) return obj.map(cloneKeepProto);
+
+    const newObj = Object.create(Object.getPrototypeOf(obj));
+    for (const key in obj) {
+      newObj[key] = isObject(obj[key]) ? cloneKeepProto(obj[key]) : obj[key];
+    }
+    return newObj;
+  }
+
+  function cloneWithCircles(options) {
+    const seenObjects = new Map();
+
+    return options.proto ? cloneWithProtoAndCircles : cloneWithCirclesOnly;
+
+    function cloneWithCirclesOnly(obj) {
+      if (!isObject(obj)) return obj;
+      if (obj instanceof Date) return new Date(obj);
+
+      if (seenObjects.has(obj)) return seenObjects.get(obj);
+
+      const clone = Array.isArray(obj) ? [] : {};
+      seenObjects.set(obj, clone);
+      
+      for (const key in obj) {
+        if (obj.hasOwnProperty(key)) {
+          clone[key] = isObject(obj[key]) ? cloneWithCirclesOnly(obj[key]) : obj[key];
+        }
+      }
+
+      return clone;
+    }
+
+    function cloneWithProtoAndCircles(obj) {
+      if (!isObject(obj)) return obj;
+      if (obj instanceof Date) return new Date(obj);
+
+      if (seenObjects.has(obj)) return seenObjects.get(obj);
+
+      const clone = Array.isArray(obj) ? [] : Object.create(Object.getPrototypeOf(obj));
+      seenObjects.set(obj, clone);
+
+      for (const key in obj) {
+        clone[key] = isObject(obj[key]) ? cloneWithProtoAndCircles(obj[key]) : obj[key];
+      }
+
+      return clone;
+    }
+  }
+
+  function isObject(obj) {
+    return obj !== null && typeof obj === 'object';
+  }
+}
+```

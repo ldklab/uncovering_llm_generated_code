@@ -1,0 +1,58 @@
+The Node.js code provided is a utility for binding functions in JavaScript. Here's a breakdown of its functionality:
+
+1. **Imports**: It imports the `function-bind` library and a module `get-intrinsic` to access the intrinsic objects of JavaScript.
+
+2. **Intrinsic Objects**:
+   - `$apply` and `$call` are set to the intrinsic properties of `Function.prototype.apply` and `Function.prototype.call` respectively.
+   - `$reflectApply` tries to use `%Reflect.apply%` if available; otherwise, it uses `bind.call($call, $apply)` as a fallback to ensure similar functionality.
+
+3. **Define Property**:
+   - `$defineProperty` attempts to use `Object.defineProperty` for property definition.
+   - A try-catch block checks if `defineProperty` is usable (bypassing issues present in older browsers like IE8).
+
+4. **Exports**:
+   - The `module.exports` function when called utilizes `Reflect.apply` (or its bound alternative) to apply the function binding using `Function.prototype.call`.
+   - An `applyBind` function is created that binds using `Function.prototype.apply`.
+
+5. **Property Definition**:
+   - If `Object.defineProperty` functionality is available, it defines a non-enumerable `apply` property on `module.exports` to hold `applyBind`.
+   - If not, it directly assigns `applyBind` to `module.exports.apply`.
+
+Rewritten Code:
+
+```js
+'use strict';
+
+const bind = require('function-bind');
+const GetIntrinsic = require('get-intrinsic');
+
+const $apply = GetIntrinsic('%Function.prototype.apply%');
+const $call = GetIntrinsic('%Function.prototype.call%');
+const $reflectApply = GetIntrinsic('%Reflect.apply%', true) || bind.call($call, $apply);
+
+let $defineProperty = GetIntrinsic('%Object.defineProperty%', true);
+
+if ($defineProperty) {
+	try {
+		$defineProperty({}, 'a', { value: 1 });
+	} catch (e) {
+		$defineProperty = null;
+	}
+}
+
+function callBind() {
+	return $reflectApply(bind, $call, arguments);
+}
+
+const applyBind = function() {
+	return $reflectApply(bind, $apply, arguments);
+};
+
+if ($defineProperty) {
+	$defineProperty(callBind, 'apply', { value: applyBind });
+} else {
+	callBind.apply = applyBind;
+}
+
+module.exports = callBind;
+```

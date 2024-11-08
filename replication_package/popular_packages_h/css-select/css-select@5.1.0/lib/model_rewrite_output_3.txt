@@ -1,0 +1,112 @@
+The provided Node.js code is a module that acts as a CSS selector engine, compatible with different DOM structures through a customizable adapter, with a default using `domutils`. At its core, it compiles and executes CSS queries on a DOM-like structure, checking conditions and optionally filtering or selecting elements. Here's the functionality explained:
+
+1. **Utility Functions**: 
+   - `__createBinding`, `__setModuleDefault`, `__importStar`, and `__importDefault` allow dynamic module importing and property binding, crucial for compatibility with both ES6 and CommonJS modules.
+
+2. **Default Options**: 
+   - These include a default `equals` function and a default adapter (using `domutils`) for interacting with the DOM-like structure.
+
+3. **Helper Functions**:
+   - `convertOptionFormats`: Ensures options object conforms to expected format.
+   - `wrapCompile`: Wraps the compile functions, adding required options transformation before execution.
+   - `prepareContext`: Prepares elements for selection, adding sibling elements if needed.
+
+4. **Core Exported Functions**:
+   - `compile`, `_compileUnsafe`, `_compileToken`: Wrap the respective compile functions from `compile.js`.
+   - `selectAll`: Finds all matching elements for a given query.
+   - `selectOne`: Finds the first matching element.
+   - `is`: Checks if an element matches a given query function.
+   - `prepareContext`: Prepares elements for searching, ensuring correct context and sibling inclusion.
+
+5. **Additional Exports**:
+   - Exports `filters`, `pseudos`, and `aliases` for user-configurable query modifications.
+
+Now, here's a possible rewrite of the given code:
+
+```javascript
+"use strict";
+
+const { default: boolbase } = require("boolbase");
+const DomUtils = require("domutils");
+const { compile: compileFunc, compileUnsafe, compileToken } = require("./compile.js");
+const { getNextSiblings } = require("./pseudo-selectors/subselects.js");
+const { filters, pseudos, aliases } = require("./pseudo-selectors/index.js");
+
+const defaultEquals = (a, b) => a === b;
+
+const defaultOptions = {
+    adapter: DomUtils,
+    equals: defaultEquals,
+};
+
+function convertOptionFormats(options) {
+    const opts = options || defaultOptions;
+    opts.adapter ||= DomUtils;
+    opts.equals ||= opts.adapter?.equals || defaultEquals;
+    return opts;
+}
+
+function wrapCompile(func) {
+    return function addAdapter(selector, options, context) {
+        const opts = convertOptionFormats(options);
+        return func(selector, opts, context);
+    };
+}
+
+exports.compile = wrapCompile(compileFunc);
+exports._compileUnsafe = wrapCompile(compileUnsafe);
+exports._compileToken = wrapCompile(compileToken);
+
+function getSelectorFunc(searchFunc) {
+    return function select(query, elements, options) {
+        const opts = convertOptionFormats(options);
+        if (typeof query !== "function") {
+            query = compileUnsafe(query, opts, elements);
+        }
+        const filteredElements = prepareContext(elements, opts.adapter, query.shouldTestNextSiblings);
+        return searchFunc(query, filteredElements, opts);
+    };
+}
+
+function prepareContext(elems, adapter, shouldTestNextSiblings = false) {
+    if (shouldTestNextSiblings) {
+        elems = appendNextSiblings(elems, adapter);
+    }
+    return Array.isArray(elems) ? adapter.removeSubsets(elems) : adapter.getChildren(elems);
+}
+
+exports.prepareContext = prepareContext;
+
+function appendNextSiblings(elem, adapter) {
+    const elems = Array.isArray(elem) ? elem.slice() : [elem];
+    for (let i = 0, len = elems.length; i < len; i++) {
+        const nextSiblings = getNextSiblings(elems[i], adapter);
+        elems.push(...nextSiblings);
+    }
+    return elems;
+}
+
+exports.selectAll = getSelectorFunc((query, elems, options) =>
+    query === boolbase.falseFunc || !elems || elems.length === 0
+        ? []
+        : options.adapter.findAll(query, elems)
+);
+
+exports.selectOne = getSelectorFunc((query, elems, options) =>
+    query === boolbase.falseFunc || !elems || elems.length === 0
+        ? null
+        : options.adapter.findOne(query, elems)
+);
+
+function is(elem, query, options) {
+    const opts = convertOptionFormats(options);
+    return (typeof query === "function" ? query : compileFunc(query, opts))(elem);
+}
+
+exports.is = is;
+exports.default = exports.selectAll;
+
+Object.defineProperty(exports, "filters", { enumerable: true, get: () => filters });
+Object.defineProperty(exports, "pseudos", { enumerable: true, get: () => pseudos });
+Object.defineProperty(exports, "aliases", { enumerable: true, get: () => aliases });
+```

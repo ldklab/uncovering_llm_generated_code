@@ -1,0 +1,91 @@
+To explain the functionality of the given Node.js code:
+
+1. **Imports and Requirements:** The script begins by importing several built-in Node.js modules (`os`, `fs`, `url`, `path`) and a custom module `svgo.js`.
+
+2. **Import Configurations Dynamically:** There's a function `importConfig` that imports configuration files. It handles both CommonJS (`.cjs`) and ES module formats, using `require` for `.cjs` and dynamic `import` for others.
+
+3. **File Check:** The `isFile` function checks asynchronously if a provided path is a file, returning a boolean.
+
+4. **Load Configuration:** The `loadConfig` function attempts to load a configuration file, searching for `svgo.config.js`, `svgo.config.mjs`, or `svgo.config.cjs` in the current working directory or its ancestors.
+
+5. **Optimize Function:** The `optimize` function processes input data using the SVGO optimizer, with configurations passed as an argument. It also ensures that the end-of-line sequence is set according to the platform.
+
+Below is a possible rewrite of the code:
+
+```javascript
+'use strict';
+
+const os = require('os');
+const fs = require('fs');
+const path = require('path');
+const { pathToFileURL } = require('url');
+const { optimize: optimizeAgnostic } = require('./svgo.js');
+
+async function importConfig(configFile) {
+  let config;
+
+  if (configFile.endsWith('.cjs')) {
+    config = require(configFile);
+  } else {
+    const { default: imported } = await import(pathToFileURL(configFile));
+    config = imported;
+  }
+
+  if (!config || typeof config !== 'object' || Array.isArray(config)) {
+    throw new Error(`Invalid config file "${configFile}"`);
+  }
+
+  return config;
+}
+
+async function isFile(file) {
+  try {
+    const stats = await fs.promises.stat(file);
+    return stats.isFile();
+  } catch {
+    return false;
+  }
+}
+
+async function loadConfig(configFile, cwd = process.cwd()) {
+  if (configFile) {
+    const absolutePath = path.isAbsolute(configFile) ? configFile : path.join(cwd, configFile);
+    return await importConfig(absolutePath);
+  }
+
+  let dir = cwd;
+  while (true) {
+    const configPaths = ['svgo.config.js', 'svgo.config.mjs', 'svgo.config.cjs'].map(file => path.join(dir, file));
+
+    for (const configPath of configPaths) {
+      if (await isFile(configPath)) {
+        return await importConfig(configPath);
+      }
+    }
+
+    const parent = path.dirname(dir);
+    if (dir === parent) {
+      return null;
+    }
+    dir = parent;
+  }
+}
+
+exports.loadConfig = loadConfig;
+
+function optimize(input, config = {}) {
+  if (typeof config !== 'object') {
+    throw new Error('Config should be an object');
+  }
+
+  return optimizeAgnostic(input, {
+    ...config,
+    js2svg: {
+      eol: os.EOL === '\r\n' ? 'crlf' : 'lf',
+      ...config.js2svg,
+    },
+  });
+}
+
+exports.optimize = optimize;
+```

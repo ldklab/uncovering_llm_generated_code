@@ -1,0 +1,122 @@
+The `@ampproject/remapping` library is designed to remap source maps through a series of code transformations back to the original source files. This helps developers debug more effectively by mapping errors in minified/bundled/transpiled code back to the original source code.
+
+### Functionality:
+
+1. **Remapping Function**: The core functionality is provided by the `remapping` function. This function takes:
+   - A source map or an array of source maps representing the transformation stages of your code.
+   - A `loader` function to resolve the source maps for files.
+   - Optional settings for excluding content from the source map or using decoded mappings.
+
+2. **Loader Function**: The `loader` function retrieves the source map for each file. It:
+   - Receives a file path and a context object that includes information such as the file's importer and tree depth in the source map loading tree.
+   - Returns the source map of transformed files if available, or `null` for original source files.
+
+3. **Advanced Loader Control**:
+   - The `ctx.source` property within the loader function allows overriding the source location reported in the final source map.
+   - The `ctx.content` property lets you provide or exclude the actual source code content in the final source map.
+
+4. **Configuration Options**:
+   - `excludeContent`: If `true`, the actual source content is excluded from the resulting source map.
+   - `decodedMappings`: If `true`, outputs mappings in decoded form rather than as a VLQ-encoded string.
+
+### Example Workflow:
+
+- Take a source file (e.g., `helloworld.js`) and perform transformations like transpiling and minification, each generating a source map.
+- Use the `remapping` function to create a final source map that traces errors from the minified code back to the original source code.
+- This involves calling the `loader` function to retrieve intermediate source maps when resolving source locations.
+
+Here's the implementation of this functionality:
+
+```javascript
+// Import necessary modules
+const fs = require('fs');
+
+/**
+ * Remaps sequential sourcemaps back to the original source code.
+ * 
+ * @param {Object|Array} map - The source map or array of source maps to remap.
+ * @param {Function} loader - Function to load source maps for each file.
+ * @param {Object} options - Optional configurations.
+ * @returns {Object} Remapped source map.
+ */
+function remapping(map, loader, options = {}) {
+  // Simplified process for remapping sourcemaps
+  if (Array.isArray(map)) {
+    return map.reduce((acc, curr) => {
+      return remapSingleSourceMap(acc, curr, loader, options);
+    });
+  }
+  return remapSingleSourceMap(null, map, loader, options);
+}
+
+function remapSingleSourceMap(parentMap, currentMap, loader, options) {
+  // Decode the current map
+  const sourceMap = JSON.parse(currentMap);
+  const resultMap = {
+    file: sourceMap.file,
+    mappings: '', // Assume this will be processed in real implementation
+    sources: [],
+    version: 3
+  };
+
+  // Assume we have a process to decode and remap mappings
+  resultMap.mappings = processMappings(sourceMap.mappings, loader);
+
+  // Consolidate sources
+  resultMap.sources = sourceMap.sources.map((source, index) => {
+    let ctx = {
+      importer: parentMap ? parentMap.file : '',
+      depth: index,
+      source: sourceMap.sources[index],
+      content: null
+    };
+    const childMap = loader(source, ctx);
+
+    if (childMap) {
+      const childSourceMap = JSON.parse(childMap);
+      return childSourceMap.sources[0]; // simplifying for single source remap
+    }
+    return source;
+  });
+
+  // Handle optional parameters
+  if (!options.excludeContent && sourceMap.sourcesContent) {
+    resultMap.sourcesContent = sourceMap.sourcesContent;
+  }
+  
+  return resultMap;
+}
+
+function processMappings(mappings, loader) {
+  // Assume we decode mappings here and re-encode them based on loader function
+  return 'AAEE'; // Simplified representation
+}
+
+// Example usage
+const transformedMap = JSON.stringify({
+  file: 'transformed.js',
+  mappings: ';CAEE',
+  sources: ['helloworld.js'],
+  version: 3,
+});
+
+const minifiedTransformedMap = JSON.stringify({
+  file: 'transformed.min.js',
+  mappings: 'AACC',
+  sources: ['transformed.js'],
+  version: 3
+});
+
+const remapped = remapping(
+  minifiedTransformedMap,
+  (file, ctx) => {
+    if (file === 'transformed.js') {
+      return transformedMap;
+    }
+    return null;
+  }
+);
+
+console.log(remapped);
+// Output should resemble the expected remapped source map pointing to original sources
+```

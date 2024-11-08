@@ -1,0 +1,75 @@
+The provided Node.js code is defining a module for configuration file exploration, loading, and caching using cosmiconfig. It exports two functions, `cosmiconfig` and `cosmiconfigSync`, which are used to create explorer objects capable of searching and loading configuration files both asynchronously and synchronously. These explorer objects come with methods to search, load, clear load cache, clear search cache, and clear all caches. Default file loaders are defined for various file extensions, such as JavaScript, JSON, and YAML, and are protected against mutation. Additionally, a `normalizeOptions` function is used to merge user-provided options with default options to manage how exploration and loading are carried out.
+
+Here's a rewritten version of the code with the same functionality:
+
+```javascript
+"use strict";
+
+import os from 'os';
+import { Explorer } from './Explorer';
+import { ExplorerSync } from './ExplorerSync';
+import { loaders as defaultLoadersModule } from './loaders';
+
+export function cosmiconfig(moduleName, options = {}) {
+  const normalizedOptions = getNormalizedOptions(moduleName, options);
+  const explorer = new Explorer(normalizedOptions);
+  return createExplorerAPI(explorer);
+}
+
+export function cosmiconfigSync(moduleName, options = {}) {
+  const normalizedOptions = getNormalizedOptions(moduleName, options);
+  const explorerSync = new ExplorerSync(normalizedOptions);
+  return createExplorerAPI(explorerSync);
+}
+
+const defaultLoaders = Object.freeze({
+  '.cjs': defaultLoadersModule.loadJs,
+  '.js': defaultLoadersModule.loadJs,
+  '.json': defaultLoadersModule.loadJson,
+  '.yaml': defaultLoadersModule.loadYaml,
+  '.yml': defaultLoadersModule.loadYaml,
+  noExt: defaultLoadersModule.loadYaml
+});
+
+function getNormalizedOptions(moduleName, options) {
+  const defaults = {
+    packageProp: moduleName,
+    searchPlaces: [
+      'package.json',
+      `.${moduleName}rc`,
+      `.${moduleName}rc.json`,
+      `.${moduleName}rc.yaml`,
+      `.${moduleName}rc.yml`,
+      `.${moduleName}rc.js`,
+      `.${moduleName}rc.cjs`,
+      `${moduleName}.config.js`,
+      `${moduleName}.config.cjs`
+    ],
+    ignoreEmptySearchPlaces: true,
+    stopDir: os.homedir(),
+    cache: true,
+    transform: x => x,
+    loaders: defaultLoaders
+  };
+  return {
+    ...defaults,
+    ...options,
+    loaders: {
+      ...defaults.loaders,
+      ...options.loaders
+    }
+  };
+}
+
+function createExplorerAPI(explorer) {
+  return {
+    search: explorer.search.bind(explorer),
+    load: explorer.load.bind(explorer),
+    clearLoadCache: explorer.clearLoadCache.bind(explorer),
+    clearSearchCache: explorer.clearSearchCache.bind(explorer),
+    clearCaches: explorer.clearCaches.bind(explorer)
+  };
+}
+
+export { defaultLoaders };
+```

@@ -1,0 +1,62 @@
+The functionality described in the README of the Node.js package `serialize-javascript` allows for the serialization of JavaScript objects into a string format that goes beyond traditional JSON, accommodating various JavaScript types that JSON.stringify does not handle, such as functions, regular expressions, dates, sets, and maps. The module offers several key features:
+
+1. **Serialization of Extended JavaScript Types**: The package can serialize not only basic data types but also advanced ones like functions, regexes, dates, maps, and sets, producing a valid JavaScript string representation of these items.
+
+2. **Safe Embedding in HTML**: The outputted string is ready to be included in HTML documents as the content of a `<script>` element. This is achieved by escaping HTML characters and JavaScript line terminators to avoid XSS vulnerabilities.
+
+3. **Custom Options for Output Control**:
+   - `space`: Similar to JSON.stringify, controls indentation for readability.
+   - `isJSON`: Signals pure JSON data to allow for faster processing.
+   - `unsafe`: Disables escaping for a direct serialization.
+   - `ignoreFunction`: Allows ignoring function serialization as JSON.stringify does.
+
+4. **Installation and Usage**: Offers straightforward installation via npm and easy-to-use API for serialization.
+
+5. **Deserialization**: Points out that deserialization can be manually handled using `eval`, cautioning to include parentheses around the serialized string to ensure correct JavaScript evaluation.
+
+Below is the implementation of the explained functionality:
+
+```js
+// serialize-javascript.js
+
+function escapeString(str) {
+    return str.replace(/</g, '\\u003C').replace(/>/g, '\\u003E').replace(/\//g, '\\u002F')
+         .replace(/\n/g, '\\n').replace(/\r/g, '\\r').replace(/\t/g, '\\t');
+}
+
+function serializeValue(value, options = {}) {
+    if (value === undefined) {
+        return 'undefined';
+    } else if (typeof value === 'function' && !options.ignoreFunction) {
+        return value.toString();
+    } else if (value instanceof RegExp) {
+        return value.toString();
+    } else if (value instanceof Date) {
+        return `new Date(${JSON.stringify(value.toISOString())})`;
+    } else if (value instanceof Map) {
+        return `new Map(${serializeValue(Array.from(value.entries()), options)})`;
+    } else if (value instanceof Set) {
+        return `new Set(${serializeValue(Array.from(value.values()), options)})`;
+    } else if (typeof value === 'bigint') {
+        return `BigInt("${value.toString()}")`;
+    } else if (value instanceof URL) {
+        return `new URL(${JSON.stringify(value.toString())})`;
+    } else if (typeof value === 'string' && !options.unsafe) {
+        return JSON.stringify(escapeString(value));
+    }
+    return JSON.stringify(value, null, options.space);
+}
+
+function serialize(object, options = {}) {
+    if (!options.isJSON) {
+        return `{${Object.entries(object)
+            .map(([key, value]) => `${JSON.stringify(key)}:${serializeValue(value, options)}`)
+            .join(',')}}`;
+    }
+    return JSON.stringify(object, null, options.space);
+}
+
+module.exports = serialize;
+```
+
+This code module implements the described functionality, handling various data types and offering options for safe serialization and customization.

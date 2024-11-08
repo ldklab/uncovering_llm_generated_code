@@ -1,0 +1,68 @@
+The provided Node.js code defines both asynchronous and synchronous versions of a directory traversal function called `escalade`. The purpose of these functions is to walk up the directory tree starting from a given directory until a specified condition, defined by a callback, is met.
+
+### Explanation:
+1. **Async Function (`escalade`)**:
+   - Starts from a given directory and moves upward through its parent directories.
+   - At each step, it reads the directory contents asynchronously using `fs.readdir`.
+   - It invokes a callback function with the current directory and its contents. 
+   - If the callback returns a truthy value, the function checks if it is an absolute path. If not, it resolves it relative to the current directory.
+   - If the returned value from the callback is considered valid, the function returns this value as the result.
+   - It stops when the filesystem root is reached without finding a result, indicated by comparing the parent path to the current path.
+
+2. **Sync Function (`escaladeSync`)**:
+   - This is a synchronous version of the async function.
+   - It uses `fs.readdirSync` to read directory contents.
+   - The rest of the logic and callback handling remains similar to the async function.
+   - It also verifies if the callback's result is an absolute path and resolves it accordingly.
+
+3. **Exports**:
+   - Both the async (`escalade`) and sync (`escaladeSync`) functions are exported, allowing other modules to use them.
+
+Here is a possible rewrite of the code:
+
+```javascript
+const fs = require('fs');
+const path = require('path');
+const { promisify } = require('util');
+
+const readdirAsync = promisify(fs.readdir);
+
+async function escalade(startDir, callback) {
+  let currentDir = path.resolve(startDir);
+
+  while (true) {
+    const entries = await readdirAsync(currentDir);
+    const found = await callback(currentDir, entries);
+
+    if (found) {
+      return path.isAbsolute(found) ? found : path.resolve(currentDir, found);
+    }
+
+    const parentDir = path.dirname(currentDir);
+    if (parentDir === currentDir) break;
+
+    currentDir = parentDir;
+  }
+}
+
+function escaladeSync(startDir, callback) {
+  let currentDir = path.resolve(startDir);
+
+  while (true) {
+    const entries = fs.readdirSync(currentDir);
+    const found = callback(currentDir, entries);
+
+    if (found) {
+      return path.isAbsolute(found) ? found : path.resolve(currentDir, found);
+    }
+
+    const parentDir = path.dirname(currentDir);
+    if (parentDir === currentDir) break;
+
+    currentDir = parentDir;
+  }
+}
+
+module.exports = escalade;
+module.exports.sync = escaladeSync;
+```

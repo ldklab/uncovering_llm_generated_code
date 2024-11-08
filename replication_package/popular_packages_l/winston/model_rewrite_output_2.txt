@@ -1,0 +1,86 @@
+The provided Node.js code is a logging setup using the `winston` library. It creates loggers with different configurations and demonstrates logging messages at various levels.
+
+**Functionality Overview:**
+
+1. **Logger Creation**:
+   - A main logger is created with multiple transports and handlers.
+   - Log levels are based on `config.npm.levels`, setting a minimum log level of 'info'.
+   - Log entries are formatted to include a label ('my-app'), a timestamp, and the log level with the message.
+
+2. **Transports**:
+   - Console transport logs all messages.
+   - File transports log error messages to 'error.log' and all messages to 'combined.log'.
+  
+3. **Exception and Rejection Handlers**:
+   - Exceptions and unhandled promise rejections are logged to 'exceptions.log' and 'rejections.log', respectively.
+
+4. **Custom Transport**:
+   - A custom transport `CustomTransport` is defined, which extends `transports.Stream`.
+   - It logs messages to the standard output (`stdout`) and a file ('custom.log').
+  
+5. **Usage**:
+   - The logger logs example 'info' and 'error' messages.
+   - The custom transport logger logs an info message.
+
+6. **Export**:
+   - The loggers are exported for use in other modules or files.
+
+Below is a rewritten version of the code:
+
+```javascript
+// index.js
+const { createLogger, format, transports, config } = require('winston');
+
+// Create a logger with multiple transports and handlers for errors and rejections
+const logger = createLogger({
+  levels: config.npm.levels,
+  level: 'info',
+  format: format.combine(
+    format.label({ label: 'my-app' }),
+    format.timestamp(),
+    format.printf(({ level, message, label, timestamp }) => `${timestamp} [${label}] ${level}: ${message}`)
+  ),
+  transports: [
+    new transports.Console(),
+    new transports.File({ filename: 'error.log', level: 'error' }),
+    new transports.File({ filename: 'combined.log' })
+  ],
+  exceptionHandlers: [
+    new transports.File({ filename: 'exceptions.log' })
+  ],
+  rejectionHandlers: [
+    new transports.File({ filename: 'rejections.log' })
+  ],
+  exitOnError: false
+});
+
+// Define a custom transport that logs to stdout
+class CustomTransport extends transports.Stream {
+  constructor(opts) {
+    super(opts);
+    this.stream = process.stdout;
+  }
+
+  log(info, callback) {
+    setImmediate(() => this.emit('logged', info));
+    this.stream.write(`${info.timestamp} ${info.level}: ${info.message}\n`);
+    callback();
+  }
+}
+
+// Create a logger using the custom transport
+const customTransportLogger = createLogger({
+  transports: [
+    new CustomTransport(),
+    new transports.File({ filename: 'custom.log' })
+  ]
+});
+
+// Log messages for demonstration
+logger.info('This is an info message');
+logger.error('This is an error message');
+customTransportLogger.info('Custom transport logging');
+
+// Export loggers for external usage
+module.exports = { logger, customTransportLogger };
+```

@@ -1,0 +1,67 @@
+The provided Node.js code is a module designed to parse data URLs and extract the MIME type and body content. Here's a breakdown of its functionality:
+
+1. The code imports necessary libraries and utility functions related to URL parsing and MIME type handling.
+2. The main exported function takes a string input, which is expected to be a data URL.
+3. The function attempts to parse the string input as a URL and returns `null` if the parsing fails.
+4. If parsing is successful, it forwards the URL record to another exported function `fromURLRecord`.
+5. The `fromURLRecord` function specifically handles data URLs (scheme 'data'). If the scheme is not 'data', it returns `null`.
+6. The function extracts, trims, and processes the MIME type declaration from the data URL up to the first comma.
+7. The body of the data URL is then decoded. If the MIME type includes `base64`, the function attempts to base64 decode the body.
+8. If base64 decoding fails, the function returns `null`.
+9. Default MIME type `text/plain` is prepended if necessary, and the MIME type is validated or defaulted to `text/plain;charset=US-ASCII`.
+10. Finally, it returns an object containing the MIME type (as a MIMEType object) and the decoded body.
+
+The code rewritten:
+
+```javascript
+"use strict";
+const MIMEType = require("whatwg-mimetype");
+const { parseURL, serializeURL } = require("whatwg-url");
+const {
+  stripLeadingAndTrailingASCIIWhitespace,
+  stringPercentDecode,
+  isomorphicDecode,
+  forgivingBase64Decode
+} = require("./utils.js");
+
+module.exports = function parseDataURL(stringInput) {
+  const urlRecord = parseURL(stringInput);
+
+  if (!urlRecord || urlRecord.scheme !== "data") {
+    return null;
+  }
+
+  const input = serializeURL(urlRecord, true).slice("data:".length);
+  let position = 0;
+  let mimeType = "";
+
+  while (position < input.length && input[position] !== ",") {
+    mimeType += input[position++];
+  }
+  mimeType = stripLeadingAndTrailingASCIIWhitespace(mimeType);
+
+  if (position === input.length) {
+    return null;
+  }
+
+  const encodedBody = input.slice(++position);
+  let body = stringPercentDecode(encodedBody);
+
+  const mimeTypeBase64Match = /(.*); *[Bb][Aa][Ss][Ee]64$/.exec(mimeType);
+  if (mimeTypeBase64Match) {
+    body = forgivingBase64Decode(isomorphicDecode(body));
+    if (!body) return null;
+    mimeType = mimeTypeBase64Match[1];
+  }
+
+  if (mimeType.startsWith(";")) {
+    mimeType = "text/plain" + mimeType;
+  }
+
+  try {
+    return { mimeType: new MIMEType(mimeType), body };
+  } catch {
+    return { mimeType: new MIMEType("text/plain;charset=US-ASCII"), body };
+  }
+};
+```

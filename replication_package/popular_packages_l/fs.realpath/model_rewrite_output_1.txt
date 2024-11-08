@@ -1,0 +1,66 @@
+The given Node.js code provides a mechanism to handle filesystem path resolution with a fallback to older JavaScript logic. Here's a detailed explanation of its functionality:
+
+1. **Custom Realpath Implementation**: The code defines custom implementations `realpath` and `realpathSync` that wrap Node.js's `fs.realpath` and `fs.realpathSync` respectively.
+
+2. **Fallback Mechanism**: If `fs.realpath` or `fs.realpathSync` encounters specific errors (`ELOOP`, `ENOMEM`, `ENAMETOOLONG`), which may occur due to symbolic link issues, memory constraints, or path length limitations, these wrappers fall back to a simpler path resolution using `path.resolve`, mimicking an older behavior.
+
+3. **Monkey Patching**: The `monkeypatch` function replaces `fs.realpath` and `fs.realpathSync` with the custom implementations. The `unmonkeypatch` function restores the original Node.js implementations.
+
+4. **Module Exports**: The custom functions, along with the monkey patching and unmonkeypatching capabilities, are exported as a module to be used in other parts of an application.
+
+Here is the rewritten code:
+
+```javascript
+const fs = require('fs');
+const path = require('path');
+
+function legacyRealpath(p, callback) {
+  try {
+    const resolvedPath = path.resolve(p);
+    callback(null, resolvedPath);
+  } catch (error) {
+    callback(error);
+  }
+}
+
+function customRealpath(p, callback) {
+  fs.realpath(p, (error, resolvedPath) => {
+    if (error && ['ELOOP', 'ENOMEM', 'ENAMETOOLONG'].includes(error.code)) {
+      legacyRealpath(p, callback);
+    } else {
+      callback(error, resolvedPath);
+    }
+  });
+}
+
+function customRealpathSync(p) {
+  try {
+    return fs.realpathSync(p);
+  } catch (error) {
+    if (['ELOOP', 'ENOMEM', 'ENAMETOOLONG'].includes(error.code)) {
+      return path.resolve(p);
+    }
+    throw error;
+  }
+}
+
+const originalFsRealpath = fs.realpath;
+const originalFsRealpathSync = fs.realpathSync;
+
+function applyMonkeyPatch() {
+  fs.realpath = customRealpath;
+  fs.realpathSync = customRealpathSync;
+}
+
+function removeMonkeyPatch() {
+  fs.realpath = originalFsRealpath;
+  fs.realpathSync = originalFsRealpathSync;
+}
+
+module.exports = {
+  realpath: customRealpath,
+  realpathSync: customRealpathSync,
+  monkeypatch: applyMonkeyPatch,
+  unmonkeypatch: removeMonkeyPatch
+};
+```

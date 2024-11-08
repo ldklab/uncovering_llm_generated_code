@@ -1,0 +1,89 @@
+The provided Node.js code is an implementation of a small asynchronous task queue. It allows functions (tasks) to be scheduled and executed as soon as possible but not synchronously with the current stack execution. Here is a breakdown of its functionality:
+
+1. **Queue and Flags**: 
+   - `queue`: An array that holds tasks to be executed.
+   - `flushing`: A flag to indicate if the task queue is being processed.
+   - `index`: Keeps track of the current task being processed in the queue.
+
+2. **asap and rawAsap Functions**: 
+   - Both functions add a given task to the `queue`.
+   - If the `queue` isn't currently being flushed, they set the `flushing` flag to `true` and call `requestFlush()` to schedule the flush operation.
+
+3. **flush Function**: 
+   - Processes each task in the `queue` in order until it is empty.
+   - Uses a `try-catch` block to handle exceptions thrown by tasks. Any caught exceptions are re-thrown asynchronously using `setTimeout` with a delay of 0 milliseconds.
+   - Resets `index` to 0 and clears `queue` once completed, along with setting `flushing` to `false`.
+
+4. **requestFlush Function**: 
+   - Determines the best available method to schedule the `flush` function asynchronously.
+   - Prefers using `MutationObserver` if available (often used because it can be fast and is supported widely in browsers).
+   - Falls back to `MessageChannel` for environments like Node.js where `MutationObserver` isn't available.
+   - Uses `setTimeout` as a last resort to ensure compatibility with all environments.
+
+5. **Export**: 
+   - Exports the `asap` function as the module's default export, and `rawAsap` as a named export.
+
+Below is a possible rewritten version of the code:
+
+```javascript
+// asap.js
+let queue = [];
+let isFlushing = false;
+let index = 0;
+
+function asap(task) {
+  queue.push(task);
+  initiateFlush();
+}
+
+function rawAsap(task) {
+  queue.push(task);
+  initiateFlush();
+}
+
+function initiateFlush() {
+  if (!isFlushing) {
+    isFlushing = true;
+    requestFlush();
+  }
+}
+
+function flush() {
+  while (index < queue.length) {
+    const currentTask = queue[index++];
+    try {
+      currentTask();
+    } catch (error) {
+      setTimeout(() => { throw error; }, 0);
+    }
+  }
+  clearQueue();
+}
+
+function clearQueue() {
+  index = 0;
+  queue.length = 0;
+  isFlushing = false;
+}
+
+function requestFlush() {
+  if (typeof MutationObserver !== 'undefined') {
+    // Using MutationObserver to schedule flush.
+    const node = document.createTextNode('');
+    const observer = new MutationObserver(flush);
+    observer.observe(node, { characterData: true });
+    node.data = '1'; // Trigger the observer.
+  } else if (typeof MessageChannel !== 'undefined') {
+    // Using MessageChannel to schedule flush.
+    const channel = new MessageChannel();
+    channel.port1.onmessage = flush;
+    channel.port2.postMessage(0);
+  } else {
+    // Fallback to setTimeout.
+    setTimeout(flush, 0);
+  }
+}
+
+module.exports = asap;
+module.exports.raw = rawAsap;
+```

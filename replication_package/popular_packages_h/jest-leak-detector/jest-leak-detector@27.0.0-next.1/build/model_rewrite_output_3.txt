@@ -1,0 +1,69 @@
+The provided Node.js code defines a class that detects memory leaks by using the `weak-napi` package to create a weak reference to a non-primitive value. It ensures that the garbage collector (GC) can collect the object if it's no longer needed, verifying whether a reference to the object is still held. The class throws an error if a primitive value is provided, as primitives don't leak memory. The GC is manually triggered multiple times to ensure it has run before checking if the object has been collected. The code includes dynamic imports of necessary modules and provides an error message if `weak-napi` is not installed.
+
+Here's a possible rewrite of the code:
+
+```javascript
+'use strict';
+
+const util = require('util');
+const v8 = require('v8');
+const vm = require('vm');
+const jestGetType = require('jest-get-type');
+const prettyFormat = require('pretty-format').default;
+
+const tick = util.promisify(setImmediate);
+
+class MemoryLeakDetector {
+  constructor(value) {
+    this._isReferenceBeingHeld = undefined;
+
+    if (jestGetType.isPrimitive(value)) {
+      throw new TypeError(
+        `Primitives cannot leak memory. You passed a ${typeof value}: <${prettyFormat(value)}>`
+      );
+    }
+
+    let weak;
+
+    try {
+      weak = require('weak-napi');
+    } catch (err) {
+      if (!err || err.code !== 'MODULE_NOT_FOUND') {
+        throw err;
+      }
+
+      throw new Error(
+        'The leaking detection mechanism requires the "weak-napi" package to be installed and work. Please install it as a dependency on your main project'
+      );
+    }
+
+    weak(value, () => (this._isReferenceBeingHeld = false));
+    this._isReferenceBeingHeld = true;
+
+    value = null;
+  }
+
+  async isLeaking() {
+    this._runGarbageCollector();
+
+    for (let i = 0; i < 10; i++) {
+      await tick();
+    }
+
+    return this._isReferenceBeingHeld;
+  }
+
+  _runGarbageCollector() {
+    const isGarbageCollectorHidden = !global.gc;
+
+    v8.setFlagsFromString('--expose-gc');
+    vm.runInNewContext('gc')();
+
+    if (isGarbageCollectorHidden) {
+      v8.setFlagsFromString('--no-expose-gc');
+    }
+  }
+}
+
+module.exports = MemoryLeakDetector;
+```

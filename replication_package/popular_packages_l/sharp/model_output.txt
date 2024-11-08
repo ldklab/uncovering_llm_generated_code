@@ -1,0 +1,98 @@
+The functionality described in the `sharp` Node.js package README is centered around high-speed image processing. Utilizing `libvips`, the package efficiently resizes and transforms image files in formats like JPEG, PNG, WebP, GIF, and AVIF for web usage. It offers several methods to manipulate images, including resizing, rotating, extracting, and gamma correction while preserving image quality with Lanczos resampling. Node-API v9 compatibility ensures broad usage across different platforms and JavaScript runtimes like Node.js, Deno, and Bun.
+
+The package can handle different color spaces, ICC profiles, and transparency channels, making it suitable for various image processing tasks. `sharp` allows manipulation through several approaches: traditional callbacks, Promises, async/await, and streams.
+
+Here's a walkthrough of the usage examples provided:
+
+- **Callback**: Resize an image buffer to a new dimension and save it as a WebP file.
+- **Promise**: Open a JPEG file, rotate and resize it, convert it to a buffer, and handle the result with Promise syntax.
+- **Async/await**: Generate a semi-transparent red PNG image using `sharp`'s `create` function, and await the buffer output.
+- **Stream**: Process an image stream, applying rounded corners via an SVG composite and outputting a PNG format.
+
+The package also provides resources for installation, API documentation, and details about contributing. It is open-source and distributed under the Apache License, Version 2.0.
+
+```javascript
+// package.json
+{
+  "name": "sharp-image-processor",
+  "version": "1.0.0",
+  "description": "A high-speed Node.js image processing package using libvips",
+  "main": "index.js",
+  "dependencies": {
+    "sharp": "^0.31.3"
+  },
+  "devDependencies": {},
+  "scripts": {
+    "start": "node index.js"
+  },
+  "author": "Your Name",
+  "license": "Apache-2.0"
+}
+
+// index.js
+const sharp = require('sharp');
+
+// Example: Resize via callback
+function resizeImageCallback(inputBuffer) {
+  sharp(inputBuffer)
+    .resize(320, 240)
+    .toFile('output.webp', (err, info) => {
+      if (err) console.error('Error during resizing:', err);
+      else console.log('Image successfully resized:', info);
+    });
+}
+
+// Example: Resize via Promise
+function resizeImagePromise(filePath) {
+  return sharp(filePath)
+    .rotate()
+    .resize(200)
+    .jpeg({ mozjpeg: true })
+    .toBuffer()
+    .then(data => console.log('Promise-based resize complete'))
+    .catch(err => console.error('Error in Promise-based resize:', err));
+}
+
+// Example: Create image using async/await
+async function createSemiTransparentImage() {
+  try {
+    const buffer = await sharp({
+      create: {
+        width: 48,
+        height: 48,
+        channels: 4,
+        background: { r: 255, g: 0, b: 0, alpha: 0.5 }
+      }
+    })
+      .png()
+      .toBuffer();
+    console.log('Async/await image created:', buffer);
+  } catch (err) {
+    console.error('Error creating image:', err);
+  }
+}
+
+// Example: Stream processing 
+function processImageStream(readableStream, writableStream) {
+  const roundedCorners = Buffer.from(
+    '<svg><rect x="0" y="0" width="200" height="200" rx="50" ry="50"/></svg>'
+  );
+
+  const roundedCornerResizer = sharp()
+    .resize(200, 200)
+    .composite([{
+      input: roundedCorners,
+      blend: 'dest-in'
+    }])
+    .png();
+
+  readableStream
+    .pipe(roundedCornerResizer)
+    .pipe(writableStream);
+}
+
+// Example usage
+resizeImageCallback(Buffer.from('inputBufferData'));
+resizeImagePromise('input.jpg');
+createSemiTransparentImage();
+```

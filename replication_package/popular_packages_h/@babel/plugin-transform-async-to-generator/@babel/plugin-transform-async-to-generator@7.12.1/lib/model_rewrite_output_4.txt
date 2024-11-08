@@ -1,0 +1,56 @@
+The provided Node.js code is a Babel plugin that transforms async functions into generator functions with the help of the `@babel/helper-remap-async-to-generator` utility. The transformation is done to make the async functions compatible with older JavaScript environments that do not natively support async/await syntax. The plugin uses the `@babel/core`, `@babel/helper-plugin-utils`, and `@babel/helper-module-imports` modules.
+
+Here's a step-by-step explanation of the code:
+
+1. The plugin is declared using `@babel/helper-plugin-utils`'s `declare` function, which ensures that the Babel API is compatible with version 7 or above.
+2. The plugin configuration accepts `options` with two potential properties: `method` and `module`.
+3. If both `method` and `module` are provided, the plugin imports a method from the specified module for wrapping async functions.
+4. The plugin traverses through all function paths in the AST, generated from the source code.
+5. It checks if a function node is async and not a generator.
+6. If `method` and `module` are specified, it adds a named import for wrapping the async function and transforms the function using `@babel/helper-remap-async-to-generator`.
+7. If not specified, it uses the default Babel helper `asyncToGenerator`.
+8. The plugin name is set as "transform-async-to-generator".
+
+The entire functionality is encapsulated in an exported default initializer.
+
+Below is the rewritten code encapsulating the discussed functionality:
+
+```javascript
+"use strict";
+
+import { declare } from "@babel/helper-plugin-utils";
+import remapAsyncToGenerator from "@babel/helper-remap-async-to-generator";
+import { addNamed } from "@babel/helper-module-imports";
+import { types } from "@babel/core";
+
+const transformAsyncToGenerator = declare((api, options) => {
+  api.assertVersion(7);
+
+  const { method, module } = options;
+
+  return {
+    name: "transform-async-to-generator",
+    visitor: {
+      Function(path, state) {
+        if (!path.node.async || path.node.generator) return;
+
+        let wrapAsync = state.methodWrapper;
+
+        if (method && module) {
+          if (wrapAsync) {
+            wrapAsync = types.cloneNode(wrapAsync);
+          } else {
+            wrapAsync = state.methodWrapper = addNamed(path, method, module);
+          }
+        } else {
+          wrapAsync = state.addHelper("asyncToGenerator");
+        }
+
+        remapAsyncToGenerator(path, { wrapAsync });
+      }
+    }
+  };
+});
+
+export default transformAsyncToGenerator;
+```

@@ -1,0 +1,168 @@
+The provided Node.js code defines a GitHost class designed to facilitate interactions with various Git hosting services, allowing for the creation of URLs and handling different types of connections and representations. Key functionalities include:
+
+1. **Caching**: It uses an LRU (Least Recently Used) cache to store results of `fromUrl` method calls, optimizing the repetitive parsing of URLs.
+
+2. **Static Properties**:
+   - `#gitHosts`: A mapping of hosts by shortcut and domain.
+   - `#protocols`: Defines protocol behaviors, including authentication requirements.
+
+3. **Class Methods**:
+   - `addHost`: Allows for adding new host configurations.
+   - `fromUrl`: Converts a URL string into a GitHost instance, utilizing the cache to prevent repetitive processing.
+   - `parseUrl`: A utility to parse URLs.
+
+4. **Instance Methods**: Each instance method transforms an object into string representations using templates for URLs (e.g., `ssh`, `browse`) and supports operations like browsing directories, files, and editing.
+
+5. **Private Method** `#fill`: A helper method used internally to populate URL templates with relevant information from a GitHost instance and additional options.
+
+6. **Loading Host Configurations**: Upon initialization, it iterates through a list of available hosts and registers them using `addHost`.
+
+Below is a possible rewrite of the code with the same functionality:
+
+```javascript
+'use strict';
+
+const { LRUCache } = require('lru-cache');
+const hosts = require('./hosts.js');
+const fromUrl = require('./from-url.js');
+const parseUrl = require('./parse-url.js');
+
+const cache = new LRUCache({ max: 1000 });
+
+class GitHost {
+  constructor(type, user, auth, project, committish, defaultRepresentation, opts = {}) {
+    Object.assign(this, GitHost.#gitHosts[type], {
+      type,
+      user,
+      auth,
+      project,
+      committish,
+      default: defaultRepresentation,
+      opts,
+    });
+  }
+
+  static #gitHosts = { byShortcut: {}, byDomain: {} };
+  static #protocols = {
+    'git+ssh:': { name: 'sshurl' },
+    'ssh:': { name: 'sshurl' },
+    'git+https:': { name: 'https', auth: true },
+    'git:': { auth: true },
+    'http:': { auth: true },
+    'https:': { auth: true },
+    'git+http:': { auth: true },
+  };
+
+  static addHost(name, host) {
+    GitHost.#gitHosts[name] = host;
+    GitHost.#gitHosts.byDomain[host.domain] = name;
+    GitHost.#gitHosts.byShortcut[`${name}:`] = name;
+    GitHost.#protocols[`${name}:`] = { name };
+  }
+
+  static fromUrl(giturl, opts) {
+    if (typeof giturl !== 'string') return;
+    const key = giturl + JSON.stringify(opts || {});
+    if (!cache.has(key)) {
+      const hostArgs = fromUrl(giturl, opts, {
+        gitHosts: GitHost.#gitHosts,
+        protocols: GitHost.#protocols,
+      });
+      cache.set(key, hostArgs ? new GitHost(...hostArgs) : undefined);
+    }
+    return cache.get(key);
+  }
+
+  static parseUrl(url) {
+    return parseUrl(url);
+  }
+
+  #fill(template, opts) {
+    if (typeof template !== 'function') return null;
+    
+    const options = { ...this, ...this.opts, ...opts };
+    if (!options.path) options.path = '';
+    if (options.path.startsWith('/')) options.path = options.path.slice(1);
+    if (options.noCommittish) options.committish = null;
+
+    const result = template(options);
+    return options.noGitPlus && result.startsWith('git+') ? result.slice(4) : result;
+  }
+
+  hash() {
+    return this.committish ? `#${this.committish}` : '';
+  }
+
+  ssh(opts) {
+    return this.#fill(this.sshtemplate, opts);
+  }
+
+  sshurl(opts) {
+    return this.#fill(this.sshurltemplate, opts);
+  }
+
+  browse(path, ...args) {
+    if (typeof path !== 'string') return this.#fill(this.browsetemplate, path);
+    if (typeof args[0] !== 'string') return this.#fill(this.browsetreetemplate, { ...args[0], path });
+    return this.#fill(this.browsetreetemplate, { ...args[1], fragment: args[0], path });
+  }
+
+  browseFile(path, ...args) {
+    if (typeof args[0] !== 'string') return this.#fill(this.browseblobtemplate, { ...args[0], path });
+    return this.#fill(this.browseblobtemplate, { ...args[1], fragment: args[0], path });
+  }
+
+  docs(opts) {
+    return this.#fill(this.docstemplate, opts);
+  }
+
+  bugs(opts) {
+    return this.#fill(this.bugstemplate, opts);
+  }
+
+  https(opts) {
+    return this.#fill(this.httpstemplate, opts);
+  }
+
+  git(opts) {
+    return this.#fill(this.gittemplate, opts);
+  }
+
+  shortcut(opts) {
+    return this.#fill(this.shortcuttemplate, opts);
+  }
+
+  path(opts) {
+    return this.#fill(this.pathtemplate, opts);
+  }
+
+  tarball(opts) {
+    return this.#fill(this.tarballtemplate, { ...opts, noCommittish: false });
+  }
+
+  file(path, opts) {
+    return this.#fill(this.filetemplate, { ...opts, path });
+  }
+
+  edit(path, opts) {
+    return this.#fill(this.edittemplate, { ...opts, path });
+  }
+
+  getDefaultRepresentation() {
+    return this.default;
+  }
+
+  toString(opts) {
+    if (this.default && typeof this[this.default] === 'function') {
+      return this[this.default](opts);
+    }
+    return this.sshurl(opts);
+  }
+}
+
+for (const [name, host] of Object.entries(hosts)) {
+  GitHost.addHost(name, host);
+}
+
+module.exports = GitHost;
+```

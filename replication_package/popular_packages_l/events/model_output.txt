@@ -1,0 +1,72 @@
+The `events` package provides a JavaScript implementation of the Node.js `events` module, specifically for environments where it is not available by default, such as web browsers. This package is directly aligned with Node.js version 11.13.0's EventEmitter API. The primary functionality offered by this package is enabling event-driven programming by allowing developers to create event listeners and emit events in a manner similar to Node.js's native capabilities.
+
+Here is a breakdown of how the Node.js events module implementation should work in other environments:
+
+1. **EventEmitter Class**: At its core, the module exports an `EventEmitter` class, which is central to reusable, event-driven modules. This class allows objects to subscribe to named events with listener functions.
+
+2. **Event Handling Methods**:
+   - `on(eventName, listener)`: Adds a function (`listener`) to the end of the listeners array for the event named `eventName`.
+   - `emit(eventName, ...args)`: Executes each of the listeners in order with the supplied arguments.
+   - `off(eventName, listener)`: Removes the specified listener from the listener array for the event named `eventName`.
+
+3. **Usage**: Using the `events` package involves creating an instance of `EventEmitter` and using its methods to manage events.
+    - An instance can be created by `var ee = new EventEmitter()`.
+    - You can listen to an event via `ee.on(...)` and trigger an event using `ee.emit(...)`.
+
+4. **Compatibility Concerns**: It utilizes JavaScript ES5 features, so it might require shims for older browsers like IE8.
+
+Below is the code for a Node.js package implementing this functionality:
+
+```javascript
+// events.js
+function EventEmitter() {
+  this.events = {};
+}
+
+// Adds a listener to the specified event
+EventEmitter.prototype.on = function(eventName, listener) {
+  if (typeof listener !== 'function') {
+    throw new TypeError('The listener must be a function');
+  }
+  if (!this.events[eventName]) {
+    this.events[eventName] = [];
+  }
+  this.events[eventName].push(listener);
+  return this;
+};
+
+// Emits an event, invoking all registered listeners
+EventEmitter.prototype.emit = function(eventName, ...args) {
+  var listeners = this.events[eventName];
+  if (!listeners || listeners.length === 0) return false;
+
+  listeners.forEach(function(listener) {
+    listener.apply(null, args);
+  });
+  return true;
+};
+
+// Removes a listener from the specified event
+EventEmitter.prototype.off = function(eventName, listener) {
+  var listeners = this.events[eventName];
+  if (!listeners) return this;
+
+  this.events[eventName] = listeners.filter(function(l) {
+    return l !== listener;
+  });
+  return this;
+};
+
+module.exports = EventEmitter;
+
+// Usage example
+var EventEmitter = require('./events');
+
+var ee = new EventEmitter();
+ee.on('message', function(text) {
+  console.log(text);
+});
+ee.emit('message', 'hello world');
+```
+
+This code sets up a basic event handling system with methods for adding, emitting, and removing event listeners. It's designed to mirror the Node.js EventEmitter interface, thus allowing event-driven patterns outside of Node.js environments.

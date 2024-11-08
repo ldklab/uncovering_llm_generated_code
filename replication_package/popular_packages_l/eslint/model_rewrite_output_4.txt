@@ -1,0 +1,74 @@
+The provided Node.js code implements a simple JavaScript linter. It is structured with a `package.json` and an `index.js` file to manage dependencies and scripts, and to execute linting logic, respectively.
+
+- **package.json**: 
+  - Describes the project with its name, version, and a basic description.
+  - Specifies `index.js` as the main entry point of the application.
+  - Defines a script named `lint` which runs `index.js`.
+  - Sets the module type to use ES Modules.
+
+- **index.js**:
+  - Uses Node's built-in `fs` (file system) module with promises for asynchronous operations.
+  - Defines linting rules in `config`. Two rules are considered:
+    - `"prefer-const"`: Issues a warning if `let` is found in the code.
+    - `"no-constant-binary-expression"`: Issues an error and sets an error exit code if constant expressions (e.g., "1 + 1") are detected.
+  - Targets files with the `.js` extension in the current directory for linting.
+  - `lintFile`: Reads a specific file and applies the linting rules.
+  - `lintFiles`: Reads all files in the current directory, and runs `lintFile` on JavaScript files.
+
+The code can be run with `npm run lint` after placing JavaScript files in the project directory for testing.
+
+Here's the rewritten code:
+
+```json
+{
+  "name": "mini-eslint",
+  "version": "1.0.0",
+  "description": "A simple JavaScript linter",
+  "main": "index.js",
+  "scripts": {
+    "lint": "node index.js"
+  },
+  "dependencies": {},
+  "type": "module"
+}
+```
+
+```javascript
+import { promises as fs } from 'fs';
+
+const config = {
+  rules: {
+    "prefer-const": "warn",
+    "no-constant-binary-expression": "error"
+  },
+  files: ["**/*.js"]
+};
+
+async function lintFile(file) {
+  try {
+    const content = await fs.readFile(file, 'utf8');
+
+    if (config.rules["prefer-const"] === "warn" && content.includes("let ")) {
+      console.warn(`Warning in ${file}: Consider using "const" instead of "let"`);
+    }
+    
+    if (config.rules["no-constant-binary-expression"] === "error" && /(\d+ [+\-*/] \d+)/.test(content)) {
+      console.error(`Error in ${file}: Avoid constant binary expressions.`);
+      process.exitCode = 1;
+    }
+  } catch (err) {
+    console.error(`Could not read file ${file}: ${err.message}`);
+  }
+}
+
+async function lintFiles() {
+  const files = await fs.readdir('.');
+  for (const file of files) {
+    if (config.files.some(pattern => file.endsWith('.js'))) {
+      await lintFile(file);
+    }
+  }
+}
+
+lintFiles();
+```

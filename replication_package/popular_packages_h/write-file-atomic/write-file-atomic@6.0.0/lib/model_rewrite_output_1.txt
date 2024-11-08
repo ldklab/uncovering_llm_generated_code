@@ -1,0 +1,235 @@
+The provided Node.js code primarily focuses on safely writing files with both asynchronous and synchronous methods to prevent data loss during crashes. Here's a high-level summary of the functionality:
+
+1. **Temporary File Creation**: It generates a unique temporary filename to prevent race conditions and overlap between concurrent file writes in multi-threaded environments.
+
+2. **File Write Operations**: 
+   - **Asynchronous (`writeFile`)**: Uses Promises to handle file operations. It also supports callbacks for backward compatibility.
+   - **Synchronous (`writeFileSync`)**: Uses synchronous file system operations for writing files.
+
+3. **File Locking Mechanism**: Introduces a queue mechanism to serialize file writing operations if multiple write requests are made on the same file, ensuring consistent data.
+
+4. **Error Handling and Cleanup**: 
+   - It uses exit handlers to automatically cleanup temporary files left due to abrupt interruption.
+   - Handles specific file system errors (e.g., `chown` errors) and ignores non-critical ones.
+
+5. **Permissions and Ownership**: Attempts to preserve the permissions and ownership of the original file when writing to a new one.
+
+6. **Worker Threads**: Recognizes different execution environments and generates unique identifiers for them, ensuring correct file operations.
+
+Here is a rewritten version of the code with all functionalities maintained:
+
+```javascript
+'use strict';
+
+const fs = require('fs');
+const MurmurHash3 = require('imurmurhash');
+const { onExit } = require('signal-exit');
+const path = require('path');
+const { promisify } = require('util');
+const activeFiles = {};
+
+module.exports = writeFile;
+module.exports.sync = writeFileSync;
+module.exports._getTmpname = getTmpname;
+module.exports._cleanupOnExit = cleanupOnExit;
+
+// Determine thread ID
+const threadId = (() => {
+  try {
+    const { threadId } = require('worker_threads');
+    return threadId;
+  } catch {
+    return 0;
+  }
+})();
+
+let invocations = 0;
+
+function getTmpname(filename) {
+  return filename + '.' + 
+    MurmurHash3(__filename)
+      .hash(String(process.pid))
+      .hash(String(threadId))
+      .hash(String(++invocations))
+      .result();
+}
+
+function cleanupOnExit(tmpfile) {
+  return () => {
+    try {
+      fs.unlinkSync(typeof tmpfile === 'function' ? tmpfile() : tmpfile);
+    } catch {
+      // Ignore errors
+    }
+  };
+}
+
+function serializeActiveFile(absoluteName) {
+  return new Promise(resolve => {
+    if (!activeFiles[absoluteName]) {
+      activeFiles[absoluteName] = [];
+    }
+    activeFiles[absoluteName].push(resolve);
+    if (activeFiles[absoluteName].length === 1) resolve();
+  });
+}
+
+function isChownErrOk(err) {
+  if (err.code === 'ENOSYS') return true;
+  if (!process.getuid || process.getuid() !== 0) {
+    if (err.code === 'EINVAL' || err.code === 'EPERM') return true;
+  }
+  return false;
+}
+
+async function writeFileAsync(filename, data, options = {}) {
+  if (typeof options === 'string') options = { encoding: options };
+
+  let fd;
+  let tmpfile;
+  const removeOnExitHandler = onExit(cleanupOnExit(() => tmpfile));
+  const absoluteName = path.resolve(filename);
+
+  try {
+    await serializeActiveFile(absoluteName);
+    const truename = await promisify(fs.realpath)(filename).catch(() => filename);
+    tmpfile = getTmpname(truename);
+    const stats = await promisify(fs.stat)(truename).catch(() => {});
+    
+    if (!options.mode || !options.chown) {
+      if (stats) {
+        if (options.mode == null) options.mode = stats.mode;
+        if (options.chown == null && process.getuid) {
+          options.chown = { uid: stats.uid, gid: stats.gid };
+        }
+      }
+    }
+
+    fd = await promisify(fs.open)(tmpfile, 'w', options.mode);
+
+    if (options.tmpfileCreated) await options.tmpfileCreated(tmpfile);
+    if (ArrayBuffer.isView(data)) {
+      await promisify(fs.write)(fd, data, 0, data.length, 0);
+    } else if (data != null) {
+      await promisify(fs.write)(fd, String(data), 0, String(options.encoding || 'utf8'));
+    }
+
+    if (options.fsync !== false) await promisify(fs.fsync)(fd);
+
+    await promisify(fs.close)(fd);
+    fd = null;
+
+    if (options.chown) {
+      await promisify(fs.chown)(tmpfile, options.chown.uid, options.chown.gid).catch(err => {
+        if (!isChownErrOk(err)) throw err;
+      });
+    }
+
+    if (options.mode) {
+      await promisify(fs.chmod)(tmpfile, options.mode).catch(err => {
+        if (!isChownErrOk(err)) throw err;
+      });
+    }
+
+    await promisify(fs.rename)(tmpfile, truename);
+  } finally {
+    if (fd) await promisify(fs.close)(fd).catch(() => {});
+    removeOnExitHandler();
+    await promisify(fs.unlink)(tmpfile).catch(() => {});
+    activeFiles[absoluteName].shift();
+    if (activeFiles[absoluteName].length > 0) {
+      activeFiles[absoluteName][0]();
+    } else {
+      delete activeFiles[absoluteName];
+    }
+  }
+}
+
+async function writeFile(filename, data, options, callback) {
+  if (typeof options === 'function') {
+    callback = options;
+    options = {};
+  }
+
+  const promise = writeFileAsync(filename, data, options);
+
+  if (callback) {
+    try {
+      const result = await promise;
+      return callback(null, result);
+    } catch (err) {
+      return callback(err);
+    }
+  }
+
+  return promise;
+}
+
+function writeFileSync(filename, data, options) {
+  if (typeof options === 'string') options = { encoding: options };
+  else if (!options) options = {};
+
+  try {
+    filename = fs.realpathSync(filename);
+  } catch {}
+
+  const tmpfile = getTmpname(filename);
+
+  if (!options.mode || !options.chown) {
+    try {
+      const stats = fs.statSync(filename);
+      options = Object.assign({}, options);
+      if (options.mode == null) options.mode = stats.mode;
+      if (options.chown == null && process.getuid) {
+        options.chown = { uid: stats.uid, gid: stats.gid };
+      }
+    } catch {}
+  }
+
+  let fd;
+  const cleanup = cleanupOnExit(tmpfile);
+  const removeOnExitHandler = onExit(cleanup);
+  
+  let threw = true;
+  try {
+    fd = fs.openSync(tmpfile, 'w', options.mode || 0o666);
+    if (options.tmpfileCreated) options.tmpfileCreated(tmpfile);
+    
+    if (ArrayBuffer.isView(data)) {
+      fs.writeSync(fd, data, 0, data.length, 0);
+    } else if (data != null) {
+      fs.writeSync(fd, String(data), 0, String(options.encoding || 'utf8'));
+    }
+    
+    if (options.fsync !== false) fs.fsyncSync(fd);
+
+    fs.closeSync(fd);
+    fd = null;
+
+    if (options.chown) {
+      try {
+        fs.chownSync(tmpfile, options.chown.uid, options.chown.gid);
+      } catch (err) {
+        if (!isChownErrOk(err)) throw err;
+      }
+    }
+
+    if (options.mode) {
+      try {
+        fs.chmodSync(tmpfile, options.mode);
+      } catch (err) {
+        if (!isChownErrOk(err)) throw err;
+      }
+    }
+
+    fs.renameSync(tmpfile, filename);
+    threw = false;
+  } finally {
+    if (fd) {
+      try { fs.closeSync(fd); } catch {}
+    }
+    removeOnExitHandler();
+    if (threw) cleanup();
+  }
+}
+```

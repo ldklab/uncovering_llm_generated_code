@@ -1,0 +1,137 @@
+The README.md describes a Node.js package called Bluebird, which is a promise library that provides additional features over the native JavaScript promises. This library focuses on innovative features and high performance. Bluebird is designed to comply with the Promises/A+ specification, ensuring a standardized behavior of promises. 
+
+Key features that are emphasized include:
+- **Cancellation**: Allows you to cancel promises, which is not supported by native promises.
+- **Iteration Methods**: Provides utilities for working with collections of promises, such as `Promise.map`, `Promise.each`, etc.
+- **Warnings**: Offers improved debugging capabilities by showing warnings for common mistakes in promise handling.
+
+The README suggests that due to the performance improvements in recent versions of Node.js, users who selected Bluebird solely for performance reasons should consider using native promises. 
+
+Bluebird is distributed under the MIT License, allowing for broad use, modification, and distribution of the software. 
+
+Below is a simplified implementation of a custom promise library that captures some of the described functionalities, such as basic promise handling and cancellation:
+
+```javascript
+// bluebird-lite.js
+class BluebirdLite {
+  constructor(executor) {
+    this.state = 'pending';
+    this.value = null;
+    this.handlers = [];
+    this.cancelRequested = false;
+
+    const resolve = (value) => {
+      if (this.cancelRequested) return;
+      this.updateState('fulfilled', value);
+    };
+
+    const reject = (reason) => {
+      if (this.cancelRequested) return;
+      this.updateState('rejected', reason);
+    };
+
+    try {
+      executor(resolve, reject);
+    } catch (error) {
+      reject(error);
+    }
+  }
+
+  updateState(state, value) {
+    if (this.state !== 'pending') return;
+    this.state = state;
+    this.value = value;
+    this.handlers.forEach((handler) => this.handle(handler));
+  }
+
+  handle(handler) {
+    if (this.state === 'pending') {
+      this.handlers.push(handler);
+    } else {
+      const cb = this.state === 'fulfilled' ? handler.onFulfilled : handler.onRejected;
+      if (!cb) {
+        cb = this.state === 'fulfilled' ? handler.resolve : handler.reject;
+        cb(this.value);
+        return;
+      }
+      try {
+        const result = cb(this.value);
+        handler.resolve(result);
+      } catch (error) {
+        handler.reject(error);
+      }
+    }
+  }
+
+  then(onFulfilled, onRejected) {
+    return new BluebirdLite((resolve, reject) => {
+      this.handle({
+        onFulfilled,
+        onRejected,
+        resolve,
+        reject,
+      });
+    });
+  }
+
+  catch(onRejected) {
+    return this.then(null, onRejected);
+  }
+
+  cancel() {
+    if (this.state === 'pending') {
+      this.cancelRequested = true;
+      this.updateState('cancelled', 'Promise was cancelled');
+    }
+  }
+
+  static resolve(value) {
+    return new BluebirdLite((resolve) => resolve(value));
+  }
+
+  static reject(reason) {
+    return new BluebirdLite((_, reject) => reject(reason));
+  }
+
+  static all(promises) {
+    return new BluebirdLite((resolve, reject) => {
+      let count = 0;
+      const results = [];
+      if (promises.length === 0) resolve([]);
+
+      const addResult = (i, value) => {
+        results[i] = value;
+        count += 1;
+        if (count === promises.length) {
+          resolve(results);
+        }
+      };
+
+      promises.forEach((promise, i) => {
+        promise.then(value => addResult(i, value))
+               .catch(reject);
+      });
+    });
+  }
+}
+
+module.exports = BluebirdLite;
+
+// Usage example
+const { log } = console;
+const bluebirdLite = require('./bluebird-lite');
+
+const promise1 = new bluebirdLite((resolve, reject) => {
+  setTimeout(() => resolve('Result 1'), 1000);
+});
+
+const promise2 = bluebirdLite.resolve('Result 2');
+
+bluebirdLite.all([promise1, promise2]).then(results => {
+  log(results); // Output: ['Result 1', 'Result 2']
+}).catch(err => {
+  log('Error:', err);
+});
+```
+
+Note that this is a simplified example and does not cover all features of the actual Bluebird library. Implementing full compliance with Promises/A+ specification and additional Bluebird-specific features would require more intricate handling and abstraction.

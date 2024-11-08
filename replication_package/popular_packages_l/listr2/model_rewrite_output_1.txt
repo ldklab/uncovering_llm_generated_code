@@ -1,0 +1,80 @@
+The provided Node.js code defines a task management system using an event-driven approach. The key components are:
+
+1. **Task Class**: Represents a task with a title and an executable function. It maintains a state ('pending', 'running', 'completed', 'failed') and can execute asynchronously.
+
+2. **Listr2 Class**: Extends the `EventEmitter` class to manage multiple tasks. It accepts an array of task definitions and an optional `concurrent` flag to determine if tasks should run concurrently or sequentially. The `run` method starts task execution, and `executeTask` manages each task's lifecycle, emitting a 'stateChange' event whenever a task's state changes.
+
+3. **EventEmitter**: Allows subscribing to task events to listen to changes in the task's state.
+
+The code also provides an example of how to use these classes, creating tasks, and listening to state changes.
+
+Here is a possible rewrite of the code:
+
+```javascript
+const EventEmitter = require('events');
+
+class Task {
+  constructor(title, task) {
+    this.title = title;
+    this.task = task;
+    this.state = 'pending';
+  }
+
+  async run(ctx) {
+    this.state = 'running';
+    try {
+      await this.task(ctx);
+      this.state = 'completed';
+    } catch (error) {
+      this.state = 'failed';
+      throw error;
+    }
+  }
+}
+
+class TaskManager extends EventEmitter {
+  constructor(tasks = [], options = { concurrent: false }) {
+    super();
+    this.tasks = tasks.map(({ title, task }) => new Task(title, task));
+    this.options = options;
+  }
+
+  async run(context = {}) {
+    const runTasks = this.tasks.map(task => this.createTaskExecutor(task, context));
+    return this.options.concurrent ? Promise.all(runTasks.map(fn => fn())) : this.executeSequentially(runTasks);
+  }
+
+  async executeSequentially(executors) {
+    for (const exec of executors) {
+      await exec();
+    }
+  }
+
+  createTaskExecutor(task, context) {
+    return async () => {
+      this.emit('stateChange', task);
+      try {
+        await task.run(context);
+      } finally {
+        this.emit('stateChange', task);
+      }
+    };
+  }
+}
+
+// Example usage
+const tasks = [
+  { title: 'Task 1', task: async (ctx) => { /* perform task 1 */ } },
+  { title: 'Task 2', task: async (ctx) => { /* perform task 2 */ } }
+];
+
+const taskManager = new TaskManager(tasks, { concurrent: false });
+
+taskManager.on('stateChange', (task) => {
+  console.log(`${task.title} is ${task.state}`);
+});
+
+taskManager.run().catch(console.error);
+
+module.exports = TaskManager;
+```

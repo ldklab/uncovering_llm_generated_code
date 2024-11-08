@@ -1,0 +1,70 @@
+The Node.js code provides a utility function that constructs a user agent string with various metadata in an AWS SDK setting. It collects information about the SDK, the operating system, the JavaScript runtime, and optionally includes service metadata and execution environment details. The user agent is useful for tracking usage, collecting metrics, and debugging.
+
+- The code defines environment and configuration file names for an application ID used in the user agent: `AWS_SDK_UA_APP_ID` in the environment and `sdk-ua-app-id` in a config file.
+- The `defaultUserAgent` function builds a user agent string. It takes an object with optional `serviceId` and required `clientVersion`, and returns a function that asynchronously generates the user agent string.
+- The function gathers metadata from:
+  - The SDK version and metadata.
+  - The OS platform and release.
+  - The language/runtime version.
+  - Optional AWS specific metadata like execution environment and service API version if `serviceId` is provided.
+  - Optionally includes an application ID obtained from environment variables or a config file.
+- The `defaultUserAgent` is exported for use in other modules.
+
+Here's the rewritten code:
+
+```node
+"use strict";
+
+const { loadConfig } = require("@aws-sdk/node-config-provider");
+const { platform, release } = require("os");
+const { env, versions } = require("process");
+
+const UA_APP_ID_ENV_NAME = "AWS_SDK_UA_APP_ID";
+const UA_APP_ID_INI_NAME = "sdk-ua-app-id";
+
+/**
+ * Constructs a user agent string with runtime metadata for AWS SDK.
+ * It includes SDK, OS, language, and optionally API and environment metadata.
+ */
+const defaultUserAgent = ({ serviceId, clientVersion }) => async () => {
+  const sections = [
+    // SDK metadata
+    ["aws-sdk-js", clientVersion],
+    // OS metadata
+    [`os/${platform()}`, release()],
+    // Language metadata
+    ["lang/js"],
+    ["md/nodejs", `${versions.node}`],
+  ];
+
+  if (serviceId) {
+    // Include API metadata if serviceId is provided
+    sections.push([`api/${serviceId}`, clientVersion]);
+  }
+
+  if (env.AWS_EXECUTION_ENV) {
+    // Include execution environment metadata if available
+    sections.push([`exec-env/${env.AWS_EXECUTION_ENV}`]);
+  }
+
+  // Retrieve application ID from environment or configuration
+  const appId = await loadConfig({
+    environmentVariableSelector: (env) => env[UA_APP_ID_ENV_NAME],
+    configFileSelector: (profile) => profile[UA_APP_ID_INI_NAME],
+    default: undefined,
+  })();
+
+  if (appId) {
+    // Include application ID metadata if available
+    sections.push([`app/${appId}`]);
+  }
+
+  return sections;
+};
+
+module.exports = {
+  UA_APP_ID_ENV_NAME,
+  UA_APP_ID_INI_NAME,
+  defaultUserAgent
+};
+```

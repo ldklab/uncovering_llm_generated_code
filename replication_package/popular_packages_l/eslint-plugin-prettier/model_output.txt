@@ -1,0 +1,123 @@
+The `eslint-plugin-prettier` is a Node.js package that acts as a bridge between Prettier and ESLint, allowing Prettier to be run as an ESLint rule. This setup helps in identifying discrepancies between the desired code style and Prettier’s formatting style as ESLint issues, making it easier to maintain consistent code formatting directly through the ESLint interface.
+
+### Main Features:
+
+1. **Prettier as ESLint Rule**: The core functionality allows Prettier to be executed within the ESLint process. It reports formatting issues detected by Prettier as ESLint errors. 
+
+2. **Installation**: It requires separate installation of Prettier and ESLint. The plugin itself is installed via npm commands and does not encapsulate these dependencies, thus relying on separate installations.
+
+3. **Configuration**: 
+    - **Legacy `.eslintrc*` configuration**: By using the `plugin:prettier/recommended` configuration preset, you can automatically configure both `eslint-plugin-prettier` and `eslint-config-prettier`. This setup disables conflicting formatting rules (e.g., `arrow-body-style` and `prefer-arrow-callback`) that can cause issues when used alongside Prettier.
+    - **Modern `eslint.config.js` configuration**: Similar to the legacy setup, a new way using JavaScript configuration files involves importing the `recommended` settings into an array.
+
+4. **Svelte Support**: Offers advice on using PostCSS with Svelte, recommending `eslint-plugin-svelte` for better compatibility.
+
+5. **Problematic Rules**: Warns about issues with rules like `arrow-body-style` and `prefer-arrow-callback`, which might cause autofixing to generate incorrect code. It suggests disabling these when using this plugin.
+
+6. **Options**: 
+    - Allows customization of Prettier settings within ESLint’s configuration file, though not advised due to potential inconsistencies with editor plugins.
+    - Supports additional options like toggling the use of Prettier’s configuration file or modifying file info options to decide if files need formatting.
+
+7. **Auto-fixable**: The rule is fixable using ESLint’s `--fix` flag, automatically applying Prettier’s formatting.
+
+Below is the implementation of `eslint-plugin-prettier`. It defines a core ESLint rule that wraps Prettier, reporting formatting discrepancies as ESLint errors.
+
+```js
+// lib/index.js
+const { CLIEngine } = require('eslint');
+const prettier = require('prettier');
+const requireIndex = require('requireindex');
+const getPrettierConfig = require('./util/getPrettierConfig');
+
+// load all rules in `rules` directory
+module.exports.rules = requireIndex(__dirname + "/rules");
+
+// lib/rules/prettier.js
+const prettier = require('prettier');
+
+module.exports = {
+  meta: {
+    type: "layout",
+    docs: {
+      description: "Run Prettier as an ESLint rule",
+      category: "Stylistic Issues",
+      recommended: true
+    },
+    fixable: "code",
+    schema: [
+      {
+        type: "object",
+        properties: {
+          // Prettier options
+        },
+        additionalProperties: false
+      },
+      {
+        type: "object",
+        properties: {
+          usePrettierrc: { type: "boolean" },
+          fileInfoOptions: {
+            type: "object",
+            properties: {
+              withNodeModules: { type: "boolean" }
+            },
+            additionalProperties: false
+          }
+        },
+        additionalProperties: false
+      }
+    ]
+  },
+
+  create(context) {
+    const options = context.options[0] || {};
+    const prettierOptionsFromContext = context.options[1] || {};
+    const usePrettierrc = prettierOptionsFromContext.usePrettierrc !== false;
+    const fileInfoOptions = prettierOptionsFromContext.fileInfoOptions || {};
+
+    const sourceCode = context.getSourceCode();
+    const filePath = context.getFilename();
+
+    return {
+      Program() {
+        const prettierRcOptions = usePrettierrc
+          ? prettier.resolveConfig.sync(filePath, { editorconfig: true })
+          : {};
+        const prettierOptions = Object.assign(
+          {},
+          prettierRcOptions,
+          options,
+          { filepath: filePath }
+        );
+
+        // Get the formatted output
+        const formatted = prettier.format(sourceCode.text, prettierOptions);
+        
+        if (formatted !== sourceCode.text) {
+          context.report({
+            loc: { line: 1, column: 0 },
+            message: 'Code style issues found in the analyzed file. Run `eslint --fix` to automatically fix them.',
+            fix(fixer) {
+              return fixer.replaceTextRange([0, sourceCode.text.length], formatted);
+            }
+          });
+        }
+      }
+    };
+  }
+};
+
+// lib/util/getPrettierConfig.js
+const prettier = require('prettier');
+const fs = require('fs');
+const path = require('path');
+
+function getPrettierConfig(filePath) {
+  const options = { editorconfig: true };
+  return prettier.resolveConfig.sync(filePath, options);
+}
+
+module.exports = getPrettierConfig;
+```
+
+The above implementation allows ESLint to report on and fix Prettier-driven formatting issues through its `--fix` mechanism, bridging the two tools seamlessly for code formatted to Prettier's specifications.

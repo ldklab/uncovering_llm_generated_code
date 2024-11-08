@@ -1,0 +1,183 @@
+The provided Node.js code defines a `FastGlob` class that performs file system pattern matching (globbing), similar to the Unix shell, allowing asynchronous, synchronous, and streaming globs to be performed using specified patterns. Below is an explanation of the key components of the code:
+
+1. **Dependencies**: 
+   - `fs`, `path` modules from Node.js, to interact with the file system and handle file paths.
+   - `micromatch`, a library used to match files using glob patterns.
+   - `stream.Readable` from Node, used for creating readable streams.
+   - Utilizes `promisify` to convert callback-based fs methods to promise-based versions.
+
+2. **Core Methods**:
+   - `globAsync`: Asynchronously matches file paths to the given patterns.
+   - `globSync`: Synchronously matches file paths to the given patterns.
+   - `globStream`: Returns a stream that emits matched paths one at a time.
+   - `processTaskAsync`, `processTaskSync`: Internal processing functions for handling file entries during asynchronous and synchronous operations.
+   - `streamProcessTask`: Async generator function for processing tasks in streaming mode.
+   
+3. **Utility Methods**:
+   - `generateTasks`: Generates tasks with base path and checks if the pattern is dynamic.
+   - `isDynamicPattern`: Checks whether given pattern is dynamic or not.
+   - `getEntry`: Retrieves the entry info, and can return a full entry object if `options.objectMode` or specific stats are requested.
+
+4. **Module Exports**: Exports the core `glob` methods for use in other files.
+
+Below is a rewritten version of the code, maintaining the same functionality:
+
+```javascript
+const fs = require('fs');
+const path = require('path');
+const { promisify } = require('util');
+const micromatch = require('micromatch');
+const { Readable } = require('stream');
+
+const readdir = promisify(fs.readdir);
+
+class FastGlob {
+  
+  static async globAsync(patterns, options = {}) {
+    const tasks = FastGlob.generateTasks(patterns, options);
+    let result = [];
+
+    for (const task of tasks) {
+      result = result.concat(await FastGlob.processTaskAsync(task, options));
+    }
+
+    return options.unique ? [...new Set(result)] : result;
+  }
+
+  static globSync(patterns, options = {}) {
+    const tasks = FastGlob.generateTasks(patterns, options);
+    let result = [];
+
+    for (const task of tasks) {
+      result = result.concat(FastGlob.processTaskSync(task, options));
+    }
+
+    return options.unique ? [...new Set(result)] : result;
+  }
+
+  static globStream(patterns, options = {}) {
+    const tasks = FastGlob.generateTasks(patterns, options);
+    const stream = new Readable({ objectMode: options.objectMode });
+
+    (async () => {
+      for (const task of tasks) {
+        for await (const entry of FastGlob.streamProcessTask(task, options)) {
+          stream.push(entry);
+        }
+      }
+      stream.push(null);
+    })();
+
+    return stream;
+  }
+
+  static async processTaskAsync(task, options) {
+    const entries = await readdir(task.base, { withFileTypes: true });
+    let results = [];
+
+    for (const entry of entries) {
+      const entryPath = path.join(task.base, entry.name);
+
+      if (task.dynamic) {
+        const matched = micromatch.isMatch(entryPath, task.patterns);
+
+        if (matched) {
+          results.push(this.getEntry(entry, entryPath, options));
+          if (entry.isDirectory() && options.deep !== 0) {
+            const subOptions = { ...options, cwd: entryPath, deep: options.deep - 1 };
+            results = results.concat(await this.globAsync('**', subOptions));
+          }
+        }
+      }
+    }
+
+    return results;
+  }
+
+  static processTaskSync(task, options) {
+    const entries = fs.readdirSync(task.base, { withFileTypes: true });
+    let results = [];
+
+    for (const entry of entries) {
+      const entryPath = path.join(task.base, entry.name);
+
+      if (task.dynamic) {
+        const matched = micromatch.isMatch(entryPath, task.patterns);
+
+        if (matched) {
+          results.push(this.getEntry(entry, entryPath, options));
+          if (entry.isDirectory() && options.deep !== 0) {
+            const subOptions = { ...options, cwd: entryPath, deep: options.deep - 1 };
+            results = results.concat(this.globSync('**', subOptions));
+          }
+        }
+      }
+    }
+
+    return results;
+  }
+  
+  static async* streamProcessTask(task, options) {
+    const entries = await readdir(task.base, { withFileTypes: true });
+
+    for (const entry of entries) {
+      const entryPath = path.join(task.base, entry.name);
+
+      if (task.dynamic) {
+        const matched = micromatch.isMatch(entryPath, task.patterns);
+
+        if (matched) {
+          yield this.getEntry(entry, entryPath, options);
+
+          if (entry.isDirectory() && options.deep !== 0) {
+            const subOptions = { ...options, cwd: entryPath, deep: options.deep - 1 };
+            yield* this.globStream('**', subOptions);
+          }
+        }
+      }
+    }
+  }
+
+  static generateTasks(patterns, options) {
+    const tasks = [];
+
+    const base = options.cwd || process.cwd();
+    for (const pattern of Array.isArray(patterns) ? patterns : [patterns]) {
+      const isDynamic = FastGlob.isDynamicPattern(pattern, options);
+      tasks.push({
+        base,
+        dynamic: isDynamic,
+        patterns: Array.isArray(pattern) ? pattern : [pattern],
+      });
+    }
+
+    return tasks;
+  }
+
+  static isDynamicPattern(pattern, options = {}) {
+    return micromatch.isMatch(pattern, '*');
+  }
+
+  static getEntry(dirent, entryPath, options) {
+    if (options.objectMode || options.stats) {
+      const stats = options.stats ? fs.statSync(entryPath) : undefined;
+      return { name: dirent.name, path: entryPath, dirent, stats };
+    }
+    return entryPath;
+  }
+}
+
+module.exports = {
+  fg: FastGlob.globAsync,
+  async: FastGlob.globAsync,
+  glob: FastGlob.globAsync,
+  sync: FastGlob.globSync,
+  globSync: FastGlob.globSync,
+  stream: FastGlob.globStream,
+  globStream: FastGlob.globStream,
+  generateTasks: FastGlob.generateTasks,
+  isDynamicPattern: FastGlob.isDynamicPattern,
+  escapePath: FastGlob.escapePath,
+  convertPathToPattern: FastGlob.convertPathToPattern,
+};
+```

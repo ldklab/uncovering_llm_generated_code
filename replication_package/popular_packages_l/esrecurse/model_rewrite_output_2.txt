@@ -1,0 +1,97 @@
+The provided Node.js code implements a simple AST (Abstract Syntax Tree) traversal utility using the Visitor design pattern. This utility allows you to specify behaviors for visiting different node types in an AST. Here is a breakdown of the functionality:
+
+1. **Visitor Class**: This class handles the traversal of an AST. It accepts a visitor object, which defines functions for handling specific node types, and options that include custom child visitor keys and a fallback strategy.
+
+2. **Construtor**: Initializes with a visitor object, child visitor keys, and a fallback method. It also keeps track of visited nodes to avoid redundant visits.
+
+3. **visit Method**: This method is the entry point for visiting a node. It checks if the node is an object and whether it has already been visited. If not, it marks it as visited, finds a corresponding visitor function from the visitor object, and then calls it. After calling the visitor function, it processes the node's children.
+
+4. **visitChildren Method**: This method determines the children of the current node (using the `getVisitKeys` method) and recursively visits each child. It handles both singular children and arrays of children.
+
+5. **getVisitKeys Method**: This method returns the keys of the children to visit. It checks the `childVisitorKeys` and fallback strategies to determine these keys.
+
+6. **visit Function**: A helper function that instantiates the `Visitor` class and starts visiting the provided AST.
+
+7. **Example Usage**: An example AST is defined and traversed, printing out values of 'Literal' type nodes.
+
+8. **Module Exports**: The `Visitor` class and the `visit` function are exported for external usage.
+
+Here's the rewritten code:
+
+```javascript
+const util = require('util');
+
+class Visitor {
+    constructor(visitor, options = {}) {
+        this.visitor = visitor || {};
+        this.childVisitorKeys = options.childVisitorKeys || {};
+        this.fallback = options.fallback || null;
+        this.visitedNodes = new Set();
+    }
+
+    visit(node) {
+        if (!node || typeof node !== 'object' || this.visitedNodes.has(node)) return;
+
+        this.visitedNodes.add(node);
+        const nodeType = node.type;
+        const visitFn = this.visitor[nodeType] || null;
+
+        if (visitFn) {
+            visitFn.call(this, node);
+        }
+
+        this.visitChildren(node);
+    }
+
+    visitChildren(node) {
+        const keys = this.getVisitKeys(node);
+        for (const key of keys) {
+            const childNode = node[key];
+            if (Array.isArray(childNode)) {
+                for (const cn of childNode) {
+                    this.visit(cn);
+                }
+            } else {
+                this.visit(childNode);
+            }
+        }
+    }
+
+    getVisitKeys(node) {
+        let keys = this.childVisitorKeys[node.type] || [];
+        if (this.fallback === 'iteration') {
+            keys = Object.keys(node);
+        } else if (typeof this.fallback === 'function') {
+            keys = this.fallback(node);
+        }
+        return keys;
+    }
+}
+
+function visit(ast, visitor, options) {
+    const v = new Visitor(visitor, options);
+    v.visit(ast);
+}
+
+// Example usage
+const ast = {
+    type: 'Program',
+    body: [
+        { type: 'Literal', value: 1 },
+        { type: 'Literal', value: 2 }
+    ]
+};
+
+visit(ast, {
+    Literal(node) {
+        console.log(`Found literal with value: ${node.value}`);
+    }
+}, {
+    fallback: 'iteration'
+});
+
+module.exports = {
+    Visitor,
+    visit
+};
+```

@@ -1,0 +1,94 @@
+The `ajv-keywords` package is an extension of the [Ajv](https://github.com/epoberezkin/ajv) JSON Schema validator. It adds a variety of custom keywords that can be utilized to perform validations that are not directly supported by the JSON Schema specification. These keywords are categorized into different types based on the data they primarily handle, such as types, numbers, strings, arrays, objects, and generic keywords. Additionally, it offers features for data transformation and defaults, making it more versatile for custom validation needs. Here are the main functionalities:
+
+1. **Types**:
+    - `typeof`: Validates a field using JavaScript's `typeof`.
+    - `instanceof`: Validates using JavaScript's `instanceof`.
+
+2. **Numbers**:
+    - `range` and `exclusiveRange`: Simplified way to express numeric ranges.
+
+3. **Strings**:
+    - `regexp`: Allows the use of regular expressions with flags in schemas.
+    - `transform`: Applies transformations to strings, such as trimming or case conversions.
+
+4. **Arrays**:
+    - `uniqueItemProperties`: Ensures certain item properties in an array are unique.
+
+5. **Objects**:
+    - `allRequired`, `anyRequired`, `oneRequired`: Require some/all properties to be present.
+    - `patternRequired`: Requires properties matching a regex pattern.
+    - `prohibited`: Prohibits the presence of certain properties.
+    - `deepProperties` and `deepRequired`: Allows validation and requirement of nested properties.
+    - `dynamicDefaults`: Assigns dynamic default values like timestamps, using predefined or custom functions.
+
+6. **Generic**:
+    - `select`/`selectCases`/`selectDefault`: Conditional validation based on a property value (deprecated in favor of OpenAPI’s discriminator).
+
+The installation can be done via npm, and the package supports adding all keywords or selectively importing the needed ones to reduce unused code.
+
+Here's an implementation with some of these functionalities:
+
+```markdown
+// index.js
+const Ajv = require("ajv");
+const addKeywords = require("./ajvKeywords");
+
+const ajv = new Ajv();
+addKeywords(ajv);
+
+const schema = {
+  type: "object",
+  properties: {
+    kind: { type: "string" },
+    timestamp: { type: "string", format: "date-time" },
+  },
+  required: ["kind"],
+  dynamicDefaults: {
+    timestamp: "datetime",
+  },
+  select: { $data: "0/kind" },
+  selectCases: {
+    foo: {
+      properties: { fooProp: { type: "string" } },
+      required: ["fooProp"],
+    },
+    bar: {
+      properties: { barProp: { type: "number" } },
+      required: ["barProp"],
+    },
+  },
+  additionalProperties: false,
+};
+
+const data = {
+  kind: "foo",
+  fooProp: "example",
+};
+
+const validate = ajv.compile(schema);
+
+if (validate(data)) {
+  console.log("Valid data:", data);
+} else {
+  console.log("Invalid data:", validate.errors);
+}
+
+// ajvKeywords.js
+module.exports = function addKeywords(ajv) {
+  // Load all keywords
+  require("ajv-keywords")(ajv);
+
+  // Optionally: Load specific keywords
+  // require("ajv-keywords")(ajv, ["transform", "uniqueItemProperties"]);
+
+  // Dynamic defaults, you can add custom functions (not shown here)
+  const dynamicDefaults = require("ajv-keywords/dist/definitions/dynamicDefaults");
+  ajv.addKeyword("dynamicDefaults", dynamicDefaults());
+};
+```
+
+In this implementation:
+
+- We've set up a basic schema that uses `dynamicDefaults` to automatically populate a timestamp.
+- We've included a deprecated `select` keyword example for conditional validation based on property values (`kind`).
+- Used the generic mechanism to load all keywords from `ajv-keywords`. Keywords can also be loaded selectively to optimize performance.

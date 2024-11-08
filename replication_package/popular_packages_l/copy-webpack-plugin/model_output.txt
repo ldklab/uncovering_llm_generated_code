@@ -1,0 +1,102 @@
+The `copy-webpack-plugin` is a Node.js package that integrates with `webpack` to facilitate copying files or directories from one location to another within a project. This plugin is designed to handle files or directories that already exist in the source tree as part of the `webpack` build process.
+
+### Functionality
+
+The plugin's primary features are:
+
+1. **Copy Files/Directories:** It allows copying of individual files or entire directories to a specified destination within the build directory. The source and destination can be defined using patterns in the `webpack` configuration file.
+
+2. **Patterns Configuration:** The `patterns` option in the plugin allows for specifying a list of objects or strings, each detailing:
+   - `from`: The path or glob pattern for the source file/directory.
+   - `to`: The destination path. This can be a string or a function that determines the output path dynamically.
+   - Additional options such as `globOptions`, `filter`, `toType`, `force`, and more to tailor how and what gets copied.
+
+3. **Advanced Options:**
+   - **`transform` and `transformAll` Options:** These options allow the contents of the files to be modified as they are copied, for instance, applying transformations or optimizations.
+   - **`concurrency`:** Controls the number of simultaneous file system operations.
+   - **`cache`:** Enables caching to improve performance by avoiding re-copying unchanged files.
+
+4. **Error Handling:** Options like `noErrorOnMissing` can suppress errors if certain files are missing during the copy operation.
+
+5. **Customization:** Supports additional customization through asynchronous and synchronous functions for file name generation and content transformations.
+
+By integrating this plugin into a `webpack` configuration, developers can automate the inclusion of static assets like images, fonts, or other non-JavaScript resources into their `webpack` build output.
+
+### Node.js Package Code
+
+```javascript
+const fs = require('fs');
+const path = require('path');
+const glob = require('fast-glob');
+
+class CopyWebpackPlugin {
+  constructor(options) {
+    this.options = options || {};
+  }
+
+  apply(compiler) {
+    compiler.hooks.emit.tapAsync('CopyWebpackPlugin', (compilation, callback) => {
+      const context = compiler.options.context;
+      const patterns = this.options.patterns || [];
+
+      Promise.all(
+        patterns.map(pattern =>
+          this.handlePattern(pattern, context, compilation)
+        )
+      )
+      .then(() => callback())
+      .catch(callback);
+    });
+  }
+
+  handlePattern(pattern, context, compilation) {
+    const { from, to } = pattern;
+    const absoluteFrom = path.resolve(context, from);
+    const filesToCopy = glob.sync(absoluteFrom);
+
+    return Promise.all(
+      filesToCopy.map(file => this.copyFile(file, to, compilation, pattern))
+    );
+  }
+
+  copyFile(from, to, compilation, pattern) {
+    return new Promise((resolve, reject) => {
+      fs.readFile(from, (err, content) => {
+        if (err) return reject(err);
+
+        const outputPath = typeof to === 'function' ?
+          to({ context: path.dirname(from), absoluteFilename: from }) :
+          path.join(to, path.basename(from));
+
+        // Optional transform step
+        if (pattern.transform) {
+          content = pattern.transform(content, from);
+        }
+
+        compilation.assets[outputPath] = {
+          source: () => content,
+          size: () => content.length,
+        };
+
+        resolve();
+      });
+    });
+  }
+}
+
+module.exports = CopyWebpackPlugin;
+
+// Webpack configuration using CopyWebpackPlugin
+// const CopyWebpackPlugin = require('./copy-webpack-plugin');
+
+// module.exports = {
+//   plugins: [
+//     new CopyWebpackPlugin({
+//       patterns: [
+//         { from: 'source', to: 'dest' },
+//         { from: 'other', to: 'public' },
+//       ],
+//     }),
+//   ],
+// };
+```

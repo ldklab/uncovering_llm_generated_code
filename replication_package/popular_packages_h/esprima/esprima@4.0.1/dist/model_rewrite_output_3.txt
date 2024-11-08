@@ -1,0 +1,80 @@
+The given Node.js code is a UMD (Universal Module Definition) pattern using Webpack that checks the module environment and exports the `esprima` module accordingly. If it's running in a CommonJS environment (`exports` and `module` are objects), it exports the module directly. If a module loader like AMD is present (`define` function exists and is of type 'function'), it uses that loader to define the module. In a global browser environment, it attaches `esprima` to the global object (`root`).
+
+The code initializes an internal cache for modules and defines a `__webpack_require__` function that mimics module loading by checking the cache first and then executing the module function to load it into the cache if not already present.
+
+The module seems to provide functionality related to parsing and tokenizing JavaScript code. It defines functions like `parse`, `parseModule`, `parseScript`, and `tokenize`, which likely handle parsing JavaScript code into abstract syntax trees (ASTs) or tokenize the input code into manageable segments for further processing.
+
+Suppose you need a simpler, more organized, and modern version of the same functional code using ES6+ module syntax. Here's a possible rewrite:
+
+```javascript
+import * as esprima from 'esprima';
+
+class ModuleLoader {
+  constructor() {
+    this.modules = {};
+  }
+
+  require(moduleId) {
+    if (this.modules[moduleId]) {
+      return this.modules[moduleId].exports;
+    }
+
+    const module = (this.modules[moduleId] = {
+      exports: {},
+    });
+
+    this.modules[moduleId].code.call(
+      module.exports,
+      module,
+      module.exports,
+      this.require.bind(this)
+    );
+
+    return module.exports;
+  }
+}
+
+const moduleLoader = new ModuleLoader();
+
+export function parse(code, options, delegate) {
+  // function implementation
+}
+
+export function parseModule(code, options, delegate) {
+  const parsingOptions = options || {};
+  parsingOptions.sourceType = 'module';
+  return parse(code, parsingOptions, delegate);
+}
+
+export function parseScript(code, options, delegate) {
+  const parsingOptions = options || {};
+  parsingOptions.sourceType = 'script';
+  return parse(code, parsingOptions, delegate);
+}
+
+export function tokenize(code, options, delegate) {
+  const tokenizer = new esprima.Tokenizer(code, options);
+  let tokens = [];
+  try {
+    while (true) {
+      let token = tokenizer.getNextToken();
+      if (!token) break;
+      if (delegate) {
+        token = delegate(token);
+      }
+      tokens.push(token);
+    }
+  } catch (e) {
+    tokenizer.errorHandler.tolerate(e);
+  }
+  if (tokenizer.errorHandler.tolerant) {
+    tokens.errors = tokenizer.errors();
+  }
+  return tokens;
+}
+
+export const Syntax = esprima.Syntax;
+export const version = '4.0.1';
+```
+
+This modern rewrite adopts ES6 module syntax, removing the UMD wrapper and leveraging JavaScript import/export directly. It simplifies the module definition pattern, focusing on clear function definitions for parsing and tokenizing JavaScript code using Esprima.

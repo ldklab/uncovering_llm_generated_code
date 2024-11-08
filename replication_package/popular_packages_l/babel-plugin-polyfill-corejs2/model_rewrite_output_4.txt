@@ -1,0 +1,70 @@
+The original code is a Babel plugin designed to add polyfills to JavaScript code using CoreJS 2 based on a strategy specified in the configuration options. It defines three modes: `usage-pure`, `usage-global`, and `entry-global`.
+
+1. **usage-pure**: This mode dynamically adds polyfills for only the features used in the code without affecting the global scope. It analyzes the code and, for example, adds a polyfill for `Array.from`.
+
+2. **usage-global**: Similar to `usage-pure`, but when adding polyfills, it modifies global objects, meaning that polyfills are added globally.
+
+3. **entry-global**: This mode works with entry imports. It replaces CoreJS imports in the code with necessary polyfills globally.
+
+Both `usage-pure` and `usage-global` modes analyze the code within call expressions to check for specific usage patterns (in this case, usage of `Array.from`) and add the necessary polyfills accordingly. The `entry-global` mode alters existing core-js imports to integrate necessary polyfills for the whole module.
+
+Here is a possible rewrite with enhanced readability:
+
+```javascript
+// babel-plugin-polyfill-corejs2/index.js
+module.exports = function(babel) {
+  const { types: t } = babel;
+
+  return {
+    name: "babel-plugin-polyfill-corejs2",
+    visitor: {
+      Program(path, state) {
+        const method = state.opts.method || 'usage-global';
+
+        function addPolyfillForArrayFrom(path, polyfillPath) {
+          if (t.isMemberExpression(path.node.callee) &&
+              path.node.callee.object.name === 'Array' &&
+              path.node.callee.property.name === 'from') {
+            path.unshiftContainer('body', t.importDeclaration(
+              [],
+              t.stringLiteral(polyfillPath)
+            ));
+          }
+        }
+
+        switch (method) {
+          case 'usage-pure':
+            path.traverse({
+              CallExpression(path) {
+                addPolyfillForArrayFrom(path, 'core-js/modules/es6.array.from');
+              },
+            });
+            break;
+
+          case 'usage-global':
+            path.traverse({
+              CallExpression(path) {
+                addPolyfillForArrayFrom(path, 'core-js/library/fn/array/from');
+              },
+            });
+            break;
+
+          case 'entry-global':
+            path.node.body.forEach((node, index) => {
+              if (t.isImportDeclaration(node) && node.source.value.startsWith('core-js')) {
+                path.get('body')[index].replaceWith(t.importDeclaration(
+                  [],
+                  t.stringLiteral('core-js/modules/index')
+                ));
+              }
+            });
+            break;
+
+          default:
+            throw new Error(`Unknown method "${method}"`);
+        }
+      },
+    },
+  };
+};
+```

@@ -1,0 +1,44 @@
+The Node.js code defines a module that exports a function called `exit`. This function is designed to exit a Node.js process with a specified exit code, but only after ensuring that all output streams (such as `stdout` and `stderr`) have finished draining. This functionality is useful when you want to make sure that all your logs or outputs are completely written to the terminal or a file before the script exits.
+
+Key features of the code:
+- The function accepts two parameters: `exitCode` (the code with which the process should exit) and `streams` (an array of output streams to monitor).
+- If `streams` is not provided, it defaults to `[process.stdout, process.stderr]`.
+- The code tracks how many of these streams are drained (`drainCount`) and exits the process when they are all drained.
+- It handles the case where streams may still have buffered data by writing an empty string to them and using the stream’s callback to update the `drainCount`.
+- It overrides the `write` function of each stream to essentially disable further writes, ensuring no new data is sent to the streams after attempting to exit.
+- The process is forcibly exited using an `exit` event listener to handle peculiarities on Windows platforms where the exit code may sometimes default to `0`.
+
+Here's a possible rewrite of this Node.js code:
+
+```javascript
+'use strict';
+
+module.exports = function exit(exitCode, streams = [process.stdout, process.stderr]) {
+  let drainedStreams = 0;
+
+  function checkAndExit() {
+    if (drainedStreams === streams.length) {
+      process.exit(exitCode);
+    }
+  }
+
+  streams.forEach(stream => {
+    if (stream.bufferSize === 0) {
+      drainedStreams++;
+    } else {
+      stream.write('', 'utf-8', () => {
+        drainedStreams++;
+        checkAndExit();
+      });
+    }
+
+    stream.write = () => {};
+  });
+
+  checkAndExit();
+
+  process.on('exit', () => {
+    process.exit(exitCode);
+  });
+};
+```

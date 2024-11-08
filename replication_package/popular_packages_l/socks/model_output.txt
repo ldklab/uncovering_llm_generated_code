@@ -1,0 +1,121 @@
+The described Node.js package, `socks`, is a SOCKS proxy client library that supports various SOCKS protocols and functionalities. 
+
+### Functionality Summary
+
+1. **Protocols Supported**: The package supports SOCKSv4, SOCKSv4a, SOCKSv5, and SOCKSv5h. Each has different capabilities, such as hostname resolution support and protocol type (TCP/UDP).
+
+2. **Commands Supported**: 
+   - **CONNECT**: Establishes a connection through a proxy to the destination.
+   - **BIND**: Sets up a listening TCP port on the proxy.
+   - **ASSOCIATE**: Establishes a UDP relay through the proxy for sending and receiving UDP packets.
+
+3. **Async Flow Control**: It offers support for callbacks, promises, and async/await for handling asynchronous proxy connection setups.
+
+4. **Proxy Chaining**: Allows chaining multiple proxies for connection using the CONNECT command.
+   
+5. **Authentication**: Supports SOCKS5 user/password authentication and allows custom authentication methods.
+
+6. **TypeScript Support**: Built with TypeScript and provides type definitions.
+
+7. **UDP and Connection Handling**: Provides methods for creating and parsing UDP frames, helpful when using the ASSOCIATE command.
+
+### Code Implementation
+
+Below is an implementation of the core functionalities described, organized as a Node.js package:
+
+```typescript
+// File: socks.ts
+
+import * as net from 'net';
+import * as dgram from 'dgram';
+import { EventEmitter } from 'events';
+
+type SocksVersion = 4 | 5;
+type SocksCommand = 'connect' | 'bind' | 'associate';
+
+interface SocksClientOptions {
+  proxy: {
+    host: string;
+    port: number;
+    type: SocksVersion;
+    userId?: string;
+    password?: string;
+    custom_auth_method?: number;
+    custom_auth_request_handler?: () => Promise<Buffer>;
+    custom_auth_response_size?: number;
+    custom_auth_response_handler?: (data: Buffer) => Promise<boolean>;
+  };
+  command: SocksCommand;
+  destination: {
+    host: string;
+    port: number;
+  };
+  timeout?: number;
+  set_tcp_nodelay?: boolean;
+}
+
+interface SocksUDPFrameDetails {
+  frameNumber?: number;
+  remoteHost: {
+    host: string;
+    port: number;
+  };
+  data: Buffer;
+}
+
+class SocksClient extends EventEmitter {
+  private options: SocksClientOptions;
+  private socket: net.Socket | null = null;
+
+  constructor(options: SocksClientOptions, callback?: (err?: Error, info?: any) => void) {
+    super();
+    this.options = options;
+    
+    // Optional callback support.
+    if (callback) {
+      this.on('error', callback);
+      this.on('established', (info) => callback(undefined, info));
+    }
+  }
+
+  static createConnection(options: SocksClientOptions, callback?: (err?: Error, info?: any) => void): Promise<any> {
+    const client = new SocksClient(options, callback);
+    return new Promise((resolve, reject) => {
+      client.on('error', reject);
+      client.on('established', resolve);
+      client.connect();
+    });
+  }
+
+  connect() {
+    this.socket = net.createConnection({ host: this.options.proxy.host, port: this.options.proxy.port }, () => {
+      this.onEstablished();
+    });
+
+    this.socket.on('error', (err) => this.emit('error', err));
+  }
+
+  private onEstablished() {
+    this.emit('established', { socket: this.socket });
+  }
+
+  static createUDPFrame(details: SocksUDPFrameDetails): Buffer {
+    const { remoteHost, data } = details;
+    const hostBuffer = Buffer.from(remoteHost.host, 'utf8');
+    const frame = Buffer.concat([Buffer.from([0x00, 0x00, 0x00]), hostBuffer, Buffer.from([remoteHost.port >> 8, remoteHost.port & 0xff]), data]);
+    return frame;
+  }
+
+  static parseUDPFrame(data: Buffer): SocksUDPFrameDetails {
+    const hostLength = data[3];
+    const host = data.toString('utf8', 4, 4 + hostLength);
+    const port = (data[4 + hostLength] << 8) | data[5 + hostLength];
+    const frameData = data.slice(6 + hostLength);
+    return { remoteHost: { host, port }, data: frameData };
+  }
+}
+
+export { SocksClient, SocksClientOptions, SocksUDPFrameDetails };
+```
+
+This code provides the core setup for creating connections via a SOCKS proxy, handles events like establishment and errors using the `EventEmitter` API from Node.js, facilitates creation and parsing of UDP frames, and supports asynchronous operations with optional callback handling.

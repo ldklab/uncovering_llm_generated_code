@@ -1,0 +1,79 @@
+The provided Node.js code is a configuration file for Webpack. It configures how CSS and JavaScript files should be processed and bundled. The configuration supports different behavior based on whether the build is for production or development.
+
+1. **Mode**: It determines if the build should be optimized for production or set up for development based on the `argv.mode` flag.
+2. **CSS Files Processing**: This uses loaders to handle CSS files:
+   - `MiniCssExtractPlugin.loader` is used for production, to extract CSS into separate files.
+   - `style-loader` is used for development to inject CSS into the DOM.
+   - `css-loader` enables importing CSS files as modules.
+   - `postcss-loader` applies PostCSS transformations like `postcss-preset-env`.
+3. **JavaScript with Styling**: There's a specific rule for files with a `.style.js` extension, which processes JavaScript files containing styles:
+   - These use `style-loader` and `css-loader` as well, along with `babel-loader` to transpile JavaScript.
+   - `postcss-loader` is configured to parse JavaScript files with styles using `postcss-js`.
+
+The resulting configuration includes the `MiniCssExtractPlugin`, which specifies the filename format for extracted CSS files, using content hashing in production for cache busting.
+
+Here's a possible rewrite of the original code:
+
+```js
+// webpack.config.js
+const path = require('path');
+const MiniCssExtractPlugin = require('mini-css-extract-plugin');
+
+module.exports = (env, argv) => {
+  const isProduction = argv.mode === 'production';
+
+  return {
+    mode: isProduction ? 'production' : 'development',
+    module: {
+      rules: [
+        {
+          test: /\.css$/i,
+          use: [
+            isProduction ? MiniCssExtractPlugin.loader : 'style-loader',
+            {
+              loader: 'css-loader',
+              options: { importLoaders: 1 },
+            },
+            {
+              loader: 'postcss-loader',
+              options: {
+                postcssOptions: {
+                  plugins: [
+                    [
+                      'postcss-preset-env',
+                      // Add any preset-env plugin options here
+                    ],
+                  ],
+                },
+                sourceMap: true, // Enable source maps for better debugging
+              },
+            },
+          ],
+        },
+        {
+          test: /\.style.js$/,
+          use: [
+            'style-loader',
+            'css-loader',
+            'babel-loader',
+            {
+              loader: 'postcss-loader',
+              options: {
+                postcssOptions: {
+                  parser: 'postcss-js',
+                },
+                execute: true,
+              },
+            },
+          ],
+        },
+      ],
+    },
+    plugins: [
+      new MiniCssExtractPlugin({
+        filename: isProduction ? '[name].[contenthash].css' : '[name].css',
+      }),
+    ],
+  };
+};
+```

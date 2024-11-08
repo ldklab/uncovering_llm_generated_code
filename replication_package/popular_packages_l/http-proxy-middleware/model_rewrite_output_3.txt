@@ -1,0 +1,70 @@
+```javascript
+const http = require('http');
+const httpProxy = require('http-proxy');
+
+class HttpProxyMiddleware {
+  constructor(options) {
+    this.options = options;
+    this.proxy = httpProxy.createProxyServer({});
+    this.bindEvents();
+  }
+
+  bindEvents() {
+    const { on } = this.options;
+    if (on) {
+      for (const event in on) {
+        if (on.hasOwnProperty(event)) {
+          this.proxy.on(event, on[event]);
+        }
+      }
+    }
+  }
+
+  middleware(req, res, next) {
+    const { target, changeOrigin, pathRewrite, onError } = this.options;
+
+    req.url = req.originalUrl || req.url;
+    const options = { target, changeOrigin };
+
+    if (pathRewrite) {
+      const pathRewriter = new RegExp(Object.keys(pathRewrite).join('|'));
+      req.url = req.url.replace(pathRewriter, (matched) => pathRewrite[matched]);
+    }
+
+    this.proxy.web(req, res, options, (err) => {
+      if (err) {
+        if (onError) {
+          onError(err, req, res, target);
+        } else {
+          res.statusCode = 500;
+          res.end('Proxy error');
+        }
+      }
+    });
+  }
+
+  upgrade(req, socket, head) {
+    const { target, changeOrigin } = this.options;
+    this.proxy.ws(req, socket, head, { target, changeOrigin });
+  }
+}
+
+function createProxyMiddleware(options) {
+  const proxyMiddleware = new HttpProxyMiddleware(options);
+  return function(req, res, next) {
+    proxyMiddleware.middleware(req, res, next);
+  };
+}
+
+module.exports = { createProxyMiddleware };
+```
+
+**Functionality Explanation:**
+The code illustrates a middleware implementation using the `http-proxy` library for Node.js. It defines a class `HttpProxyMiddleware` to handle creating and managing a proxy server with configurable options such as target server, path rewriting, and event handling.
+
+- **Constructor**: Initializes the proxy server using the options passed and sets up any event listeners if specified.
+- **bindEvents**: Attaches user-defined event handlers to proxy events.
+- **middleware**: Core function invoked to handle incoming HTTP requests. It carries out URL rewriting if needed and proxies the request to the intended target. In case of an error, it invokes an error handler if provided or sends a default error response.
+- **upgrade**: Handles WebSocket connections by forwarding them to the target server.
+
+The `createProxyMiddleware` function is a helper for creating and returning an instance of `HttpProxyMiddleware`, which can be used as a middleware function in web server applications.

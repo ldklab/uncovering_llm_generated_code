@@ -1,0 +1,202 @@
+The provided Node.js code is a module that exports a Babel transformer designed specifically for use with Jest. This transformer is used to preprocess files before they are executed in Jest tests, ensuring that modern JavaScript features can be understood by the test environment. Here's a breakdown of its functionality:
+
+1. **Dependencies and Imports**: The code imports various modules needed for its functionality, such as `crypto` for hashing, `path` for file path manipulations, `@babel/core` for Babel transformations, and others. Some imports use helper functions `_interopRequireDefault` and `_interopRequireWildcard` for handling default and wildcard imported objects.
+
+2. **Utility Functions**:
+   - **`assertLoadedBabelConfig`**: Throws an error if the Babel configuration is not loaded, suggesting modifications to the Jest configuration if necessary.
+   - **`addIstanbulInstrumentation`**: Adds Istanbul instrumentation to Babel options if requested, for code coverage purposes.
+   - **`getCacheKeyFromConfig`**: Generates a unique cache key for the transformation process based on input source text, Babel options, and several environmental factors.
+
+3. **Loading Babel Configuration**:
+   - **`loadBabelConfig` and `loadBabelConfigAsync`**: Load Babel configurations synchronously and asynchronously, ensuring the config is correctly loaded and asserting it.
+   - **`loadBabelOptions` and `loadBabelOptionsAsync`**: Retrieve Babel options and integrate with Istanbul for testing coverage if necessary.
+
+4. **Jest Transformer Creation**:
+   - **`createTransformer`**: Accepts user options to generate a transformer object. The transformer can preprocess files synchronously or asynchronously and generate cache keys for transformed files to optimize performance. It uses Babel to transform the files and integrates Jest-specific configurations, such as instrumentation and source map support.
+
+5. **Main Export**:
+   - The transformed code is exported as a factory object with a `createTransformer` function exposed as the default export, adhering to constraints by Jest's module import mechanism.
+
+```javascript
+'use strict';
+
+const crypto = require('crypto');
+const path = require('path');
+const babelCore = require('@babel/core');
+const chalk = require('chalk');
+const fs = require('graceful-fs');
+const slash = require('slash');
+const { loadPartialConfig, loadPartialConfigAsync } = require('./loadBabelConfig');
+
+const THIS_FILE = fs.readFileSync(__filename);
+const jestPresetPath = require.resolve('babel-preset-jest');
+const babelIstanbulPlugin = require.resolve('babel-plugin-istanbul');
+
+function assertLoadedBabelConfig(babelConfig, cwd, filename) {
+  if (!babelConfig) {
+    throw new Error(
+      `babel-jest: Babel ignores ${chalk.bold(
+        slash(path.relative(cwd, filename))
+      )} - make sure to include the file in Jest's ${chalk.bold(
+        'transformIgnorePatterns'
+      )} as well.`
+    );
+  }
+}
+
+function addIstanbulInstrumentation(babelOptions, transformOptions) {
+  if (transformOptions.instrument) {
+    return {
+      ...babelOptions,
+      auxiliaryCommentBefore: ' istanbul ignore next ',
+      plugins: (babelOptions.plugins ?? []).concat([
+        [babelIstanbulPlugin, { cwd: transformOptions.config.cwd, exclude: [] }]
+      ]),
+    };
+  }
+  return babelOptions;
+}
+
+function getCacheKeyFromConfig(sourceText, sourcePath, babelOptions, transformOptions) {
+  const { config, configString, instrument } = transformOptions;
+  const configPath = [babelOptions.config ?? '', babelOptions.babelrc ?? ''];
+  return crypto.createHash('sha1')
+    .update(THIS_FILE)
+    .update('\0')
+    .update(JSON.stringify(babelOptions.options))
+    .update('\0')
+    .update(sourceText)
+    .update('\0')
+    .update(path.relative(config.rootDir, sourcePath))
+    .update('\0')
+    .update(configString)
+    .update('\0')
+    .update(configPath.join(''))
+    .update('\0')
+    .update(instrument ? 'instrument' : '')
+    .update('\0')
+    .update(process.env.NODE_ENV ?? '')
+    .update('\0')
+    .update(process.env.BABEL_ENV ?? '')
+    .update('\0')
+    .update(process.version)
+    .digest('hex')
+    .substring(0, 32);
+}
+
+function loadBabelConfig(cwd, filename, transformOptions) {
+  const babelConfig = loadPartialConfig(transformOptions);
+  assertLoadedBabelConfig(babelConfig, cwd, filename);
+  return babelConfig;
+}
+
+async function loadBabelConfigAsync(cwd, filename, transformOptions) {
+  const babelConfig = await loadPartialConfigAsync(transformOptions);
+  assertLoadedBabelConfig(babelConfig, cwd, filename);
+  return babelConfig;
+}
+
+function loadBabelOptions(cwd, filename, transformOptions, jestTransformOptions) {
+  const { options } = loadBabelConfig(cwd, filename, transformOptions);
+  return addIstanbulInstrumentation(options, jestTransformOptions);
+}
+
+async function loadBabelOptionsAsync(cwd, filename, transformOptions, jestTransformOptions) {
+  const { options } = await loadBabelConfigAsync(cwd, filename, transformOptions);
+  return addIstanbulInstrumentation(options, jestTransformOptions);
+}
+
+const createTransformer = userOptions => {
+  const inputOptions = userOptions ?? {};
+  const options = {
+    ...inputOptions,
+    caller: {
+      name: 'babel-jest',
+      supportsDynamicImport: false,
+      supportsExportNamespaceFrom: false,
+      supportsStaticESM: false,
+      supportsTopLevelAwait: false,
+      ...inputOptions.caller
+    },
+    compact: false,
+    plugins: inputOptions.plugins ?? [],
+    presets: (inputOptions.presets ?? []).concat(jestPresetPath),
+    sourceMaps: 'both'
+  };
+
+  function mergeBabelTransformOptions(filename, transformOptions) {
+    const { cwd, rootDir } = transformOptions.config;
+    return {
+      cwd,
+      root: rootDir,
+      ...options,
+      caller: {
+        ...options.caller,
+        supportsDynamicImport: transformOptions.supportsDynamicImport ?? options.caller.supportsDynamicImport,
+        supportsExportNamespaceFrom: transformOptions.supportsExportNamespaceFrom ?? options.caller.supportsExportNamespaceFrom,
+        supportsStaticESM: transformOptions.supportsStaticESM ?? options.caller.supportsStaticESM,
+        supportsTopLevelAwait: transformOptions.supportsTopLevelAwait ?? options.caller.supportsTopLevelAwait
+      },
+      filename
+    };
+  }
+
+  return {
+    canInstrument: true,
+    getCacheKey(sourceText, sourcePath, transformOptions) {
+      const babelOptions = loadBabelConfig(
+        transformOptions.config.cwd,
+        sourcePath,
+        mergeBabelTransformOptions(sourcePath, transformOptions)
+      );
+      return getCacheKeyFromConfig(sourceText, sourcePath, babelOptions, transformOptions);
+    },
+    async getCacheKeyAsync(sourceText, sourcePath, transformOptions) {
+      const babelOptions = await loadBabelConfigAsync(
+        transformOptions.config.cwd,
+        sourcePath,
+        mergeBabelTransformOptions(sourcePath, transformOptions)
+      );
+      return getCacheKeyFromConfig(sourceText, sourcePath, babelOptions, transformOptions);
+    },
+    process(sourceText, sourcePath, transformOptions) {
+      const babelOptions = loadBabelOptions(
+        transformOptions.config.cwd,
+        sourcePath,
+        mergeBabelTransformOptions(sourcePath, transformOptions),
+        transformOptions
+      );
+      const transformResult = babelCore.transformSync(sourceText, babelOptions);
+      if (transformResult) {
+        const { code, map } = transformResult;
+        if (typeof code === 'string') {
+          return { code, map };
+        }
+      }
+      return { code: sourceText };
+    },
+    async processAsync(sourceText, sourcePath, transformOptions) {
+      const babelOptions = await loadBabelOptionsAsync(
+        transformOptions.config.cwd,
+        sourcePath,
+        mergeBabelTransformOptions(sourcePath, transformOptions),
+        transformOptions
+      );
+      const transformResult = await babelCore.transformAsync(sourceText, babelOptions);
+      if (transformResult) {
+        const { code, map } = transformResult;
+        if (typeof code === 'string') {
+          return { code, map };
+        }
+      }
+      return { code: sourceText };
+    }
+  };
+};
+
+const transformerFactory = {
+  createTransformer
+};
+
+module.exports = transformerFactory;
+```

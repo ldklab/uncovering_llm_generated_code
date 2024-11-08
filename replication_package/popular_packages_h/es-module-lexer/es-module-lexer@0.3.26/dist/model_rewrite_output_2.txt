@@ -1,0 +1,95 @@
+The provided Node.js code is a module that processes some text input using WebAssembly (WASM). Here's a breakdown of the key functionalities:
+
+1. **Exports**: The code exports a `parse` function and an `init` variable. The `parse` function is used to process input text, and `init` is a promise that ensures the WebAssembly module is loaded before attempting to parse any text.
+
+2. **Endianness Check**: This line checks the machine's endianness:
+   ```javascript
+   const A = 1 === new Uint8Array(new Uint16Array([1]).buffer)[0];
+   ```
+   It determines whether the system is little-endian or big-endian, which influences how the input is processed.
+
+3. **WebAssembly Initialization**: The WASM binary is stored as a base64-encoded string in the variable `E`. The `WebAssembly.compile` and `WebAssembly.instantiate` methods are used to load and initialize the WASM module, whose exported functions are stored in `B`.
+
+4. **Text Parsing**: The `parse` function performs several steps:
+   - It first checks if the WASM module (`B`) is initialized, deferring the parsing operation until it’s ready.
+   - Memory is managed to accommodate the input size.
+   - The input string `E` is written into the WASM module's memory space using either the function `C` or `Q` depending on the system's endianness.
+   - If the WASM `parse` function signals an error, an error message is constructed showing the position of the error in the input text.
+   - Upon successful parsing, the function collects and returns information processed by the WASM module. It returns a list of sections and elements from the parsed text.
+
+5. **Helper Functions (`Q` and `C`)**: These functions convert the input string characters to a format suitable for writing into WASM memory, considering the endianness of the platform.
+
+6. **Memory Management**: The WebAssembly instance's memory is adjusted as per the input length.
+
+Using these principles, the Node.js code can be rewritten to retain its function as follows:
+
+```javascript
+"use strict";
+
+exports.parse = parse;
+exports.init = void 0;
+
+// Check for little-endian machine
+const isLittleEndian = 1 === new Uint8Array(new Uint16Array([1]).buffer)[0];
+
+function parse(input, source = "@") {
+    if (!wasmExports) {
+        return init.then(() => parse(input));
+    }
+
+    // Ensure enough memory is available for the input
+    const inputLength = input.length + 1;
+    const additionalMemory = (wasmExports.__heap_base.value || wasmExports.__heap_base) + 4 * inputLength - wasmExports.memory.buffer.byteLength;
+    if (additionalMemory > 0) {
+        wasmExports.memory.grow(Math.ceil(additionalMemory / 65536));
+    }
+
+    // Allocate memory and write input
+    const offset = wasmExports.sa(inputLength - 1);
+    (isLittleEndian ? writeStringLittleEndian : writeStringBigEndian)(input, new Uint16Array(wasmExports.memory.buffer, offset, inputLength));
+
+    // Parse input using WASM
+    if (!wasmExports.parse()) {
+        const errorIndex = wasmExports.e();
+        throw Object.assign(new Error(`Parse error ${source}:${input.slice(0, errorIndex).split("\n").length}:${errorIndex - input.lastIndexOf("\n", errorIndex - 1)}`), { idx: errorIndex });
+    }
+
+    // Collect parsed sections and elements
+    const sections = [];
+    const elements = [];
+    while (wasmExports.ri()) {
+        sections.push({ s: wasmExports.is(), e: wasmExports.ie(), ss: wasmExports.ss(), se: wasmExports.se(), d: wasmExports.id() });
+    }
+    while (wasmExports.re()) {
+        elements.push(input.slice(wasmExports.es(), wasmExports.ee()));
+    }
+
+    return [sections, elements, !!wasmExports.f()];
+}
+
+function writeStringBigEndian(input, buffer) {
+    for (let i = 0, len = input.length; i < len; ++i) {
+        const char = input.charCodeAt(i);
+        buffer[i] = char;
+    }
+}
+
+function writeStringLittleEndian(input, buffer) {
+    for (let i = 0, len = input.length; i < len; ++i) {
+        const char = input.charCodeAt(i);
+        buffer[i] = (255 & char) << 8 | char >>> 8;
+    }
+}
+
+// Initialize WebAssembly module
+let wasmExports;
+const init = WebAssembly.compile(
+  (wasmCode = "AGFzbQEAAAABWAxgAX8B..."
+    // shorten for clarity, the rest is assumed to be base64 WASM code
+  )
+  .then(WebAssembly.instantiate)
+  .then(instance => { wasmExports = instance.exports; });
+exports.init = init;
+```
+
+Note: The detailed WASM binary is truncated and requires completion with valid base64 WASM data from the original source. This code initializes a WASM instance and translates input text considering system endianness, managing memory efficiently, and handling parse results.

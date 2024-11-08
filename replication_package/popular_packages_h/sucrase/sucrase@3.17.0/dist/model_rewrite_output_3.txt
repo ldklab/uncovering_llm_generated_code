@@ -1,0 +1,101 @@
+The provided Node.js code is designed to implement a module that processes and transforms JavaScript code using various options and utilities. Here's a breakdown of its functionality:
+
+1. **Module Imports and Initialization**: The code imports several utility modules and initializes some of them. These modules seem to handle different aspects of JavaScript code processing, such as handling tokens, managing names, processing imports, and generating source maps.
+
+2. **Exported Functions**:
+   - `getVersion`: A function that reads the version number from the package.json file and returns it.
+   - `transform`: A primary function that takes JavaScript `code` and an `options` object as inputs. It transforms the code based on the specified options and returns either the transformed code or an object containing the code and a source map. It first validates options, then gets a processing context using the `getSucraseContext` function, and applies transformations using `RootTransformer`.
+   - `getFormattedTokens`: This function returns a formatted string representation of the tokens generated from the input code, mainly for diagnostic purposes.
+
+3. **Helper Function**:
+   - `getSucraseContext`: This function creates a context for processing the JavaScript code. It tokenizes the input code, manages names, handles imports, manages helpers, and identifies shadowed global variables. The context created is used by the `transform` function to process the code transformation.
+
+Based on this explanation, here's a possible rewrite of the original Node.js code:
+
+```javascript
+"use strict";
+
+const CJSImportProcessor = require('./CJSImportProcessor');
+const computeSourceMap = require('./computeSourceMap');
+const { HelperManager } = require('./HelperManager');
+const identifyShadowedGlobals = require('./identifyShadowedGlobals');
+const NameManager = require('./NameManager');
+const { validateOptions } = require('./Options');
+const { parse } = require('./parser');
+const TokenProcessor = require('./TokenProcessor');
+const RootTransformer = require('./transformers/RootTransformer');
+const formatTokens = require('./util/formatTokens');
+const getTSImportedNames = require('./util/getTSImportedNames');
+
+exports.getVersion = function getVersion() {
+  return require("../package.json").version;
+};
+
+exports.transform = function transform(code, options) {
+  validateOptions(options);
+  try {
+    const sucraseContext = getSucraseContext(code, options);
+    const transformer = new RootTransformer(
+      sucraseContext,
+      options.transforms,
+      Boolean(options.enableLegacyBabel5ModuleInterop),
+      options
+    );
+    let result = { code: transformer.transform() };
+    if (options.sourceMapOptions) {
+      if (!options.filePath) {
+        throw new Error("filePath must be specified when generating a source map.");
+      }
+      result = {
+        ...result,
+        sourceMap: computeSourceMap(result.code, options.filePath, options.sourceMapOptions),
+      };
+    }
+    return result;
+  } catch (e) {
+    if (options.filePath) {
+      e.message = `Error transforming ${options.filePath}: ${e.message}`;
+    }
+    throw e;
+  }
+};
+
+exports.getFormattedTokens = function getFormattedTokens(code, options) {
+  const tokens = getSucraseContext(code, options).tokenProcessor.tokens;
+  return formatTokens(code, tokens);
+};
+
+function getSucraseContext(code, options) {
+  const isJSXEnabled = options.transforms.includes("jsx");
+  const isTypeScriptEnabled = options.transforms.includes("typescript");
+  const isFlowEnabled = options.transforms.includes("flow");
+  const file = parse(code, isJSXEnabled, isTypeScriptEnabled, isFlowEnabled);
+  const tokens = file.tokens;
+  const scopes = file.scopes;
+
+  const nameManager = new NameManager(code, tokens);
+  const helperManager = new HelperManager(nameManager);
+  const tokenProcessor = new TokenProcessor(code, tokens, isFlowEnabled, helperManager);
+  const enableLegacyTypeScriptModuleInterop = Boolean(options.enableLegacyTypeScriptModuleInterop);
+
+  let importProcessor = null;
+  if (options.transforms.includes("imports")) {
+    importProcessor = new CJSImportProcessor(
+      nameManager,
+      tokenProcessor,
+      enableLegacyTypeScriptModuleInterop,
+      options,
+      isTypeScriptEnabled,
+      helperManager
+    );
+    importProcessor.preprocessTokens();
+    identifyShadowedGlobals(tokenProcessor, scopes, importProcessor.getGlobalNames());
+    if (isTypeScriptEnabled) {
+      importProcessor.pruneTypeOnlyImports();
+    }
+  } else if (isTypeScriptEnabled) {
+    identifyShadowedGlobals(tokenProcessor, scopes, getTSImportedNames(tokenProcessor));
+  }
+  return { tokenProcessor, scopes, nameManager, importProcessor, helperManager };
+}
+```

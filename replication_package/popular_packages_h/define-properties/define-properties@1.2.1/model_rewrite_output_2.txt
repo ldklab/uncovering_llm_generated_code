@@ -1,0 +1,63 @@
+The given Node.js code provides a utility for defining properties on an object with optional predicates and support for property descriptors. It combines several functionalities:
+
+1. **Dependency Imports**: The code imports external dependencies for defining data properties and checking the existence of property descriptors, and uses the `object-keys` module to obtain object keys. 
+
+2. **Symbol Support Check**: It checks if `Symbol` is supported in the current environment, allowing handling of both string and symbol properties.
+
+3. **Utility Function - `isFunction`**: The function `isFunction` checks if a given object is a function by verifying both its type and its stringified representation.
+
+4. **Descriptor Support Check**: It uses `has-property-descriptors` to determine whether the environment supports property descriptors.
+
+5. **`defineProperty` Function**: This function defines a property on an object if certain conditions are met:
+   - Checks if the property already exists and if it should be updated based on the predicate function or value comparison.
+   - Uses `defineDataProperty` to define the property either with descriptors (if supported) or without them.
+
+6. **`defineProperties` Function**: Iterates over the properties provided in a map, optionally including symbol properties, and attempts to define them on the target object using the `defineProperty` function.
+
+7. **Export**: Exports the `defineProperties` function, including a property indicating if descriptors are supported.
+
+Here is the rewritten version of the code:
+
+```javascript
+'use strict';
+
+const keys = require('object-keys');
+const hasSymbols = typeof Symbol === 'function' && typeof Symbol('foo') === 'symbol';
+
+const toStr = Object.prototype.toString;
+const concat = Array.prototype.concat;
+const defineDataProperty = require('define-data-property');
+const supportsDescriptors = require('has-property-descriptors')();
+
+const isFunction = (fn) => typeof fn === 'function' && toStr.call(fn) === '[object Function]';
+
+const defineProperty = (object, name, value, predicate) => {
+	if (name in object) {
+		if (predicate === true && object[name] === value) {
+			return;
+		}
+		if (isFunction(predicate) && !predicate()) {
+			return;
+		}
+	}
+	if (supportsDescriptors) {
+		defineDataProperty(object, name, value, true);
+	} else {
+		defineDataProperty(object, name, value);
+	}
+};
+
+const defineProperties = (object, map, predicates = {}) => {
+	let props = keys(map);
+	if (hasSymbols) {
+		props = concat.call(props, Object.getOwnPropertySymbols(map));
+	}
+	props.forEach((prop) => {
+		defineProperty(object, prop, map[prop], predicates[prop]);
+	});
+};
+
+defineProperties.supportsDescriptors = Boolean(supportsDescriptors);
+
+module.exports = defineProperties;
+```

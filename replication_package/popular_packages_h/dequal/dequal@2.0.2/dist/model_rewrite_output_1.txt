@@ -1,0 +1,90 @@
+The Node.js code provided implements a deep equality comparison utility named `dequal`. This utility allows for comparing two values, `foo` and `bar`, to determine if they are deeply equal. The equality logic includes:
+
+1. **Trivial equality**: Immediately returns `true` if `foo` and `bar` are strictly equal (`foo === bar`) or both are `NaN`.
+2. **Objects with same constructor**: If both `foo` and `bar` are objects and their constructors are equal:
+   - **Date**: Compares time values using `getTime()`.
+   - **RegExp**: Compares their string representations.
+   - **Array**: Compares each element recursively.
+   - **Set**: Ensures both sets have the same size and each element in `foo` is in `bar`.
+   - **Map**: Compares keys and values recursively.
+   - **ArrayBuffer and Views**: Compares their byte contents.
+   - **DataView**: Compares byte length and content.
+   - **General objects**: Compares properties recursively, ensuring both objects have the same keys and values.
+3. **Fallback**: If none of the above conditions apply, it checks if both values are `NaN`.
+
+The function `find` is employed within `dequal` to locate a deeply equal key in maps and sets when the key is an object. It utilizes the `dequal` function for comparison.
+
+Here's a potential rewrite of the code:
+
+```javascript
+const hasOwnProperty = Object.prototype.hasOwnProperty;
+
+function findInIterable(iterable, target) {
+    for (const key of iterable.keys()) {
+        if (deepEqual(key, target)) return key;
+    }
+}
+
+function deepEqual(a, b) {
+    if (a === b) return true;
+
+    if (a && b && a.constructor === b.constructor) {
+        const constructor = a.constructor;
+
+        if (constructor === Date) return a.getTime() === b.getTime();
+        if (constructor === RegExp) return a.toString() === b.toString();
+
+        if (Array.isArray(a)) {
+            if (a.length !== b.length) return false;
+            for (let i = 0; i < a.length; i++) {
+                if (!deepEqual(a[i], b[i])) return false;
+            }
+            return true;
+        }
+
+        if (constructor === Set || constructor === Map) {
+            if (a.size !== b.size) return false;
+            const entriesA = constructor === Map ? Array.from(a.entries()) : Array.from(a);
+            const entriesB = constructor === Map ? Array.from(b.entries()) : Array.from(b);
+            for (const [key, value] of entriesA) {
+                const correspondingKey = key && typeof key === 'object' ? findInIterable(b, key) : key;
+                if (!b.has(correspondingKey)) return false;
+                if (constructor === Map && !deepEqual(value, b.get(correspondingKey))) return false;
+            }
+            return true;
+        }
+
+        if (constructor === ArrayBuffer || ArrayBuffer.isView(a)) {
+            const arrayA = new Uint8Array(a);
+            const arrayB = new Uint8Array(b);
+            if (arrayA.length !== arrayB.length) return false;
+            for (let i = 0; i < arrayA.length; i++) {
+                if (arrayA[i] !== arrayB[i]) return false;
+            }
+            return true;
+        }
+
+        if (constructor === DataView) {
+            if (a.byteLength !== b.byteLength) return false;
+            for (let i = 0; i < a.byteLength; i++) {
+                if (a.getInt8(i) !== b.getInt8(i)) return false;
+            }
+            return true;
+        }
+
+        if (typeof a === 'object') {
+            const keysA = Object.keys(a);
+            if (keysA.length !== Object.keys(b).length) return false;
+            for (const key of keysA) {
+                if (!hasOwnProperty.call(b, key) || !deepEqual(a[key], b[key])) return false;
+            }
+            return true;
+        }
+    }
+
+    // Special case for NaN
+    return a !== a && b !== b;
+}
+
+exports.deepEqual = deepEqual;
+```

@@ -1,0 +1,104 @@
+The Nano ID library described in the README provides a functionality to generate unique, secure, and URL-friendly string IDs in JavaScript. Here's a breakdown of its main features and how they are implemented:
+
+1. **ID Generation**:
+   - It generates an ID using 21 characters from a URL-safe alphabet (`A-Za-z0-9_-`), achieving a collision probability similar to UUID v4 but with a smaller footprint.
+   - Optionally, you can specify a different size for the ID or even a custom alphabet to further customize generated IDs.
+
+2. **Security and Performance**:
+   - Utilizes cryptography APIs (`crypto` module in Node.js, Web Crypto API in browsers) for generating secure random numbers, ensuring IDs are unpredictable.
+   - Offers a faster, non-secure version using `Math.random()` when security is less of a concern.
+
+3. **Asynchronous Support**:
+   - Provides asynchronous API to prevent blocking during random byte collection.
+   - Allows code execution to continue in parallel while waiting for ID generation completion.
+
+4. **Customization Options**:
+   - `customAlphabet`: Allows defining a custom alphabet and ID length.
+   - `customRandom`: Allows defining a custom random byte generator, offering even more control over ID generation.
+
+5. **Compatibility**:
+   - Supports various environments including modern browsers, IE (with polyfills), Node.js, and React Native. 
+   - Workarounds are available for environments lacking a secure random number generator like Web Workers or certain React Native setups.
+
+Here's a simple implementation of the `nanoid` package providing these functionalities:
+
+```js
+import crypto from 'crypto';
+
+// Default alphabet for URL-friendly IDs
+const urlAlphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
+
+// Generate random bytes securely
+function getRandomBytes(size) {
+  return new Promise((resolve, reject) => {
+    crypto.randomBytes(size, (err, buf) => {
+      if (err) reject(err);
+      else resolve(buf);
+    });
+  });
+}
+
+// Nano ID function to generate IDs
+async function nanoid(size = 21, alphabet = urlAlphabet) {
+  const bytes = await getRandomBytes(size);
+  let id = '';
+  const mask = (2 << (Math.log(alphabet.length - 1) / Math.LN2)) - 1;
+  let step = Math.ceil((1.6 * mask * size) / alphabet.length);
+
+  while (true) {
+    const random = await getRandomBytes(step);
+    let i = step;
+    while (i--) {
+      const byte = random[i] & mask;
+      if (alphabet[byte]) {
+        id += alphabet[byte];
+        if (id.length === size) return id;
+      }
+    }
+  }
+}
+
+// Non-secure Nano ID function using Math.random
+function nonSecureNanoid(size = 21, alphabet = urlAlphabet) {
+  let id = '';
+  while (size--) {
+    id += alphabet[(Math.random() * alphabet.length) | 0];
+  }
+  return id;
+}
+
+// Custom Alphabet Generator
+function customAlphabet(alphabet, size = 21) {
+  return () => nonSecureNanoid(size, alphabet);
+}
+
+// Custom Random ID Generator
+function customRandom(alphabet, size, random) {
+  return () => {
+    let id = '';
+    while (size--) {
+      id += alphabet[random(size)];
+    }
+    return id;
+  }
+}
+
+// Example usage
+async function example() {
+  console.log('Secure NanoID:', await nanoid());
+  console.log('Non-secure NanoID:', nonSecureNanoid());
+  const customId = customAlphabet('abcdef', 10);
+  console.log('Custom Alphabet ID:', customId());
+}
+
+example().catch(console.error);
+
+export {
+  nanoid,
+  nonSecureNanoid,
+  customAlphabet,
+  customRandom,
+  urlAlphabet
+};
+```
+This implementation covers secure and non-secure ID generation, allows custom sizes and alphabets, and outlines asynchronous operations for when non-blocking behavior is preferred.

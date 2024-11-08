@@ -1,0 +1,84 @@
+The provided Node.js code defines and exports several classes that mimic the browser's AbortController API, allowing for async operation cancellation in Node.js.
+
+1. **AbortError**: A custom error class that is used to indicate an operation's abort.
+   - Extends the built-in `Error` class.
+   - Sets its name property to 'AbortError'.
+
+2. **AbortSignal**: Represents a signal object that allows communication of abort status (`aborted` state).
+   - Contains a boolean property `aborted` initialized to `false`.
+   - Stores listeners in a private array `_abortEventListeners`.
+   - Methods:
+     - `addEventListener(event, listener)`: Adds an 'abort' event listener.
+     - `removeEventListener(event, listener)`: Removes a specific 'abort' event listener.
+     - `_dispatchEvent(event)`: Marks the signal as aborted and invokes all listener callbacks.
+     - Static `timeout(ms)`: Provides a signal that auto-aborts after specified milliseconds.
+
+3. **AbortController**: Controls an `AbortSignal` object enabling it to be aborted programmatically.
+   - Contains a single `AbortSignal` instance (`this.signal`).
+   - Method `abort()`: Dispatches the 'abort' event if not already aborted.
+
+The classes are then exported as a module for usage in other Node.js programs.
+
+```javascript
+class AbortError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = 'AbortError';
+  }
+}
+
+class AbortSignal {
+  constructor() {
+    this.aborted = false;
+    this._abortEventListeners = [];
+  }
+
+  addEventListener(event, listener) {
+    if (event === 'abort') {
+      this._abortEventListeners.push(listener);
+    }
+  }
+
+  removeEventListener(event, listener) {
+    if (event === 'abort') {
+      const index = this._abortEventListeners.indexOf(listener);
+      if (index !== -1) {
+        this._abortEventListeners.splice(index, 1);
+      }
+    }
+  }
+
+  _dispatchEvent(event) {
+    if (event === 'abort') {
+      this.aborted = true;
+      this._abortEventListeners.forEach(listener => listener({ type: 'abort' }));
+    }
+  }
+
+  static timeout(ms) {
+    const signal = new AbortSignal();
+    setTimeout(() => {
+      signal._dispatchEvent('abort');
+    }, ms);
+    return signal;
+  }
+}
+
+class AbortController {
+  constructor() {
+    this.signal = new AbortSignal();
+  }
+
+  abort() {
+    if (!this.signal.aborted) {
+      this.signal._dispatchEvent('abort');
+    }
+  }
+}
+
+module.exports = {
+  AbortError,
+  AbortController,
+  AbortSignal,
+};
+```

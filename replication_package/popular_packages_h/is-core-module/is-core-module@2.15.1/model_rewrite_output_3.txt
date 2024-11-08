@@ -1,0 +1,69 @@
+The Node.js code is a utility module that checks whether a specified core module or feature is included in a given Node.js version. Here's a breakdown of the functionality:
+
+1. **Imports and Initialization**:
+   - The `hasOwn` module is used to check for the existence of an object property's direct key.
+   - A JSON file `core.json` is imported, which presumably contains information about core modules and their availability across Node.js versions.
+
+2. **specifierIncluded Function**:
+   - This function compares a Node.js version (`current`) with a version `specifier`.
+   - It checks if `current` meets the criteria specified in `specifier`, which could include operators such as '=', '<', or '>='.
+   - It parses both the current version and specifier into major, minor, and patch segments for comparison.
+
+3. **matchesRange Function**:
+   - Evaluates whether a Node.js version meets all conditions specified within a range, which may contain multiple version specifiers joined by "&&".
+   - Calls `specifierIncluded` to check each condition.
+
+4. **versionIncluded Function**:
+   - Determines if a given Node.js version (`nodeVersion`) meets the conditions specified by `specifierValue`.
+   - It handles boolean, string, and object inputs, representing different ways the specifiers might be provided.
+   - Falls back to `process.versions.node` if no version is explicitly provided.
+
+5. **Module Export: isCore Function**:
+   - The exported function checks whether a given string (`x`) corresponds to a core module available in the specified or current Node.js version.
+   - It utilizes `hasOwn` to check for the module in the `data` JSON and then uses `versionIncluded` to determine compatibility with the Node.js version.
+
+Now, here is a possible rewrite following the explanation:
+
+```javascript
+'use strict';
+
+const hasOwn = require('hasown');
+const data = require('./core.json');
+
+function specifierIncluded(currentVersion, versionSpecifier) {
+	const currentParts = currentVersion.split('.');
+	const [op, versionPart] = versionSpecifier.includes(' ') ? versionSpecifier.split(' ') : ['=', versionSpecifier];
+	const specifierParts = versionPart.split('.');
+	
+	for (let i = 0; i < 3; i++) {
+		const currentSegment = parseInt(currentParts[i] || 0, 10);
+		const specifierSegment = parseInt(specifierParts[i] || 0, 10);
+		
+		if (currentSegment === specifierSegment) continue;
+		
+		if (op === '<') return currentSegment < specifierSegment;
+		if (op === '>=') return currentSegment >= specifierSegment;
+		return false;
+	}
+	return op === '>=';
+}
+
+function matchesRange(currentVersion, range) {
+	const specifiers = range.split(/ ?&& ?/);
+	return specifiers.every(specifier => specifierIncluded(currentVersion, specifier));
+}
+
+function versionIncluded(nodeVersion = process.versions.node, specifier) {
+	if (typeof specifier === 'boolean') return specifier;
+	if (typeof nodeVersion !== 'string') throw new TypeError('A valid Node.js version is required');
+	
+	if (Array.isArray(specifier)) {
+		return specifier.some(range => matchesRange(nodeVersion, range));
+	}
+	return matchesRange(nodeVersion, specifier);
+}
+
+module.exports = function isCore(moduleName, nodeVersion) {
+	return hasOwn(data, moduleName) && versionIncluded(nodeVersion, data[moduleName]);
+};
+```

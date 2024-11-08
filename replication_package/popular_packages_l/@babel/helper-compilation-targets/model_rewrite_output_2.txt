@@ -1,0 +1,95 @@
+The code provided is a Node.js module that utilizes Babel and MDN browser compatibility data to determine which JavaScript features are supported by specified browser targets. It consists of three main functions:
+
+1. **getCompilationTargets(query)**: 
+   - This function uses the `browserslist` package to return a list of browser targets based on the specified query.
+
+2. **isFeatureSupported(feature, query)**: 
+   - This function checks if a specific JavaScript feature (given by its feature name, like 'arrow-functions') is supported by all browsers in the list obtained from `getCompilationTargets`.
+   - It checks the compatibility data for each browser and version against the provided feature.
+
+3. **listSupportedFeatures(query)**:
+   - Using the query, this function returns a list of all JavaScript features that are supported by the given browser targets. It iterates over all features in the MDN compatibility data and checks support using `isFeatureSupported`.
+
+The `tests.js` file demonstrates how to use these functions:
+
+- It determines the compilation targets using a browser query.
+- It checks if the 'arrow-functions' feature is supported by the specified targets.
+- It lists all features supported by those targets.
+
+```json
+// package.json
+{
+  "name": "@babel/helper-compilation-targets",
+  "version": "1.0.0",
+  "main": "index.js",
+  "description": "Helper functions on Babel compilation targets",
+  "scripts": {
+    "test": "node tests.js"
+  },
+  "author": "",
+  "license": "MIT"
+}
+```
+
+```javascript
+// index.js
+const browserslist = require('browserslist');
+const compatData = require('@mdn/browser-compat-data');
+const { features } = compatData.javascript;
+
+function getCompilationTargets(query) {
+  return browserslist(query);
+}
+
+function isFeatureSupported(feature, query) {
+  const targets = getCompilationTargets(query);
+  
+  if (!(feature in features)) {
+    throw new Error(`Unknown feature: ${feature}`);
+  }
+
+  return targets.every(target => {
+    const [browser, version] = target.split(' ');
+    const supportData = features[feature].__compat.support[browser];
+    return supportData && supportData.version_added <= parseFloat(version);
+  });
+}
+
+function listSupportedFeatures(query) {
+  const targets = getCompilationTargets(query);
+  let supportedFeatures = [];
+
+  for (let feature in features) {
+    try {
+      if (isFeatureSupported(feature, query)) {
+        supportedFeatures.push(feature);
+      }
+    } catch (error) {
+      console.error(error.message);
+    }
+  }
+
+  return supportedFeatures;
+}
+
+module.exports = {
+  getCompilationTargets,
+  isFeatureSupported,
+  listSupportedFeatures
+};
+```
+
+```javascript
+// tests.js
+const {
+  getCompilationTargets,
+  isFeatureSupported,
+  listSupportedFeatures
+} = require('./index');
+
+const testQuery = '> 0.25%, not dead';
+
+console.log('Compilation Targets:', getCompilationTargets(testQuery));
+console.log('Is arrow functions supported:', isFeatureSupported('arrow-functions', testQuery));
+console.log('Supported features:', listSupportedFeatures(testQuery));
+```

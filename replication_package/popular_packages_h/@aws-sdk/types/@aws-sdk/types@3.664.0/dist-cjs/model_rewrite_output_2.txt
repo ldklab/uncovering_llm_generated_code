@@ -1,0 +1,71 @@
+The Node.js code provided is a module that organizes multiple exports from various source files (`src/abort.ts`, `src/auth.ts`, `src/blob/blob-types.ts`, etc.) under a central CommonJS module. It uses utility functions to define and copy properties between objects while allowing re-exports and ensuring they are enumerable.
+
+Here's a breakdown of how the code works:
+- `__defProp`, `__getOwnPropDesc`, `__getOwnPropNames`, and `__hasOwnProp` are standard functions and properties for handling object properties.
+- `__export` is used to export multiple properties from a module in a single line by defining them as enumerable properties on the target object.
+- `__copyProps` assists in copying properties from one object to another while respecting any exceptions or descriptors provided.
+- `__toCommonJS` wraps these operations to prepare the `src_exports` object for export as a CommonJS module.
+- `src_exports` holds references to various imports (presumably from an `import_types` object) which are re-exported under their corresponding property names.
+- A `HostAddressType` enum-like structure is defined in-place using an Immediately Invoked Function Expression (IIFE) that conditionally initializes the `HostAddressType` with string values "AAAA" and "A".
+
+The code does not contain any functional scripts or operations beyond organizing and re-exporting parts of the module.
+
+Here’s a possible rewrite of the given Node.js code:
+
+```javascript
+"use strict";
+
+const ObjectHelpers = {
+  defineProperty: Object.defineProperty,
+  getOwnPropertyDescriptor: Object.getOwnPropertyDescriptor,
+  getOwnPropertyNames: Object.getOwnPropertyNames,
+  hasOwnProperty: Object.prototype.hasOwnProperty,
+};
+
+const utilities = {
+  exportAll: (target, all) => {
+    for (const name in all) {
+      ObjectHelpers.defineProperty(target, name, { get: all[name], enumerable: true });
+    }
+  },
+  copyProperties: (to, from, except, desc) => {
+    if (from && (typeof from === "object" || typeof from === "function")) {
+      for (const key of ObjectHelpers.getOwnPropertyNames(from)) {
+        if (!ObjectHelpers.hasOwnProperty.call(to, key) && key !== except) {
+          ObjectHelpers.defineProperty(to, key, { get: () => from[key], enumerable: !(desc = ObjectHelpers.getOwnPropertyDescriptor(from, key)) || desc.enumerable });
+        }
+      }
+    }
+    return to;
+  },
+  toCommonJS: (mod) => utilities.copyProperties(ObjectHelpers.defineProperty({}, "__esModule", { value: true }), mod),
+};
+
+// Main module export
+const src_exports = {};
+const import_types = require("@smithy/types");
+
+utilities.exportAll(src_exports, {
+  AbortController: () => import_types.AbortController,
+  // ... similar lines for other exports
+  randomValues: () => import_types.randomValues
+});
+
+// Export module
+module.exports = utilities.toCommonJS(src_exports);
+
+// Definitions from other files
+const HostAddressType = /* @__PURE__ */ ((HostAddressTypeDef) => {
+  HostAddressTypeDef["AAAA"] = "AAAA";
+  HostAddressTypeDef["A"] = "A";
+  return HostAddressTypeDef;
+})(HostAddressType || {});
+
+// Dummy exports to satisfy possible ESM imports
+0 && (module.exports = {
+  HttpAuthLocation,
+  HostAddressType,
+  EndpointURLScheme,
+  RequestHandlerProtocol
+});
+```

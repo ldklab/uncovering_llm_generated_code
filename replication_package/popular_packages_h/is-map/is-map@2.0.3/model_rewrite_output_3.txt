@@ -1,0 +1,66 @@
+The provided Node.js code checks if a given value is a `Map` object. Here's a detailed breakdown of its functionality:
+
+1. It initializes the constants `$Map` and `$Set` to `Map` and `Set` constructors, respectively, if they are available in the current environment; otherwise, it sets them to `null`.
+
+2. It initializes a variable `exported`, which will hold the exported function that checks if a value is a `Map`.
+
+3. If `Map` is not available in the environment, it assigns a function to `exported` that always returns `false`, since `Map` cannot exist without the `Map` constructor.
+
+4. It checks if the `Map` prototype has a `has` method. If it does not, it assigns to `exported` a function that always returns `false`, since an object cannot be a `Map` if `Map.prototype.has` doesn't exist.
+
+5. If none of the above conditions are true, it assigns a function to `exported` that verifies if a value is a `Map`. It does this by:
+   - Checking if the value is an object.
+   - Attempting to call the `has` method of a `Map` on the value. If the call does not throw an error and if `Set.prototype.has` exists and throws when called on the value, the value is determined to be a `Map`.
+   - Alternatively, it checks if the value is an instance of `$Map`, handling compatibility with certain JavaScript polyfills.
+
+Finally, the code exports the `isMap` function via `module.exports`.
+
+Here's the rewritten code:
+
+```javascript
+'use strict';
+
+/** @const */
+const $Map = typeof Map === 'function' && Map.prototype ? Map : null;
+const $Set = typeof Set === 'function' && Set.prototype ? Set : null;
+
+let isMap;
+
+if (!$Map) {
+	// eslint-disable-next-line no-unused-vars
+	isMap = function (x) {
+		// `Map` is not present in this environment.
+		return false;
+	};
+} else {
+	const $mapHas = $Map.prototype.has;
+	const $setHas = $Set ? $Set.prototype.has : null;
+	if (!$mapHas) {
+		// eslint-disable-next-line no-unused-vars
+		isMap = function (x) {
+			// `Map` does not have a `has` method
+			return false;
+		};
+	} else {
+		isMap = function (x) {
+			if (!x || typeof x !== 'object') {
+				return false;
+			}
+			try {
+				$mapHas.call(x);
+				if ($setHas) {
+					try {
+						$setHas.call(x);
+					} catch (e) {
+						return true;
+					}
+				}
+				return x instanceof $Map;
+			} catch (e) {}
+			return false;
+		};
+	}
+}
+
+module.exports = isMap;
+```

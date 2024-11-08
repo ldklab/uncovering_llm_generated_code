@@ -1,0 +1,86 @@
+The provided Node.js code exports two functions: `getChangedFilesForRoots` and `findRepos`. These functions are used to identify and analyze version control repositories (Git, HG, and SL) in specified directories and to find files that have changed within these repositories.
+
+### Explanation of Functionality:
+
+1. **Imports**:
+   - `p-limit`: Controls the number of promises that can run concurrently. It restricts the number of operations happening at the same time.
+   - `jest-util`: Provides utility functions for Jest, like `isNonNullable`.
+   - `git`, `hg`, `sl`: Modules providing functionality to work with Git, Mercurial (HG), and SL repositories, respectively.
+
+2. **Core Functions**:
+   - **`getChangedFilesForRoots`**: 
+     - Asynchronously determines which files have changed in the specified roots. 
+     - Uses `findRepos` to find Git, HG, and SL repositories within these roots.
+     - Collects promises that find changed files using repository-specific methods.
+     - Returns a set of changed files along with the repository details.
+
+   - **`findRepos`**:
+     - Asynchronously finds root directories for Git, HG, and SL in the provided directories.
+     - Filters out null values to ensure only initialized/valid repositories are included.
+     - Returns an object containing sets of found repositories.
+
+3. **Concurrency Management**:
+   - `mutex`: Limits the number of concurrent operations to 5, preventing overwhelming system resources when scanning through directories that may contain many repositories.
+
+```javascript
+'use strict';
+
+Object.defineProperty(exports, '__esModule', {
+  value: true
+});
+exports.getChangedFilesForRoots = exports.findRepos = void 0;
+
+const pLimit = require('p-limit');
+const { isNonNullable } = require('jest-util');
+const git = require('./git');
+const hg = require('./hg');
+const sl = require('./sl');
+
+// Limit the number of concurrently running promises to 5
+const mutex = pLimit(5);
+
+const findGitRoot = dir => mutex(() => git.getRoot(dir));
+const findHgRoot = dir => mutex(() => hg.getRoot(dir));
+const findSlRoot = dir => mutex(() => sl.getRoot(dir));
+
+const getChangedFilesForRoots = async (roots, options) => {
+  const repos = await findRepos(roots);
+  const changedFilesOptions = {
+    includePaths: roots,
+    ...options
+  };
+
+  const gitPromises = Array.from(repos.git, repo => git.findChangedFiles(repo, changedFilesOptions));
+  const hgPromises = Array.from(repos.hg, repo => hg.findChangedFiles(repo, changedFilesOptions));
+  const slPromises = Array.from(repos.sl, repo => sl.findChangedFiles(repo, changedFilesOptions));
+
+  const changedFiles = (await Promise.all([...gitPromises, ...hgPromises, ...slPromises]))
+    .reduce((allFiles, changedFilesInTheRepo) => {
+      for (const file of changedFilesInTheRepo) {
+        allFiles.add(file);
+      }
+      return allFiles;
+    }, new Set());
+
+  return {
+    changedFiles,
+    repos
+  };
+};
+exports.getChangedFilesForRoots = getChangedFilesForRoots;
+
+const findRepos = async (roots) => {
+  const [gitRepos, hgRepos, slRepos] = await Promise.all([
+    Promise.all(roots.map(findGitRoot)),
+    Promise.all(roots.map(findHgRoot)),
+    Promise.all(roots.map(findSlRoot))
+  ]);
+
+  return {
+    git: new Set(gitRepos.filter(isNonNullable)),
+    hg: new Set(hgRepos.filter(isNonNullable)),
+    sl: new Set(slRepos.filter(isNonNullable))
+  };
+};
+exports.findRepos = findRepos;
+```

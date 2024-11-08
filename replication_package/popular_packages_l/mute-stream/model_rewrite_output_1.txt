@@ -1,0 +1,50 @@
+```javascript
+const { Duplex } = require('stream');
+
+class MuteStream extends Duplex {
+  constructor(options = {}) {
+    super(options);
+    this.muted = false;
+    this.replace = options.replace || null;
+    this.prompt = options.prompt || '';
+    this._isTTY = process.stdout.isTTY;
+  }
+
+  _write(chunk, encoding, callback) {
+    if (!this.muted) {
+      if (this.replace) {
+        const replacedContent = Buffer.from(String(chunk).replace(/./g, this.replace));
+        this.push(replacedContent);
+      } else {
+        this.push(chunk);
+      }
+    }
+    callback();
+  }
+
+  _read(size) {}
+
+  mute() {
+    this.muted = true;
+  }
+
+  unmute() {
+    this.muted = false;
+  }
+
+  get isTTY() {
+    return this._isTTY;
+  }
+}
+
+// Usage example
+const ms = new MuteStream({ replace: '*' });
+ms.pipe(process.stdout);
+ms.write('foo\n');    // Outputs: foo
+ms.mute();
+ms.write('bar\n');    // Outputs: nothing
+ms.unmute();
+ms.write('baz\n');    // Outputs: baz
+```
+
+This code defines a custom Duplex stream called `MuteStream` which allows for selectively muting or replacing the output of written data. The `MuteStream` class inherits from the `Duplex` stream class, allowing it to handle both the reading and writing of data. The constructor accepts an options object, where you can specify if you want to replace the output with a specific character (`replace` option) when the stream isn't muted. The stream can be muted with the `mute()` method, which stops any data from being outputted when written to the stream, and unmuted with the `unmute()` method, allowing the original data to pass through to the destination. Additionally, when the replace option is provided, every character of the output is replaced by the specified character when the stream is not muted. The `isTTY` property reflects whether the process's standard output is a terminal (TTY).

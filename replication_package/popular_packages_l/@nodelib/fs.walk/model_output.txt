@@ -1,0 +1,193 @@
+The `@nodelib/fs.walk` package provides a method to read directories recursively in both synchronous and asynchronous ways. It offers the following core functionalities:
+
+1. **Recursive Directory Walk**: Allows users to walk through directories and subdirectories to gather file and directory information.
+2. **Information Retrieval**: Returns information about each entry including `name`, `path`, `dirent`, and optionally `stats`.
+3. **Error and Filtering System**: Provides options to filter directories or files, handle errors (e.g., ignore specific error codes), and manage broken symbolic links safely.
+4. **Options and Settings**: Offers configurable settings to customize walking behavior like concurrency, path adjustments, symbolic link handling, and custom filesystem adapters.
+
+### Features Explained
+
+- **Synchronous vs Asynchronous**: Supports both async (with callbacks and streams) and sync operations.
+- **Settings Class and Options**: Uses a Settings class or Options object to define behavior like whether to follow symbolic links, manage error handling, and filter entries.
+- **Stream and Promises**: Offers a streaming API and can be promisified to return promises.
+- **Base Path Customization**: Allows altering the root path from which relative paths are reported.
+
+### Code Implementation
+
+```javascript
+const fs = require('fs');
+const path = require('path');
+
+class Entry {
+    constructor(name, path, dirent, stats = null) {
+        this.name = name;
+        this.path = path;
+        this.dirent = dirent;
+        this.stats = stats;
+    }
+}
+
+class Settings {
+    constructor(options = {}) {
+        this.basePath = options.basePath || undefined;
+        this.concurrency = options.concurrency || Infinity;
+        this.deepFilter = options.deepFilter || undefined;
+        this.entryFilter = options.entryFilter || undefined;
+        this.errorFilter = options.errorFilter || undefined;
+        this.stats = options.stats || false;
+        this.followSymbolicLinks = options.followSymbolicLinks || false;
+        this.throwErrorOnBrokenSymbolicLink = options.throwErrorOnBrokenSymbolicLink || true;
+        this.pathSegmentSeparator = options.pathSegmentSeparator || path.sep;
+        this.fs = options.fs || fs;
+    }
+}
+
+function walkSync(directory, optionsOrSettings) {
+    const settings = optionsOrSettings instanceof Settings ? optionsOrSettings : new Settings(optionsOrSettings);
+    const result = [];
+
+    function read(dir, basePath) {
+        try {
+            const entries = settings.fs.readdirSync(dir, { withFileTypes: true });
+            for (const entry of entries) {
+                const fullPath = path.join(dir, entry.name);
+                const relativePath = path.join(basePath || '', entry.name);
+
+                if (settings.entryFilter && !settings.entryFilter(new Entry(entry.name, relativePath, entry))) {
+                    continue;
+                }
+
+                let stats = null;
+                if (settings.stats) {
+                    stats = settings.followSymbolicLinks ? settings.fs.statSync(fullPath) : settings.fs.lstatSync(fullPath);
+                }
+
+                result.push(new Entry(entry.name, relativePath, entry, stats));
+
+                if (entry.isDirectory() && (!settings.deepFilter || settings.deepFilter(new Entry(entry.name, relativePath, entry)))) {
+                    read(fullPath, relativePath);
+                }
+            }
+        } catch (error) {
+            if (!settings.errorFilter || !settings.errorFilter(error)) {
+                throw error;
+            }
+        }
+    }
+
+    read(directory, settings.basePath);
+    return result;
+}
+
+function walk(directory, optionsOrSettings, callback) {
+    const settings = optionsOrSettings instanceof Settings ? optionsOrSettings : new Settings(optionsOrSettings);
+    const result = [];
+    let pending = 1;
+    let errorDetected = false;
+
+    function read(dir, basePath) {
+        settings.fs.readdir(dir, { withFileTypes: true }, (error, entries) => {
+            if (error) {
+                if (!settings.errorFilter || !settings.errorFilter(error)) {
+                    errorDetected = true;
+                    return callback(error, null);
+                } else {
+                    return checkPending();
+                }
+            }
+            pending += entries.length;
+
+            for (const entry of entries) {
+                const fullPath = path.join(dir, entry.name);
+                const relativePath = path.join(basePath || '', entry.name);
+
+                if (settings.entryFilter && !settings.entryFilter(new Entry(entry.name, relativePath, entry))) {
+                    checkPending();
+                    continue;
+                }
+
+                let statsCallback = function() {
+                    result.push(new Entry(entry.name, relativePath, entry, stats));
+                    if (entry.isDirectory() && (!settings.deepFilter || settings.deepFilter(new Entry(entry.name, relativePath, entry)))) {
+                        read(fullPath, relativePath);
+                    }
+                    checkPending();
+                };
+
+                if (settings.stats) {
+                    (settings.followSymbolicLinks ? settings.fs.stat : settings.fs.lstat)(fullPath, (err, stats) => {
+                        if (err) {
+                            return callback(err, null);
+                        }
+                        statsCallback(stats);
+                    });
+                } else {
+                    statsCallback(null);
+                }
+            }
+            checkPending();
+        });
+    }
+
+    function checkPending() {
+        pending--;
+        if (pending === 0 && !errorDetected) {
+            callback(null, result);
+        }
+    }
+
+    read(directory, settings.basePath);
+}
+
+function walkStream(directory, optionsOrSettings) {
+    const settings = optionsOrSettings instanceof Settings ? optionsOrSettings : new Settings(optionsOrSettings);
+    const { Readable } = require('stream');
+    const stream = new Readable({ objectMode: true, read() {} });
+
+    function processEntry(entry, fullPath, relativePath) {
+        if (entry.isDirectory() && (!settings.deepFilter || settings.deepFilter(entry))) {
+            read(fullPath, relativePath);
+        }
+        stream.push(entry);
+    }
+
+    function read(dir, basePath) {
+        settings.fs.readdir(dir, { withFileTypes: true }, (error, entries) => {
+            if (error) {
+                if (!settings.errorFilter || !settings.errorFilter(error)) {
+                    stream.emit('error', error);
+                    return;
+                }
+            } else {
+                for (const entry of entries) {
+                    const fullPath = path.join(dir, entry.name);
+                    const relativePath = path.join(basePath || '', entry.name);
+
+                    if (settings.entryFilter && !settings.entryFilter(entry)) continue;
+
+                    if (settings.stats) {
+                        (settings.followSymbolicLinks ? settings.fs.stat : settings.fs.lstat)(fullPath, (err, stats) => {
+                            if (!err) {
+                                processEntry(new Entry(entry.name, relativePath, entry, stats), fullPath, relativePath);
+                            }
+                        });
+                    } else {
+                        processEntry(new Entry(entry.name, relativePath, entry), fullPath, relativePath);
+                    }
+                }
+            }
+        });
+    }
+
+    read(directory, settings.basePath);
+    stream.push(null);
+    return stream;
+}
+
+module.exports = {
+    walkSync,
+    walk,
+    walkStream,
+    Settings
+};
+```

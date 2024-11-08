@@ -1,0 +1,94 @@
+The provided Node.js code defines an `asyncKit` module, which consists of two main functions, `parallel` and `serial`. These functions are designed to perform asynchronous operations either concurrently or sequentially over an input collection, which can be an array or an object.
+
+### Functionality Explanation
+
+#### `asyncKit.parallel(input, iterator, finalCallback)`
+
+- **Purpose**: Executes multiple asynchronous operations in parallel.
+- **Parameters**:
+  - `input`: An array or object containing data over which asynchronous operations are to be performed.
+  - `iterator`: A function applied to each item in the `input`, executed in parallel. It accepts arguments `(item, key, callback)`, and the `callback` should be invoked once the operation is complete.
+  - `finalCallback`: A function called after all operations are done, or if any operation reports an error.
+- **Operation**: 
+  - If the `input` is an array, the keys are its indices; if it's an object, the keys are its properties.
+  - The `iterator` is called with each item/key, executing an asynchronous task.
+  - If an error occurs in any task, all remaining tasks are aborted, and `finalCallback` is invoked with the error and partial results.
+  - Upon successful completion of all tasks, `finalCallback` is called with no error and the aggregated results.
+
+#### `asyncKit.serial(input, iterator, finalCallback)`
+
+- **Purpose**: Executes multiple asynchronous operations sequentially.
+- **Parameters**:
+  - Identical to those in the `parallel` function.
+- **Operation**:
+  - Executes the `iterator` function on each item/key in the `input` one after another.
+  - The `iterator` must call `next(err, result)` to proceed to the following item.
+  - If an error occurs, execution stops, and `finalCallback` is called with the error and results up to that point.
+  - If all operations succeed, `finalCallback` is triggered with the complete results.
+
+### Rewritten Code
+
+```javascript
+// File: index.js
+class AsyncKit {
+  static parallel(input, iterator, finalCallback) {
+    const keys = Array.isArray(input) ? input.map((_, i) => i) : Object.keys(input);
+    const totalJobs = keys.length;
+    const results = Array.isArray(input) ? [] : {};
+    let completedJobs = 0;
+    let errorOccurred = false;
+    const abortFns = [];
+
+    keys.forEach(key => {
+      if (errorOccurred) return;
+
+      const item = input[key];
+      const abortFn = iterator(item, key, (err, result) => {
+        if (errorOccurred) return;
+
+        completedJobs++;
+        if (err) {
+          errorOccurred = true;
+          abortFns.forEach(fn => fn && fn());
+          finalCallback(err, results);
+        } else {
+          results[key] = result;
+          if (completedJobs === totalJobs) {
+            finalCallback(null, results);
+          }
+        }
+      });
+
+      if (typeof abortFn === "function") {
+        abortFns.push(abortFn);
+      }
+    });
+  }
+
+  static serial(input, iterator, finalCallback) {
+    const keys = Array.isArray(input) ? input.map((_, i) => i) : Object.keys(input);
+    const results = Array.isArray(input) ? [] : {};
+    let currentIndex = 0;
+    const totalJobs = keys.length;
+
+    const next = (err, result) => {
+      if (err || currentIndex === totalJobs) {
+        finalCallback(err, results);
+        return;
+      }
+
+      if (currentIndex > 0) results[keys[currentIndex - 1]] = result;
+
+      const currentKey = keys[currentIndex++];
+      const currentItem = input[currentKey];
+
+      iterator(currentItem, currentKey, next);
+    };
+    
+    next();
+  }
+}
+
+// Export the package functionalities
+module.exports = AsyncKit;
+```

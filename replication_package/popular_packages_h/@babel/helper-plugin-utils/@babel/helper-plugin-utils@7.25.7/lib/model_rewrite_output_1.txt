@@ -1,0 +1,84 @@
+The Node.js code is intended to provide a mechanism for declaring Babel plugins or presets while ensuring compatibility with certain Babel API versions. It incorporates polyfills for Babel API methods that may not exist in older versions, ensuring smooth functionality across different environments. Here’s a breakdown of its components:
+
+1. **Polyfills Definition**: It defines `apiPolyfills` that provide fallback implementations of certain Babel API functionalities such as `assertVersion`, `targets`, `assumption`, and `addExternalDependency`.
+
+2. **`declare` Function**: This function wraps a builder function with an augmented API object that includes polyfilled functions. If any expected methods are not present in the provided API, the polyfill is used instead.
+
+3. **`declarePreset`**: A constant that is simply an alias for the `declare` function, possibly intended for convenience when defining Babel presets.
+
+4. **`copyApiObject` Function**: This function clones the Babel API object, ensuring that the prototype chain is respected particularly for Babel versions 7.x, so that all expected API properties are available.
+
+5. **`throwVersionError` Function**: It throws a customized error if the Babel version in use does not satisfy the expected version range. This function assures users are informed when there is a version mismatch issue.
+
+Here's a possible rewrite of the code while maintaining the original functionality:
+
+```js
+"use strict";
+
+const apiPolyfills = {
+  assertVersion: (api) => (range) => {
+    throwVersionError(range, api.version);
+  },
+  targets: () => () => ({}),
+  assumption: () => () => undefined,
+  addExternalDependency: () => () => {}
+};
+
+function declare(builder) {
+  return (api, options = {}, dirname) => {
+    let clonedApi;
+    for (const name of Object.keys(apiPolyfills)) {
+      if (!api[name]) {
+        clonedApi ??= cloneApi(api);
+        clonedApi[name] = apiPolyfills[name](clonedApi);
+      }
+    }
+    return builder(clonedApi ?? api, options, dirname);
+  };
+}
+
+const declarePreset = declare;
+
+function cloneApi(api) {
+  let proto = null;
+  if (typeof api.version === "string" && api.version.startsWith("7.")) {
+    proto = Object.getPrototypeOf(api);
+    if (proto && ["version", "transform", "template", "types"].some(prop => !proto.hasOwnProperty(prop))) {
+      proto = null;
+    }
+  }
+  return Object.assign({}, proto, api);
+}
+
+function throwVersionError(range, version) {
+  if (typeof range === "number" && !Number.isInteger(range)) {
+    throw new Error("Expected string or integer value.");
+  } else if (typeof range === "number") {
+    range = `^${range}.0.0-0`;
+  } else if (typeof range !== "string") {
+    throw new Error("Expected string or integer value.");
+  }
+
+  const originalLimit = Error.stackTraceLimit;
+  if (typeof originalLimit === "number" && originalLimit < 25) {
+    Error.stackTraceLimit = 25;
+  }
+
+  const message = version.startsWith("7.")
+    ? `Requires Babel "^7.0.0-beta.41", but was loaded with "${version}". You'll need to update your @babel/core version.`
+    : `Requires Babel "${range}", but was loaded with "${version}". If you are sure you have a compatible version of @babel/core, it might be due to an incorrect build process loading the wrong version. Inspect the stack trace to find non-@babel/core references.`;
+
+  const error = new Error(message);
+  error.code = "BABEL_VERSION_UNSUPPORTED";
+  error.version = version;
+  error.range = range;
+
+  Error.stackTraceLimit = originalLimit;
+  throw error;
+}
+
+exports.declare = declare;
+exports.declarePreset = declarePreset;
+
+//# sourceMappingURL=index.js.map
+```

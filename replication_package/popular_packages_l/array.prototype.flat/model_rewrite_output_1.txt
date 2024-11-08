@@ -1,0 +1,78 @@
+The provided Node.js code implements a polyfill for the `Array.prototype.flat` method. It consists of the following components:
+
+1. **flatPolyfill Function**: A function that mimics the behavior of the `Array.prototype.flat()` method. It flattens nested arrays up to a specified `depth`. It uses recursion to flatten each nested level of the array. If the provided `array` argument is not an array, it throws a `TypeError`.
+
+2. **getPolyfill Function**: This function checks if the native `Array.prototype.flat` is available. If it is, it returns that native implementation; otherwise, it returns the custom `flatPolyfill`.
+
+3. **shim Function**: This function adds the polyfill to `Array.prototype.flat` if it's not already present. It checks for the existing method and defines it using `Object.defineProperty` to ensure it behaves like a standard built-in method of arrays.
+
+4. **Module Exports**: The `flatPolyfill`, `shim`, and `getPolyfill` functions are exported from the module so they can be used elsewhere.
+
+5. **Test Suite in test.js**: This part imports the polyfill and runs various assertions to ensure the polyfill behaves correctly. It verifies both the standalone function and the shimmed method on the `Array.prototype`. Tests cover different levels of array flattening and compatibility between the polyfill and native implementations if they exist.
+
+Here's the rewritten code:
+
+```javascript
+// index.js
+function flatPolyfill(array, depth = 1) {
+  if (!Array.isArray(array)) {
+    throw new TypeError('The first argument must be an array');
+  }
+
+  const flatten = (arr, d) => {
+    return d > 0
+      ? arr.reduce((acc, val) => acc.concat(Array.isArray(val) ? flatten(val, d - 1) : val), [])
+      : arr.slice();
+  };
+
+  return flatten(array, depth);
+}
+
+function getPolyfill() {
+  return typeof Array.prototype.flat === 'function' ? Array.prototype.flat : flatPolyfill;
+}
+
+function shim() {
+  const polyfill = getPolyfill();
+  if (Array.prototype.flat !== polyfill) {
+    Object.defineProperty(Array.prototype, 'flat', {
+      value: polyfill,
+      configurable: true,
+      writable: true,
+    });
+  }
+  return polyfill;
+}
+
+module.exports = flatPolyfill;
+module.exports.shim = shim;
+module.exports.getPolyfill = getPolyfill;
+
+// test.js
+const assert = require('assert');
+const flat = require('./index');
+
+// Test cases
+const arr = [1, [2], [], 3, [[4]]];
+
+// Spec tests
+assert.deepEqual(flat(arr, 1), [1, 2, 3, [4]]);
+assert.deepEqual(flat(arr, 2), [1, 2, 3, 4]);
+
+// Test shim
+delete Array.prototype.flat;
+const shimmedFlat = flat.shim();
+assert.equal(shimmedFlat, flat.getPolyfill());
+assert.deepEqual(arr.flat(), flat(arr));
+
+// Test native compatibility
+Array.prototype.flat = function (depth) {
+  return flat(this, depth);
+};
+const shimmedIncludes = flat.shim();
+assert.equal(shimmedIncludes, Array.prototype.flat);
+assert.deepEqual(arr.flat(), flat(arr));
+
+// Tests pass message
+console.log("All tests passed!");
+```

@@ -1,0 +1,127 @@
+The given Node.js code is a basic module structure dealing with configuration loading from multiple sources such as environment variables, shared configuration files, and static defaults. The module is organized to allow importing and exporting functionality in a CommonJS environment while providing utilities for handling and organizing properties and functions, using custom functions for defining and exporting properties. 
+
+Here's a summary of the functionality:
+
+1. **Utilities for property management:** Functions are provided to define, copy, and manage object properties such as setting the "name" property, exporting properties, and managing property descriptors.
+   
+2. **Environment Variable Loader (`fromEnv`)**: Attempts to retrieve configuration from the environment. If it fails, it throws an error including the selector name extracted using `getSelectorName`.
+    
+3. **Shared Config File Loader (`fromSharedConfigFiles`)**: Attempts to load configurations from a profile in shared configuration files (like AWS config/credentials). It merges profiles based on preference and throws an error if the required configuration is absent.
+   
+4. **Static Configuration Loader (`fromStatic`)**: Determines if the provided default value is a function or not and returns the default value accordingly, either resolving a promise or using a static value.
+    
+5. **Configuration Loader (`loadConfig`)**: Combines the above strategies using `import_property_provider` to memoize the result, creating a chain of responsibility to load configurations from environment variables, shared files, or static defaults.
+
+The code exports the `loadConfig` function for usage, marking the module as compatible with CommonJS format.
+
+Here is a rewritten version of the code:
+
+```javascript
+const { defineProperty: defProp, getOwnPropertyDescriptor: getOwnPropDesc, getOwnPropertyNames: getOwnPropNames } = Object;
+const hasOwnProp = Object.prototype.hasOwnProperty;
+
+const setName = (target, value) => defProp(target, "name", { value, configurable: true });
+const exportProperties = (target, all) => {
+  for (const name in all)
+    defProp(target, name, { get: all[name], enumerable: true });
+};
+
+const copyProperties = (to, from, except, desc) => {
+  if (from && (typeof from === "object" || typeof from === "function")) {
+    for (const key of getOwnPropNames(from)) {
+      if (!hasOwnProp.call(to, key) && key !== except) {
+        defProp(to, key, { get: () => from[key], enumerable: !(desc = getOwnPropDesc(from, key)) || desc.enumerable });
+      }
+    }
+  }
+  return to;
+};
+
+const toCommonJS = (mod) => copyProperties(defProp({}, "__esModule", { value: true }), mod);
+
+// src/index.js
+const srcExports = {};
+exportProperties(srcExports, {
+  loadConfig: () => loadConfig
+});
+module.exports = toCommonJS(srcExports);
+
+// src/configLoader.js
+
+// src/fromEnv.js
+const { CredentialsProviderError } = require("@smithy/property-provider");
+
+// src/getSelectorName.js
+function getSelectorName(functionString) {
+  try {
+    const constants = new Set((functionString.match(/([A-Z_]){3,}/g) || []));
+    constants.delete("CONFIG");
+    constants.delete("CONFIG_PREFIX_SEPARATOR");
+    constants.delete("ENV");
+    return Array.from(constants).join(", ");
+  } catch (e) {
+    return functionString;
+  }
+}
+setName(getSelectorName, "getSelectorName");
+
+// src/fromEnv.js
+const fromEnv = setName((envVarSelector, logger) => async () => {
+  try {
+    const config = envVarSelector(process.env);
+    if (config === undefined) {
+      throw new Error();
+    }
+    return config;
+  } catch (e) {
+    throw new CredentialsProviderError(
+      e.message || `Not found in ENV: ${getSelectorName(envVarSelector.toString())}`,
+      { logger }
+    );
+  }
+}, "fromEnv");
+
+// src/fromSharedConfigFiles.js
+const { getProfileName, loadSharedConfigFiles } = require("@smithy/shared-ini-file-loader");
+
+const fromSharedConfigFiles = setName((configSelector, { preferredFile = "config", ...init } = {}) => async () => {
+  const profile = getProfileName(init);
+  const { configFile, credentialsFile } = await loadSharedConfigFiles(init);
+  const profileFromCredentials = credentialsFile[profile] || {};
+  const profileFromConfig = configFile[profile] || {};
+  const mergedProfile = preferredFile === "config" ? { ...profileFromCredentials, ...profileFromConfig } : { ...profileFromConfig, ...profileFromCredentials };
+
+  try {
+    const cfgFile = preferredFile === "config" ? configFile : credentialsFile;
+    const configValue = configSelector(mergedProfile, cfgFile);
+    if (configValue === undefined) {
+      throw new Error();
+    }
+    return configValue;
+  } catch (e) {
+    throw new CredentialsProviderError(
+      e.message || `Not found in config files w/ profile [${profile}]: ${getSelectorName(configSelector.toString())}`,
+      { logger: init.logger }
+    );
+  }
+}, "fromSharedConfigFiles");
+
+// src/fromStatic.js
+const isFunction = setName((func) => typeof func === "function", "isFunction");
+
+const fromStatic = setName((defaultValue) => isFunction(defaultValue) ? async () => await defaultValue() : require("@smithy/property-provider").fromStatic(defaultValue), "fromStatic");
+
+// src/configLoader.js
+const loadConfig = setName(({ environmentVariableSelector, configFileSelector, default: defaultValue }, configuration = {}) => require("@smithy/property-provider").memoize(
+  require("@smithy/property-provider").chain(
+    fromEnv(environmentVariableSelector),
+    fromSharedConfigFiles(configFileSelector, configuration),
+    fromStatic(defaultValue)
+  )
+), "loadConfig");
+
+// Annotate the CommonJS export names for ESM import in node:
+0 && (module.exports = {
+  loadConfig
+});
+```

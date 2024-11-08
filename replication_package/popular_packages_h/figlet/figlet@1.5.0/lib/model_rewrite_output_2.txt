@@ -1,0 +1,68 @@
+The provided Node.js code is a plug-in for the `figlet.js` module which deals with loading and managing font files for rendering text in various font styles. Here's an explanation of its functionality:
+
+1. **Font Loading**: The code provides two methods to load fonts:
+   - `figlet.loadFont`: Asynchronously loads a specified font by its name using a callback function. If the font is already loaded, it returns cached font options instead of reading from the file system. Otherwise, it reads the font file with `.flf` extension from the specified directory, parses the font data using `figlet.parseFont`, and returns the result.
+   - `figlet.loadFontSync`: Does the same as `loadFont`, but synchronously. It immediately returns the loaded font options after reading and parsing the font file.
+
+2. **Listing Available Fonts**: 
+   - `figlet.fonts`: Asynchronously reads the font directory to list all available font files with a `.flf` extension, stripping the extension away from the file names, and provides the list through a callback.
+   - `figlet.fontsSync`: Synchronously performs the same listing task as `figlet.fonts` and returns an array of font names directly.
+
+3. **File and Path Handling**: The code makes extensive use of Node.js's `fs` (file system) and `path` modules to handle file reading and paths, ensuring it operates correctly across different operating systems.
+
+Below is the rewritten code with the same functionality:
+
+```javascript
+const figlet = require('./figlet.js');
+const fs = require('fs');
+const path = require('path');
+const fontDir = path.join(__dirname, '/../fonts/');
+
+figlet.loadFont = function(name, next) {
+    if (figlet.figFonts[name]) {
+        return next(null, figlet.figFonts[name].options);
+    }
+
+    const fontPath = path.join(fontDir, `${name}.flf`);
+    fs.readFile(fontPath, { encoding: 'utf-8' }, (err, fontData) => {
+        if (err) return next(err);
+
+        try {
+            const parsedFont = figlet.parseFont(name, fontData);
+            next(null, parsedFont);
+        } catch (error) {
+            next(error);
+        }
+    });
+};
+
+figlet.loadFontSync = function(name) {
+    if (figlet.figFonts[name]) {
+        return figlet.figFonts[name].options;
+    }
+
+    const fontPath = path.join(fontDir, `${name}.flf`);
+    const fontData = fs.readFileSync(fontPath, { encoding: 'utf-8' });
+    return figlet.parseFont(name, fontData);
+};
+
+figlet.fonts = function(next) {
+    fs.readdir(fontDir, (err, files) => {
+        if (err) return next(err);
+
+        const fontList = files
+            .filter(file => /\.flf$/.test(file))
+            .map(file => file.replace(/\.flf$/, ''));
+        
+        next(null, fontList);
+    });
+};
+
+figlet.fontsSync = function() {
+    return fs.readdirSync(fontDir)
+        .filter(file => /\.flf$/.test(file))
+        .map(file => file.replace(/\.flf$/, ''));
+};
+
+module.exports = figlet;
+```

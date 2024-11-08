@@ -1,0 +1,42 @@
+The given Node.js code defines a module that exports a function named `unboxPrimitive`. This function takes a single argument, `value`, which is expected to be a boxed primitive type such as String, Number, Boolean, Symbol, or BigInt. The module utilizes a library called `which-boxed-primitive` to determine the type of the boxed primitive. It then unboxes the primitive value by calling the appropriate method—`toString` for String, `valueOf` for Number and Boolean, and similar for others. If the type isn't recognized or if the environment lacks support for Symbols or BigInts and a corresponding boxed value is provided, the function throws an error.
+
+Below is a possible rewrite of the code that maintains the same functionality:
+
+```javascript
+'use strict';
+
+const whichBoxedPrimitive = require('which-boxed-primitive');
+const bind = require('function-bind');
+const hasSymbols = require('has-symbols')();
+const hasBigInts = require('has-bigints')();
+
+const unboxMethods = {
+	String: bind.call(Function.call, String.prototype.toString),
+	Number: bind.call(Function.call, Number.prototype.valueOf),
+	Boolean: bind.call(Function.call, Boolean.prototype.valueOf),
+	Symbol: hasSymbols ? bind.call(Function.call, Symbol.prototype.valueOf) : null,
+	BigInt: hasBigInts ? bind.call(Function.call, BigInt.prototype.valueOf) : null
+};
+
+module.exports = function unboxPrimitive(value) {
+	const which = whichBoxedPrimitive(value);
+	if (typeof which !== 'string') {
+		throw new TypeError(which === null 
+			? 'value is an unboxed primitive' 
+			: 'value is a non-boxed-primitive object'
+		);
+	}
+
+	if (!unboxMethods[which]) {
+		if (which === 'Symbol') {
+			throw new EvalError('somehow this environment does not have Symbols, but you have a boxed Symbol value. Please report this!');
+		}
+		if (which === 'BigInt') {
+			throw new EvalError('somehow this environment does not have BigInts, but you have a boxed BigInt value. Please report this!');
+		}
+		throw new RangeError(`unknown boxed primitive found: ${which}`);
+	}
+
+	return unboxMethods[which](value);
+};
+```

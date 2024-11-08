@@ -1,0 +1,112 @@
+The ADM-ZIP library is a Node.js package that provides functionality for working with ZIP files. It supports reading and writing compressed data and allows developers to manipulate ZIP archives within their Node.js applications. Here is a summary of the key features and usage:
+
+### Key Features
+
+1. **Decompressing ZIP Files**:
+   - The library can extract files from ZIP archives, either directly to disk or into memory as buffers.
+
+2. **Creating ZIP Files**:
+   - Users can create new ZIP files by adding files directly from memory or existing files on disk.
+
+3. **Updating ZIP Files**:
+   - It allows modifying an existing ZIP file by adding new files or deleting existing ones.
+
+4. **No External Dependencies**:
+   - The library does not depend on any other Node.js libraries.
+
+5. **Electron fs Support**:
+   - Support is provided for Electron's `original-fs` module for file operations, which can be specified through an option in the constructor.
+
+### Basic Usage
+
+- **Reading ZIP Files**:
+  - Instantiate ADM-ZIP with the path to a ZIP file.
+  - Use `getEntries()` to retrieve the list of files, and `getData()` to read their contents.
+  - Extract files using `extractEntryTo()` or `extractAllTo()` methods.
+
+- **Creating and Saving ZIP Files**:
+  - Instantiate an empty ADM-ZIP object.
+  - Add files using `addFile()` for memory data, or `addLocalFile()` for disk files.
+  - Save the resulting ZIP archive using `toBuffer()` for a buffer output or `writeZip()` for directly saving to disk.
+
+- **Using with Electron**:
+  - Specify the `original-fs` module when initializing to handle file operations within Electron applications.
+
+Below is a simplified implementation of the described functionalities in a Node.js package format:
+
+```javascript
+// adm-zip.js
+const fs = require('fs');
+const path = require('path');
+const zlib = require('zlib');
+
+class AdmZip {
+    constructor(zipPath, options = {}) {
+        this.zipPath = zipPath;
+        this.fs = options.fs || fs;
+        this.entries = [];
+        if (zipPath) {
+            this.loadEntries();
+        }
+    }
+
+    loadEntries() {
+        // Simulated loading of ZIP entries (in reality you'd parse the zip structure)
+        this.entries = [{ entryName: 'my_file.txt', getData: () => Buffer.from('File Content') }];
+    }
+  
+    getEntries() {
+        return this.entries;
+    }
+
+    readAsText(entryName) {
+        const entry = this.entries.find(e => e.entryName === entryName);
+        return entry ? entry.getData().toString('utf8') : null;
+    }
+
+    extractEntryTo(entryName, targetPath, maintainEntryPath, overwrite) {
+        const entry = this.entries.find(e => e.entryName === entryName);
+        if (entry) {
+            const outputPath = path.join(targetPath, entryName);
+            if (overwrite || !this.fs.existsSync(outputPath)) {
+                this.fs.writeFileSync(outputPath, entry.getData());
+            }
+        }
+    }
+
+    extractAllTo(targetPath, overwrite) {
+        this.entries.forEach(entry => {
+            this.extractEntryTo(entry.entryName, targetPath, false, overwrite);
+        });
+    }
+
+    addFile(entryName, contentBuffer, comment) {
+        this.entries.push({ entryName, getData: () => contentBuffer, comment });
+    }
+
+    addLocalFile(filePath) {
+        const contentBuffer = this.fs.readFileSync(filePath);
+        const entryName = path.basename(filePath);
+        this.addFile(entryName, contentBuffer);
+    }
+
+    toBuffer() {
+        // Dummy implementation for creating a buffer
+        return Buffer.from('ZIP data');
+    }
+
+    writeZip(targetPath) {
+        console.log(`Writing zip to: ${targetPath}`);
+        this.fs.writeFileSync(targetPath, this.toBuffer());
+    }
+}
+
+module.exports = AdmZip;
+
+// Usage example:
+
+// const AdmZip = require('./adm-zip');
+// const zip = new AdmZip();
+// zip.addFile('test.txt', Buffer.from('This is test content'));
+// zip.writeZip('./test.zip');
+```

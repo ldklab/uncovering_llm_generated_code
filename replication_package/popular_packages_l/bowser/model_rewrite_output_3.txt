@@ -1,0 +1,131 @@
+The Node.js code defines a class `BrowserParser` designed to parse a User-Agent string, typically sent by a web browser, to identify details about the browser, operating system, platform, and rendering engine. It uses regex patterns to extract version information and identify the name of the browser and operating system. The class offers several methods:
+
+1. **Constructor**: Takes a User-Agent string, converts it to lowercase, and parses it to extract browser and system details.
+2. **`parseUserAgent` Method**: Uses various regex patterns organized into different categories (browsers, OS, platforms, engines) to match and extract relevant details from the User-Agent string.
+3. **`getMacOSVersionName` Method**: Maps macOS versions to their code names, such as 'Catalina' for version '10.15'.
+4. **`getBrowserName` Method**: Returns the name of the browser extracted.
+5. **`getBrowser` Method**: Returns an object containing the browser's name and version.
+6. **`satisfies` Method**: Checks if the parsed browser details meet specified conditions, such as a version greater than or less than a given version.
+7. **Static Methods**: 
+   - `getParser` creates and returns a new `BrowserParser` instance.
+   - `parse` directly parses a User-Agent string and returns the parsed details.
+
+Here is a possible rewrite of the code:
+
+```javascript
+// browserParser.js
+
+class BrowserParser {
+  constructor(userAgent) {
+    this.userAgent = userAgent.toLowerCase();
+    this.parsedResult = this.parseUserAgent();
+  }
+
+  parseUserAgent() {
+    const ua = this.userAgent;
+    const definitions = {
+      browsers: [
+        { name: 'chrome', pattern: /chrome\/([\d.]+)/ },
+        { name: 'firefox', pattern: /firefox\/([\d.]+)/ },
+        { name: 'safari', pattern: /version\/([\d.]+).*safari/ },
+        { name: 'internet explorer', pattern: /msie ([\d.]+)/ },
+        { name: 'opera', pattern: /opera\/([\d.]+)/ },
+      ],
+      operatingSystems: [
+        { name: 'windows', pattern: /windows nt ([\d.]+)/ },
+        { name: 'macos', pattern: /mac os x ([\d_]+)/ },
+        { name: 'linux', pattern: /linux/ },
+      ],
+      platforms: [
+        { type: 'desktop', pattern: /(win|mac|linux)/ },
+        { type: 'mobile', pattern: /(iphone|android|mobile)/ },
+      ],
+      engines: [
+        { name: 'trident', pattern: /trident\/([\d.]+)/ },
+        { name: 'webkit', pattern: /webkit\/([\d.]+)/ },
+        { name: 'gecko', pattern: /gecko\/([\d.]+)/ },
+      ],
+    };
+
+    const findMatch = (group) => {
+      for (let item of group) {
+        const match = item.pattern.exec(ua);
+        if (match) return { name: item.name || item.type, version: match[1].replace('_', '.') };
+      }
+      return null;
+    };
+
+    const browser = findMatch(definitions.browsers) || { name: 'unknown', version: '' };
+    const os = findMatch(definitions.operatingSystems) || { name: 'unknown', version: '' };
+    const platform = findMatch(definitions.platforms) || { type: 'unknown' };
+    const engine = findMatch(definitions.engines) || { name: 'unknown', version: '' };
+
+    if (os.name === 'macos') {
+      os.versionName = this.getMacOSVersionName(os.version);
+    }
+
+    return { browser, os, platform, engine };
+  }
+
+  getMacOSVersionName(version) {
+    const macVersions = {
+      '10.15': 'Catalina',
+      '10.14': 'Mojave',
+      '10.13': 'High Sierra',
+      '10.12': 'Sierra',
+      '10.11': 'El Capitan',
+      '10.10': 'Yosemite',
+      '10.9': 'Mavericks',
+      '10.8': 'Mountain Lion',
+      '10.7': 'Lion',
+      '10.6': 'Snow Leopard',
+      '10.5': 'Leopard',
+      '10.4': 'Tiger',
+      '10.3': 'Panther',
+      '10.2': 'Jaguar',
+      '10.1': 'Puma',
+    };
+    return macVersions[version] || 'unknown';
+  }
+
+  getBrowserName() {
+    return this.parsedResult.browser.name;
+  }
+
+  getBrowser() {
+    return this.parsedResult.browser;
+  }
+
+  satisfies(conditions = {}) {
+    const { browser } = this.parsedResult;
+
+    const versionCheck = (version, condition) => {
+      const [operator, ...vParts] = condition.split(/(?=\d)/);
+      const targetVersion = vParts.join('');
+      switch (operator) {
+        case '>': return version > targetVersion;
+        case '<': return version < targetVersion;
+        case '=': return version === targetVersion;
+        case '~': return version.startsWith(targetVersion);
+        default: return false;
+      }
+    };
+
+    return Object.entries(conditions).some(([type, checks]) =>
+      Object.entries(checks).some(([name, condition]) =>
+        browser.name.includes(name) && versionCheck(browser.version, condition)
+      )
+    );
+  }
+
+  static getParser(userAgent) {
+    return new BrowserParser(userAgent);
+  }
+
+  static parse(userAgent) {
+    return new BrowserParser(userAgent).parsedResult;
+  }
+}
+
+module.exports = BrowserParser;
+```

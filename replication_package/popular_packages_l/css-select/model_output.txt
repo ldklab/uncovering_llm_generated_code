@@ -1,0 +1,77 @@
+The `css-select` package in Node.js is designed as both a compiler and an engine for CSS selectors. Here’s a breakdown of its key functionality:
+
+1. **Compiler Functionality:**
+   - Converts CSS selectors into JavaScript functions. These functions can be used to test if a given DOM element matches the selector criteria. 
+   - The compilation process involves parsing a CSS selector string into an array of objects that represent each part of the selector (using a dependency like `css-what`).
+   - Each part of the selector is turned into a function that checks an element against the selector criteria recursively from right-to-left (which opposes the typical left-to-right execution seen in most CSS engines).
+
+2. **Engine Functionality:**
+   - Traverses a DOM tree to find elements that satisfy the CSS selector criteria.
+   - Supports a comprehensive set of CSS3, most CSS4, and some jQuery/Sizzle extensions.
+   - Implements right-to-left parsing for performance efficiency, reducing redundant checks and improving runtime operation to `O(n)` complexity for descendant querying.
+   - Uses `htmlparser2`’s `domhandler` DOM structure by default but can be adapted to other structures through custom adapter implementations.
+
+3. **API Overview:**
+   - `selectAll`: Takes a query and a set of elements, returns all elements that match the query.
+   - `compile`: Converts a selector into a function for element matching.
+   - `is`: Tests if a single element matches a selector.
+   - `selectOne`: Similar to `selectAll`, but returns only the first match.
+
+4. **Options:**
+   - Support for XML mode, custom adapters, query context, and result caching.
+   - The ability to set `pseudos`, which are mappings of pseudo-class selectors to their implementations.
+
+5. **Supported Selectors:**
+   - Includes support for CSS basic selectors, combinators, attribute selectors, and a wide range of pseudo-classes, with some jQuery extensions like `:contains`.
+
+Below is a simplified version of the code to demonstrate how the `css-select` package might be implemented:
+
+```markdown
+// index.js
+const cssWhat = require('css-what');
+const domutils = require('domutils');
+
+class CSSselect {
+  static selectAll(selector, elems, options = {}) {
+    const compiledSelector = CSSselect.compile(selector, options);
+    return domutils.findAll(compiledSelector, elems, options);
+  }
+
+  static compile(selector, options = {}) {
+    const parsedSelector = cssWhat.parse(selector);
+    const funcs = parsedSelector[0].map(part => CSSselect.compilePart(part, options));
+    return element => {
+      for (const func of funcs) {
+        if (!func(element)) return false;
+      }
+      return true;
+    };
+  }
+
+  static compilePart(part, options) {
+    switch (part.type) {
+      case 'tag':
+        return elem => elem.tagName === part.name;
+      case 'descendant':
+        return elem => elem.parentNode != null;
+      // Further cases for other selector parts...
+      default:
+        throw new Error(`Unsupported selector type: ${part.type}`);
+    }
+  }
+
+  static is(elem, query, options = {}) {
+    const compiledSelector = CSSselect.compile(query, options);
+    return compiledSelector(elem);
+  }
+
+  static selectOne(selector, elems, options = {}) {
+    const compiledSelector = CSSselect.compile(selector, options);
+    return domutils.findOne(compiledSelector, elems, options);
+  }
+}
+
+module.exports = CSSselect;
+```
+
+This code represents the core functionalities of `css-select`. It includes methods for compiling selectors into functions, and executing queries against a DOM-like structure using simple logic for tags and descendants. The functions are designed with flexibility in mind, allowing for further expansion to support more complex selectors and options.

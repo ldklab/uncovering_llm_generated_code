@@ -1,0 +1,78 @@
+The Node.js code consists of a package configuration and a small module dealing with Babel compilation targets. Here's a breakdown of the functionality:
+
+1. **package.json**: This file configures the package with basic information like name, version, main entry point (`index.js`), description, and test script which uses `node` to run `tests.js`.
+
+2. **index.js**: This JavaScript file exports functions to interact with compilation targets and their feature support:
+   - `getCompilationTargets(query)`: Uses `browserslist` to return a list of browsers that meet the provided query criteria.
+   - `isFeatureSupported(feature, query)`: Takes a JavaScript feature and a query to check whether all target browsers support that feature using MDN compatibility data.
+   - `listSupportedFeatures(query)`: Lists all features supported by the target browsers returned by the query.
+
+3. **tests.js**: This script tests the functions from `index.js`, defining a query (`> 0.25%, not dead`) and checking for supported browsers and features. It specifically tests for `'arrow-functions'` support.
+
+Here's a possible rewrite of this code:
+
+```json
+// package.json
+{
+  "name": "@babel/helper-compilation-targets",
+  "version": "1.0.0",
+  "main": "index.js",
+  "description": "Helper functions on Babel compilation targets",
+  "scripts": {
+    "test": "node tests.js"
+  },
+  "author": "",
+  "license": "MIT"
+}
+```
+
+```javascript
+// index.js
+const browserslist = require('browserslist');
+const compatData = require('@mdn/browser-compat-data');
+
+function getCompilationTargets(query) {
+  return browserslist(query);
+}
+
+function isFeatureSupported(feature, query) {
+  const targets = getCompilationTargets(query);
+  const features = compatData.javascript.features;
+
+  if (!features[feature]) {
+    throw new Error(`Unknown feature: ${feature}`);
+  }
+
+  return targets.every(target => {
+    const [browser, version] = target.split(' ');
+    const supportInfo = features[feature].__compat.support[browser];
+    return supportInfo && supportInfo.version_added <= parseFloat(version);
+  });
+}
+
+function listSupportedFeatures(query) {
+  const targets = getCompilationTargets(query);
+  const features = compatData.javascript.features;
+  
+  return Object.keys(features).filter(feature => isFeatureSupported(feature, query));
+}
+
+module.exports = {
+  getCompilationTargets,
+  isFeatureSupported,
+  listSupportedFeatures
+};
+
+// tests.js
+const {
+  getCompilationTargets,
+  isFeatureSupported,
+  listSupportedFeatures
+} = require('./index');
+
+const testQuery = '> 0.25%, not dead';
+
+console.log('Compilation Targets:', getCompilationTargets(testQuery));
+console.log('Is arrow functions supported:', isFeatureSupported('arrow-functions', testQuery));
+console.log('Supported features:', listSupportedFeatures(testQuery));
+```

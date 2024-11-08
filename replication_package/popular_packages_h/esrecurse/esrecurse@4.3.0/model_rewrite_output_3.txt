@@ -1,0 +1,104 @@
+The provided Node.js code is a module that defines and exports functionality for traversing and visiting nodes in an Abstract Syntax Tree (AST) using a visitor pattern. The module primarily uses the `estraverse` library to define traversal and visiting behavior for different node types in the AST. Here's a breakdown of the functionality:
+
+1. **Node Checking**: The function `isNode` checks whether the given element is an AST node by verifying that it is an object with a `type` property, which is a string.
+
+2. **Property Checking**: The function `isProperty` determines if a node type is either an Object Expression or Object Pattern and checks if the key is 'properties'.
+
+3. **Visitor Class**: The `Visitor` class is defined to manage visiting operations. It takes a visitor object and options upon instantiation. The class can customize child visitor keys (determining which child nodes to visit) and fallback strategies if a node type is unknown.
+
+4. **Visiting Methods**:
+    - `visitChildren`: This method handles the visiting of child nodes for a given node. It retrieves the children to be visited based on the node's type and recursively visits these children.
+    - `visit`: This method visits a node, calling any specific visit method provided by the visitor. If no specific method is available, it will continue to visit its children using `visitChildren`.
+
+5. **Exports**: The module exports:
+    - `version`: The version of the package, which is retrieved from `package.json`.
+    - `Visitor`: The `Visitor` class, providing an interface for creating visitor instances.
+    - `visit`: A convenience function that creates a `Visitor` instance and uses it to visit a node.
+
+Here's the rewritten version:
+
+```javascript
+/*
+  This code is under the BSD license, allowing redistribution and use with certain conditions.
+*/
+
+(function () {
+    'use strict';
+
+    const estraverse = require('estraverse');
+
+    function isNode(node) {
+        return node && typeof node === 'object' && typeof node.type === 'string';
+    }
+
+    function isProperty(nodeType, key) {
+        return (
+            (nodeType === estraverse.Syntax.ObjectExpression || nodeType === estraverse.Syntax.ObjectPattern) &&
+            key === 'properties'
+        );
+    }
+
+    class Visitor {
+        constructor(visitor, options = {}) {
+            this.__visitor = visitor || this;
+            this.__childVisitorKeys = options.childVisitorKeys
+                ? { ...estraverse.VisitorKeys, ...options.childVisitorKeys }
+                : estraverse.VisitorKeys;
+
+            if (options.fallback === 'iteration') {
+                this.__fallback = Object.keys;
+            } else if (typeof options.fallback === 'function') {
+                this.__fallback = options.fallback;
+            }
+        }
+
+        visitChildren(node) {
+            if (!node) return;
+
+            const type = node.type || estraverse.Syntax.Property;
+            let children = this.__childVisitorKeys[type];
+
+            if (!children) {
+                if (this.__fallback) {
+                    children = this.__fallback(node);
+                } else {
+                    throw new Error(`Unknown node type ${type}.`);
+                }
+            }
+
+            for (const key of children) {
+                const child = node[key];
+                if (child) {
+                    if (Array.isArray(child)) {
+                        for (const element of child) {
+                            if (element && (isNode(element) || isProperty(type, key))) {
+                                this.visit(element);
+                            }
+                        }
+                    } else if (isNode(child)) {
+                        this.visit(child);
+                    }
+                }
+            }
+        }
+
+        visit(node) {
+            if (!node) return;
+
+            const type = node.type || estraverse.Syntax.Property;
+            if (this.__visitor[type]) {
+                this.__visitor[type].call(this, node);
+            } else {
+                this.visitChildren(node);
+            }
+        }
+    }
+
+    exports.version = require('./package.json').version;
+    exports.Visitor = Visitor;
+    exports.visit = function (node, visitor, options) {
+        const v = new Visitor(visitor, options);
+        v.visit(node);
+    };
+})();
+```

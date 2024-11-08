@@ -1,0 +1,88 @@
+The provided Node.js code defines a module for Jest, a popular JavaScript testing framework, that allows users to run parameterized tests. The core functionality is encapsulated within two functions: `each` and `taggedEach`. Here's a breakdown of the functionality:
+
+1. **formatTitle**: This helper function uses Node.js's `util.format` to create test names by combining a title with the supplied arguments.
+
+2. **executeTestCases**: This function orchestrates the execution of multiple test cases. It iterates over an array of parameters, generating a test name for each and executing the provided test function with those parameters using a given `testExecutor`.
+
+3. **each**: This is the main function that accepts an array of parameter sets. It returns an object with methods (`test`, `describe`) to schedule test cases:
+   - `test`: Registers test cases for each parameter set.
+   - `test.only`, `test.skip`, `test.concurrent`, `test.concurrent.only`, `test.concurrent.skip`: Variants for selective and concurrent testing.
+   - `describe`: Schedules a suite of tests for each parameter set.
+   - `describe.only`, `describe.skip`: Variants for selective suite execution.
+   - Aliases are created for test methods: `test.it`, `test.fit`, `test.xit`.
+
+4. **taggedEach**: Offers support for tagged template literals, allowing more readable parameterized test definitions. This function parses a template result to extract test cases.
+
+5. **Exports**: The `each` function, along with `taggedEach` as `each.only`, is exported for use in tests.
+
+Here's a possible rewrite of the code:
+
+```javascript
+const { format } = require('util');
+
+// Format test titles with given args
+function formatTitle(title, args) {
+  return format(title, ...args);
+}
+
+// Execute test scenarios with parameters
+function executeTestCases(name, testFn, params, executor) {
+  params.forEach((args) => {
+    const testTitle = formatTitle(name, args);
+    executor(testTitle, () => testFn(...args));
+  });
+}
+
+// Main parameterization function
+function each(params) {
+  if (!Array.isArray(params)) {
+    throw new Error('Parameter should be an array');
+  }
+
+  const test = (name, testFn) => executeTestCases(name, testFn, params, global.test);
+  test.only = (name, testFn) => executeTestCases(name, testFn, params, global.test.only);
+  test.skip = (name, testFn) => executeTestCases(name, testFn, params, global.test.skip);
+  test.concurrent = (name, testFn) => executeTestCases(name, testFn, params, global.test.concurrent);
+  test.concurrent.only = (name, testFn) => executeTestCases(name, testFn, params, global.test.concurrent.only);
+  test.concurrent.skip = (name, testFn) => executeTestCases(name, testFn, params, global.test.concurrent.skip);
+  
+  const describe = (name, suiteFn) => {
+    params.forEach((args) => {
+      const describeTitle = formatTitle(name, args);
+      global.describe(describeTitle, () => suiteFn(...args));
+    });
+  };
+  describe.only = (name, suiteFn) => {
+    params.forEach((args) => {
+      const describeTitle = formatTitle(name, args);
+      global.describe.only(describeTitle, () => suiteFn(...args));
+    });
+  };
+  describe.skip = (name, suiteFn) => {
+    params.forEach((args) => {
+      const describeTitle = formatTitle(name, args);
+      global.describe.skip(describeTitle, () => suiteFn(...args));
+    });
+  };
+
+  return { test, describe };
+}
+
+// Support for tagged template literals
+function taggedEach(strings, ...expressions) {
+  const [header, ...rows] = strings[0].split('\n').map(s => s.trim()).filter(Boolean);
+  const headers = header.split('|').map(h => h.trim());
+  const params = rows.map(row => {
+    const values = row.split('|').map(r => r.trim());
+    return headers.reduce((obj, h, i) => {
+      obj[h] = expressions[i] ? expressions[i](values[i]) : values[i];
+      return obj;
+    }, {});
+  });
+
+  return each(params);
+}
+
+each.only = taggedEach;
+module.exports = each;
+```

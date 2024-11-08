@@ -1,0 +1,73 @@
+The provided Node.js code exports a function `createJiti`, which is a custom module loader. This module loader facilitates dynamic `require` capabilities with Babel transpilation support. Here’s the breakdown of its functionality:
+
+1. **Setup Options**: When invoked, `createJiti` accepts a filename and an options object, merging user-specified options with defaults.
+
+2. **Cache Management**: Two caches are managed in this module loader: one for filesystem reads (`fsCache`) and the other for module exports (`moduleCache`).
+
+3. **JIT Compilation**: 
+   - Files are read and transpiled using Babel if not previously cached.
+   - Transpilation considers JSX and TypeScript syntax based on the options.
+   - Babel transformations are applied using specified presets (React and TypeScript).
+
+4. **Dynamic Execution**: The transformed code is wrapped and executed in a new function context that provides `require`, `exports`, and `module`, simulating Node.js's module execution.
+
+5. **Module Resolution**: A custom resolution method is used to determine absolute paths relative to the invoking script.
+
+6. **Async Import Wrapper**: `import` method is available for an asynchronous style import, though it synchronously evaluates the module due to sync I/O operations.
+
+Below is a possible rewrite of the code, retaining the described functionality:
+
+```javascript
+const fs = require('fs');
+const { transformSync } = require('@babel/core');
+const path = require('path');
+
+function createJiti(filename, userOptions = {}) {
+  const options = {
+    debug: false,
+    fsCache: true,
+    moduleCache: true,
+    sourceMaps: false,
+    interopDefault: true,
+    alias: {},
+    jsx: false,
+    ...userOptions,
+  };
+
+  const cache = {};
+
+  const jitiRequire = (filePath) => {
+    if (cache[filePath]) {
+      return cache[filePath].exports;
+    }
+    
+    const absPath = path.resolve(path.dirname(filename), filePath);
+    const code = fs.readFileSync(absPath, 'utf-8');
+    const transformed = transformSync(code, {
+      filename: absPath,
+      presets: [
+        options.jsx && '@babel/preset-react',
+        '@babel/preset-typescript',
+      ].filter(Boolean),
+      sourceMaps: options.sourceMaps,
+    });
+
+    const module = { exports: {} };
+    const functionWrapper = new Function('require', 'exports', 'module', transformed.code);
+    functionWrapper(jitiRequire, module.exports, module);
+
+    cache[filePath] = module;
+    return module.exports;
+  };
+
+  jitiRequire.import = async (filePath) => jitiRequire(filePath);
+  jitiRequire.esmResolve = (filePath) => path.resolve(path.dirname(filename), filePath);
+  jitiRequire.resolve = jitiRequire.esmResolve;
+
+  // Additional logic for handling debug, interopDefault, and caching not shown
+
+  return jitiRequire;
+}
+
+module.exports = { createJiti };
+```

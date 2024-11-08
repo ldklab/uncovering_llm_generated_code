@@ -1,0 +1,42 @@
+The given Node.js code is a Babel plugin used to transform JavaScript source files by hoisting specific Jest mock-related calls to the top of the file. Specifically, it looks for function calls on the `jest` object, such as `jest.disableAutomock`, `jest.enableAutomock`, `jest.unmock`, and `jest.mock`. These identified calls are initially removed from their original positions in the code and are then inserted just before the first import statement in the file, or at the beginning of the file if no import statements are present. This ensures that these Jest calls are executed as early as possible when the module is loaded, which can be necessary for proper test setup.
+
+Here's a possible rewritten version of the code:
+
+```javascript
+// babel-plugin-jest-hoist.js
+
+module.exports = function({ types: t }) {
+  return {
+    visitor: {
+      Program(path) {
+        const jestCalls = [];
+
+        path.traverse({
+          ExpressionStatement(exprPath) {
+            const { expression } = exprPath.node;
+            if (
+              t.isCallExpression(expression) &&
+              t.isMemberExpression(expression.callee) &&
+              t.isIdentifier(expression.callee.object, { name: 'jest' })
+            ) {
+              const methodName = expression.callee.property.name;
+              if (['disableAutomock', 'enableAutomock', 'unmock', 'mock'].includes(methodName)) {
+                jestCalls.push(exprPath.node);
+                exprPath.remove();
+              }
+            }
+          }
+        });
+
+        const firstImportIndex = path.node.body.findIndex((stm) => t.isImportDeclaration(stm));
+
+        if (firstImportIndex !== -1) {
+          path.node.body.splice(firstImportIndex, 0, ...jestCalls);
+        } else {
+          path.node.body.unshift(...jestCalls);
+        }
+      }
+    }
+  };
+};
+```

@@ -1,0 +1,62 @@
+The provided Node.js code is a module that automatically manages cleanup functions in a testing environment to ensure tests run in isolation. The code exports all properties from the `pure` module (except `default` and `__esModule`) and configures automatic cleanup of tests if the environment is set up for it, using test lifecycle functions.
+
+Here's a simplified breakdown of what the code does:
+
+1. **Imports**: It imports functionality from `./act-compat` and `./pure`.
+
+2. **Exports**: It iterates over the keys of the imported `_pure` module, exporting each except for `default` and `__esModule`, if they have not already been exported with the same value.
+
+3. **Automatic Cleanup**:
+   - If the `RTL_SKIP_AUTO_CLEANUP` environment variable isn't set to 'true', it registers a cleanup function with the testing framework.
+   - If the testing environment supports `afterEach`, it triggers cleanup after each test automatically.
+   - It also accounts for the presence of `teardown` in other possible testing environments.
+
+4. **Test Environment Compatibility**:
+   - It conditionally handles setup and teardown for environments that support `beforeAll` and `afterAll`.
+   - It adjusts the React act environment setting for React < 18 to ensure compatibility with `act()` testing utilities.
+
+Below is a rewritten version of the code:
+
+```javascript
+"use strict";
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+
+const { getIsReactActEnvironment, setReactActEnvironment } = require("./actCompat");
+const { cleanup, ...pure } = require("./pure");
+
+Object.entries(pure).forEach(([key, value]) => {
+  if (key !== "default" && key !== "__esModule" && (!exports[key] || exports[key] !== value)) {
+    Object.defineProperty(exports, key, {
+      enumerable: true,
+      get: () => value,
+    });
+  }
+});
+
+if (typeof process === 'undefined' || !process.env?.RTL_SKIP_AUTO_CLEANUP) {
+  
+  if (typeof afterEach === 'function') {
+    afterEach(() => {
+      cleanup();
+    });
+  } else if (typeof teardown === 'function') {
+    teardown(() => {
+      cleanup();
+    });
+  }
+
+  if (typeof beforeAll === 'function' && typeof afterAll === 'function') {
+    let previousIsReactActEnvironment = getIsReactActEnvironment();
+    beforeAll(() => {
+      previousIsReactActEnvironment = getIsReactActEnvironment();
+      setReactActEnvironment(true);
+    });
+    afterAll(() => {
+      setReactActEnvironment(previousIsReactActEnvironment);
+    });
+  }
+}
+```

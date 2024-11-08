@@ -1,0 +1,71 @@
+The provided Node.js code defines a module that exports functions related to adding a middleware for detecting recursion in AWS Lambda environments. This is achieved through the manipulation of HTTP request headers and environment variables associated with the AWS X-Ray tracing system.
+
+Here's a breakdown of the key components and functionality of the code:
+
+1. **Variable Definitions and Utility Functions**:
+   - Various utility functions are defined to help handle property definitions, property copying, and exporting functions in a manner compatible with CommonJS.
+
+2. **Environment Variables and HTTP Header**:
+   - Constants for environment variable names and HTTP headers are declared (`TRACE_ID_HEADER_NAME`, `ENV_LAMBDA_FUNCTION_NAME`, `ENV_TRACE_ID`).
+
+3. **`recursionDetectionMiddleware` Function**:
+   - This is a middleware function designed to detect recursion by inspecting and possibly modifying HTTP headers.
+   - It is executed conditionally within a Node.js runtime environment and when the HTTP request does not already contain the trace ID header.
+   - The function retrieves the AWS Lambda function name and trace ID from environment variables.
+   - If both variables are non-empty strings, it adds the trace ID to the request headers.
+
+4. **Middleware Options**:
+   - `addRecursionDetectionMiddlewareOptions` specifies the configuration for adding the middleware to the request handling process, indicating it should take place during the "build" step.
+
+5. **`getRecursionDetectionPlugin` Function**:
+   - This function is responsible for applying the middleware to a client stack, allowing for integration in a broader middleware framework.
+
+Below is a possible rewrite of the original Node.js code based on the explanation provided:
+
+```javascript
+"use strict";
+
+const { HttpRequest } = require("@smithy/protocol-http");
+
+const TRACE_ID_HEADER_NAME = "X-Amzn-Trace-Id";
+const ENV_LAMBDA_FUNCTION_NAME = "AWS_LAMBDA_FUNCTION_NAME";
+const ENV_TRACE_ID = "_X_AMZN_TRACE_ID";
+
+const recursionDetectionMiddleware = (options) => (next) => async (args) => {
+  const { request } = args;
+  if (!HttpRequest.isInstance(request) || options.runtime !== "node" || request.headers.hasOwnProperty(TRACE_ID_HEADER_NAME)) {
+    return next(args);
+  }
+  const functionName = process.env[ENV_LAMBDA_FUNCTION_NAME];
+  const traceId = process.env[ENV_TRACE_ID];
+
+  const isNonEmptyString = (str) => typeof str === "string" && str.length > 0;
+  if (isNonEmptyString(functionName) && isNonEmptyString(traceId)) {
+    request.headers[TRACE_ID_HEADER_NAME] = traceId;
+  }
+  return next({
+    ...args,
+    request
+  });
+};
+
+const addRecursionDetectionMiddlewareOptions = {
+  step: "build",
+  tags: ["RECURSION_DETECTION"],
+  name: "recursionDetectionMiddleware",
+  override: true,
+  priority: "low"
+};
+
+const getRecursionDetectionPlugin = (options) => ({
+  applyToStack: (clientStack) => {
+    clientStack.add(recursionDetectionMiddleware(options), addRecursionDetectionMiddlewareOptions);
+  }
+});
+
+module.exports = {
+  recursionDetectionMiddleware,
+  addRecursionDetectionMiddlewareOptions,
+  getRecursionDetectionPlugin
+};
+```

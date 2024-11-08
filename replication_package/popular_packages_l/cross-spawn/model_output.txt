@@ -1,0 +1,61 @@
+The `cross-spawn` package is designed to solve several issues encountered with Node.js's default `spawn` and `spawnSync` functions, particularly on Windows platforms. The primary functionality of this package is to provide a cross-platform solution that addresses the following problems:
+
+1. **PATHEXT Ignorance**: The Windows PATHEXT environment variable specifies which file extensions are considered executable. The native `spawn` in Node.js does not honor this on Windows, which `cross-spawn` corrects.
+
+2. **Shebang Support**: Unix-like systems use a shebang (`#!`) at the start of scripts to indicate what interpreter should execute the script. Node's native `spawn` lacks support for this on Windows.
+
+3. **Handling Spaces in Commands**: Commands with spaces, especially on Windows, can lead to execution errors with Node's built-in methods.
+
+4. **Posix Relative Paths**: Running commands using relative paths like `./my-folder/my-executable` can cause issues on Windows, which `cross-spawn` handles properly.
+
+5. **Command Shims and Argument Parsing**: In some setups, like those using command shims (e.g., `node_modules/.bin/`), native `spawn` can misinterpret arguments with quotes or parentheses, leading to syntax errors.
+
+6. **Shell Options**: For Node versions `<4.8`, there is no `options.shell` support, but `cross-spawn` provides this functionality.
+
+The `cross-spawn` package can be used in the same way as Node's `spawn` and `spawnSync`, providing a seamless drop-in replacement. The implementation ensures that cross-platform command execution issues are resolved, making it particularly useful for developers working in environments where Windows compatibility is essential.
+
+Below is the implementation of `cross-spawn` as described:
+
+```javascript
+const { spawn, spawnSync } = require('child_process');
+const path = require('path');
+const os = require('os');
+
+function resolveCommand(command) {
+    if (os.platform() !== 'win32') return command;
+
+    const extensions = (process.env.PATHEXT || '.EXE').split(';');
+    const cmdPath = path.resolve(process.cwd(), command);
+
+    for (const ext of extensions) {
+        const fullPath = cmdPath + ext;
+        if (require('fs').existsSync(fullPath)) {
+            return fullPath;
+        }
+    }
+
+    return command;
+}
+
+function crossSpawn(command, args, options = {}) {
+    const resolvedCommand = resolveCommand(command);
+    options.shell = options.shell !== undefined ? options.shell : /win32/.test(os.platform());
+
+    return spawn(resolvedCommand, args, options);
+}
+
+function crossSpawnSync(command, args, options = {}) {
+    const resolvedCommand = resolveCommand(command);
+    options.shell = options.shell !== undefined ? options.shell : /win32/.test(os.platform());
+
+    return spawnSync(resolvedCommand, args, options);
+}
+
+module.exports = { spawn: crossSpawn, sync: crossSpawnSync };
+
+// Usage Example:
+// const spawn = require('./cross-spawn-module').spawn;
+// const child = spawn('npm', ['list', '-g', '--depth=0'], { stdio: 'inherit' });
+```
+
+This module wraps Node.js's `spawn` and `spawnSync` functions, adjusting for platform-specific quirks primarily affecting Windows systems. It resolves the command with PATH extensions, sets `shell` options appropriately, and handles shebangs and command parsing issues that typically occur on Windows.

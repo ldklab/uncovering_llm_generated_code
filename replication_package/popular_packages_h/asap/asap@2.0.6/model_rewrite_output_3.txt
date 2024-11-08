@@ -1,0 +1,81 @@
+The provided Node.js code defines a function `asap` that schedules tasks to be executed as soon as possible using the event loop, with higher priority over I/O events. The code utilizes a `RawTask` class to encapsulate the task execution and domain management. Here's a breakdown of the functionality:
+
+1. **Task Scheduling**: The `asap` function takes a task (usually a function) and assigns it to an available `RawTask` instance. If no `RawTask` instances are free from previous use, a new one is instantiated.
+
+2. **Domain Management**: Each task is executed within a captured domain context (if available), which allows for error handling specific to that domain.
+
+3. **Error Handling**: If a task throws an exception, the exception is propagated, causing the process to crash unless handled by `process.on("uncaughtException")` or `domain.on("error")`. However, if exceptions are caught and handled, task execution resumes for subsequent tasks.
+
+4. **Task Recycling**: Completed or failed tasks are recycled into the `freeTasks` pool to be reused efficiently.
+
+Below is a rewritten version of this code:
+
+```javascript
+"use strict";
+
+const rawAsap = require("./raw");
+const freeTasks = [];
+
+/**
+ * Schedules a task to be executed as soon as possible, prioritizing over I/O events.
+ * An exception in the task will either crash the process or can be handled using
+ * `process.on("uncaughtException")` or `domain.on("error")`.
+ *
+ * @param {Function} task - A function to be executed with no arguments.
+ */
+module.exports = asap;
+function asap(task) {
+    // Retrieve a reusable task or create a new one
+    const rawTask = freeTasks.length ? freeTasks.pop() : new RawTask();
+    rawTask.initialize(task, process.domain);
+    rawAsap(rawTask);
+}
+
+class RawTask {
+    constructor() {
+        this.task = null;
+        this.domain = null;
+    }
+
+    /**
+     * Initializes the RawTask with a task and a domain.
+     * @param {Function} task
+     * @param {Domain} domain
+     */
+    initialize(task, domain) {
+        this.task = task;
+        this.domain = domain;
+    }
+
+    /**
+     * Calls the stored task and handles exceptions and domain management.
+     */
+    call() {
+        if (this.domain) {
+            this.domain.enter();
+        }
+        let threw = true;
+        try {
+            this.task();
+            threw = false;
+            if (this.domain) {
+                this.domain.exit();
+            }
+        } finally {
+            if (threw) {
+                rawAsap.requestFlush();
+            }
+            this.reset();
+            freeTasks.push(this);
+        }
+    }
+
+    /**
+     * Resets the state of the RawTask for reuse.
+     */
+    reset() {
+        this.task = null;
+        this.domain = null;
+    }
+}
+```

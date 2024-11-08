@@ -1,0 +1,190 @@
+The Node.js package described in the README.md is essentially a lightweight module that brings the Fetch API to Node.js, commonly used for making HTTP requests. Here's a breakdown of its functionality:
+
+1. **Fetch API for Node.js**: The package provides a `fetch` function that mimics the browser's Fetch API, allowing developers to make HTTP requests in a similar manner within Node.js environments.
+
+2. **Installation and Usage**: The package can be installed via npm and imported using ES Modules syntax. It also offers alternatives for CommonJS.
+
+3. **Features**:
+   - Compatibility with the `window.fetch` API.
+   - Utilizes native promises and async functions.
+   - Implements native Node streams for request/response bodies.
+   - Supports automatic decoding of content encodings like gzip and deflate.
+   - Offers helpful extensions like redirect limits and maximum response size limits.
+
+4. **Handling Requests and Responses**: 
+   - Supports various HTTP methods and content types.
+   - Provides `Response`, `Request`, and `Headers` classes for managing requests and responses.
+   - Allows for reading and writing request bodies using streams.
+
+5. **Error Handling**: Special classes `FetchError` and `AbortError` handle network and operational errors, including handling abort signals for request cancellation.
+
+6. **Advanced Usage**: Includes features like streaming response bodies, handling redirects manually, and accessing low-level metadata like headers.
+
+7. **Asynchronous Programming and Promises**: All operations are designed around promises, enabling non-blocking usage and integration with async/await patterns.
+
+8. **Custom Agent and Headers**: Supports customizable HTTP agents for specific networking settings and manual header management.
+
+9. **Typescript Support**: Types are included for TypeScript users, simplifying integration with typed JavaScript codebases.
+
+Below is an implementation of this functionality in a Node.js package:
+
+```javascript
+// index.mjs
+import http from 'node:http';
+import https from 'node:https';
+import { Readable } from 'node:stream';
+import { TextDecoder } from 'node:util';
+
+class FetchError extends Error {
+  constructor(message, type, systemError) {
+    super(message);
+    this.type = type;
+    if (systemError) {
+      this.code = this.errno = systemError.code;
+      this.erroredAt = systemError.erroredAt;
+    }
+  }
+}
+
+class AbortError extends Error {
+  constructor(message) {
+    super(message);
+    this.type = 'aborted';
+  }
+}
+
+class Body {
+  constructor(body) {
+    this.body = body;
+    this.bodyUsed = false;
+  }
+
+  async _consumeBody() {
+    if (this.bodyUsed) {
+      throw new TypeError('Body has already been used');
+    }
+    this.bodyUsed = true;
+    if (this.body instanceof Readable) {
+      return new Promise((resolve, reject) => {
+        const chunks = [];
+        this.body.on('data', (chunk) => {
+          chunks.push(chunk);
+        });
+        this.body.on('end', () => {
+          resolve(Buffer.concat(chunks));
+        });
+        this.body.on('error', reject);
+      });
+    } else {
+      return this.body || Buffer.alloc(0);
+    }
+  }
+
+  async text() {
+    const buffer = await this._consumeBody();
+    return buffer.toString('utf-8');
+  }
+
+  async json() {
+    const text = await this.text();
+    return JSON.parse(text);
+  }
+}
+
+class Headers {
+  constructor(init = {}) {
+    this.map = {};
+
+    for (const [key, value] of Object.entries(init)) {
+      this.map[key.toLowerCase()] = [value.toString()];
+    }
+  }
+
+  get(name) {
+    const entries = this.map[name.toLowerCase()];
+    return entries ? entries.join(', ') : null;
+  }
+
+  set(name, value) {
+    this.map[name.toLowerCase()] = [value];
+  }
+  
+  raw() {
+    return this.map;
+  }
+}
+
+class Request extends Body {
+  constructor(input, options = {}) {
+    super(options.body);
+    this.url = input;
+    this.method = options.method || 'GET';
+    this.headers = new Headers(options.headers);
+  }
+}
+
+class Response extends Body {
+  constructor(body, options = {}) {
+    super(body);
+    this.status = options.status || 200;
+    this.statusText = options.statusText || '';
+    this.headers = new Headers(options.headers);
+  }
+
+  get ok() {
+    return this.status >= 200 && this.status < 300;
+  }
+}
+
+function fetch(url, options = {}) {
+  return new Promise((resolve, reject) => {
+    const parsedURL = new URL(url);
+    const protocol = parsedURL.protocol === 'http:' ? http : https;
+
+    const headers = new Headers(options.headers);
+    const request = protocol.request(
+      url,
+      {
+        method: options.method || 'GET',
+        headers: headers.raw(),
+        agent: options.agent
+      },
+      (res) => {
+        const body = new Readable();
+        res.on('data', (chunk) => body.push(chunk));
+        res.on('end', () => body.push(null));
+
+        const responseOptions = {
+          status: res.statusCode,
+          statusText: res.statusMessage,
+          headers: res.headers,
+        };
+        
+        const responseBody = options.size && body.size > options.size 
+          ? new FetchError(`content size at ${this.url} over limit: ${options.size}`, 'max-size')
+          : body;
+        
+        resolve(new Response(responseBody, responseOptions));
+      }
+    );
+
+    request.on('error', (err) => {
+      reject(new FetchError(`request to ${url} failed, reason: ${err.message}`, 'system', err));
+    });
+
+    if (options.body) {
+      if (options.body instanceof Readable) {
+        options.body.pipe(request);
+      } else {
+        request.write(options.body);
+      }
+    }
+
+    request.end();
+  });
+}
+
+export { fetch, Headers, Request, Response, FetchError, AbortError };
+```
+
+This code defines a `fetch` function along with `Headers`, `Request`, `Response`, `FetchError`, and `AbortError` classes to manage HTTP requests and responses in a Node.js environment. The fetch function uses Node’s native HTTP modules to perform the actions similar to the web Fetch API.

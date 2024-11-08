@@ -1,0 +1,88 @@
+The provided Node.js code is designed to determine the byte offset of various typed array instances in JavaScript. Here's an explanation of its functionality:
+
+1. **Initialization**: Necessary modules like `forEach`, `callBind`, `available-typed-arrays`, `has-proto`, `gopd`, and `is-typed-array` are imported for iteration, method binding, checking object properties, and identifying typed arrays.
+
+2. **Typed Arrays**: A list of available typed arrays is retrieved using `available-typed-arrays()`.
+
+3. **Getters Setup**: An empty `getters` object is prepared to store functions for retrieving the `byteOffset` of each typed array type.
+
+4. **Property Descriptor Checking**: The code checks if typed array constructors in the global scope have a prototype property `byteOffset`. If they do, and the `byteOffset` is a getter, it binds this getter to be used later.
+
+5. **Fallback for Non-Conforming Engines**: If `byteOffset` can't be bound using a getter, a typed array instance is created, and its `byteOffset` property is directly used, assuming it's a configurable property of instances.
+
+6. **ByteOffset Retrieval Function**: A function `tryTypedArrays` is defined to iterate over all the stored getters. It attempts to retrieve the `byteOffset` of the provided typed array instance until a valid number is found or all options are exhausted.
+
+7. **TypedArray Verification**: The module exports a function `typedArrayByteOffset` that verifies if the input is a typed array using `is-typed-array`. If true, it applies the `tryTypedArrays` logic to get the byte offset.
+
+Here's an organized rewrite of this code:
+
+```javascript
+'use strict';
+
+const forEach = require('for-each');
+const callBind = require('call-bind');
+const typedArrays = require('available-typed-arrays')();
+const hasProto = require('has-proto')();
+const gOPD = require('gopd');
+const isTypedArray = require('is-typed-array');
+const oDP = Object.defineProperty;
+
+/** @typedef {Int8Array | Uint8Array | Uint8ClampedArray | Int16Array | Uint16Array | Int32Array | Uint32Array | Float32Array | Float64Array | BigInt64Array | BigUint64Array} TypedArray */
+/** @typedef {(x: TypedArray) => number} ByteOffsetGetter */
+
+// Define an object to store byte offset getters for different typed arrays
+const getters = {};
+
+if (gOPD) {
+    const getByteOffset = function (x) {
+        return x.byteOffset;
+    };
+
+    forEach(typedArrays, function (typedArray) {
+        if (typeof global[typedArray] === 'function' || typeof global[typedArray] === 'object') {
+            const Proto = global[typedArray].prototype;
+            let descriptor = gOPD(Proto, 'byteOffset');
+            if (!descriptor && hasProto) {
+                const superProto = Proto.__proto__;
+                descriptor = gOPD(superProto, 'byteOffset');
+            }
+            if (descriptor && descriptor.get) {
+                getters[typedArray] = callBind(descriptor.get);
+            } else if (oDP) {
+                const arr = new global[typedArray](2);
+                descriptor = gOPD(arr, 'byteOffset');
+                if (descriptor && descriptor.configurable) {
+                    oDP(arr, 'length', { value: 3 });
+                }
+                if (arr.length === 2) {
+                    getters[typedArray] = getByteOffset;
+                }
+            }
+        }
+    });
+}
+
+// Function to attempt retrieving the byte offset based on available getters
+const tryTypedArrays = function (value) {
+    let foundOffset;
+    forEach(getters, function (getter) {
+        if (typeof foundOffset !== 'number') {
+            try {
+                const offset = getter(value);
+                if (typeof offset === 'number') {
+                    foundOffset = offset;
+                }
+            } catch (e) {}
+        }
+    });
+    return foundOffset;
+};
+
+// Exported function to check if a value is a typed array and get its byte offset
+module.exports = function typedArrayByteOffset(value) {
+    if (!isTypedArray(value)) {
+        return false;
+    }
+    return tryTypedArrays(value);
+};
+```

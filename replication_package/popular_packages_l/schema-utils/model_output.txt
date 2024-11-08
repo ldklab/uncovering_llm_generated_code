@@ -1,0 +1,72 @@
+The `schema-utils` Node.js package is designed to validate options provided to loaders and plugins against a schema specified in JSON format. This ensures that configurations conform to expected types and structures, thereby preventing misconfigurations.
+
+### Key Features:
+1. **Schema Definition**: Users define a JSON schema that specifies the structure and permissible types for the configuration options. This schema can include additional configuration attributes like `title`, `type`, `properties`, and `additionalProperties`.
+
+2. **Validation Function**: The main function `validate(schema, options, configuration)` checks if the given options adhere to the defined schema. It throws an error if there's a mismatch, providing a formatted error message with customizable components.
+
+3. **Configuration Options**:
+   - **Name**: Allows naming in error messages to correspond to specific plugins or loaders.
+   - **BaseDataPath**: Sets where in the options object the error occurred, providing a path for clarity.
+   - **PostFormatter**: A function to further format error messages. It can modify default messages based on criteria like error keywords.
+
+4. **Enable/Disable Validation**: Validation can be disabled for production builds using environment variables or programmatic functions. This allows bypassing validation checks to optimize builds in production environments.
+
+5. **Integration with Plugins/Loaders**: The package is capable of integrating smoothly with plugins and loaders by allowing schema validations at instantiation or during execution.
+
+### Example Usage
+- You import a schema and call the `validate` function with the designated schema, options you want to check, and an optional configuration object specifying name and base path properties.
+- You can customize how errors are handled or represented with additional configuration provided in the validation call.
+
+Below is the implementation of the `schema-utils` package that follows the guidelines provided in its README:
+
+```js
+// schema-utils.js
+import Ajv from 'ajv';
+const ajv = new Ajv();
+
+let validationDisabled = false;
+
+export function validate(schema, options, configuration = {}) {
+  if (validationDisabled) return;
+  
+  const {
+    name = "Object",
+    baseDataPath = "configuration",
+    postFormatter = (formattedError, error) => formattedError
+  } = configuration;
+  
+  const validate = ajv.compile(schema);
+  const valid = validate(options);
+  
+  if (!valid) {
+    let errorMessage = `Invalid ${baseDataPath} object. ${name} has been initialized using a ${baseDataPath} object that does not match the API schema.\n`;
+    errorMessage += validate.errors.map(error => ` - ${baseDataPath}${error.dataPath} ${error.message}`).join("\n");
+
+    validate.errors.forEach(error => {
+      errorMessage = postFormatter(errorMessage, error);
+    });
+    
+    throw new Error(errorMessage);
+  }
+}
+
+export function disableValidation() {
+  validationDisabled = true;
+}
+
+export function enableValidation() {
+  validationDisabled = false;
+}
+
+export function needValidate() {
+  return !validationDisabled;
+}
+
+// Automatically handle process.env.SKIP_VALIDATION
+const skipValidationValues = ["yes", "y", "true", "1", "on"];
+const skipValidationEnv = process.env.SKIP_VALIDATION || "";
+if (skipValidationValues.includes(skipValidationEnv.toLowerCase())) disableValidation();
+```
+
+The above `schema-utils` package uses the popular `ajv` library to perform JSON schema validations. It offers a flexible validation layer ensuring that provided options to your webpack loaders and plugins conform to the specified JSON schema. The functions allow users to effectively manage validation processes across different environments by enabling or disabling validation checks.

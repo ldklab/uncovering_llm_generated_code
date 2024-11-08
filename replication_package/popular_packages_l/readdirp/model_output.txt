@@ -1,0 +1,98 @@
+The `readdirp` package provides a means to read directories recursively in Node.js, similar to `fs.readdir`, but with added functionality. This package supports two APIs: a Stream API and a Promise API, both suitable for different use cases.
+
+### Key Features:
+
+1. **Stream API**: 
+   - Allows processing of directory entries using Node.js streams.
+   - Emits 'data' events for each file or directory found, and you can handle these entries using event listeners.
+   - The Stream API supports async iteration (`for await of`), making it easy to work with in asynchronous contexts.
+   - Can emit 'warn', 'error', 'end', and 'close' events during the directory traversal.
+   - The Stream API can be more memory efficient compared to the Promise API, particularly for large file systems.
+
+2. **Promise API**:
+   - Simplifies fetching all directory entries into a list.
+   - Provides an easier way to handle results in cases where entire directory content is needed upfront.
+   - May consume more RAM and CPU than the Stream API because it waits to load all results before resolving.
+
+### Options:
+
+The library allows custom filtering and traversal behaviour via options:
+- `fileFilter` and `directoryFilter` to include/exclude specific files or directories.
+- `depth` to set how deep the recursion should go.
+- `type` to specify whether to include `files`, `directories`, `files_directories`, or `all`.
+- `alwaysStat` to indicate whether file statistics should be returned for each file, potentially increasing execution time.
+- `lstat` to include symlink handling in the returned entries.
+
+### Entry Information (`EntryInfo`):
+
+Contains information about each file or directory:
+- `path`: Relative path to the entry.
+- `fullPath`: Absolute path.
+- `basename`: Name of the file or directory.
+- `dirent`: An object representing the directory entry if `alwaysStat` is `false`.
+- `stats`: An object with file statistics if `alwaysStat` is `true`.
+
+Here's a basic implementation of `readdirp`:
+
+```javascript
+import fs from 'fs';
+import path from 'path';
+import { Readable } from 'stream';
+
+class ReaddirpStream extends Readable {
+  constructor(root, options = {}) {
+    super({ objectMode: true });
+    this.root = root;
+    this.options = options;
+    this._files = [];
+    this._dirs = [root];
+  }
+
+  _read() {
+    if (this._files.length > 0) {
+      this.push(this._files.shift());
+    } else if (this._dirs.length > 0) {
+      const dir = this._dirs.shift();
+      fs.readdir(dir, { withFileTypes: true }, (err, entries) => {
+        if (err) {
+          this.emit('warn', err);
+        } else {
+          for (const entry of entries) {
+            const fullPath = path.join(dir, entry.name);
+            const entryInfo = {
+              path: path.relative(this.root, fullPath),
+              fullPath,
+              basename: entry.name,
+              dirent: entry
+            };
+            if (entry.isFile() && (!this.options.fileFilter || this.options.fileFilter(entryInfo))) {
+              this._files.push(entryInfo);
+            } else if (entry.isDirectory() && (!this.options.directoryFilter || this.options.directoryFilter(entryInfo))) {
+              this._dirs.push(fullPath);
+            }
+          }
+          this._read();
+        }
+      });
+    } else {
+      this.push(null);
+    }
+  }
+}
+
+function readdirp(root, options) {
+  return new ReaddirpStream(root, options);
+}
+
+async function readdirpPromise(root, options) {
+  const entries = [];
+  const stream = readdirp(root, options);
+  for await (const entry of stream) {
+    entries.push(entry);
+  }
+  return entries;
+}
+
+export default readdirp;
+export { readdirpPromise };
+```

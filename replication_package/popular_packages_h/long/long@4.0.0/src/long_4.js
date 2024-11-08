@@ -1,0 +1,420 @@
+module.exports = Long;
+
+let wasmOptimized = null;
+
+try {
+  wasmOptimized = new WebAssembly.Instance(new WebAssembly.Module(new Uint8Array([
+      // WASM binary data for optimized operations
+      0, 97, 115, 109, 1, 0, 0, 0, 1, 13, 2, 96, 0, 1, 127, 96, 4, 127, 127, 127, 127, 1, 127, 3, 7, 6, 0, 1, 1, 1, 1, 1, 
+      6, 6, 1, 127, 1, 65, 0, 11, 7, 50, 6, 3, 109, 117, 108, 0, 1, 5, 100, 105, 118, 95, 115, 0, 2, 5, 100, 105, 118, 95, 
+      117, 0, 3, 5, 114, 101, 109, 95, 115, 0, 4, 5, 114, 101, 109, 95, 117, 0, 5, 8, 103, 101, 116, 95, 104, 105, 103, 
+      104, 0, 0, 10, 191, 1, 6, 4, 0, 35, 0, 11, 36, 1, 1, 126, 32, 0, 173, 32, 1, 173, 66, 32, 134, 132, 32, 2, 173, 32, 
+      3, 173, 66, 32, 134, 132, 126, 34, 4, 66, 32, 135, 167, 36, 0, 32, 4, 167, 11, 36, 1, 1, 126, 32, 0, 173, 32, 1, 
+      173, 66, 32, 134, 132, 32, 2, 173, 32, 3, 173, 66, 32, 134, 132, 127, 34, 4, 66, 32, 135, 167, 36, 0, 32, 4, 167, 11,
+      36, 1, 1, 126, 32, 0, 173, 32, 1, 173, 66, 32, 134, 132, 32, 2, 173, 32, 3, 173, 66, 32, 134, 132, 128, 34, 4, 66, 32,
+      135, 167, 36, 0, 32, 4, 167, 11, 36, 1, 1, 126, 32, 0, 173, 32, 1, 173, 66, 32, 134, 132, 32, 2, 173, 32, 3, 173, 66,
+      32, 134, 132, 129, 34, 4, 66, 32, 135, 167, 36, 0, 32, 4, 167, 11, 36, 1, 1, 126, 32, 0, 173, 32, 1, 173, 66, 32,
+      134, 132, 32, 2, 173, 32, 3, 173, 66, 32, 134, 132, 130, 34, 4, 66, 32, 135, 167, 36, 0, 32, 4, 167, 11
+    ])), {}).exports;
+} catch (error) {
+  // Handle cases where WASM support is unavailable
+}
+
+function Long(low, high, unsigned = false) {
+  this.low = low | 0;
+  this.high = high | 0;
+  this.unsigned = unsigned;
+}
+
+Long.prototype.__isLong__ = true;
+
+function isLong(obj) {
+  return (obj && obj.__isLong__) === true;
+}
+
+Long.isLong = isLong;
+
+const INT_CACHE = {};
+const UINT_CACHE = {};
+
+Long.fromInt = function(value, unsigned = false) {
+  let cachedObj, cache, obj;
+  if (unsigned) {
+    value >>>= 0;
+    if (cache = (0 <= value && value < 256)) {
+      cachedObj = UINT_CACHE[value];
+      if (cachedObj) return cachedObj;
+    }
+    obj = Long.fromBits(value, (value | 0) < 0 ? -1 : 0, true);
+    if (cache) UINT_CACHE[value] = obj;
+    return obj;
+  } else {
+    value |= 0;
+    if (cache = (-128 <= value && value < 128)) {
+      cachedObj = INT_CACHE[value];
+      if (cachedObj) return cachedObj;
+    }
+    obj = Long.fromBits(value, value < 0 ? -1 : 0, false);
+    if (cache) INT_CACHE[value] = obj;
+    return obj;
+  }
+}
+
+Long.fromNumber = function(value, unsigned = false) {
+  if (isNaN(value)) return unsigned ? Long.UZERO : Long.ZERO;
+  if (unsigned) {
+    if (value < 0) return Long.UZERO;
+    if (value >= Long.TWO_PWR_64_DBL) return Long.MAX_UNSIGNED_VALUE;
+  } else {
+    if (value <= -Long.TWO_PWR_63_DBL) return Long.MIN_VALUE;
+    if (value + 1 >= Long.TWO_PWR_63_DBL) return Long.MAX_VALUE;
+  }
+  if (value < 0) return Long.fromNumber(-value, unsigned).neg();
+  return Long.fromBits((value % Long.TWO_PWR_32_DBL) | 0, (value / Long.TWO_PWR_32_DBL) | 0, unsigned);
+}
+
+Long.fromBits = function(lowBits, highBits, unsigned = false) {
+  return new Long(lowBits, highBits, unsigned);
+}
+
+Long.fromString = function(str, unsigned = false, radix = 10) {
+  if (str.length === 0) throw Error('empty string');
+  if (str === "NaN" || str === "Infinity" || str === "+Infinity" || str === "-Infinity") return Long.ZERO;
+  if (typeof unsigned === 'number') {
+    radix = unsigned;
+    unsigned = false;
+  } else {
+    unsigned = !!unsigned;
+  }
+  if (radix < 2 || 36 < radix) throw RangeError('radix');
+
+  let result = Long.ZERO;
+  let radixToPower = Long.fromNumber(Math.pow(radix, 8));
+
+  for (let i = 0; i < str.length; i += 8) {
+    const size = Math.min(8, str.length - i);
+    const value = parseInt(str.substring(i, i + size), radix);
+    result = result.mul(radixToPower).add(Long.fromNumber(value));
+  }
+  result.unsigned = unsigned;
+  return result;
+}
+
+Long.fromValue = function(val, unsigned = false) {
+  if (typeof val === 'number') return Long.fromNumber(val, unsigned);
+  if (typeof val === 'string') return Long.fromString(val, unsigned);
+  if (val.__isLong__) return val;
+  return Long.fromBits(val.low, val.high, typeof unsigned === 'boolean' ? unsigned : val.unsigned);
+}
+
+Long.TWO_PWR_16_DBL = 1 << 16;
+Long.TWO_PWR_24_DBL = 1 << 24;
+Long.TWO_PWR_32_DBL = Long.TWO_PWR_16_DBL * Long.TWO_PWR_16_DBL;
+Long.TWO_PWR_64_DBL = Long.TWO_PWR_32_DBL * Long.TWO_PWR_32_DBL;
+Long.TWO_PWR_63_DBL = Long.TWO_PWR_64_DBL / 2;
+
+Long.TWO_PWR_24 = Long.fromInt(Long.TWO_PWR_24_DBL);
+
+Long.ZERO = Long.fromInt(0);
+Long.UZERO = Long.fromInt(0, true);
+Long.ONE = Long.fromInt(1);
+Long.UONE = Long.fromInt(1, true);
+Long.NEG_ONE = Long.fromInt(-1);
+Long.MAX_VALUE = Long.fromBits(0xFFFFFFFF | 0, 0x7FFFFFFF | 0, false);
+Long.MAX_UNSIGNED_VALUE = Long.fromBits(0xFFFFFFFF | 0, 0xFFFFFFFF | 0, true);
+Long.MIN_VALUE = Long.fromBits(0, 0x80000000 | 0, false);
+
+const LongPrototype = Long.prototype;
+
+LongPrototype.toInt = function() {
+  return this.unsigned ? this.low >>> 0 : this.low;
+};
+
+LongPrototype.toNumber = function() {
+  if (this.unsigned) return ((this.high >>> 0) * Long.TWO_PWR_32_DBL) + (this.low >>> 0);
+  return this.high * Long.TWO_PWR_32_DBL + (this.low >>> 0);
+};
+
+LongPrototype.toString = function(radix = 10) {
+  if (radix < 2 || 36 < radix) throw RangeError('radix');
+  if (this.isZero()) return '0';
+  if (this.isNegative()) {
+    if (this.eq(Long.MIN_VALUE)) return this.div(Long.fromNumber(radix)).toString(radix) + '0';
+    else return '-' + this.neg().toString(radix);
+  }
+
+  let result = '';
+  let rem = this;
+  const radixToPower = Long.fromNumber(Math.pow(radix, 6), this.unsigned);
+
+  while (!rem.isZero()) {
+    const remDiv = rem.div(radixToPower);
+    const digits = (rem.sub(remDiv.mul(radixToPower)).toInt() >>> 0).toString(radix);
+    rem = remDiv;
+    result = (rem.isZero() ? digits : ('000000' + digits).slice(-6)) + result;
+  }
+  return result;
+};
+
+LongPrototype.getHighBits = function() {
+  return this.high;
+};
+
+LongPrototype.getLowBits = function() {
+  return this.low;
+};
+
+LongPrototype.isZero = function() {
+  return this.high === 0 && this.low === 0;
+};
+
+LongPrototype.isNegative = function() {
+  return !this.unsigned && this.high < 0;
+};
+
+LongPrototype.eq = LongPrototype.equals = function(other) {
+  if (!isLong(other)) other = Long.fromValue(other);
+  return this.high === other.high && this.low === other.low;
+};
+
+LongPrototype.negate = LongPrototype.neg = function() {
+  if (!this.unsigned && this.eq(Long.MIN_VALUE)) return Long.MIN_VALUE;
+  return this.not().add(Long.ONE);
+};
+
+LongPrototype.add = function(addend) {
+  if (!isLong(addend)) addend = Long.fromValue(addend);
+
+  const a48 = this.high >>> 16;
+  const a32 = this.high & 0xFFFF;
+  const a16 = this.low >>> 16;
+  const a00 = this.low & 0xFFFF;
+
+  const b48 = addend.high >>> 16;
+  const b32 = addend.high & 0xFFFF;
+  const b16 = addend.low >>> 16;
+  const b00 = addend.low & 0xFFFF;
+
+  let c48 = 0, c32 = 0, c16 = 0, c00 = 0;
+  c00 += a00 + b00;
+  c16 += c00 >>> 16;
+  c00 &= 0xFFFF;
+  c16 += a16 + b16;
+  c32 += c16 >>> 16;
+  c16 &= 0xFFFF;
+  c32 += a32 + b32;
+  c48 += c32 >>> 16;
+  c32 &= 0xFFFF;
+  c48 += a48 + b48;
+  c48 &= 0xFFFF;
+  return Long.fromBits((c16 << 16) | c00, (c48 << 16) | c32, this.unsigned);
+};
+
+LongPrototype.subtract = LongPrototype.sub = function(subtrahend) {
+  if (!isLong(subtrahend)) subtrahend = Long.fromValue(subtrahend);
+  return this.add(subtrahend.neg());
+};
+
+LongPrototype.multiply = LongPrototype.mul = function(multiplier) {
+  if (this.isZero()) return Long.ZERO;
+  if (!isLong(multiplier)) multiplier = Long.fromValue(multiplier);
+
+  if (wasmOptimized) {
+    const low = wasmOptimized.mul(this.low, this.high, multiplier.low, multiplier.high);
+    return Long.fromBits(low, wasmOptimized.get_high(), this.unsigned);
+  }
+
+  if (multiplier.isZero()) return Long.ZERO;
+  if (this.eq(Long.MIN_VALUE)) return multiplier.isOdd() ? Long.MIN_VALUE : Long.ZERO;
+  if (multiplier.eq(Long.MIN_VALUE)) return this.isOdd() ? Long.MIN_VALUE : Long.ZERO;
+
+  if (this.isNegative()) {
+    if (multiplier.isNegative()) return this.neg().mul(multiplier.neg());
+    return this.neg().mul(multiplier).neg();
+  } else if (multiplier.isNegative()) return this.mul(multiplier.neg()).neg();
+
+  if (this.lt(Long.TWO_PWR_24) && multiplier.lt(Long.TWO_PWR_24)) {
+    return Long.fromNumber(this.toNumber() * multiplier.toNumber(), this.unsigned);
+  }
+
+  const a48 = this.high >>> 16;
+  const a32 = this.high & 0xFFFF;
+  const a16 = this.low >>> 16;
+  const a00 = this.low & 0xFFFF;
+
+  const b48 = multiplier.high >>> 16;
+  const b32 = multiplier.high & 0xFFFF;
+  const b16 = multiplier.low >>> 16;
+  const b00 = multiplier.low & 0xFFFF;
+
+  let c48 = 0, c32 = 0, c16 = 0, c00 = 0;
+  c00 += a00 * b00;
+  c16 += c00 >>> 16;
+  c00 &= 0xFFFF;
+  c16 += a16 * b00;
+  c32 += c16 >>> 16;
+  c16 &= 0xFFFF;
+  c16 += a00 * b16;
+  c32 += c16 >>> 16;
+  c16 &= 0xFFFF;
+  c32 += a32 * b00;
+  c48 += c32 >>> 16;
+  c32 &= 0xFFFF;
+  c32 += a16 * b16;
+  c48 += c32 >>> 16;
+  c32 &= 0xFFFF;
+  c32 += a00 * b32;
+  c48 += c32 >>> 16;
+  c32 &= 0xFFFF;
+  c48 += a48 * b00 + a32 * b16 + a16 * b32 + a00 * b48;
+  c48 &= 0xFFFF;
+  return Long.fromBits((c16 << 16) | c00, (c48 << 16) | c32, this.unsigned);
+};
+
+LongPrototype.divide = LongPrototype.div = function(divisor) {
+  if (!isLong(divisor)) divisor = Long.fromValue(divisor);
+  if (divisor.isZero()) throw Error('division by zero');
+
+  if (wasmOptimized) {
+    if (!this.unsigned && this.high === -0x80000000 && divisor.low === -1 && divisor.high === -1) {
+      return this;  
+    }
+    const low = ((this.unsigned ? wasmOptimized.div_u : wasmOptimized.div_s)(this.low, this.high, divisor.low, divisor.high));
+    return Long.fromBits(low, wasmOptimized.get_high(), this.unsigned);
+  }
+
+  if (this.isZero()) return this.unsigned ? Long.UZERO : Long.ZERO;
+  let result = Long.ZERO;
+  let rem = this;
+
+  if (!this.unsigned && (divisor.eq(Long.MIN_VALUE) || this.eq(Long.MIN_VALUE))) {
+    if (divisor.eq(Long.MIN_VALUE)) return Long.ONE;
+    return divisor.isNegative() ? Long.ONE : Long.NEG_ONE;
+  }
+
+  if (this.isNegative()) {
+    if (divisor.isNegative()) return this.neg().div(divisor.neg());
+    return this.neg().div(divisor).neg();
+  } else if (divisor.isNegative()) return this.div(divisor.neg()).neg();
+
+  while (rem.gte(divisor)) {
+    let approx = Math.max(1, Math.floor(rem.toNumber() / divisor.toNumber()));
+    let log2 = Math.ceil(Math.log(approx) / Math.LN2);
+    let delta = (log2 <= 48) ? 1 : Math.pow(2, log2 - 48);
+    let approxRes = Long.fromNumber(approx);
+    let approxRem = approxRes.mul(divisor);
+
+    while (approxRem.gt(rem)) {
+      approx -= delta;
+      approxRes = Long.fromNumber(approx);
+      approxRem = approxRes.mul(divisor);
+    }
+
+    result = result.add(approxRes);
+    rem = rem.sub(approxRem);
+  }
+
+  return result;
+};
+
+LongPrototype.modulo = LongPrototype.mod = LongPrototype.rem = function(divisor) {
+  if (!isLong(divisor)) divisor = Long.fromValue(divisor);
+
+  if (wasmOptimized) {
+    const low = ((this.unsigned ? wasmOptimized.rem_u : wasmOptimized.rem_s)(this.low, this.high, divisor.low, divisor.high));
+    return Long.fromBits(low, wasmOptimized.get_high(), this.unsigned);
+  }
+
+  return this.sub(this.div(divisor).mul(divisor));
+};
+
+LongPrototype.not = function() {
+  return Long.fromBits(~this.low, ~this.high, this.unsigned);
+};
+
+LongPrototype.and = function(other) {
+  if (!isLong(other)) other = Long.fromValue(other);
+  return Long.fromBits(this.low & other.low, this.high & other.high, this.unsigned);
+};
+
+LongPrototype.or = function(other) {
+  if (!isLong(other)) other = Long.fromValue(other);
+  return Long.fromBits(this.low | other.low, this.high | other.high, this.unsigned);
+};
+
+LongPrototype.xor = function(other) {
+  if (!isLong(other)) other = Long.fromValue(other);
+  return Long.fromBits(this.low ^ other.low, this.high ^ other.high, this.unsigned);
+};
+
+LongPrototype.shiftLeft = LongPrototype.shl = function(numBits) {
+  if (isLong(numBits)) numBits = numBits.toInt();
+  if ((numBits &= 63) === 0) return this;
+  else if (numBits < 32) return Long.fromBits(this.low << numBits, (this.high << numBits) | (this.low >>> (32 - numBits)), this.unsigned);
+  else return Long.fromBits(0, this.low << (numBits - 32), this.unsigned);
+};
+
+LongPrototype.shiftRight = LongPrototype.shr = function(numBits) {
+  if (isLong(numBits)) numBits = numBits.toInt();
+  if ((numBits &= 63) === 0) return this;
+  else if (numBits < 32) return Long.fromBits((this.low >>> numBits) | (this.high << (32 - numBits)), this.high >> numBits, this.unsigned);
+  else return Long.fromBits(this.high >> (numBits - 32), this.high >= 0 ? 0 : -1, this.unsigned);
+};
+
+LongPrototype.shiftRightUnsigned = LongPrototype.shru = LongPrototype.shr_u = function(numBits) {
+  if (isLong(numBits)) numBits = numBits.toInt();
+  numBits &= 63;
+  if (numBits === 0) return this;
+  else {
+    const high = this.high;
+    if (numBits < 32) {
+      const low = this.low;
+      return Long.fromBits((low >>> numBits) | (high << (32 - numBits)), high >>> numBits, this.unsigned);
+    } else if (numBits === 32) return Long.fromBits(high, 0, this.unsigned);
+    else return Long.fromBits(high >>> (numBits - 32), 0, this.unsigned);
+  }
+};
+
+LongPrototype.toSigned = function() {
+  if (!this.unsigned) return this;
+  return Long.fromBits(this.low, this.high, false);
+};
+
+LongPrototype.toUnsigned = function() {
+  if (this.unsigned) return this;
+  return Long.fromBits(this.low, this.high, true);
+};
+
+LongPrototype.toBytes = function(le) {
+  return le ? this.toBytesLE() : this.toBytesBE();
+};
+
+LongPrototype.toBytesLE = function() {
+  const hi = this.high, lo = this.low;
+  return [lo & 0xff, lo >>> 8 & 0xff, lo >>> 16 & 0xff, lo >>> 24, hi & 0xff, hi >>> 8 & 0xff, hi >>> 16 & 0xff, hi >>> 24];
+};
+
+LongPrototype.toBytesBE = function() {
+  const hi = this.high, lo = this.low;
+  return [hi >>> 24, hi >>> 16 & 0xff, hi >>> 8 & 0xff, hi & 0xff, lo >>> 24, lo >>> 16 & 0xff, lo >>> 8 & 0xff, lo & 0xff];
+};
+
+Long.fromBytes = function(bytes, unsigned, le) {
+  return le ? Long.fromBytesLE(bytes, unsigned) : Long.fromBytesBE(bytes, unsigned);
+};
+
+Long.fromBytesLE = function(bytes, unsigned) {
+  return new Long(
+    bytes[0] | bytes[1] << 8 | bytes[2] << 16 | bytes[3] << 24,
+    bytes[4] | bytes[5] << 8 | bytes[6] << 16 | bytes[7] << 24,
+    unsigned
+  );
+};
+
+Long.fromBytesBE = function(bytes, unsigned) {
+  return new Long(
+    bytes[4] << 24 | bytes[5] << 16 | bytes[6] << 8 | bytes[7],
+    bytes[0] << 24 | bytes[1] << 16 | bytes[2] << 8 | bytes[3],
+    unsigned
+  );
+};

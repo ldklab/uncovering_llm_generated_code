@@ -1,0 +1,94 @@
+The provided Node.js code is a self-invoking function that implements a polyfill for the `String.prototype.matchAll` method. This method is used to retrieve all matches of a regular expression in a string, along with capturing groups, if any.
+
+Here is a breakdown of the main parts:
+- `callBind`: Creates a bound version of the `Function.prototype.call`, allowing it to be used conveniently.
+- `indexOf` and `hasOwn`: Utilize `callBind` to access native methods, `String.prototype.indexOf` and `Object.prototype.hasOwnProperty`.
+- `hasSymbols`: Checks if the environment supports ES6 symbols.
+- `toObject` and `toString`: Utility functions to convert values to objects and strings, respectively.
+- `createMatcher`: Constructs a global `RegExp` object, ensuring necessary flags are included.
+- `matchAllShim`: The main function that mimics `String.prototype.matchAll` by returning all matches as an array of objects, each with properties `index` and `input` for the match location and source string.
+- `shim`: Adds the `matchAll` method to `String.prototype` if it doesn't exist, using the `matchAllShim` as its implementation.
+- The module exports the `matchAllShim`, allowing it to be used in other parts of a Node.js application.
+
+Below is a rewritten version of this code:
+
+```javascript
+(function () {
+  'use strict';
+
+  var callMethod = Function.prototype.call.bind(Function.prototype.call);
+  var indexOf = callMethod(String.prototype.indexOf);
+
+  var supportsSymbols = typeof Symbol === 'function' && typeof Symbol.iterator !== 'undefined';
+
+  var convertToObject = function (value) {
+    if (value == null) {
+      throw new TypeError('Cannot convert undefined or null to object');
+    }
+    return Object(value);
+  };
+
+  var convertToString = function (item) {
+    return String(item);
+  };
+
+  var hasOwnProperty = callMethod(Object.prototype.hasOwnProperty);
+
+  var buildMatcher = function (regexp) {
+    var flags = 'g' + (hasOwnProperty(regexp, 'flags') ? '' : 
+      (regexp.ignoreCase ? 'i' : '') + 
+      (regexp.multiline ? 'm' : '') + 
+      (regexp.dotAll ? 's' : '') + 
+      (regexp.unicode ? 'u' : '') + 
+      (regexp.sticky ? 'y' : ''));
+    return new RegExp(regexp.source, flags);
+  };
+
+  var matchAllPolyfill = function matchAll(string, regex) {
+    var obj = convertToObject(string);
+    var str = convertToString(obj);
+
+    var matcher;
+    if (typeof regex !== 'object' || (supportsSymbols && !(Symbol.matchAll in regex))) {
+      matcher = buildMatcher(new RegExp(regex, 'g'));
+    } else if (!regex.global) {
+      throw new TypeError('matchAll requires a global RegExp or a non-RegExp string');
+    } else {
+      matcher = regex;
+    }
+
+    var results = [];
+    var lastIndex = 0;
+    var match;
+    
+    while ((match = matcher.exec(str)) !== null) {
+      var matchInfo = Object.assign([], match);
+      matchInfo.index = match.index;
+      matchInfo.input = str;
+      results.push(matchInfo);
+      if (!matcher.global) {
+        break;
+      }
+      lastIndex = matcher.lastIndex;
+    }
+
+    matcher.lastIndex = lastIndex;
+    return results;
+  };
+
+  matchAllPolyfill.shim = function applyPolyfill() {
+    var proto = String.prototype;
+    if (!('matchAll' in proto)) {
+      Object.defineProperty(proto, 'matchAll', {
+        configurable: true,
+        writable: true,
+        value: function matchAll(regex) {
+          return matchAllPolyfill(this, regex);
+        }
+      });
+    }
+  };
+
+  module.exports = matchAllPolyfill;
+}());
+```

@@ -1,0 +1,88 @@
+The Node.js code is a module for file searching using patterns, called "FastGlob". It provides asynchronous, synchronous, and stream-based functionalities to match file patterns specified by the user. The module imports utility functions and settings from other files to manage tasks, handle synchronous and asynchronous processes, and manage stream operations.
+
+### Key functionalities include:
+
+1. **Asynchronous Search**: The main exported function `FastGlob` takes a source and options, verifies the input patterns, generates tasks, and performs the asynchronous file search operation using the provided patterns and options.
+
+2. **Synchronous Search**: `FastGlob.sync` provides a synchronous method to search for files using the same pattern and options logic as the asynchronous method.
+
+3. **Stream Search**: `FastGlob.stream` performs a search operation that returns a stream of matches, allowing handling of potentially large sets of results without loading everything into memory at once.
+
+4. **Task Generation**: `FastGlob.generateTasks` generates the tasks necessary to perform the file search operation based on the given patterns and options.
+
+5. **Dynamic Pattern Checking**: `FastGlob.isDynamicPattern` checks if the given pattern is dynamic based on the settings.
+
+6. **Path Escaping**: `FastGlob.escapePath` provides a utility function to escape paths based on the given source input.
+
+7. **Utility Functions**: 
+   - `getWorks` is used to create tasks and provide them to the specified provider.
+   - `assertPatternsInput` checks if the input patterns are valid non-empty strings or an array of strings.
+
+```javascript
+"use strict";
+
+const taskManager = require("./managers/tasks");
+const AsyncProvider = require("./providers/async").default;
+const StreamProvider = require("./providers/stream").default;
+const SyncProvider = require("./providers/sync").default;
+const Settings = require("./settings").default;
+const utils = require("./utils");
+
+async function FastGlob(source, options) {
+    assertPatternsInput(source);
+    const works = getWorks(source, AsyncProvider, options);
+    const result = await Promise.all(works);
+    return utils.array.flatten(result);
+}
+
+(function (FastGlob) {
+    FastGlob.sync = function sync(source, options) {
+        assertPatternsInput(source);
+        const works = getWorks(source, SyncProvider, options);
+        return utils.array.flatten(works);
+    };
+
+    FastGlob.stream = function stream(source, options) {
+        assertPatternsInput(source);
+        const works = getWorks(source, StreamProvider, options);
+        return utils.stream.merge(works);
+    };
+
+    FastGlob.generateTasks = function generateTasks(source, options) {
+        assertPatternsInput(source);
+        const patterns = [].concat(source);
+        const settings = new Settings(options);
+        return taskManager.generate(patterns, settings);
+    };
+
+    FastGlob.isDynamicPattern = function isDynamicPattern(source, options) {
+        assertPatternsInput(source);
+        const settings = new Settings(options);
+        return utils.pattern.isDynamicPattern(source, settings);
+    };
+
+    FastGlob.escapePath = function escapePath(source) {
+        assertPatternsInput(source);
+        return utils.path.escape(source);
+    };
+
+})(FastGlob || (FastGlob = {}));
+
+function getWorks(source, Provider, options) {
+    const patterns = [].concat(source);
+    const settings = new Settings(options);
+    const tasks = taskManager.generate(patterns, settings);
+    const provider = new Provider(settings);
+    return tasks.map(provider.read, provider);
+}
+
+function assertPatternsInput(input) {
+    const source = [].concat(input);
+    const isValidSource = source.every((item) => utils.string.isString(item) && !utils.string.isEmpty(item));
+    if (!isValidSource) {
+        throw new TypeError('Patterns must be a string (non empty) or an array of strings');
+    }
+}
+
+module.exports = FastGlob;
+```

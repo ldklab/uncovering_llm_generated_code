@@ -1,0 +1,49 @@
+The Node.js code is designed to determine if a given object `x` is an instance of a DataView. Here's how it works:
+
+1. It first retrieves the intrinsic `%ArrayBuffer%` and `%DataView%` constructors and stores them in `$ArrayBuffer` and `$DataView` respectively.
+2. It uses the `call-bind` package to handle older versions of Node.js where the `buffer` property of a DataView isn't on the prototype chain, but rather as a direct own property.
+3. The code checks if the argument `x` is an object, not a typed array, and if it is an instance of DataView.
+4. If a bound method to access the `buffer` property (`$dataViewBuffer`) is available, the code tries to use it to determine if `x` is a DataView; if accessing `buffer` throws an error, `x` is not a DataView.
+5. Without the bound method, it checks if `x` has a `getInt8` method and verifies it matches the `getInt8` method from a new DataView, ensuring `x` is a DataView.
+
+Here's a possible rewrite of the code:
+
+```javascript
+'use strict';
+
+var GetIntrinsic = require('get-intrinsic');
+
+var $ArrayBuffer = GetIntrinsic('%ArrayBuffer%');
+var $DataView = GetIntrinsic('%DataView%', true);
+
+var callBound = require('call-bind/callBound');
+var $dataViewBuffer = callBound('DataView.prototype.buffer', true);
+
+var isTypedArray = require('is-typed-array');
+
+module.exports = function isDataView(x) {
+    // Ensure x is an object, DataView is available, and x is not a typed array
+    if (!x || typeof x !== 'object' || !$DataView || isTypedArray(x)) {
+        return false;
+    }
+
+    // Use bound method to detect older Node versions
+    if ($dataViewBuffer) {
+        try {
+            $dataViewBuffer(x);
+            return true;
+        } catch (e) {
+            return false;
+        }
+    }
+
+    // Check for DataView characteristics without bound method
+    if (('getInt8' in x) &&
+        typeof x.getInt8 === 'function' &&
+        x.getInt8 === new $DataView(new $ArrayBuffer(1)).getInt8) {
+        return true;
+    }
+
+    return false;
+};
+```

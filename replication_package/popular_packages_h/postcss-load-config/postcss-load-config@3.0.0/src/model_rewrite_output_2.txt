@@ -1,0 +1,93 @@
+The provided Node.js code is a module designed to load and process PostCSS configurations using `cosmiconfig`, which is a library that helps to search and load configuration files. Here's a detailed breakdown of its functionality:
+
+1. **Dependencies**: 
+   - `$resolve` from the `path` module is used to resolve file paths.
+   - `cosmiconfig` is used to search for configuration files related to PostCSS.
+   - `loadOptions` and `loadPlugins` are local modules that process options and plugins respectively for PostCSS.
+
+2. **`processResult` Function**: 
+   - Accepts a configuration context and a result from `cosmiconfig`.
+   - Extracts and processes the configuration. If the configuration is a function, it executes it using the context; otherwise, it merges the context into the configuration.
+   - Ensures the configuration has a `plugins` array.
+   - Returns an object containing processed plugins, options, and the file path.
+
+3. **`createContext` Function**: 
+   - Builds the configuration context with default values for `cwd` (current working directory) and `env` (environment). If `env` isn't specified, it defaults to `development`.
+
+4. **`rc` Function**:
+   - Asynchronously loads a PostCSS configuration.
+   - Creates a full config context and resolves the path.
+   - Utilizes `cosmiconfig` to search for a configuration file starting from the provided or default path. Processes the result if found.
+   - Throws an error if no configuration file is found.
+
+5. **`rc.sync` Function**:
+   - A synchronous version of the `rc` function with similar logic but using `cosmiconfigSync`.
+
+6. **Exports**:
+   - Exports the `rc` function as a module.
+
+Here's a possible rewritten version of the code:
+
+```javascript
+'use strict'
+
+const { resolve } = require('path');
+const { cosmiconfig, cosmiconfigSync } = require('cosmiconfig');
+const loadOptions = require('./options.js');
+const loadPlugins = require('./plugins.js');
+
+const processResult = (ctx, result) => {
+  const file = result.filepath || '';
+  let config = typeof result.config === 'function' ? result.config(ctx) : Object.assign({}, result.config, ctx);
+
+  if (!config.plugins) {
+    config.plugins = [];
+  }
+
+  return {
+    plugins: loadPlugins(config, file),
+    options: loadOptions(config, file),
+    file
+  };
+}
+
+const createContext = (ctx) => {
+  ctx = Object.assign({
+    cwd: process.cwd(),
+    env: process.env.NODE_ENV
+  }, ctx);
+
+  if (!ctx.env) {
+    process.env.NODE_ENV = 'development';
+  }
+
+  return ctx;
+}
+
+const rc = (ctx, path, options) => {
+  ctx = createContext(ctx);
+  path = path ? resolve(path) : process.cwd();
+
+  return cosmiconfig('postcss', options)
+    .search(path)
+    .then((result) => {
+      if (!result) {
+        throw new Error(`No PostCSS Config found in: ${path}`);
+      }
+      return processResult(ctx, result);
+    });
+}
+
+rc.sync = (ctx, path, options) => {
+  ctx = createContext(ctx);
+  path = path ? resolve(path) : process.cwd();
+  const result = cosmiconfigSync('postcss', options).search(path);
+
+  if (!result) {
+    throw new Error(`No PostCSS Config found in: ${path}`);
+  }
+  return processResult(ctx, result);
+}
+
+module.exports = rc;
+```

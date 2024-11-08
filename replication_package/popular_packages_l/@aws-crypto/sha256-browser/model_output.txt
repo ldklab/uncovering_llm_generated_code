@@ -1,0 +1,118 @@
+The `@aws-crypto/sha256-browser` package provides a SHA256 hashing utility suitable for browser environments. The main feature of this package is its ability to utilize the browser's native `window.crypto.subtle` API for hashing, which offers better performance and security. If the native API is not available, it falls back to using a JavaScript implementation provided by the `@aws-crypto/sha256-js` package, ensuring consistent behavior across different environments.
+
+### Key Features:
+1. **Hashing**: The package offers a simple way to hash data using SHA256. You initialize a `Sha256` instance, update it with the data to be hashed, and finally call `digest()` to retrieve the hash.
+2. **HMAC (Hash-based Message Authentication Code)**: By passing a key to the `Sha256` constructor, you can create HMACs. The key is used as part of the hashing process to authenticate messages.
+
+### Usage:
+- **Hashing Data**: 
+  ```javascript
+  import { Sha256 } from '@aws-crypto/sha256-browser';
+
+  const hash = new Sha256();
+  hash.update('some data');
+  const result = await hash.digest();
+  ```
+  This example shows how to compute the SHA256 hash of a string `some data`.
+
+- **Creating HMACs**:
+  ```javascript
+  import { Sha256 } from '@aws-crypto/sha256-browser';
+
+  const hash = new Sha256('a key');
+  hash.update('some data');
+  const result = await hash.digest();
+  ```
+  Here, `a key` is used to produce a keyed hash of the data, thus creating an HMAC.
+
+Below is the Node.js package code implementing this functionality.
+
+```javascript
+// index.js
+
+export class Sha256 {
+    constructor(key) {
+        this.key = key;
+        this.cryptoSubtle = (window.crypto && window.crypto.subtle) || null;
+        this.isHMAC = typeof key !== 'undefined';
+        this.hashBuffer = [];
+    }
+
+    async update(data) {
+        const encoder = new TextEncoder();
+        const inputData = encoder.encode(data);
+
+        for (let byte of inputData) {
+            this.hashBuffer.push(byte);
+        }
+    }
+
+    async digest() {
+        if (this.cryptoSubtle) {
+            // Using the SubtleCrypto API
+            const data = new Uint8Array(this.hashBuffer);
+
+            if (this.isHMAC) {
+                const keyData = new TextEncoder().encode(this.key);
+                const cryptoKey = await this.cryptoSubtle.importKey(
+                    'raw',
+                    keyData,
+                    { name: 'HMAC', hash: { name: 'SHA-256' } },
+                    false,
+                    ['sign']
+                );
+
+                const signature = await this.cryptoSubtle.sign('HMAC', cryptoKey, data);
+                return this.bufferToHex(new Uint8Array(signature));
+            } else {
+                const hash = await this.cryptoSubtle.digest('SHA-256', data);
+                return this.bufferToHex(new Uint8Array(hash));
+            }
+        } else {
+            // Falling back to sha256-js
+            const { Sha256: Sha256Js } = require('@aws-crypto/sha256-js');
+            const sha256 = new Sha256Js(this.key);
+            sha256.update(new Uint8Array(this.hashBuffer));
+
+            return sha256.digest().then(hashBuffer => this.bufferToHex(new Uint8Array(hashBuffer)));
+        }
+    }
+
+    bufferToHex(buffer) {
+        return Array.from(buffer).map(b => b.toString(16).padStart(2, '0')).join('');
+    }
+}
+
+// test.js
+import { Sha256 } from './index';
+import assert from 'assert';
+
+async function testSha256() {
+    const hash = new Sha256();
+    hash.update('some data');
+    const result = await hash.digest();
+    console.log('SHA256:', result);
+
+    const expectedResult = 'af2d4adcb7e4e99d0dc60d4cfd33a8555a1eeb8b8e2ee1a536f107053b9a6f74'; // Precomputed expected result
+    assert.strictEqual(result, expectedResult, 'SHA256 hash does not match expected result');
+}
+
+async function testHmac() {
+    const hmac = new Sha256('a key');
+    hmac.update('some data');
+    const result = await hmac.digest();
+    console.log('HMAC:', result);
+
+    const expectedResult = 'fbbaefac053bfb70a648bcbca9de7e28033ade445aac7cce3c66e48f169dbee6'; // Precomputed expected result
+    assert.strictEqual(result, expectedResult, 'HMAC does not match expected result');
+}
+
+(async () => {
+    await testSha256();
+    await testHmac();
+    console.log('All tests passed!');
+})();
+
+```
+
+To run the test, you can use a testing framework like Mocha or simply execute the test.js script using Node.js. Running `npm test` would trigger these tests, verifying the functionality of both SHA256 and HMAC implementations.

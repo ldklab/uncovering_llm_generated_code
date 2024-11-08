@@ -1,0 +1,162 @@
+The given Node.js code defines a class `TestExclude` that manages the inclusion and exclusion of file paths, specifically for testing scenarios. This class is useful for filtering which files should be instrumented (e.g., for code coverage analysis) based on specified criteria.
+
+### Explanation:
+
+1. **Dependencies and Imports**: 
+   - It imports necessary modules such as `path` for path manipulations, `glob` for file matching using patterns, `minimatch` for pattern matching, and some defaults from `@istanbuljs/schema`.
+   - There's also a local module `isOutsideDir` to check if a file is outside a specified directory.
+
+2. **Class `TestExclude`**: 
+   - This class is initialized with options (`opts`) that allow customization of include and exclude patterns, file extensions, and whether to exclude 'node_modules'.
+   - It sets default configuration from imported defaults, then overrides with any provided options.
+
+3. **Handling Inclusion and Exclusion Patterns**:
+   - Converts string patterns to arrays if necessary and processes glob patterns for inclusion and exclusion.
+   - It handles negation patterns (e.g., patterns starting with `!`) differently, moving them to a separate processing step.
+
+4. **File Instrumentation Logic**:
+   - `shouldInstrument` method checks if a file should be included based on its extension, path relative to the current working directory, inclusion, and exclusion patterns.
+   - Filters out files outside of the working directory.
+
+5. **Glob Pattern Matching**:
+   - Two methods (`globSync` and `glob`) utilize synchronous and asynchronous globbing to retrieve files matching the specified patterns in a given directory.
+   - Optimizes by skipping directories that should not be included unless negation patterns exist.
+
+6. **Utility Functions**:
+   - `prepGlobPatterns` enhances pattern matching by allowing directory exclusions similar to `.gitignore`.
+   - `getExtensionPattern` creates glob patterns based on specified file extensions.
+
+Here is the rewritten code with the same functionality:
+
+```javascript
+'use strict';
+
+const path = require('path');
+const { glob } = require('glob');
+const { minimatch } = require('minimatch');
+const { defaults } = require('@istanbuljs/schema');
+const isOutsideDir = require('./is-outside-dir');
+
+class TestExclude {
+    constructor(opts = {}) {
+        Object.assign(
+            this,
+            { relativePath: true },
+            defaults.testExclude
+        );
+
+        Object.entries(opts).forEach(([name, value]) => {
+            if (value !== undefined) {
+                this[name] = value;
+            }
+        });
+
+        if (typeof this.include === 'string') this.include = [this.include];
+        if (typeof this.exclude === 'string') this.exclude = [this.exclude];
+        if (typeof this.extension === 'string') this.extension = [this.extension];
+        else if (this.extension.length === 0) this.extension = false;
+
+        this.include = this.preparePatterns(
+            this.include && this.include.length ? this.include : false
+        );
+
+        if (
+            this.excludeNodeModules &&
+            !this.exclude.includes('**/node_modules/**')
+        ) {
+            this.exclude = this.exclude.concat('**/node_modules/**');
+        }
+
+        this.exclude = this.preparePatterns(this.exclude);
+        this.handleNegation();
+    }
+
+    handleNegation() {
+        const isNegated = e => e.startsWith('!');
+        const negate = e => e.slice(1);
+
+        if (Array.isArray(this.include)) {
+            const includeNegated = this.include.filter(isNegated).map(negate);
+            this.exclude.push(...this.preparePatterns(includeNegated));
+            this.include = this.include.filter(e => !isNegated(e));
+        }
+
+        this.excludeNegated = this.exclude.filter(isNegated).map(negate);
+        this.exclude = this.exclude.filter(e => !isNegated(e));
+        this.excludeNegated = this.preparePatterns(this.excludeNegated);
+    }
+
+    shouldInstrument(filename, relFile) {
+        if (
+            this.extension &&
+            !this.extension.some(ext => filename.endsWith(ext))
+        ) {
+            return false;
+        }
+
+        let pathToCheck = this.relativePath ? (relFile || path.relative(this.cwd, filename)) : filename;
+
+        if (this.relativePath && isOutsideDir(this.cwd, filename)) {
+            return false;
+        }
+
+        if (this.relativePath) {
+            pathToCheck = pathToCheck.replace(/^\.[\\/]/, '');
+        }
+
+        const matches = pattern => minimatch(pathToCheck, pattern, { dot: true });
+        return (
+            (!this.include || this.include.some(matches)) &&
+            (!this.exclude.some(matches) || this.excludeNegated.some(matches))
+        );
+    }
+
+    globSync(cwd = this.cwd) {
+        const globPatterns = this.getExtensionPattern(this.extension || []);
+        const options = { cwd, nodir: true, dot: true, posix: true };
+        if (!this.excludeNegated.length) {
+            options.ignore = this.exclude;
+        }
+
+        return glob.sync(globPatterns, options)
+            .filter(file => this.shouldInstrument(path.resolve(cwd, file)));
+    }
+
+    async glob(cwd = this.cwd) {
+        const globPatterns = this.getExtensionPattern(this.extension || []);
+        const options = { cwd, nodir: true, dot: true, posix: true };
+        if (!this.excludeNegated.length) {
+            options.ignore = this.exclude;
+        }
+
+        const files = await glob(globPatterns, options);
+        return files.filter(file => this.shouldInstrument(path.resolve(cwd, file)));
+    }
+
+    preparePatterns(patterns) {
+        if (!patterns) return false;
+        return patterns.reduce((result, pattern) => {
+            if (!/\/\*\*$/.test(pattern)) {
+                result.push(pattern.replace(/\/$/, '') + '/**');
+            }
+
+            if (/^\*\*\//.test(pattern)) {
+                result.push(pattern.replace(/^\*\*\//, ''));
+            }
+            
+            result.push(pattern);
+            return result;
+        }, []);
+    }
+
+    getExtensionPattern(extension) {
+        switch (extension.length) {
+            case 0: return '**';
+            case 1: return `**/*${extension[0]}`;
+            default: return `**/*{${extension.join()}}`;
+        }
+    }
+}
+
+module.exports = TestExclude;
+```

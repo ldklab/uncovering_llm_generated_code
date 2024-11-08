@@ -1,0 +1,128 @@
+The provided Node.js code defines a `FormData` class to manage multipart/form-data submissions. This is typically used when handling forms that need to send files over HTTP POST requests, emulating how browsers handle form submissions with file uploads.
+
+### Explanation of Functionality:
+
+1. **Initialization**: 
+   - The `FormData` class is initialized with an optional `options` object and sets a boundary string for separating form parts in the multipart request.
+   
+2. **Appending Fields**: 
+   - `append`: Adds fields (form values, including files) to the form's internal list. Each field comprises a name, value, and optional metadata about the file.
+
+3. **Headers Management**:
+   - `getHeaders`: Returns appropriate headers for the form submission, including the content type with the boundary.
+
+4. **Boundary Management**:
+   - `getBoundary` and `setBoundary`: Retrieve and set the multipart boundary string used in the request.
+
+5. **Buffer Construction**:
+   - `getBuffer`: Constructs the full multipart/form-data payload as a Buffer by iterating over all fields and appending necessary headers, boundaries, and content.
+
+6. **Form Length Calculation**:
+   - `getLength`: Calculates the total length of the form including boundaries and formatting, calling a callback with the result.
+
+7. **Submitting the Form**:
+   - `submit`: Sends the multipart form data to a specified URL using an HTTP POST request. Handles success and error responses via callbacks.
+
+8. **Piping Data**:
+   - `pipe`: Takes a writable stream and writes the form's data buffer to it, effectively streaming the form's content to the destination.
+
+Below is the rewritten code that retains the functionality described above:
+
+```javascript
+const fs = require('fs');
+const http = require('http');
+const { Readable } = require('stream');
+
+class FormData {
+  constructor(options = {}) {
+    this.fields = [];
+    this.boundary = '--------------------------' + Math.random().toString().substr(2);
+    this.options = options;
+  }
+
+  append(field, value, options = {}) {
+    if (typeof options === 'string') {
+      options = { filename: options };
+    }
+    this.fields.push({ field, value, options });
+  }
+
+  getHeaders(customHeaders = {}) {
+    return {
+      ...customHeaders,
+      'Content-Type': `multipart/form-data; boundary=${this.boundary}`
+    };
+  }
+
+  getBoundary() {
+    return this.boundary;
+  }
+
+  setBoundary(boundary) {
+    this.boundary = boundary;
+  }
+
+  getBuffer() {
+    const buffers = this.fields.map(field => {
+      const parts = [];
+      parts.push(Buffer.from(`--${this.boundary}\r\n`));
+      if (typeof field.value === 'string' || Buffer.isBuffer(field.value)) {
+        parts.push(Buffer.from(`Content-Disposition: form-data; name="${field.field}"\r\n\r\n`));
+        parts.push(Buffer.from(field.value));
+      } else if (field.value instanceof Readable) {
+        parts.push(Buffer.from(`Content-Disposition: form-data; name="${field.field}"; filename="${field.options.filename || 'unknown'}"\r\n`));
+        parts.push(Buffer.from(`Content-Type: ${field.options.contentType || 'application/octet-stream'}\r\n\r\n`));
+        field.value.pipe(Buffer.from(field.value.read()));
+      }
+      parts.push(Buffer.from('\r\n'));
+      return Buffer.concat(parts);
+    });
+    buffers.push(Buffer.from(`--${this.boundary}--\r\n`));
+    return Buffer.concat(buffers);
+  }
+
+  getLength(callback) {
+    const length = this.fields.reduce((acc, field) => {
+      if (typeof field.value === 'string' || Buffer.isBuffer(field.value)) {
+        return acc + Buffer.byteLength(field.value);
+      } else if (field.value instanceof Readable && field.options.knownLength) {
+        return acc + field.options.knownLength;
+      }
+      return acc;
+    }, 0);
+    process.nextTick(() => callback(null, length));
+  }
+
+  submit(params, callback) {
+    if (typeof params === 'string') {
+      params = new URL(params);
+    }
+    
+    const options = {
+      method: 'POST',
+      hostname: params.hostname,
+      path: params.pathname,
+      headers: this.getHeaders(params.headers || {}),
+    };
+    
+    const req = http.request(options, (res) => callback(null, res));
+    req.on('error', callback);
+    this.pipe(req);
+    req.end();
+  }
+
+  pipe(destination) {
+    destination.write(this.getBuffer());
+  }
+}
+
+module.exports = FormData;
+
+// Usage example:
+// const form = new FormData();
+// form.append('exampleField', 'exampleValue');
+// form.submit('http://example.com', (err, res) => {
+//   if (err) throw err;
+//   console.log('Response received');
+// });
+```

@@ -1,0 +1,63 @@
+The provided Node.js code defines a module for executing a command with specified environment variables. It does this via a custom function called `crossEnv`. Here's a breakdown of how this works:
+
+1. **parseEnvVar Function**: This helper function splits an environment variable expressed in the form `KEY=VALUE`. It returns an array holding the key and value separately.
+
+2. **getEnvVariables Function**: This function takes an array of environment variables (as strings) and constructs an environment object. It combines the current process' environment variables with the ones provided, ensuring that new or updated ones are included.
+
+3. **crossEnv Function**: This main function does the following:
+   - Splits the input arguments into environment variables and command arguments.
+   - The inputs that contain `=` are treated as environment variables.
+   - The first non-environment input is taken as the command to execute.
+   - The remaining arguments are passed to this command.
+   - Uses the `spawn` function from the `child_process` module to run the command with the specified environment variables, inheriting standard input/output streams and allowing shell commands.
+
+4. **Module Execution**: It exports the `crossEnv` function and, if the file is executed directly, runs `crossEnv` with command-line arguments passed to the script.
+
+Here's a possible rewritten version of the code, structured in the same way:
+
+```javascript
+// cross-env.js
+const { spawn } = require('child_process');
+
+function parseEnvVar(envVar) {
+  const [key, ...valParts] = envVar.split('=');
+  const value = valParts.join('=');
+  return [key, value];
+}
+
+function getEnvVariables(envVars) {
+  return envVars.reduce((env, envVar) => {
+    const [key, value] = parseEnvVar(envVar);
+    if (key) env[key] = value;
+    return env;
+  }, { ...process.env });
+}
+
+function crossEnv(args) {
+  const envVars = [];
+  const commandArgs = [];
+
+  args.forEach(arg => {
+    if (arg.includes('=')) {
+      envVars.push(arg);
+    } else {
+      commandArgs.push(arg);
+    }
+  });
+
+  const [command, ...cmdArgs] = commandArgs;
+  const env = getEnvVariables(envVars);
+
+  return spawn(command, cmdArgs, {
+    stdio: 'inherit',
+    shell: true,
+    env,
+  }).on('exit', process.exit);
+}
+
+module.exports = { crossEnv };
+
+if (require.main === module) {
+  crossEnv(process.argv.slice(2));
+}
+```

@@ -1,0 +1,54 @@
+The given Node.js code is a module that exports a function `unboxPrimitive`. This function is used to unbox a given boxed primitive value. Boxed primitives are objects in JavaScript that wrap primitive values like strings, numbers, booleans, symbols, and BigInts, to give them access to additional methods. 
+
+The code does the following:
+
+1. It imports a module `which-boxed-primitive` to detect what type of boxed primitive the input value is, and other dependencies like `function-bind`, `has-symbols`, and `has-bigints`.
+2. It checks if the environment supports symbols and BigInts.
+3. It creates functions that can extract the primitive values from their boxed objects using `Function.prototype.call`.
+4. The main `unboxPrimitive` function takes a value, identifies its boxed type, and returns the underlying primitive using the appropriate extract function. It throws errors if:
+   - The value is not of a boxed primitive type or is not of a known type.
+   - A symbol is found, but the environment does not support symbols.
+
+Here is a rewritten version of the code:
+
+```javascript
+'use strict';
+
+const whichBoxedPrimitive = require('which-boxed-primitive');
+const bind = require('function-bind');
+const hasSymbols = require('has-symbols')();
+const hasBigInts = require('has-bigints')();
+
+const stringToString = bind.call(Function.call, String.prototype.toString);
+const numberValueOf = bind.call(Function.call, Number.prototype.valueOf);
+const booleanValueOf = bind.call(Function.call, Boolean.prototype.valueOf);
+const symbolValueOf = hasSymbols ? bind.call(Function.call, Symbol.prototype.valueOf) : undefined;
+const bigIntValueOf = hasBigInts ? bind.call(Function.call, BigInt.prototype.valueOf) : undefined;
+
+function unboxPrimitive(value) {
+    const which = whichBoxedPrimitive(value);
+    if (typeof which !== 'string') {
+        throw new TypeError(which === null ? 'value is an unboxed primitive' : 'value is a non-boxed-primitive object');
+    }
+
+    switch (which) {
+        case 'String':
+            return stringToString(value);
+        case 'Number':
+            return numberValueOf(value);
+        case 'Boolean':
+            return booleanValueOf(value);
+        case 'Symbol':
+            if (!hasSymbols) {
+                throw new EvalError('Somehow this environment does not have Symbols, but you have a boxed Symbol value. Please report this!');
+            }
+            return symbolValueOf(value);
+        case 'BigInt':
+            return bigIntValueOf(value);
+        default:
+            throw new RangeError(`unknown boxed primitive found: ${which}`);
+    }
+}
+
+module.exports = unboxPrimitive;
+```

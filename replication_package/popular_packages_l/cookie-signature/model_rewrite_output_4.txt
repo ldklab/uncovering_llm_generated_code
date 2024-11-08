@@ -1,0 +1,45 @@
+```javascript
+const crypto = require('crypto');
+
+/**
+ * Signs a given value with a secret key using HMAC SHA-256 and returns the signed value.
+ * 
+ * @param {string} value - The initial value to be signed.
+ * @param {string} secret - The secret key used for signing.
+ * @returns {string} - The signed result, concatenated with the original value and its signature.
+ */
+exports.sign = function(value, secret) {
+  // Creates an HMAC using the SHA-256 hashing algorithm and the secret key
+  const signature = crypto
+    .createHmac('sha256', secret)
+    .update(value)          // Updates the HMAC with the given value
+    .digest('base64')       // Encodes the HMAC digest in base64
+    .replace(/=+$/, '');    // Removes trailing '=' for base64 padding
+  return `${value}.${signature}`; // Returns the value and signature concatenated with a dot
+};
+
+/**
+ * Verifies a signed value against the provided secret and original value.
+ * 
+ * @param {string} signedValue - The signed value to verify.
+ * @param {string} secret - The secret key used to originally sign the value.
+ * @returns {string|boolean} - Returns the original value if the signature is valid, or false if invalid.
+ */
+exports.unsign = function(signedValue, secret) {
+  const lastDot = signedValue.lastIndexOf('.'); // Retrieves the position of the last dot
+  if (lastDot === -1) return false; // Returns false if no dot is found, indicating an invalid format
+
+  const value = signedValue.slice(0, lastDot); // Extracts the original value part
+  const signature = signedValue.slice(lastDot + 1); // Extracts the signature part
+
+  // Regenerates the expected signature from the value using the secret key
+  const expectedSignature = crypto
+    .createHmac('sha256', secret)
+    .update(value)
+    .digest('base64')
+    .replace(/=+$/, '');
+
+  // Compares the given signature with the expected signature
+  return signature === expectedSignature ? value : false; // Returns the original value if valid, false otherwise
+};
+```

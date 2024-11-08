@@ -1,0 +1,126 @@
+The `magic-string` package provides a utility for modifying strings in a precise, controlled way while also allowing the generation of source maps. The primary functionality can be broken down into several key aspects:
+
+1. **String Manipulation**: The package allows you to perform various operations on strings including updating, appending, prepending, slicing, trimming, and more.
+
+2. **Source Maps**: It can generate version 3 source maps which map the changes made back to the original string, allowing tools to understand the relationship between modified and original source code.
+
+3. **Bundling**: The package supports concatenating multiple sources into a bundle and generating a source map for this bundle.
+
+4. **Chainable API**: Most methods allow for method chaining to streamline modifications.
+
+5. **Sourcemap Location Tracking**: Functions like `addSourcemapLocation` allow the user to specify important character positions to improve source map accuracy.
+
+Below is a simplified example implementation showcasing the primary functions of `magic-string`.
+
+```javascript
+// MagicString.js
+
+class MagicString {
+  constructor(originalString, options = {}) {
+    this.originalString = originalString;
+    this.modifiedString = originalString;
+    this.changes = [];
+    this.options = options;
+  }
+
+  update(start, end, content) {
+    this.modifiedString =
+      this.modifiedString.slice(0, start) +
+      content +
+      this.modifiedString.slice(end);
+    this.changes.push({ type: 'update', start, end, content });
+    return this;
+  }
+
+  append(content) {
+    this.modifiedString += content;
+    this.changes.push({ type: 'append', content });
+    return this;
+  }
+
+  prepend(content) {
+    this.modifiedString = content + this.modifiedString;
+    this.changes.push({ type: 'prepend', content });
+    return this;
+  }
+
+  generateMap(options = {}) {
+    const map = {
+      version: 3,
+      file: options.file || 'output.js',
+      sources: [options.source || 'input.js'],
+      names: [],
+      mappings: 'AAAA'
+    };
+
+    if (options.includeContent) {
+      map.sourcesContent = [this.originalString];
+    }
+
+    return {
+      ...map,
+      toString: () => JSON.stringify(map),
+      toUrl: () => `data:application/json;charset=utf-8;base64,${btoa(JSON.stringify(map))}`
+    };
+  }
+
+  toString() {
+    return this.modifiedString;
+  }
+
+  clone() {
+    return new MagicString(this.originalString, this.options);
+  }
+}
+
+// MagicString.Bundle
+
+MagicString.Bundle = class {
+  constructor() {
+    this.sources = [];
+    this.indentString = '  ';
+  }
+
+  addSource(source) {
+    this.sources.push(source);
+    return this;
+  }
+
+  indent(indentStr) {
+    if (indentStr) {
+      this.indentString = indentStr;
+    }
+    this.sources = this.sources.map(
+      source => new MagicString(source.modifiedString.replace(/^/gm, this.indentString))
+    );
+    return this;
+  }
+
+  toString() {
+    return this.sources.map(source => source.toString()).join('\n');
+  }
+
+  generateMap(options = {}) {
+    const map = {
+      version: 3,
+      file: options.file || 'bundle.js',
+      sources: this.sources.map(source => source.options.filename || 'unknown'),
+      mappings: '',
+    };
+
+    if (options.includeContent) {
+      map.sourcesContent = this.sources.map(source => source.originalString);
+    }
+
+    return {
+      ...map,
+      toString: () => JSON.stringify(map),
+      toUrl: () => `data:application/json;charset=utf-8;base64,${btoa(JSON.stringify(map))}`
+    };
+  }
+};
+
+export default MagicString;
+```
+
+This sample code implements basic operations such as update, append, and prepend, and provides a structure for generating a source map and bundling. It doesn't cover all functionalities of the `magic-string` package but demonstrates the core concept.

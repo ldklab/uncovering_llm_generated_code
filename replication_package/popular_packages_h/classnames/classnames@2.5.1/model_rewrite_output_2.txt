@@ -1,0 +1,88 @@
+The Node.js code defines a utility function `classNames` that constructs a string of class names based on given arguments. These arguments can be strings, numbers, arrays, or objects. Here's a breakdown of how it works:
+
+1. **Functionality**:
+   - The `classNames` function iterates over all provided arguments, constructing a string consisting of valid class names.
+   - It accepts multiple types of arguments:
+     - **Strings/Numbers**: Directly appended to the class list.
+     - **Arrays**: Recursively processed to extract class names.
+     - **Objects**: The object's keys are included in the class list if their values are truthy.
+     - It handles custom `toString` methods overriding the default `Object.prototype.toString` method.
+   - The logic keeps track of the classes string being built and ensures no unwanted spaces are added.
+   
+2. **Export**:
+   - It exports the `classNames` function to be used in different JavaScript environments:
+     - In Node.js through `module.exports`.
+     - In AMD modules using `define`.
+     - Globally assigns it to `window.classNames` for use in the browser.
+
+Here is a possible rewrite of this code:
+
+```javascript
+/*!
+    Copyright (c) 2018 Jed Watson.
+    Licensed under the MIT License (MIT), see
+    http://jedwatson.github.io/classnames
+*/
+
+(function () {
+    'use strict';
+
+    const hasOwnProp = Object.prototype.hasOwnProperty;
+
+    function classNames() {
+        let classString = '';
+
+        for (const arg of arguments) {
+            if (arg) {
+                classString = addClass(classString, evaluateArg(arg));
+            }
+        }
+
+        return classString;
+    }
+
+    function evaluateArg(arg) {
+        if (typeof arg === 'string' || typeof arg === 'number') {
+            return arg;
+        }
+
+        if (typeof arg !== 'object') {
+            return '';
+        }
+
+        if (Array.isArray(arg)) {
+            return classNames(...arg);
+        }
+
+        if (arg.toString !== Object.prototype.toString && !arg.toString.toString().includes('[native code]')) {
+            return arg.toString();
+        }
+
+        let classList = '';
+        for (const key in arg) {
+            if (hasOwnProp.call(arg, key) && arg[key]) {
+                classList = addClass(classList, key);
+            }
+        }
+
+        return classList;
+    }
+
+    function addClass(existing, newClass) {
+        if (!newClass) {
+            return existing;
+        }
+
+        return existing ? `${existing} ${newClass}` : newClass;
+    }
+
+    if (typeof module !== 'undefined' && module.exports) {
+        classNames.default = classNames;
+        module.exports = classNames;
+    } else if (typeof define === 'function' && define.amd) {
+        define('classnames', [], () => classNames);
+    } else {
+        window.classNames = classNames;
+    }
+})();
+```

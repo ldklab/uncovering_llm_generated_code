@@ -1,0 +1,60 @@
+The `dedent` function is a utility to remove leading spaces and manage certain newline characters from template literals or regular strings in Node.js.
+
+### Explanation:
+
+1. **Function Input Handling**:
+    - The function can handle both template literals and regular strings.
+    - If a plain string is provided, it's converted to an array with a single element for consistency with template literal processing.
+
+2. **Interpolation**:
+    - Concatenates string parts, replacing suppressed newlines (newline following a backslash) with nothing and handling escaped backticks properly.
+
+3. **Indentation Removal**:
+    - Splits concatenated string into lines.
+    - Identifies the minimum level of indentation within non-empty lines.
+    - Removes this common indentation from each line, ensuring that the relative indentation structure is preserved.
+  
+4. **Whitespace Cleanup**:
+    - Trims leading and trailing whitespace from the result.
+    - Converts escaped newlines `\\n` to real newlines to avoid them being mistaken for intended line breaks.
+  
+5. **Module Export**:
+    - Exports the `dedent` function if the `module` is defined, suitable for use in Node.js environments.
+
+### Code Rewrite:
+
+```js
+"use strict";
+
+function dedent(strings) {
+  let raw = typeof strings === "string" ? [strings] : strings.raw;
+
+  let result = raw.reduce((acc, curr, i) => {
+    acc += curr.replace(/\\\n[ \t]*/g, "").replace(/\\`/g, "`");
+    if (i < arguments.length - 1) {
+      acc += arguments[i + 1];
+    }
+    return acc;
+  }, "");
+
+  let lines = result.split("\n");
+  let mindent = lines.reduce((minIndent, line) => {
+    let match = line.match(/^(\s+)\S+/);
+    if (match) {
+      let indent = match[1].length;
+      return minIndent === null ? indent : Math.min(minIndent, indent);
+    }
+    return minIndent;
+  }, null);
+
+  if (mindent !== null) {
+    result = lines.map(line => line.startsWith(" ") ? line.slice(mindent) : line).join("\n");
+  }
+
+  return result.trim().replace(/\\n/g, "\n");
+}
+
+if (typeof module !== "undefined") {
+  module.exports = dedent;
+}
+```

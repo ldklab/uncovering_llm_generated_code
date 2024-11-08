@@ -1,0 +1,45 @@
+The given Node.js code is designed to determine if a variable is an instance of a `WeakSet`. It first checks if the current environment supports `WeakMap` and `WeakSet`. If `WeakMap` or `WeakSet` isn't supported, or if `WeakSet` doesn't have a `has` method, it exports a function that always returns `false`. Otherwise, it exports a function that checks if the provided variable is an object and attempts to use the `has` method of `WeakSet` to confirm if it's a `WeakSet`. It incorporates error handling to identify a `WeakSet` when certain operations fail, providing a workaround for `core-js` environments below version 3.
+
+```javascript
+'use strict';
+
+var WeakMapAvailable = typeof WeakMap === 'function' && WeakMap.prototype;
+var WeakSetAvailable = typeof WeakSet === 'function' && WeakSet.prototype;
+
+var isWeakSet;
+
+if (!WeakMapAvailable) {
+	isWeakSet = function(x) {
+		// WeakSet is not available
+		return false;
+	};
+}
+
+var mapHas = WeakMapAvailable ? WeakMap.prototype.has : null;
+var setHas = WeakSetAvailable ? WeakSet.prototype.has : null;
+
+if (!isWeakSet && !setHas) {
+	module.exports = function(x) {
+		// WeakSet doesn't have a 'has' method.
+		return false;
+	};
+}
+
+module.exports = isWeakSet || function(x) {
+	if (!x || typeof x !== 'object') {
+		return false;
+	}
+	try {
+		setHas.call(x, setHas);
+		if (mapHas) {
+			try {
+				mapHas.call(x, mapHas);
+			} catch (e) {
+				return true;
+			}
+		}
+		return x instanceof WeakSet; // core-js workaround, pre-v3
+	} catch (e) {}
+	return false;
+};
+```

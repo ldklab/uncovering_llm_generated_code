@@ -1,0 +1,72 @@
+The Node.js code is designed to detect if the execution environment is a continuous integration (CI) server. It does this based on predefined CI vendor configurations, which are loaded from an external JSON file called `vendors.json`. Each vendor has specifications on how to detect if it is running as a CI server and whether it's running in the context of a pull request.
+
+Here's a step-by-step explanation of the code:
+
+1. **Loading vendor configurations:** The code requires a `vendors.json` file, which contains an array of vendor-specific configurations.
+2. **Exporting vendor constants:** It exports an array (`_vendors`) containing constant names for each vendor to facilitate testing.
+3. **Detecting CI environment and PRs:**
+   - It iterates over each vendor configuration.
+   - For each vendor, it checks the specific environment variables to determine if the code is executing within a CI environment.
+   - If a CI environment is detected, it sets the `exports.name` to the vendor's name.
+   - It then checks if the current process is running in the context of a Pull Request (PR) based on the vendor's configuration.
+   - The nature of the PR detection can vary: a single environment variable, a condition object, or an array of possible environment variables.
+4. **Detecting generic CI environments:** It sets `exports.isCI` to true if any well-known CI environment variables (`CI`, `CONTINUOUS_INTEGRATION`, `BUILD_NUMBER`, `RUN_ID`) are present.
+5. **Utility function:** `checkEnv()` is a utility function to help determine if the current environment variables match the vendor's specified conditions.
+
+Below is a refactored version of the original code that maintains its functionality:
+
+```javascript
+'use strict';
+
+const vendors = require('./vendors.json');
+const env = process.env;
+
+Object.defineProperty(exports, '_vendors', {
+  value: vendors.map(vendor => vendor.constant)
+});
+
+exports.name = null;
+exports.isPR = null;
+
+vendors.forEach(vendor => {
+  const envs = Array.isArray(vendor.env) ? vendor.env : [vendor.env];
+  const isCI = envs.every(checkEnv);
+
+  exports[vendor.constant] = isCI;
+
+  if (isCI) {
+    exports.name = vendor.name;
+    exports.isPR = detectPrState(vendor.pr);
+  }
+});
+
+exports.isCI = Boolean(
+  env.CI ||
+  env.CONTINUOUS_INTEGRATION ||
+  env.BUILD_NUMBER ||
+  env.RUN_ID ||
+  exports.name
+);
+
+function checkEnv(obj) {
+  if (typeof obj === 'string') return Boolean(env[obj]);
+  return Object.keys(obj).every(key => env[key] === obj[key]);
+}
+
+function detectPrState(prConfig) {
+  switch (typeof prConfig) {
+    case 'string':
+      return Boolean(env[prConfig]);
+    case 'object':
+      if ('env' in prConfig) {
+        return env[prConfig.env] !== prConfig.ne;
+      }
+      if ('any' in prConfig) {
+        return prConfig.any.some(key => Boolean(env[key]));
+      }
+      return checkEnv(prConfig);
+    default:
+      return null;
+  }
+}
+```

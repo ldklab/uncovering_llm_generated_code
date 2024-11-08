@@ -1,0 +1,52 @@
+The given Node.js code provides a utility function `createRequire`, which helps in creating a `require` function scoped to a specific filename or path. It is particularly useful when you want to require modules relative to a different path than the current working directory of the Node.js application.
+
+Here's what each part of the code does:
+- The `createRequire` function is the main function that takes a `filename` as input, defaults to the current working directory if no filename is provided, and handles directory paths by appending `index.js` to them to ensure a valid file path.
+- It utilizes different methods to create a require function based on the Node.js version:
+  - Node.js v12.2.0 and above: Uses `nativeModule.createRequire`.
+  - Node.js v10.12.0 to v12.1.0: Uses `nativeModule.createRequireFromPath`.
+  - Older versions: Uses a custom polyfill `_createRequire`.
+- The `isDir` utility function checks if a given path is a directory by using `fs.lstatSync`.
+- The `_createRequire` function is a polyfill that simulates the behavior of `createRequireFromPath` by embedding the standard `require` function into a new `Module` instance, compiling it, and exporting it.
+
+Here's a possible rewrite of the original Node.js code:
+
+```javascript
+const { Module } = require('module');
+const path = require('path');
+const fs = require('fs');
+
+function createRequire(filename = process.cwd()) {
+  if (isDirectory(filename)) {
+    filename = path.join(filename, 'index.js');
+  }
+
+  if (Module.createRequire) {
+    return Module.createRequire(filename);
+  }
+
+  if (Module.createRequireFromPath) {
+    return Module.createRequireFromPath(filename);
+  }
+
+  return polyfillCreateRequire(filename);
+}
+
+function polyfillCreateRequire(filename) {
+  const mod = new Module(filename, null);
+  mod.filename = filename;
+  mod.paths = Module._nodeModulePaths(path.dirname(filename));
+  mod._compile('module.exports = require;', filename);
+  return mod.exports;
+}
+
+function isDirectory(path) {
+  try {
+    return fs.lstatSync(path).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+module.exports = createRequire;
+```

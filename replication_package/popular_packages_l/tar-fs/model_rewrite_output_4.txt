@@ -1,0 +1,91 @@
+The Node.js code provided defines two functions, `pack` and `extract`, for handling tar files using streams. Here is an overview of each function's functionality:
+
+1. **pack(directory, options)**:
+   - This function compresses a directory's contents into a tar stream.
+   - It recursively reads the provided `directory`, packing its content into the `tarStream`.
+   - The packing process respects various options such as `ignore` for excluding files, `entries` for including specific files, `fmode` and `dmode` for file and directory permissions, and `map` and `mapStream` for modifying file properties and file streams respectively.
+   - It finalizes and returns a tar pack stream.
+
+2. **extract(outputDir, options)**:
+   - This function extracts a tar stream into a specified `outputDir`.
+   - It processes each entry (file or directory) of the tar stream using event listeners.
+   - Similar to `pack`, it supports options like `ignore`, `dmode`, `fmode`, and `mapStream`.
+   - Files and directories are created with specified permissions, and files are streamed to their destination using `pipeline` for handling the streaming process.
+
+Based on this functionality, here is a possible rewrite of the code:
+
+```javascript
+// tar-fs-rewrite.js
+const fs = require('fs');
+const path = require('path');
+const { pipeline } = require('stream');
+const tarStream = require('tar-stream');
+
+function pack(directory, options = {}) {
+  const packStream = tarStream.pack(options);
+  const specifiedEntries = options.entries ? new Set(options.entries) : null;
+
+  function traverseDir(currentDir) {
+    const contents = fs.readdirSync(currentDir);
+    contents.forEach(item => {
+      const itemPath = path.join(currentDir, item);
+      const itemStats = fs.statSync(itemPath);
+
+      if (options.ignore && options.ignore(itemPath, { type: itemStats.isDirectory() ? 'directory' : 'file' })) {
+        return;
+      }
+
+      if (specifiedEntries && !specifiedEntries.has(path.relative(directory, itemPath))) {
+        return;
+      }
+
+      if (itemStats.isDirectory()) {
+        packStream.entry({ name: itemPath, type: 'directory', mode: options.dmode || 0o755 });
+        traverseDir(itemPath);
+      } else {
+        const fileHeader = { name: itemPath, size: itemStats.size, mode: options.fmode || 0o644 };
+        if (options.map) options.map(fileHeader);
+
+        const fileEntry = packStream.entry(fileHeader);
+        const fileStream = fs.createReadStream(itemPath);
+        const modifiedStream = options.mapStream ? options.mapStream(fileStream, fileHeader) : fileStream;
+        modifiedStream.pipe(fileEntry);
+      }
+    });
+  }
+
+  traverseDir(directory);
+  packStream.finalize();
+  return packStream;
+}
+
+function extract(outputDir, options = {}) {
+  const extractStream = tarStream.extract();
+  extractStream.on('entry', (header, entryStream, nextAction) => {
+    const destinationPath = path.join(outputDir, header.name);
+
+    if (options.ignore && options.ignore(destinationPath, header)) {
+      entryStream.resume();
+      return nextAction();
+    }
+
+    if (header.type === 'directory') {
+      fs.mkdirSync(destinationPath, { recursive: true, mode: options.dmode || 0o755 });
+      entryStream.resume();
+    } else if (header.type === 'file') {
+      const outputStream = fs.createWriteStream(destinationPath, { mode: options.fmode || 0o644 });
+      const modifiedEntryStream = options.mapStream ? options.mapStream(entryStream, header) : entryStream;
+      pipeline(modifiedEntryStream, outputStream, nextAction);
+      return;
+    } else {
+      entryStream.resume();
+    }
+
+    nextAction();
+  });
+
+  return extractStream;
+}
+
+module.exports = { pack, extract };
+```

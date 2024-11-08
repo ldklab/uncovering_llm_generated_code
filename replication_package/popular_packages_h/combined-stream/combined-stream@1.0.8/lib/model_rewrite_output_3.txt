@@ -1,0 +1,204 @@
+The Node.js code defines a module that exports a `CombinedStream` constructor, which is a type of stream that aggregates multiple data streams into a single stream. This module leverages Node.js's Stream internal events to handle data flow, errors, and more, allowing for sequential streaming of multiple inputs.
+
+Here's a concise description of its functionality:
+
+1. **Initialization**: 
+   - `CombinedStream` is initialized with properties to handle the stream states, like `writable`, `readable`, `dataSize`, `maxDataSize`, etc.
+   - The constructor sets initial values for these properties and prepares the stream to manage multiple input streams.
+
+2. **Combining Streams**: 
+   - The method `append` adds new streams or inputs to the queue. It checks if the input is stream-like and, if necessary, wraps non-standard streams into `DelayedStream` for more control.
+   - The stream management includes pausing, resuming, and error handling through event listeners.
+
+3. **Stream Management**: 
+   - `_getNext` and `_realGetNext` are pivotal in the logic, deciding how and when to pull and push data from the available streams.
+   - Streams are consumed in order, with support for asynchronous stream generation via functions.
+
+4. **Error & Data Handling**:
+   - Error handling is centralized in `_handleErrors` and `_emitError`.
+   - Data size is monitored to ensure it doesn’t exceed `maxDataSize`, preventing potential memory issues.
+   
+5. **Flow Control**:
+   - Supports pausing and resuming of the stream to align with consumer’s reading pace.
+   - Methods like `pipe`, `pause`, `resume`, `end`, and `destroy` are implemented for managing stream flow and lifecycle.
+
+Here's the refactored version of the code for better readability and modern conventions:
+
+```javascript
+const { Stream } = require('stream');
+const util = require('util');
+const DelayedStream = require('delayed-stream');
+
+function CombinedStream() {
+  if (!(this instanceof CombinedStream)) return new CombinedStream();
+
+  Stream.call(this);
+
+  this.writable = false;
+  this.readable = true;
+  this.dataSize = 0;
+  this.maxDataSize = 2 * 1024 * 1024; // 2MB
+  this.pauseStreams = true;
+
+  this._released = false;
+  this._streams = [];
+  this._currentStream = null;
+  this._insideLoop = false;
+  this._pendingNext = false;
+}
+
+util.inherits(CombinedStream, Stream);
+
+CombinedStream.create = function (options = {}) {
+  const combinedStream = new CombinedStream();
+  Object.assign(combinedStream, options);
+  return combinedStream;
+};
+
+CombinedStream.isStreamLike = function (stream) {
+  return typeof stream !== 'function'
+    && typeof stream !== 'string'
+    && typeof stream !== 'boolean'
+    && typeof stream !== 'number'
+    && !Buffer.isBuffer(stream);
+};
+
+CombinedStream.prototype.append = function (stream) {
+  if (CombinedStream.isStreamLike(stream)) {
+    if (!(stream instanceof DelayedStream)) {
+      stream = DelayedStream.create(stream, {
+        maxDataSize: Infinity,
+        pauseStream: this.pauseStreams,
+      });
+    }
+    stream.on('data', this._checkDataSize.bind(this));
+    this._handleErrors(stream);
+    if (this.pauseStreams) stream.pause();
+  }
+
+  this._streams.push(stream);
+  return this;
+};
+
+CombinedStream.prototype.pipe = function (dest, options) {
+  Stream.prototype.pipe.call(this, dest, options);
+  this.resume();
+  return dest;
+};
+
+CombinedStream.prototype._getNext = function () {
+  if (this._insideLoop) {
+    this._pendingNext = true;
+    return;
+  }
+
+  this._insideLoop = true;
+  try {
+    do {
+      this._pendingNext = false;
+      this._realGetNext();
+    } while (this._pendingNext);
+  } finally {
+    this._insideLoop = false;
+  }
+};
+
+CombinedStream.prototype._realGetNext = function () {
+  const stream = this._streams.shift();
+
+  if (!stream) {
+    this.end();
+    return;
+  }
+
+  if (typeof stream !== 'function') {
+    this._pipeNext(stream);
+    return;
+  }
+
+  stream(getStream => {
+    if (CombinedStream.isStreamLike(getStream)) {
+      getStream.on('data', this._checkDataSize.bind(this));
+      this._handleErrors(getStream);
+    }
+    this._pipeNext(getStream);
+  });
+};
+
+CombinedStream.prototype._pipeNext = function (stream) {
+  this._currentStream = stream;
+
+  if (CombinedStream.isStreamLike(stream)) {
+    stream.once('end', this._getNext.bind(this));
+    stream.pipe(this, { end: false });
+  } else {
+    this.write(stream);
+    this._getNext();
+  }
+};
+
+CombinedStream.prototype._handleErrors = function (stream) {
+  stream.on('error', err => this._emitError(err));
+};
+
+CombinedStream.prototype.write = function (data) {
+  this.emit('data', data);
+};
+
+CombinedStream.prototype.pause = function () {
+  if (this.pauseStreams && this._currentStream?.pause) {
+    this._currentStream.pause();
+  }
+  this.emit('pause');
+};
+
+CombinedStream.prototype.resume = function () {
+  if (!this._released) {
+    this._released = true;
+    this.writable = true;
+    this._getNext();
+  }
+
+  if (this.pauseStreams && this._currentStream?.resume) {
+    this._currentStream.resume();
+  }
+  this.emit('resume');
+};
+
+CombinedStream.prototype.end = function () {
+  this._reset();
+  this.emit('end');
+};
+
+CombinedStream.prototype.destroy = function () {
+  this._reset();
+  this.emit('close');
+};
+
+CombinedStream.prototype._reset = function () {
+  this.writable = false;
+  this._streams = [];
+  this._currentStream = null;
+};
+
+CombinedStream.prototype._checkDataSize = function () {
+  this._updateDataSize();
+  if (this.dataSize > this.maxDataSize) {
+    this._emitError(new Error(`DelayedStream#maxDataSize of ${this.maxDataSize} bytes exceeded.`));
+  }
+};
+
+CombinedStream.prototype._updateDataSize = function () {
+  this.dataSize = this._streams.reduce((acc, stream) => acc + (stream.dataSize || 0), 0);
+  if (this._currentStream && this._currentStream.dataSize) {
+    this.dataSize += this._currentStream.dataSize;
+  }
+};
+
+CombinedStream.prototype._emitError = function (err) {
+  this._reset();
+  this.emit('error', err);
+};
+
+module.exports = CombinedStream;
+```

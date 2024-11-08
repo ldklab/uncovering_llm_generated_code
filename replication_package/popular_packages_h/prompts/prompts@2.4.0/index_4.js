@@ -1,0 +1,25 @@
+function isNodeLT(targetVersion) {
+  // Convert targetVersion to an array of numbers
+  const target = (Array.isArray(targetVersion) ? targetVersion : targetVersion.split('.')).map(Number);
+  // Get the current Node.js version and convert it to an array of numbers
+  const current = process.versions.node.split('.').map(Number);
+  
+  // Compare each part of the version numbers
+  for (let i = 0; i < target.length; i++) {
+    // If the current version segment is greater, return false
+    if (current[i] > target[i]) return false;
+    // If the target version segment is greater, return true
+    if (target[i] > current[i]) return true;
+  }
+  
+  // If all compared segments are equal, return false
+  return false;
+}
+
+module.exports =
+  // Check if the current Node.js version is less than 8.6.0
+  isNodeLT('8.6.0')
+    // If true, require and export the './dist/index.js' module
+    ? require('./dist/index.js')
+    // Otherwise, require and export the './lib/index.js' module
+    : require('./lib/index.js');

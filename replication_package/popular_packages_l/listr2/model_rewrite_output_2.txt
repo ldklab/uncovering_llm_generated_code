@@ -1,0 +1,91 @@
+The given Node.js code defines a task management system using classes and an event-driven approach. Here's a breakdown of how it works:
+
+1. **Task Class**: 
+   - Represents a single task with a title and a function (`task`) to execute.
+   - Maintains a `state` property to track its status (e.g., 'pending', 'running', 'completed', 'failed').
+   - The `run(ctx)` method executes the task function and updates the task's state. If the task runs successfully, it sets the state to 'completed'; if it fails, it sets the state to 'failed' and throws an error.
+
+2. **Listr2 Class**:
+   - Extends Node.js's `EventEmitter` to allow for event-driven updates.
+   - Manages a list of tasks and has an option to run tasks concurrently or sequentially.
+   - The `run(context)` method executes all tasks. If the `concurrent` option is `true`, tasks run in parallel; if `false`, tasks run one after the other.
+   - The `executeTask(task, context)` method wraps task execution in a function that emits 'stateChange' events before and after running the task.
+   
+3. **Event Handling**:
+   - Uses the `stateChange` event to log the current state of each task to the console whenever a task's state changes.
+
+4. **Example Usage**:
+   - Demonstrates creating a list of tasks and running them with an instance of `Listr2`. Logs task state changes to the console.
+
+Now, here is a possible rewrite of the given code:
+
+```javascript
+const EventEmitter = require('events');
+
+class Task {
+  constructor(title, taskFn) {
+    this.title = title;
+    this.taskFn = taskFn;
+    this.state = 'pending';
+  }
+
+  async execute(ctx) {
+    this.state = 'running';
+    try {
+      await this.taskFn(ctx);
+      this.state = 'completed';
+    } catch (err) {
+      this.state = 'failed';
+      throw err;
+    }
+  }
+}
+
+class TaskRunner extends EventEmitter {
+  constructor(tasks = [], options = { concurrent: false }) {
+    super();
+    this.tasks = tasks.map(({ title, task }) => new Task(title, task));
+    this.concurrent = options.concurrent;
+  }
+
+  async runTasks(ctx = {}) {
+    const taskExecutions = this.tasks.map(task => this.createTaskExecutor(task, ctx));
+    if (this.concurrent) {
+      await Promise.all(taskExecutions);
+    } else {
+      for (const exec of taskExecutions) {
+        await exec();
+      }
+    }
+  }
+
+  createTaskExecutor(task, ctx) {
+    return async () => {
+      this.emit('taskStateChanged', task);
+      try {
+        await task.execute(ctx);
+        this.emit('taskStateChanged', task);
+      } catch (err) {
+        this.emit('taskStateChanged', task);
+        throw err;
+      }
+    };
+  }
+}
+
+// Example usage
+const sampleTasks = [
+  { title: 'Task 1', task: async (ctx) => { /* perform task 1 */ } },
+  { title: 'Task 2', task: async (ctx) => { /* perform task 2 */ } }
+];
+
+const taskManager = new TaskRunner(sampleTasks, { concurrent: false });
+
+taskManager.on('taskStateChanged', task => {
+  console.log(`${task.title} is ${task.state}`);
+});
+
+taskManager.runTasks().catch(err => console.error(err));
+
+module.exports = TaskRunner;
+```

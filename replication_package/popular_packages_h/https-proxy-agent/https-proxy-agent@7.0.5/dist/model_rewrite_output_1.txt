@@ -1,0 +1,136 @@
+The provided Node.js code defines an `HttpsProxyAgent` class that is used to create an HTTP agent for sending HTTPS requests via a proxy server. The agent connects to an HTTP or HTTPS proxy server using the `CONNECT` method. Once the connection is established, it upgrades the connection to TLS if the destination is secure.
+
+Here's a detailed breakdown of the functionality:
+- **Node.js Modules Import**: It utilizes the `net`, `tls`, `url` modules, along with `agent-base` for creating the Agent, `assert` for assertions, and `debug` for logging.
+- **Proxy Parsing**: It accepts proxy server URLs either as a string or `URL` object. It parses the proxy hostname and port.
+- **Connection Options**: It constructs connection options for the proxy, including server ports and `ALPNProtocols` for HTTP/1.1.
+- **Connection Logic**: 
+  - If using an HTTPS proxy, it creates a `tls.Socket`. Otherwise, it uses a `net.Socket`.
+  - Compiles HTTP headers, including optional `Proxy-Authorization` for proxy authentication.
+  - Sends the `CONNECT` request to establish a tunnel.
+- **Response Handling**:
+  - If the response status is `200`, it may upgrade the socket to TLS if required.
+  - Otherwise, it handles different status codes and ensures the actual HTTP request data doesn't leak to the proxy on failed connect attempts.
+- **Utility Functions**: `resume` to resume socket connections and `omit` to filter out properties from objects.
+
+Below is the rewritten version, organized and formatted with comments for clarity:
+
+```javascript
+"use strict";
+
+const net = require("net");
+const tls = require("tls");
+const assert = require("assert");
+const debug = require("debug")("https-proxy-agent");
+const { Agent } = require("agent-base");
+const { URL } = require("url");
+const { parseProxyResponse } = require("./parse-proxy-response");
+
+/**
+ * HttpsProxyAgent is an HTTP Agent that connects through a proxy server.
+ * It supports upgrading connections to TLS for `https:` requests.
+ */
+class HttpsProxyAgent extends Agent {
+    constructor(proxy, opts = {}) {
+        super(opts);
+        this.options = { path: undefined };
+        this.proxy = typeof proxy === "string" ? new URL(proxy) : proxy;
+        this.proxyHeaders = opts.headers || {};
+        debug("Creating new HttpsProxyAgent instance: %o", this.proxy.href);
+
+        const host = (this.proxy.hostname || this.proxy.host).replace(/^\[|\]$/g, '');
+        const port = this.proxy.port
+            ? parseInt(this.proxy.port, 10)
+            : this.proxy.protocol === "https:" ? 443 : 80;
+
+        this.connectOpts = {
+            ALPNProtocols: ['http/1.1'],
+            ...omit(opts, 'headers'),
+            host,
+            port,
+        };
+    }
+
+    async connect(req, opts) {
+        const { proxy } = this;
+        
+        if (!opts.host) throw new TypeError('No "host" provided');
+
+        let socket;
+        if (proxy.protocol === "https:") {
+            debug("Creating `tls.Socket`: %o", this.connectOpts);
+            const servername = this.connectOpts.servername || this.connectOpts.host;
+            socket = tls.connect({ ...this.connectOpts, servername });
+        } else {
+            debug("Creating `net.Socket`: %o", this.connectOpts);
+            socket = net.connect(this.connectOpts);
+        }
+
+        const headers = typeof this.proxyHeaders === "function"
+            ? this.proxyHeaders()
+            : { ...this.proxyHeaders };
+        const host = net.isIPv6(opts.host) ? `[${opts.host}]` : opts.host;
+        let payload = `CONNECT ${host}:${opts.port} HTTP/1.1\r\n`;
+
+        if (proxy.username || proxy.password) {
+            const auth = `${decodeURIComponent(proxy.username)}:${decodeURIComponent(proxy.password)}`;
+            headers["Proxy-Authorization"] = `Basic ${Buffer.from(auth).toString("base64")}`;
+        }
+
+        headers.Host = `${host}:${opts.port}`;
+        headers["Proxy-Connection"] = headers["Proxy-Connection"] || (this.keepAlive ? "Keep-Alive" : "close");
+
+        for (const name in headers) {
+            payload += `${name}: ${headers[name]}\r\n`;
+        }
+
+        const proxyResponsePromise = parseProxyResponse(socket);
+        socket.write(`${payload}\r\n`);
+        const { connect, buffered } = await proxyResponsePromise;
+
+        req.emit("proxyConnect", connect);
+        this.emit("proxyConnect", connect, req);
+
+        if (connect.statusCode === 200) {
+            req.once("socket", resume);
+
+            if (opts.secureEndpoint) {
+                debug("Upgrading socket connection to TLS");
+                const servername = opts.servername || opts.host;
+                return tls.connect({ ...omit(opts, "host", "path", "port"), socket, servername });
+            }
+            return socket;
+        }
+
+        socket.destroy();
+        const fakeSocket = new net.Socket({ writable: false });
+        fakeSocket.readable = true;
+
+        req.once("socket", (s) => {
+            debug("Replaying proxy buffer for failed request");
+            assert(s.listenerCount("data") > 0);
+            s.push(buffered);
+            s.push(null);
+        });
+
+        return fakeSocket;
+    }
+}
+
+HttpsProxyAgent.protocols = ["http", "https"];
+exports.HttpsProxyAgent = HttpsProxyAgent;
+
+function resume(socket) {
+    socket.resume();
+}
+
+function omit(obj, ...keys) {
+    const result = {};
+    for (const key in obj) {
+        if (!keys.includes(key)) {
+            result[key] = obj[key];
+        }
+    }
+    return result;
+}
+```

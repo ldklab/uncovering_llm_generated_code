@@ -1,0 +1,84 @@
+```json
+// package.json
+{
+  "name": "crypto-native-wrapper",
+  "version": "1.0.0",
+  "main": "index.js",
+  "type": "module"
+}
+```
+
+```javascript
+// index.js
+import { createHash, createHmac, randomBytes, createCipheriv, createDecipheriv } from 'crypto';
+
+// Function to compute SHA-256 hash of a given data
+export function sha256(data) {
+  return createHash('sha256').update(data).digest('hex');
+}
+
+// Function to compute HMAC using SHA-512 with a given key
+export function hmacSHA512(data, key) {
+  return createHmac('sha512', key).update(data).digest('hex');
+}
+
+// Function to encode data to Base64
+export function base64Encode(data) {
+  return Buffer.from(data).toString('base64');
+}
+
+// Function to decode Base64 encoded data
+export function base64Decode(data) {
+  return Buffer.from(data, 'base64').toString('utf8');
+}
+
+// Encryption algorithm constant
+const algorithm = 'aes-256-cbc';
+
+// Function to encrypt text using AES with a secret key
+export function encryptAES(text, secret) {
+  const iv = randomBytes(16);
+  const cipher = createCipheriv(algorithm, Buffer.from(secret, 'hex'), iv);
+  let encrypted = cipher.update(text, 'utf8', 'hex');
+  encrypted += cipher.final('hex');
+  return iv.toString('hex') + ':' + encrypted;
+}
+
+// Function to decrypt AES encrypted text using a secret key
+export function decryptAES(encryptedText, secret) {
+  const textParts = encryptedText.split(':');
+  const iv = Buffer.from(textParts.shift(), 'hex');
+  const encryptedTextBuff = Buffer.from(textParts.join(':'), 'hex');
+  const decipher = createDecipheriv(algorithm, Buffer.from(secret, 'hex'), iv);
+  let decrypted = decipher.update(encryptedTextBuff, 'hex', 'utf8');
+  decrypted += decipher.final('utf8');
+  return decrypted;
+}
+
+// Usage example code to demonstrate hashing, HMAC, and encryption functionality
+
+// Sample message and key data
+const message = 'Hello';
+const nonce = '123';
+const path = '/api/endpoint';
+const privateKey = 'a1b2c3d4';
+
+// Compute SHA-256 hash of combined nonce and message
+const hashDigest = sha256(nonce + message);
+// Compute HMAC-SHA-512 and encode result to Base64
+const hmacDigest = base64Encode(hmacSHA512(path + hashDigest, privateKey));
+
+// Log hash and HMAC digests
+console.log('Hash Digest:', hashDigest);
+console.log('HMAC Digest:', hmacDigest);
+
+// Generate random secret key for AES encryption
+const secretKey = randomBytes(32).toString('hex');
+// Encrypt and then decrypt a sample message using AES
+const encryptedMessage = encryptAES('my message', secretKey);
+const decryptedMessage = decryptAES(encryptedMessage, secretKey);
+
+// Log encrypted and decrypted messages
+console.log('Encrypted Message:', encryptedMessage);
+console.log('Decrypted Message:', decryptedMessage);
+```

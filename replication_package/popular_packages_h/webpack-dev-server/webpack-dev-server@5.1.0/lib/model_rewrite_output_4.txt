@@ -1,0 +1,141 @@
+The provided Node.js code implements a Webpack Dev Server. The code is constructed using several features, including Express for middleware management, WebSockets for real-time client-server communication, and ZeroConf networking with Bonjour for service discovery over the local network. Additionally, it makes use of Node.js native modules and various third-party modules for enhanced functionality, such as graceful file system operations with `graceful-fs` and IP address parsing with `ipaddr.js`.
+
+The server supports extensive configurations, defined via JSDoc typedef annotations, to facilitate various features such as HTTP/HTTPS/HTTP2 spdy protocols, client configuration for logging, reconnection options, static file serving, middleware setup, open target applications, and proxy settings. The server also supports hot reloading and live reload for an enhanced development experience. The options are validated against a predefined schema using `schema-utils`.
+
+It accommodates internal HTTP APIs for client interactions (e.g., invalidating cache, opening files), establishes WebSocket connections for module hot reloading, and maintains middleware for handling incoming requests based on specified user configurations.
+
+**Key Functionalities:**
+1. Initialization and normalization of server options.
+2. Setup and configuration of middleware and WebSocket server.
+3. Proxy configuration and management for development environments.
+4. Hosting and broadcasting server details via Bonjour.
+5. Handling of file system changes with `chokidar`.
+
+**Core Components:**
+- **Server Class**: Encapsulates all functionalities related to managing Webpack Dev Server operations.
+- **Helper Functions**: Utility functions to handle IP fetching, hostname resolution, and other configurations.
+- **Middleware Integration**: Allows custom middleware functionality with predefined and user-defined middlewares.
+- **Websocket Support**: Real-time updates are enabled via WebSockets.
+  
+Below is a simplified rewrite of the given code, focusing on mimicking its structure and functionality:
+
+```js
+"use strict";
+
+const os = require("os");
+const path = require("path");
+const fs = require("graceful-fs");
+const express = require("express");
+const ipaddr = require("ipaddr.js");
+const { validate } = require("schema-utils");
+const schema = require("./options.json");
+
+// Utility function to memoize results
+const memoize = (fn) => {
+  let cache = false;
+  let result;
+  return () => {
+    if (cache) return result;
+    result = fn();
+    cache = true;
+    fn = undefined;
+    return result;
+  };
+};
+const getExpress = memoize(() => require("express"));
+
+if (!process.env.WEBPACK_SERVE) {
+  process.env.WEBPACK_SERVE = "true";
+}
+
+class Server {
+  constructor(options = {}, compiler) {
+    validate(schema, options, { name: "Dev Server", baseDataPath: "options" });
+    this.compiler = compiler;
+    this.logger = this.compiler.getInfrastructureLogger("webpack-dev-server");
+    this.options = options;
+    this.sockets = [];
+  }
+
+  async initialize() {
+    await this.setupApp();
+    // Additional setup tasks
+  }
+
+  async setupApp() {
+    this.app = typeof this.options.app === "function" ? await this.options.app() : getExpress()();
+  }
+
+  static isAbsoluteURL(URL) {
+    return /^[a-zA-Z][a-zA-Z\d+\-.]*:/.test(URL);
+  }
+
+  static async getHostname(hostname) {
+    if (hostname === "local-ip") {
+      return Server.findIp("v4", false) || "0.0.0.0";
+    }
+    return hostname;
+  }
+
+  static findIp(family, isInternal) {
+    const networks = Object.values(os.networkInterfaces()).flatMap(net => net ?? []).filter(net => {
+      return net && net.family === `IP${family}` && (net.internal === isInternal);
+    });
+
+    return networks.length > 0 ? networks[0].address : undefined;
+  }
+
+  setupMiddlewares() {
+    let middlewares = [];
+
+    middlewares.push({
+      name: "host-header-check",
+      middleware: (req, res, next) => {
+        if (this.checkHeader(req.headers, "host")) {
+          next();
+          return;
+        }
+        res.statusCode = 403;
+        res.end("Invalid Host header");
+      },
+    });
+
+    if (this.options.compress) {
+      const compression = require("compression");
+      middlewares.push({ name: "compression", middleware: compression() });
+    }
+
+    for (const middleware of middlewares) {
+      if (typeof middleware === "function") {
+        this.app.use(middleware);
+      } else {
+        this.app.use(middleware.path, middleware.middleware);
+      }
+    }
+  }
+
+  checkHeader(headers, headerToCheck) {
+    if (this.options.allowedHosts === "all") return true;
+    const hostHeader = headers[headerToCheck];
+    if (!hostHeader) return false;
+    const hostname = url.parse(hostHeader.includes("://") ? hostHeader : `//${hostHeader}`, false, true).hostname;
+    return hostname === "localhost" || hostname === this.options.host;
+  }
+
+  async start() {
+    await this.initialize();
+    const listenOptions = { host: this.options.host, port: this.options.port };
+    this.server = this.app.listen(listenOptions, () => {
+      this.logger.info(`Project is running at http://${listenOptions.host}:${listenOptions.port}/`);
+    });
+  }
+
+  async stop() {
+    if (this.server) {
+      this.server.close();
+    }
+  }
+}
+
+module.exports = Server;
+```

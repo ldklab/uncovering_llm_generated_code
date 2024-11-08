@@ -1,0 +1,134 @@
+The functionality described in the README.md details an option parsing utility for Node.js. The purpose of this utility is to simplify the process of handling command line options in Node.js applications. Here’s a summary of the functionality:
+
+1. **Known Options and Types**: You can define known options and their expected types. Supported types include `String`, `Number`, `Boolean`, `path`, `Stream`, `Array`, etc. Each option can have one or more types, and nopt will attempt to parse the option values accordingly.
+
+2. **Shorthands**: Shorthand notations can be set up to expand into longer argument forms. This allows specifying shorter versions of command options that expand into full form when parsed.
+
+3. **Parsing Behavior**:
+   - Options specified in the command line are parsed and returned as an object containing the parsed options and their values.
+   - Boolean flags automatically default to `true` when present and `false` when prefixed with `no-`.
+   - The utility resolves known paths against `cwd` if not absolute.
+   - Allows multiple values for options typed as arrays.
+
+4. **Error Handling**: The package can produce warnings for invalid option values unless an `invalidHandler` is set to handle such instances differently.
+
+5. **Abbreviations**: Supports partial matching of option names allowing for shorter versions.
+
+6. **Remaining Arguments**: After parsing, any arguments that don't match options are stored in a `remain` array on the returned object.
+
+7. **Custom Types**: Custom types can be added by defining them in `nopt.typeDefs`.
+
+Here's the implementation in a Node.js package for this functionality:
+
+```javascript
+// nopt.js
+
+const path = require("path");
+
+class Nopt {
+  constructor() {
+    this.typeDefs = {
+      'String': { type: 'string', validate: (val) => val },
+      'Number': { type: 'number', validate: (val) => !isNaN(parseFloat(val)) ? Number(val) : NaN },
+      'Boolean': { type: 'boolean', validate: (val) => val === 'true' || val === true },
+      'path': { type: 'path', validate: (val) => path.resolve(val) },
+      'Array': { type: 'array', validate: (val) => Array.isArray(val) ? val : [val] },
+      // Add other types if needed
+    };
+    this.invalidHandler = (key, val, type) => console.error(`Invalid value: ${val} for key: ${key}`);
+  }
+
+  parse(knownOpts, shortHands, args = process.argv, slice = 2) {
+    let parsed = { argv: { remain: [], original: Array.from(args), cooked: [] } };
+    args = args.slice(slice);
+    
+    args.forEach((arg, index) => {
+      if (arg.startsWith('--')) {
+        this._parseLongFlag(arg, knownOpts, parsed);
+      } else if (arg.startsWith('-')) {
+        this._parseShortFlag(arg, shortHands, args, index, parsed);
+      } else {
+        parsed.argv.remain.push(arg);
+      }
+    });
+
+    return parsed;
+  }
+  
+  _parseLongFlag(arg, knownOpts, parsed) {
+    let [key, val] = arg.slice(2).split('=');
+    if (val === undefined) val = true; // For flags like --flag
+    if (key.startsWith('no-')) val = false;
+    
+    let optTypes = knownOpts[key.replace('no-', '')];
+    if (optTypes) {
+      val = this._validateValue(val, optTypes) || true;
+    }
+    
+    parsed[key.replace('no-', '')] = val;
+  }
+
+  _parseShortFlag(arg, shortHands, args, index, parsed) {
+    arg.slice(1).split('').forEach(ch => {
+      const expanded = shortHands[ch];
+      if (expanded) {
+        expanded.forEach(expArg => {
+          if (!expArg.startsWith('--')) {
+            let val = args[++index];
+            parsed.argv.remain.push(val);
+          } else {
+            this._parseLongFlag(expArg, knownOpts, parsed);
+          }
+        });
+      } else {
+        parsed.argv.remain.push(`-${ch}`);
+      }
+    });
+  }
+  
+  _validateValue(val, types) {
+    for (let type of types) {
+      const typeDef = this.typeDefs[type.name || type];
+      if (typeDef && typeDef.validate(val)) {
+        return typeDef.validate(val);
+      }
+    }
+    this.invalidHandler(key, val, types);
+    return null;
+  }
+}
+
+module.exports = new Nopt();
+```
+```javascript
+// Usage example
+// my-program.js
+
+const nopt = require("./nopt");
+const Stream = require("stream").Stream;
+const path = require("path");
+
+const knownOpts = { 
+  "foo" : [String, null],
+  "bar" : [Stream, Number],
+  "baz" : path,
+  "bloo" : ["big", "medium", "small"],
+  "flag" : Boolean,
+  "pick" : Boolean,
+  "many1" : [String, Array],
+  "many2" : [path, Array]
+};
+
+const shortHands = { 
+  "foofoo" : ["--foo", "Mr. Foo"],
+  "b7" : ["--bar", "7"],
+  "m" : ["--bloo", "medium"],
+  "p" : ["--pick"],
+  "f" : ["--flag"] 
+};
+
+const parsed = nopt.parse(knownOpts, shortHands, process.argv, 2);
+console.log(parsed);
+```
+
+This implementation provides a basic option parsing system similar to the `nopt` utility. Additional refinements might be necessary for a complete feature parity, such as comprehensive error handling, full support of all mentioned types, and enhanced abbreviation functionality.

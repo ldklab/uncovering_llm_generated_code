@@ -1,0 +1,134 @@
+The given Node.js code is a module that appears to work with DOM-like structures, allowing for querying and manipulation with selector queries. It seems to be part of a larger system, possibly related to parsing and selecting DOM elements similar to how a browser might operate. Here's an explanation of its functionality:
+
+1. **Helper Functions for Module Imports:**
+   - `__createBinding`, `__setModuleDefault`, and `__importStar` are utility functions to facilitate the import and binding of module exports. They provide compatibility mechanisms for different module systems.
+
+2. **Exports:**
+   - Several functions and properties are exported:
+     - Functions: `compile`, `_compileUnsafe`, `_compileToken`, `prepareContext`, `selectAll`, `selectOne`, and `is`.
+     - Constants: `filters` and `pseudos`, imported from another module.
+
+3. **Compiling Selectors:**
+   - `wrapCompile` is a function that prepares options and wraps a compile function to adapt selector string queries into executable functions.
+   - `compile`, `_compileUnsafe`, and `_compileToken` are all wrapped versions of functions from `compile_1` that handle different compilation needs.
+
+4. **Element Selection:**
+   - `getSelectorFunc` returns a function to perform element selection using query functions across different elements, using a provided search function (`selectAll`, `selectOne`).
+   - `selectAll`: Finds all matching elements given a query.
+   - `selectOne`: Finds the first matching element with a query.
+   - `is`: Tests if an individual element matches a given compiled query.
+
+5. **Context Preparation:**
+   - `prepareContext` processes elements to either remove unnecessary elements (subsets) or retrieve children before query execution.
+   - `appendNextSiblings` adds sibling elements to a list if queries require them.
+
+6. **Utility and Default Functions:**
+   - `convertOptionFormats`: Adjusts and fills in default options for selector execution needing adapters like `DomUtils`.
+   - Default behavior is defined by `defaultEquals` (simple equality check) and `defaultOptions`.
+
+7. **Integration with Submodules:**
+   - Uses external modules (`domutils`, `boolbase`, `pseudo-selectors`, `compile`) for core functionality like DOM manipulation, selector compilation, and handling pseudo-selectors.
+
+Here is a rewritten version of the given code:
+
+```javascript
+"use strict";
+
+function __createBinding(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    Object.defineProperty(o, k2, { enumerable: true, get: function() { return m[k]; } });
+}
+
+function __setModuleDefault(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}
+
+function __importStar(mod) {
+    if (mod && mod.__esModule) return mod;
+    const result = {};
+    if (mod != null) for (const k in mod) if (k !== "default" && Object.prototype.hasOwnProperty.call(mod, k)) __createBinding(result, mod, k);
+    __setModuleDefault(result, mod);
+    return result;
+}
+
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.pseudos = exports.filters = exports.is = exports.selectOne = exports.selectAll = exports.prepareContext = exports._compileToken = exports._compileUnsafe = exports.compile = void 0;
+
+const DomUtils = __importStar(require("domutils"));
+const { falseFunc } = require("boolbase");
+const { compile, compileUnsafe, compileToken } = require("./compile");
+const { getNextSiblings } = require("./pseudo-selectors/subselects");
+
+const defaultEquals = (a, b) => a === b;
+const defaultOptions = {
+    adapter: DomUtils,
+    equals: defaultEquals,
+};
+
+function convertOptionFormats(options) {
+    let opts = options ?? defaultOptions;
+    opts.adapter ??= DomUtils;
+    opts.equals ??= opts.adapter?.equals ?? defaultEquals;
+    return opts;
+}
+
+function wrapCompile(func) {
+    return function(selector, options, context) {
+        const opts = convertOptionFormats(options);
+        return func(selector, opts, context);
+    };
+}
+
+exports.compile = wrapCompile(compile);
+exports._compileUnsafe = wrapCompile(compileUnsafe);
+exports._compileToken = wrapCompile(compileToken);
+
+function getSelectorFunc(searchFunc) {
+    return function(query, elements, options) {
+        const opts = convertOptionFormats(options);
+        if (typeof query !== "function") {
+            query = compileUnsafe(query, opts, elements);
+        }
+        const filteredElements = prepareContext(elements, opts.adapter, query.shouldTestNextSiblings);
+        return searchFunc(query, filteredElements, opts);
+    };
+}
+
+function prepareContext(elems, adapter, shouldTestNextSiblings = false) {
+    if (shouldTestNextSiblings) {
+        elems = appendNextSiblings(elems, adapter);
+    }
+    return Array.isArray(elems) ? adapter.removeSubsets(elems) : adapter.getChildren(elems);
+}
+
+exports.prepareContext = prepareContext;
+
+function appendNextSiblings(elem, adapter) {
+    const elems = Array.isArray(elem) ? elem.slice() : [elem];
+    elems.forEach(e => {
+        elems.push(...getNextSiblings(e, adapter));
+    });
+    return elems;
+}
+
+exports.selectAll = getSelectorFunc((query, elems, options) => (
+    query === falseFunc || !elems || elems.length === 0 ? [] : options.adapter.findAll(query, elems)
+));
+
+exports.selectOne = getSelectorFunc((query, elems, options) => (
+    query === falseFunc || !elems || elems.length === 0 ? null : options.adapter.findOne(query, elems)
+));
+
+function is(elem, query, options) {
+    const opts = convertOptionFormats(options);
+    return (typeof query === "function" ? query : compile(query, opts))(elem);
+}
+
+exports.is = is;
+
+exports.default = exports.selectAll;
+
+const { filters, pseudos } = require("./pseudo-selectors");
+Object.defineProperty(exports, "filters", { enumerable: true, get: () => filters });
+Object.defineProperty(exports, "pseudos", { enumerable: true, get: () => pseudos });
+```

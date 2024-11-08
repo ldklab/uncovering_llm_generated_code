@@ -1,0 +1,70 @@
+The Node.js code defines a module that provides a configuration management function. This function aggregates configuration settings from multiple sources into a single configuration object. It pulls configurations from several sources:
+
+1. Default settings specified as an object or as a JSON file.
+2. Environment variables prefixed with the provided `name`.
+3. Configuration files located in standard locations based on the operating system.
+4. Command-line arguments parsed using `minimist`.
+
+The function allows these configurations to be managed in a prioritized manner, merging them into a final configuration object that respects this priority. System configurations are read from multiple default paths depending on whether the operating system is Windows or not. If files are specified through environment variables or command-line arguments, these also are added to the configuration sources. The final configuration is constructed by deeply merging all these sources.
+
+Here's how the code can be rewritten:
+
+```javascript
+const utils = require('./lib/utils');
+const path = require('path');
+const deepExtend = require('deep-extend');
+const minimist = require('minimist');
+
+const etc = '/etc';
+const isWindows = process.platform === "win32";
+const homeDirectory = isWindows ? process.env.USERPROFILE : process.env.HOME;
+
+function loadConfig(name, defaults, argv, parse) {
+  if (typeof name !== 'string') {
+    throw new Error('rc(name): name *must* be string');
+  }
+
+  argv = argv || minimist(process.argv.slice(2));
+
+  defaults = (typeof defaults === 'string' ? utils.json(defaults) : defaults) || {};
+  parse = parse || utils.parse;
+  const env = utils.env(name + '_');
+
+  const configs = [defaults];
+  const configFiles = [];
+
+  const addConfigFile = (file) => {
+    if (configFiles.includes(file)) return;
+    const fileConfig = utils.file(file);
+    if (fileConfig) {
+      configs.push(parse(fileConfig));
+      configFiles.push(file);
+    }
+  };
+
+  if (!isWindows) {
+    [path.join(etc, name, 'config'), path.join(etc, `${name}rc`)].forEach(addConfigFile);
+  }
+
+  if (homeDirectory) {
+    [
+      path.join(homeDirectory, '.config', name, 'config'),
+      path.join(homeDirectory, '.config', name),
+      path.join(homeDirectory, `.${name}`, 'config'),
+      path.join(homeDirectory, `.${name}rc`)
+    ].forEach(addConfigFile);
+  }
+
+  addConfigFile(utils.find(`.${name}rc`));
+  if (env.config) addConfigFile(env.config);
+  if (argv.config) addConfigFile(argv.config);
+
+  return deepExtend.apply(null, configs.concat([
+    env,
+    argv,
+    configFiles.length ? { configs: configFiles, config: configFiles[configFiles.length - 1] } : undefined,
+  ]));
+}
+
+module.exports = loadConfig;
+```

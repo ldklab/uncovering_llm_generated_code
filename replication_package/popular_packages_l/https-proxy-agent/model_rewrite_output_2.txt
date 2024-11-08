@@ -1,0 +1,52 @@
+The Node.js code defines a custom HTTP agent class, `HttpsProxyAgent`, which facilitates making HTTPS requests through an HTTP proxy. It extends the native `http.Agent` class to manage HTTP connections and utilizes the `CONNECT` method to establish a tunnel through the proxy to the destination server. The agent handles the creation of a connection through a specified proxy server and leverages that connection to reach the final target. The `httpsRequestExample` function demonstrates usage by making an HTTPS GET request to `https://example.com`, passing the proxy agent to manage the connection.
+
+Rewritten code:
+
+```javascript
+import http from 'node:http';
+import https from 'node:https';
+import { URL } from 'node:url';
+
+class HttpsProxyAgent extends http.Agent {
+  constructor(proxyUrl, options = {}) {
+    super(options);
+    this.proxy = new URL(proxyUrl);
+    this.headers = options.headers || {};
+  }
+
+  createConnection(options, callback) {
+    const requestOptions = {
+      hostname: this.proxy.hostname,
+      port: parseInt(this.proxy.port, 10),
+      method: 'CONNECT',
+      path: `${options.hostname}:${options.port}`,
+      headers: this.headers,
+    };
+
+    const proxyRequest = http.request(requestOptions);
+    proxyRequest.end();
+
+    proxyRequest.on('connect', (res, socket) => {
+      if (res.statusCode === 200) {
+        options.socket = socket;
+        const connection = super.createConnection(options, callback);
+        callback(null, connection);
+      } else {
+        callback(new Error(`Proxy connection failed: ${res.statusCode}`));
+      }
+    });
+
+    proxyRequest.on('error', (err) => { callback(err); });
+  }
+}
+
+function exampleHttpsRequest() {
+  const agent = new HttpsProxyAgent('http://168.63.76.32:3128');
+  https.get('https://example.com', { agent }, (res) => {
+    console.log('Response received:', res.headers);
+    res.pipe(process.stdout);
+  });
+}
+
+export { HttpsProxyAgent, exampleHttpsRequest };
+```

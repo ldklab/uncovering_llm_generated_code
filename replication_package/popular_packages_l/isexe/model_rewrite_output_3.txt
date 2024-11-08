@@ -1,0 +1,71 @@
+```javascript
+import { stat, constants } from 'fs';
+import { promisify } from 'util';
+
+// Promisify the 'stat' function to convert it into a promise-based function
+const statAsync = promisify(stat);
+
+// Function to check if a file is executable on Windows systems
+function checkExecutableOnWin32(path, pathExt) {
+  const ext = path.split('.').pop(); // Retrieve the file extension
+  return pathExt.includes(`.${ext}`); // Check if the file extension exists in the PATH's extensions
+}
+
+// Function to check if a file is executable on Unix-like systems
+function checkExecutableOnPosix(stats, uid, gid) {
+  const { mode } = stats;
+  const isOwner = (stats.uid === uid); // Check ownership of the file
+  const isGroup = (stats.gid === gid); // Check group of the file
+  // Determine if the file is executable by user, group, or others
+  return ((isOwner && (mode & constants.S_IXUSR)) ||
+          (isGroup && (mode & constants.S_IXGRP)) ||
+          (mode & constants.S_IXOTH));
+}
+
+// Asynchronous function to determine if a file is executable
+async function isexe(path, options = {}) {
+  try {
+    const stats = await statAsync(path); // Get file stats asynchronously
+    // Check platform and use the appropriate method to determine executability
+    return process.platform === 'win32'
+      ? checkExecutableOnWin32(path, options.pathExt || process.env.PATHEXT.split(';'))
+      : checkExecutableOnPosix(stats, options.uid || process.getuid(), options.gid || process.getgid());
+  } catch (err) {
+    if (options.ignoreErrors) return false; // Return false if errors are to be ignored
+    throw err; // Otherwise, throw the error
+  }
+}
+
+// Synchronous function to determine if a file is executable
+function sync(path, options = {}) {
+  try {
+    const stats = stat(path); // Get file stats synchronously
+    // Similar check as in 'isexe' for platform-specific executability
+    return process.platform === 'win32'
+      ? checkExecutableOnWin32(path, options.pathExt || process.env.PATHEXT.split(';'))
+      : checkExecutableOnPosix(stats, options.uid || process.getuid(), options.gid || process.getgid());
+  } catch (err) {
+    if (options.ignoreErrors) return false; // Return false if errors are to be ignored
+    throw err; // Otherwise, throw the error
+  }
+}
+
+// Windows implementation for executability check
+const win32 = {
+  isexe: async (path, options) => await isexe(path, { ...options, pathExt: options.pathExt || process.env.PATHEXT.split(';') }),
+  sync: (path, options) => sync(path, { ...options, pathExt: options.pathExt || process.env.PATHEXT.split(';') })
+};
+
+// POSIX implementation for executability check
+const posix = {
+  isexe: async (path, options) => await isexe(path, options),
+  sync: (path, options) => sync(path, options)
+};
+
+// Select the implementation based on the platform
+const selectedImplementation = process.platform === 'win32' ? win32 : posix;
+
+// Exports the selected implementation
+export const { isexe, sync } = selectedImplementation;
+export { win32, posix };
+```

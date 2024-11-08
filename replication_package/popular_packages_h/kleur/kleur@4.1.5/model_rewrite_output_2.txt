@@ -1,0 +1,109 @@
+The given Node.js code is a library for handling terminal text styles and colors using ANSI escape codes. It checks if the environment supports colored terminal output and exports an object with methods to apply text styles and colors. Here's the breakdown:
+
+1. **Environment Variables & Terminal Check:** The code checks certain environment variables (`FORCE_COLOR`, `NODE_DISABLE_COLORS`, `NO_COLOR`, `TERM`) and the `isTTY` property to determine if the terminal can support colors.
+
+2. **Styled Output Control:** An `$` object is created with properties for various terminal text styles (modifiers), colors, and background colors. Each property is a function created by `init`.
+
+3. **Styling Functions Creation:** The `init` function creates a function to wrap a given text with the appropriate ANSI codes. If called without arguments, it returns a chainable object that can combine multiple styles. If `$` is enabled (based on earlier checks), these styles are applied to the text.
+
+4. **Chaining and Running Styles:** The `chain` function allows multiple styles to be applied in sequence. Each style function keeps track of applied styles. The `run` function applies the collected styles to a text, ensuring ANSI codes are nested correctly.
+
+5. **Export:** Finally, the styled text handling functionality is exported as the `$` object.
+
+Below is a possible rewrite of the provided code with the same functionality:
+
+```javascript
+'use strict';
+
+let FORCE_COLOR, NODE_DISABLE_COLORS, NO_COLOR, TERM, isTTY = true;
+if (typeof process !== 'undefined') {
+    ({ FORCE_COLOR, NODE_DISABLE_COLORS, NO_COLOR, TERM } = process.env || {});
+    isTTY = process.stdout && process.stdout.isTTY;
+}
+
+const styles = createStyles();
+
+function createStyles() {
+    return {
+        enabled: canUseColors(),
+        // modifiers
+        reset: createStyle(0, 0),
+        bold: createStyle(1, 22),
+        dim: createStyle(2, 22),
+        italic: createStyle(3, 23),
+        underline: createStyle(4, 24),
+        inverse: createStyle(7, 27),
+        hidden: createStyle(8, 28),
+        strikethrough: createStyle(9, 29),
+        // colors
+        black: createStyle(30, 39),
+        red: createStyle(31, 39),
+        green: createStyle(32, 39),
+        yellow: createStyle(33, 39),
+        blue: createStyle(34, 39),
+        magenta: createStyle(35, 39),
+        cyan: createStyle(36, 39),
+        white: createStyle(37, 39),
+        gray: createStyle(90, 39),
+        grey: createStyle(90, 39),
+        // background colors
+        bgBlack: createStyle(40, 49),
+        bgRed: createStyle(41, 49),
+        bgGreen: createStyle(42, 49),
+        bgYellow: createStyle(43, 49),
+        bgBlue: createStyle(44, 49),
+        bgMagenta: createStyle(45, 49),
+        bgCyan: createStyle(46, 49),
+        bgWhite: createStyle(47, 49)
+    };
+}
+
+function canUseColors() {
+    return !NODE_DISABLE_COLORS && NO_COLOR == null && TERM !== 'dumb' && (
+        (FORCE_COLOR != null && FORCE_COLOR !== '0') || isTTY
+    );
+}
+
+function createStyle(open, close) {
+    const ansiCode = {
+        open: `\x1b[${open}m`,
+        close: `\x1b[${close}m`,
+        rgx: new RegExp(`\\x1b\\[${close}m`, 'g')
+    };
+    return function styler(txt) {
+        if (this !== undefined && this.has !== undefined) {
+            if (!this.has.includes(open)) {
+                this.has.push(open);
+                this.keys.push(ansiCode);
+            }
+            return txt === undefined ? this : styles.enabled ? applyStyles(this.keys, `${txt}`) : `${txt}`;
+        }
+        return txt === undefined ? styleChain([open], [ansiCode]) : styles.enabled ? applyStyles([ansiCode], `${txt}`) : `${txt}`;
+    };
+}
+
+function applyStyles(styleArray, text) {
+    let beg = '', end = '';
+    for (const style of styleArray) {
+        beg += style.open;
+        end += style.close;
+        if (text.includes(style.close)) {
+            text = text.replace(style.rgx, style.close + style.open);
+        }
+    }
+    return beg + text + end;
+}
+
+function styleChain(has, keys) {
+    const chainObj = { has, keys };
+
+    for (const style in styles) {
+        if (typeof styles[style] === 'function') {
+            chainObj[style] = styles[style].bind(chainObj);
+        }
+    }
+    return chainObj;
+}
+
+module.exports = styles;
+```

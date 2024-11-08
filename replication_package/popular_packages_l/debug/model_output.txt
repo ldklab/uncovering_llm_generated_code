@@ -1,0 +1,184 @@
+The `debug` package is a lightweight utility designed for debugging JavaScript applications both in Node.js and web browsers. It provides an easy mechanism for developers to track and log debug messages with varying levels of complexity. Here's a breakdown of its functionality:
+
+1. **Basic Usage**: 
+   - The `debug` function takes a string, usually the name of your module, and returns a decorated version of `console.error` that you can use to add debug statements.
+   - This allows for enabling or disabling debug output for specific parts of your application using environment variables.
+
+2. **Environment Configuration**:
+   - Debugging can be toggled using the `DEBUG` environment variable, supporting space or comma-delimited namespaces and wildcards for flexible configuration.
+   - Debug outputs can be printed in color when supported by the terminal or browser, assisting in visually parsing debug messages.
+
+3. **Namespace and Colors**:
+   - Each debug instance is associated with a colored namespace, facilitating easier identification of messages from different parts of an application.
+   - Node.js relies on TTY support for colors, and additional color support can be obtained through the `supports-color` module.
+
+4. **Formatting and Output Options**:
+   - Debug employs printf-style formatting for log messages, supporting output customization using formatters like `%O`, `%o`, `%s`, etc.
+   - Per-namespace and global log output redirection options are available.
+
+5. **Advanced Features**:
+   - **Extending Namespace**: Provides `extend()` method to create hierarchically structured debug namespaces.
+   - **Dynamic Configuration**: Methods like `enable()` and `disable()` allow for manually toggling debugging without restarting the application.
+   - **Custom Formatters**: You can define custom formatters to extend the default capabilities.
+   - **Child Process Configuration**: Adjustments can be made to ensure debug output retains colors in child processes.
+
+6. **Browser Support**:
+   - Debugging state persists via `localStorage` making it easy to control debug output across browser sessions.
+   - It is compatible with modern browser development tools that support structured logging.
+
+Here's a Node.js module that implements the described functionality:
+
+```js
+// debug.js
+
+const util = require('util');
+const fs = require('fs');
+
+const colors = [6, 2, 3, 4, 5, 1];
+let namespaces = [];
+let skips = [];
+let formatters = {};
+
+// Utility to select a random color for a namespace
+function selectColor(namespace) {
+  let hash = 0;
+  for (let i = 0; i < namespace.length; i++) {
+    hash = ((hash << 5) - hash) + namespace.charCodeAt(i);
+    hash |= 0; // Convert to 32bit integer
+  }
+  return colors[Math.abs(hash) % colors.length];
+}
+
+// Enables namespaces
+function enable(namespaces) {
+  save(namespaces);
+  const split = (namespaces || '').split(/[\s,]+/);
+  splits.forEach(name => {
+    if (!name) return;  // ignore empty strings
+    name = name.replace(/\*/g, '.*?');
+    if (name[0] === '-') {
+      skips.push(new RegExp('^' + name.substr(1) + '$'));
+    } else {
+      namespaces.push(new RegExp('^' + name + '$'));
+    }
+  });
+}
+
+// Check if a debug namespace is enabled
+function enabled(name) {
+  if (name[name.length - 1] === '*') {
+    return true;
+  }
+  
+  for (let i = 0; i < skips.length; i++) {
+    if (skips[i].test(name)) {
+      return false;
+    }
+  }
+  
+  for (let i = 0; i < namespaces.length; i++) {
+    if (namespaces[i].test(name)) {
+      return true;
+    }
+  }
+  
+  return false;
+}
+
+// Create a debug instance with specified namespace
+function createDebug(namespace) {
+  // Define the color for this debug instance
+  let color = selectColor(namespace);
+  
+  function debug(...args) {
+    if (!debug.enabled) return;
+    
+    const self = debug;
+    
+    // Set formatting options
+    args[0] = coerce(args[0]);
+    let index = 0;
+    args[0] = args[0].replace(/%([a-zA-Z%])/g, (match, format) => {
+      if (match === '%%') return match;
+      index++;
+      const formatter = formatters[format];
+      if (typeof formatter === 'function') {
+        const val = args[index];
+        match = formatter.call(self, val);
+        args.splice(index, 1);
+        index--;
+      }
+      return match;
+    });
+    
+    // Apply color for browser or TTY terminals
+    args[0] = (useColors() ? `\u001b[3${color < 8 ? color : '8;5;' + color}` + `;1m${namespace} ` + `\u001b[0m` : `${namespace} `) + args[0];
+    
+    // Log it
+    console.error.apply(console, args);
+  }
+  
+  debug.namespace = namespace;
+  debug.enabled = enabled(namespace);
+  debug.color = color;
+  debug.extend = extend;
+  
+  return debug;
+}
+
+// Check if colors should be used
+function useColors() {
+  return (typeof window !== 'undefined' && window.process && window.process.type === 'renderer') ||
+    (typeof navigator !== 'undefined' && navigator.userAgent && navigator.userAgent.toLowerCase().match(/(chrome|firefox|edge)/)) ||
+    false;
+}
+
+// Add a basic formatter
+formatters.o = function(v) {
+  return util.inspect(v, { colors: this.useColors, depth: null });
+};
+
+// Push namespaces/skips from both localStorage and environment variable
+function load() {
+  try {
+    return localStorage.debug;
+  } catch (e) {
+    return process.env.DEBUG;
+  }
+}
+
+// Save the configured namespaces to ensure persistence
+function save(namespaces) {
+  try {
+    localStorage.debug = namespaces;
+  } catch (e) {
+    process.env.DEBUG = namespaces;
+  }
+}
+
+function coerce(val) {
+  if (val instanceof Error) return val.stack || val.message;
+  return val;
+}
+
+function extend(namespace, delimiter) {
+  const newDebug = createDebug(this.namespace + (typeof delimiter === 'undefined' ? ':' : delimiter) + namespace);
+  newDebug.log = this.log;
+  return newDebug;
+}
+
+enable(load());
+
+// Exporting the module
+module.exports = createDebug;
+module.exports.enable = enable;
+module.exports.disable = function() {
+  const previous = module.exports.namespaces.join(',') || (module.exports.namespaces.length ? '-' + module.exports.skips.join(',') : '');
+  enable('');
+  return previous;
+};
+module.exports.enabled = enabled;
+module.exports.formatters = formatters;
+```
+
+This code implements the key features described in the README, including namespace enabling, color usage, formatters, and more, providing a versatile debugging utility for JavaScript applications.

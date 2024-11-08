@@ -1,0 +1,41 @@
+// index.js
+(function() {
+    'use strict';
+
+    // The function creates a custom trim function that removes leading and trailing 
+    // whitespace from a string based on a set of predefined whitespace characters.
+    var createTrimFunction = function() {
+        // Define a string of various whitespace characters including standard and non-standard spaces.
+        var whitespaceChars = '\u0009\u000A\u000B\u000C\u000D\u0020\u00A0\u1680\u180E\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200A\u202F\u205F\u3000\uFEFF';
+        // Define a zero-width space character that should be retained in this implementation.
+        var zeroWidthSpace = '\u200B';
+        // Create a new list of whitespace characters to exclude zero-width spaces.
+        var trimmedWhitespaceChars = whitespaceChars.replace(zeroWidthSpace, '');
+        
+        // Regular expression to match leading and trailing whitespace excluding zero-width spaces.
+        var trimRegex = new RegExp(`^[${trimmedWhitespaceChars}]+|[${trimmedWhitespaceChars}]+$`, 'g');
+        
+        // Returns a function that trims the whitespace using the defined regex pattern.
+        return function trim() {
+            // Converts the `this` value to a string and applies the trim regex.
+            return String(this).replace(trimRegex, '');
+        };
+    }();
+
+    // This function applies the custom trim implementation to a given value.
+    var trim = function(value) {
+        // Uses `.call` to set `this` inside the `createTrimFunction` to `value`.
+        return createTrimFunction.call(value);
+    };
+
+    // A shim function to augment String.prototype with the custom trim implementation if necessary.
+    trim.shim = function shimStringTrim() {
+        // Adds the custom trim to String.prototype if it does not exist or incorrectly trims zero-width spaces.
+        if (!String.prototype.trim || '\u200B'.trim() !== '\u200B') {
+            String.prototype.trim = createTrimFunction;
+        }
+    };
+
+    // Exports the trim function for use in other modules.
+    module.exports = trim;
+})();

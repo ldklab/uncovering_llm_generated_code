@@ -1,0 +1,136 @@
+The provided code is a Node.js module that exports two functions, `read` and `write`. These functions are used to read and write floating-point numbers from and to a binary buffer using the IEEE 754 standard. IEEE 754 is a representation of floating-point values that uses a specific binary format. 
+
+### Functionality
+
+1. **`read` Function**
+   - This function interprets a sequence of bytes in a buffer as an IEEE 754 floating-point number.
+   - Parameters:
+     - `buffer`: The source buffer to read from.
+     - `offset`: The starting position in the buffer.
+     - `isLE`: A boolean indicating whether data is Little-Endian. If `false`, data is Big-Endian.
+     - `mLen`: The number of bits for the mantissa (fractional part).
+     - `nBytes`: The total number of bytes to read.
+   - It decodes these bytes into a floating-point number by breaking it into sign, exponent, and mantissa and applying IEEE 754 rules.
+
+2. **`write` Function**
+   - This function writes a floating-point number into the buffer in IEEE 754 format.
+   - Parameters:
+     - `buffer`: The destination buffer to write to.
+     - `value`: The floating-point number to be written.
+     - `offset`: The starting position in the buffer.
+     - `isLE`: A boolean indicating whether to write data as Little-Endian.
+     - `mLen`: The number of bits for the mantissa (fractional part).
+     - `nBytes`: The total number of bytes to write.
+   - It calculates the sign, exponent, and mantissa of the floating-point number and encodes these components into binary form.
+
+Both functions utilize bitwise operations to manipulate the individual bits of the floating-point number's representation.
+
+Here's the rewritten code:
+
+```javascript
+/*! ieee754. BSD-3-Clause License. Feross Aboukhadijeh <https://feross.org/opensource> */
+exports.read = function (buffer, offset, isLE, mLen, nBytes) {
+  let e, m;
+  const eLen = (nBytes * 8) - mLen - 1;
+  const eMax = (1 << eLen) - 1;
+  const eBias = eMax >> 1;
+  let nBits = -7;
+  let i = isLE ? (nBytes - 1) : 0;
+  const d = isLE ? -1 : 1;
+  let s = buffer[offset + i];
+
+  i += d;
+  e = s & ((1 << (-nBits)) - 1);
+  s >>= (-nBits);
+  nBits += eLen;
+
+  while (nBits > 0) {
+    e = (e * 256) + buffer[offset + i];
+    i += d;
+    nBits -= 8;
+  }
+
+  m = e & ((1 << (-nBits)) - 1);
+  e >>= (-nBits);
+  nBits += mLen;
+
+  while (nBits > 0) {
+    m = (m * 256) + buffer[offset + i];
+    i += d;
+    nBits -= 8;
+  }
+
+  if (e === 0) {
+    e = 1 - eBias;
+  } else if (e === eMax) {
+    return m ? NaN : ((s ? -1 : 1) * Infinity);
+  } else {
+    m = m + Math.pow(2, mLen);
+    e = e - eBias;
+  }
+  return (s ? -1 : 1) * m * Math.pow(2, e - mLen);
+};
+
+exports.write = function (buffer, value, offset, isLE, mLen, nBytes) {
+  let e, m, c;
+  const eLen = (nBytes * 8) - mLen - 1;
+  const eMax = (1 << eLen) - 1;
+  const eBias = eMax >> 1;
+  const rt = (mLen === 23 ? Math.pow(2, -24) - Math.pow(2, -77) : 0);
+  let i = isLE ? 0 : (nBytes - 1);
+  const d = isLE ? 1 : -1;
+  const s = value < 0 || (value === 0 && 1 / value < 0) ? 1 : 0;
+
+  value = Math.abs(value);
+
+  if (isNaN(value) || value === Infinity) {
+    m = isNaN(value) ? 1 : 0;
+    e = eMax;
+  } else {
+    e = Math.floor(Math.log(value) / Math.LN2);
+    if (value * (c = Math.pow(2, -e)) < 1) {
+      e--;
+      c *= 2;
+    }
+    if (e + eBias >= 1) {
+      value += rt / c;
+    } else {
+      value += rt * Math.pow(2, 1 - eBias);
+    }
+    if (value * c >= 2) {
+      e++;
+      c /= 2;
+    }
+
+    if (e + eBias >= eMax) {
+      m = 0;
+      e = eMax;
+    } else if (e + eBias >= 1) {
+      m = ((value * c) - 1) * Math.pow(2, mLen);
+      e = e + eBias;
+    } else {
+      m = value * Math.pow(2, eBias - 1) * Math.pow(2, mLen);
+      e = 0;
+    }
+  }
+
+  while (mLen >= 8) {
+    buffer[offset + i] = m & 0xff;
+    i += d;
+    m /= 256;
+    mLen -= 8;
+  }
+
+  e = (e << mLen) | m;
+  eLen += mLen;
+
+  while (eLen > 0) {
+    buffer[offset + i] = e & 0xff;
+    i += d;
+    e /= 256;
+    eLen -= 8;
+  }
+
+  buffer[offset + i - d] |= s * 128;
+};
+```

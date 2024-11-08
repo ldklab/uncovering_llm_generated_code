@@ -1,0 +1,72 @@
+The provided Node.js code is a module designed to create and manage a default user agent provider. It exports several constants and functions to be used for determining and organizing user agent metadata. 
+
+The key functionalities are:
+1. **User Agent Metadata Construction**: The code constructs metadata related to the SDK version, OS platform, Node.js version, and execution environment, used to build a user agent string.
+2. **CRT Availability Check**: There's functionality to check whether a specific feature `crt` (likely related to AWS SDK's CRT - Common Runtime) is available.
+3. **Configuration Options**: It includes configuration options for setting an application ID through environment variables or configuration files.
+4. **Exports**: Uses custom utility functions to define properties and export modules in a way that's compatible with CommonJS and potentially ESM (ECMAScript Modules).
+
+The following is the rewritten code:
+
+```javascript
+"use strict";
+
+const os = require("os");
+const process = require("process");
+const { DEFAULT_UA_APP_ID } = require("@aws-sdk/middleware-user-agent");
+
+const UA_APP_ID_ENV_NAME = "AWS_SDK_UA_APP_ID";
+const UA_APP_ID_INI_NAME = "sdk-ua-app-id";
+
+const NODE_APP_ID_CONFIG_OPTIONS = {
+  environmentVariableSelector: (env) => env[UA_APP_ID_ENV_NAME],
+  configFileSelector: (profile) => profile[UA_APP_ID_INI_NAME],
+  default: DEFAULT_UA_APP_ID
+};
+
+const crtAvailability = {
+  isCrtAvailable: false
+};
+
+const isCrtAvailable = () => {
+  return crtAvailability.isCrtAvailable ? ["md/crt-avail"] : null;
+};
+
+const createDefaultUserAgentProvider = ({ serviceId, clientVersion }) => async (config) => {
+  const sections = [
+    ["aws-sdk-js", clientVersion],
+    ["ua", "2.1"],
+    [`os/${os.platform()}`, os.release()],
+    ["lang/js"],
+    ["md/nodejs", `${process.versions.node}`]
+  ];
+
+  const crtAvailable = isCrtAvailable();
+  if (crtAvailable) {
+    sections.push(crtAvailable);
+  }
+  
+  if (serviceId) {
+    sections.push([`api/${serviceId}`, clientVersion]);
+  }
+  
+  if (process.env.AWS_EXECUTION_ENV) {
+    sections.push([`exec-env/${process.env.AWS_EXECUTION_ENV}`]);
+  }
+  
+  const appId = await (config?.userAgentAppId?.());
+  const resolvedUserAgent = appId ? [...sections, [`app/${appId}`]] : [...sections];
+  return resolvedUserAgent;
+};
+
+const defaultUserAgent = createDefaultUserAgentProvider;
+
+module.exports = {
+  NODE_APP_ID_CONFIG_OPTIONS,
+  UA_APP_ID_ENV_NAME,
+  UA_APP_ID_INI_NAME,
+  createDefaultUserAgentProvider,
+  crtAvailability,
+  defaultUserAgent
+};
+```

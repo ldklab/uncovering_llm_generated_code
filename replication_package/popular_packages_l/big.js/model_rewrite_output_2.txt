@@ -1,0 +1,119 @@
+The provided Node.js code defines a `Big` class for performing arithmetic operations on large or precise numbers, which are represented internally as strings to maintain their precision. Here's a breakdown of the functionality:
+
+1. **Constructor**: The class can be initialized with a number or string value. In strict mode, it throws an error if the input is a number to avoid precision issues.
+
+2. **Static Properties and Methods**:
+   - `strict`: A boolean static property to determine if operations are done strictly.
+   - `DP` and `RM`: Decimal places and rounding mode for operations.
+   - `roundHalfUp`: Static method to round numbers using the half-up strategy.
+
+3. **Instance Methods**:
+   - `toNumber`: Converts the internal value to a JavaScript number.
+   - Arithmetic operations (`plus`, `minus`, `times`, `div`) perform basic operations, converting operands to numbers, and return new `Big` instances.
+   - Comparison (`eq`, `gt`) compares numbers.
+   - `sqrt`, `pow`: Calculate the square root and power, respectively.
+   - `toFixed`, `toExponential`, `toPrecision`: Format numbers.
+
+4. **Properties as Getters**:
+   - `c`: The internal array of digits (coefficient).
+   - `e`: The exponent derived from the position of the decimal point.
+   - `s`: The sign of the number.
+
+5. **Precision Check**:
+   - `_isPrecise`: Checks if the conversion from string to number maintains the desired precision.
+
+Here is a possible rewrite of the provided code:
+
+```javascript
+class BigNumber {
+  constructor(value) {
+    if (BigNumber.strictModeEnabled && typeof value === 'number') {
+      throw new TypeError('[BigNumber] Invalid number');
+    }
+    this._value = typeof value === 'string' ? value : value.toString();
+  }
+
+  static strictModeEnabled = false;
+  static decimalPlaces = 20;
+  static roundingMode = 0; // 0: round down, 1: round half-up
+
+  static roundToPrecision(x, dp) {
+    const factor = Math.pow(10, dp);
+    return Math.round(x * factor) / factor;
+  }
+
+  toNumber() {
+    const num = Number(this._value);
+    if (BigNumber.strictModeEnabled && !BigNumber._isConversionPrecise(this._value, num)) {
+      throw new Error('[BigNumber] Imprecise conversion');
+    }
+    return num;
+  }
+
+  add(y) {
+    return new BigNumber(this.toNumber() + new BigNumber(y).toNumber());
+  }
+
+  subtract(y) {
+    return new BigNumber(this.toNumber() - new BigNumber(y).toNumber());
+  }
+
+  multiply(y) {
+    return new BigNumber(this.toNumber() * new BigNumber(y).toNumber());
+  }
+
+  divide(y) {
+    const result = this.toNumber() / new BigNumber(y).toNumber();
+    return new BigNumber(BigNumber.roundToPrecision(result, BigNumber.decimalPlaces));
+  }
+
+  isEqualTo(y) {
+    return this.toNumber() === new BigNumber(y).toNumber();
+  }
+
+  isGreaterThan(y) {
+    return this.toNumber() > new BigNumber(y).toNumber();
+  }
+
+  squareRoot() {
+    const sqrtResult = Math.sqrt(this.toNumber());
+    return new BigNumber(BigNumber.roundToPrecision(sqrtResult, BigNumber.decimalPlaces));
+  }
+
+  power(exp) {
+    const powerResult = Math.pow(this.toNumber(), exp);
+    return new BigNumber(BigNumber.roundToPrecision(powerResult, BigNumber.decimalPlaces));
+  }
+
+  toFixedFormat(dp) {
+    return this.toNumber().toFixed(dp);
+  }
+
+  toExponentialFormat(dp) {
+    return this.toNumber().toExponential(dp);
+  }
+
+  toPrecisionFormat(dp) {
+    return this.toNumber().toPrecision(dp);
+  }
+
+  get coefficient() {
+    return Array.from(this._value.replace('.', '')).map(digit => parseInt(digit, 10));
+  }
+
+  get exponent() {
+    return this._value.includes('.') ? this._value.indexOf('.') - 1 : this._value.length - 1;
+  }
+
+  get sign() {
+    return this._value.startsWith('-') ? -1 : 1;
+  }
+
+  static _isConversionPrecise(initialValue, convertedValue) {
+    const tolerance = 1e-15;
+    return Math.abs(Number(initialValue) - convertedValue) < tolerance;
+  }
+}
+
+module.exports = BigNumber;
+```

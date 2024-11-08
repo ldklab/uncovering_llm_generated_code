@@ -1,0 +1,43 @@
+The provided Node.js code defines a function to set the `Symbol.toStringTag` property on a given object, which affects the result of the `Object.prototype.toString` method when called on that object. This is useful for customizing the string description of objects. The module checks if the environment supports `Symbol.toStringTag`. If not, it does nothing. If it does, the following steps are performed:
+
+1. It checks if an existing `toStringTag` property exists on the object and if it should be forcibly overridden (`overrideIfSet`).
+2. If the property should be set or overridden, and if `Object.defineProperty` is available, it uses this method to define the property with specific configuration options: non-enumerable, non-writable, and configurable.
+3. If `Object.defineProperty` is not available, it directly assigns the value to the `toStringTag` property of the object.
+
+Here is a possible rewrite of this code:
+
+```javascript
+'use strict';
+
+const GetIntrinsic = require('get-intrinsic');
+
+const $defineProperty = GetIntrinsic('%Object.defineProperty%', true);
+
+const hasToStringTag = require('has-tostringtag/shams')();
+const { hasOwnProperty: hasOwn } = Object.prototype;
+
+const toStringTag = hasToStringTag ? Symbol.toStringTag : null;
+
+/**
+ * Function to set the Symbol.toStringTag property on an object.
+ * @param {object} object - The target object.
+ * @param {string} value - The value to set for Symbol.toStringTag.
+ * @param {object} [options] - Options object.
+ * @param {boolean} [options.force] - Whether to force override existing property.
+ */
+module.exports = function setToStringTag(object, value, options = {}) {
+  const overrideIfSet = options.force;
+  if (toStringTag && (overrideIfSet || !hasOwn.call(object, toStringTag))) {
+    if ($defineProperty) {
+      $defineProperty(object, toStringTag, {
+        configurable: true,
+        enumerable: false,
+        value: value,
+        writable: false
+      });
+    } else {
+      object[toStringTag] = value;
+    }
+  }
+};
+```

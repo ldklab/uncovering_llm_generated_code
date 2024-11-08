@@ -1,0 +1,81 @@
+The provided Node.js code defines a function `onExit` to handle process exit events, including signals. The `onExit` function registers a callback for when the process exits, either normally or via signals like `SIGINT` or `SIGTERM`. It ensures the callback is only called once and optionally allows the handler to always execute last by overriding `process.emit` temporarily.
+
+Here's a breakdown of its functionality:
+1. **Signal List**: The script defines a list of signals that are commonly used to terminate processes, such as `SIGINT`, `SIGTERM`, etc.
+2. **Exit Handling**: It registers a handler for the `exit` event and adds listeners for each signal in the list.
+3. **Single Execution**: A flag `fired` ensures the callback only executes once to prevent duplicate handling.
+4. **Callback Execution**: When a signal is received, the script calls the `exitHandler`, passing the signal. If the callback returns `true`, the process does not exit.
+5. **Optional Behavior**: If `options.alwaysLast` is set, it modifies `process.emit` to ensure that the exit handler is always executed last.
+6. **Cleanup**: Returning a function `remove` allows you to unregister the exit and signal handlers.
+7. **Browser Compatibility**: A no-op version of `onExit` is exported for browser environments.
+
+Below is a possible rewrite of the Node.js code:
+
+```javascript
+// signal-exit.js
+const signals = [
+  'SIGINT', 'SIGTERM', 'SIGQUIT', 'SIGHUP', 'SIGBREAK', 
+  'SIGUSR1', 'SIGUSR2', 'SIGPIPE'
+];
+const originalEmit = process.emit;
+
+export function onExit(callback, options = {}) {
+  if (!process || typeof process.emit !== 'function') {
+    return () => {}; // For environments without a proper process object
+  }
+
+  let hasExited = false;
+  let trackedSignals = new Set();
+  
+  const exitHandler = (exitCode, signal) => {
+    if (hasExited) return;
+    hasExited = true;
+
+    if (!trackedSignals.has(signal) || callback(exitCode, signal) !== true) {
+      process.exit(exitCode);
+    }
+  };
+
+  const handleSignal = (signal) => {
+    trackedSignals.add(signal);
+    exitHandler(null, signal);
+  };
+
+  process.on('exit', exitHandler);
+
+  signals.forEach(signal => {
+    try {
+      process.on(signal, handleSignal);
+    } catch (error) {
+      // Catch and ignore errors for signals unsupported on the current platform
+    }
+  });
+
+  if (options.alwaysLast) {
+    process.emit = function (...args) {
+      const eventType = args[0];
+      if (eventType === 'exit') {
+        process.removeListener('exit', exitHandler);
+        const eventResult = originalEmit.apply(process, args);
+        process.on('exit', exitHandler);
+        return eventResult;
+      }
+      return originalEmit.apply(process, args);
+    };
+  }
+
+  return function cleanup() {
+    if (hasExited) return;
+    process.removeListener('exit', exitHandler);
+    signals.forEach(signal => process.removeListener(signal, handleSignal));
+    if (options.alwaysLast) {
+      process.emit = originalEmit;
+    }
+  };
+}
+
+// browser.js (No operation shim for browser)
+export function onExit(callback, options = {}) {
+  return () => {}; // No-op for situations where process handling doesn't apply
+}
+```

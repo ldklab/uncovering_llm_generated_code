@@ -1,0 +1,94 @@
+The Node.js code defines a `Walker` class that extends the `EventEmitter` class to traverse a directory tree asynchronously and emit events based on file system entries encountered. The main functionality includes:
+
+1. Initialization: The `Walker` class is initialized with a root directory path and it supports an optional directory filtering function set using `filterDir()`.
+
+2. Traversal: The `walk()` method begins the recursive file system traversal, starting from the root directory. The `_walk(dir)` method handles the actual directory reading and entry processing using `fs.readdir`.
+
+3. Event Emission: As entries (files, directories, and other file types) are encountered, the class emits specific events like 'entry', 'dir', 'file', 'symlink', etc., along with their full paths and stats.
+
+4. Error Handling: Errors encountered during directory reading or file stat checking emit an 'error' event.
+
+5. End Event: Once all entries in the root directory have been processed, the 'end' event is emitted.
+
+6. Factory Function: `WalkerFactory` serves as a convenience function to create a Walker instance and automatically start directory walking in the next event loop tick.
+
+Here is the rewritten code with the same functionality:
+
+```javascript
+const fs = require('fs');
+const path = require('path');
+const EventEmitter = require('events');
+
+class DirectoryWalker extends EventEmitter {
+  constructor(startPath) {
+    super();
+    this.startPath = startPath;
+    this.filterFunction = null;
+  }
+
+  setFilter(filterFunction) {
+    this.filterFunction = filterFunction;
+    return this;
+  }
+
+  start() {
+    this.traverse(this.startPath);
+    return this;
+  }
+
+  traverse(currentPath) {
+    fs.readdir(currentPath, { withFileTypes: true }, (error, entries) => {
+      if (error) {
+        this.emit('error', error, currentPath);
+        return;
+      }
+
+      entries.forEach(entry => {
+        const fullPath = path.join(currentPath, entry.name);
+        fs.stat(fullPath, (error, stats) => {
+          if (error) {
+            this.emit('error', error, fullPath);
+            return;
+          }
+
+          this.emit('entry', fullPath, stats);
+
+          if (stats.isDirectory()) {
+            if (this.filterFunction && !this.filterFunction(fullPath, stats)) {
+              return;
+            }
+            this.emit('directory', fullPath, stats);
+            this.traverse(fullPath);
+          } else if (stats.isFile()) {
+            this.emit('file', fullPath, stats);
+          } else if (stats.isSymbolicLink()) {
+            this.emit('symlink', fullPath, stats);
+          } else if (stats.isBlockDevice()) {
+            this.emit('blockDevice', fullPath, stats);
+          } else if (stats.isFIFO()) {
+            this.emit('fifo', fullPath, stats);
+          } else if (stats.isSocket()) {
+            this.emit('socket', fullPath, stats);
+          } else if (stats.isCharacterDevice()) {
+            this.emit('characterDevice', fullPath, stats);
+          }
+        });
+      });
+
+      process.nextTick(() => {
+        if (currentPath === this.startPath) {
+          this.emit('completed');
+        }
+      });
+    });
+  }
+}
+
+function createDirectoryWalker(startPath) {
+  const walker = new DirectoryWalker(startPath);
+  process.nextTick(() => walker.start());
+  return walker;
+}
+
+module.exports = createDirectoryWalker;
+```

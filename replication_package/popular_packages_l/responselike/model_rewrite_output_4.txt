@@ -1,0 +1,51 @@
+The Node.js code defines a custom `Response` class that extends the `PassThrough` stream from Node.js' `stream` module. This class is designed to simulate a response-like object with a streaming body, similar to an HTTP response.
+
+### Key Functionality:
+1. **Constructor Parameters:**
+   - `statusCode`: The HTTP status code of the response.
+   - `headers`: An object representing the headers of the response.
+   - `body`: The content of the response, which should be a Buffer.
+   - `url`: The URL from which the response was fetched.
+
+2. **Headers Handling:**
+   - The headers are normalized to lowercase keys for consistency, which is common practice in HTTP to ensure key case insensitivity.
+
+3. **Body Streaming:**
+   - The provided `body`, expected to be a Buffer, is written to the stream and immediately ended on the next tick of the event loop using `process.nextTick()` method.
+
+4. **PassThrough Stream:**
+   - By using `PassThrough`, the class inherits the ability to stream data, allowing the response body to be piped to writable streams, such as `process.stdout`.
+
+Below is the rewritten code:
+
+```javascript
+const { PassThrough } = require('stream');
+
+class Response extends PassThrough {
+  constructor(statusCode, headers, body, url) {
+    super();
+
+    this.statusCode = statusCode;
+    this.headers = Object.fromEntries(Object.entries(headers).map(([key, value]) => [key.toLowerCase(), value]));
+    this.body = body;
+    this.url = url;
+
+    process.nextTick(() => {
+      this.end(body);
+    });
+  }
+}
+
+module.exports = Response;
+
+// Usage example
+const responseExample = new Response(200, { foo: 'bar' }, Buffer.from('Hi!'), 'https://example.com');
+
+console.log(responseExample.statusCode); // 200
+console.log(responseExample.headers); // { foo: 'bar' }
+console.log(responseExample.body); // <Buffer 48 69 21>
+console.log(responseExample.url); // 'https://example.com'
+
+responseExample.pipe(process.stdout); // Hi!
+```
+

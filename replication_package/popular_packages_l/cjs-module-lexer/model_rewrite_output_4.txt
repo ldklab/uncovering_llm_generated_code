@@ -1,0 +1,118 @@
+The given Node.js code defines a `CJSLexer` class that is used to parse JavaScript written in CommonJS module format to detect and extract exports and re-exports. Here's the functionality broken down:
+
+1. **Class and Method Overview**:
+   - `CJSLexer` is a class that performs lexical analysis to identify exported entities from CommonJS modules.
+   - `reset()` clears any previous parsing results, setting up `exports`, `reexports`, and `tokens` as empty sets or arrays.
+   - `parse(code)` is the main method that takes JavaScript code in string form, resets any prior state, tokenizes the code using `tokenize()`, detects exports and re-exports using `detectExportsAndReexports()`, and returns an object containing exports and re-exports as arrays.
+
+2. **Tokenization**:
+   - The `tokenize(code)` method is intended to convert the source code into identifiable tokens based on patterns like identifiers, string literals, `require` calls, `module.exports`, `exports`, and `Object.defineProperty`. Though detailed implementation is not provided, it suggests using regex for basic token detection.
+
+3. **Export and Re-export Detection**:
+   - The `detectExportsAndReexports()` method processes the tokens to figure out what is being exported or re-exported.
+   - It detects when `module.exports` is assigned and checks if it's followed by a `require` call to capture re-exports.
+   - It handles identifying exports via `exports.<name>` and `Object.defineProperty`.
+
+4. **Helper Functions**:
+   - `extractExportsFromObject(token)`: Adds export object property names to the `exports` list.
+   - `extractIdentifierAfter(dotExportsToken)`: Intends to retrieve the identifier specified after `exports.`.
+   - `extractKeyFromDefine(defineToken)`: Extracts the key from `Object.defineProperty`.
+
+5. **Module Export**:
+   - The module exports a single `parse` function that instantiates a `CJSLexer` instance and uses it to parse the provided code.
+
+Here’s a possible code rewrite:
+
+```javascript
+// cjs-module-lexer.js
+
+class CJSLexer {
+  constructor() {
+    this.reset();
+  }
+
+  reset() {
+    this.exports = new Set();
+    this.reexports = new Set();
+    this.tokens = [];
+  }
+
+  parse(code) {
+    this.reset();
+    this.tokenize(code);
+    this.detectExportsAndReexports();
+
+    return {
+      exports: Array.from(this.exports),
+      reexports: Array.from(this.reexports)
+    };
+  }
+
+  tokenize(code) {
+    const patterns = {
+      identifier: /[a-zA-Z_$][0-9a-zA-Z_$]*/,
+      stringLiteral: /(["'])(?:(?=(\\?))\2.)*?\1/,
+      requireCall: /require\s*\(\s*(['"`])([^'"`]+)\1\s*\)/,
+      moduleExports: /module\s*\.\s*exports/,
+      dotExports: /exports\s*\.\s*/,
+      defineProperty: /Object\s*\.\s*defineProperty/
+    };
+    // Pretend code is tokenized into array this.tokens for simplicity.
+  }
+
+  detectExportsAndReexports() {
+    let inModuleExports = false;
+    let lastRequire = null;
+
+    this.tokens.forEach(token => {
+      if (token.match(/module\s*\.\s*exports\s*=/)) {
+        inModuleExports = true;
+        if (lastRequire) {
+          this.reexports.add(lastRequire);
+        }
+      } else if (inModuleExports && token.type === 'objectLiteral') {
+        this.extractExportsFromObject(token);
+        inModuleExports = false;
+      } else if (token.type === 'requireCall') {
+        lastRequire = token.modulePath;
+      } else if (token.match(/exports\s*\.\s*/)) {
+        const exportName = this.extractIdentifierAfter(token);
+        if (exportName) {
+          this.exports.add(exportName);
+        }
+      } else if (token.match(/Object\s*\.\s*defineProperty/)) {
+        const exportName = this.extractKeyFromDefine(token);
+        if (exportName) {
+          this.exports.add(exportName);
+        }
+      }
+    });
+  }
+
+  extractExportsFromObject(token) {
+    token.properties.forEach(prop => {
+      if (prop.type === 'property' && prop.key.type === 'identifier') {
+        this.exports.add(prop.key.name);
+      }
+    });
+  }
+
+  extractIdentifierAfter(dotExportsToken) {
+    // Logic to find identifier after 'exports.'
+  }
+
+  extractKeyFromDefine(defineToken) {
+    const match = defineToken.match(/,\s*['"`]([^'"`]+)['"`]\s*,/);
+    return match ? match[1] : null;
+  }
+}
+
+function parse(code) {
+  const lexer = new CJSLexer();
+  return lexer.parse(code);
+}
+
+module.exports = {
+  parse
+};
+```

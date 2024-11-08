@@ -1,0 +1,61 @@
+The `fast-levenshtein` Node.js package provides a JavaScript implementation of the Levenshtein distance algorithm, which calculates the number of single-character edits (insertions, deletions, or substitutions) required to change one word into another. This package supports both Node.js and browser environments and includes functionality for locale-sensitive string comparisons using `Intl.Collator`.
+
+### Key Features:
+1. **Node.js and Browser Support**: The library can be used in both server-side (Node.js) and client-side (browser) JavaScript environments.
+2. **Locale-Sensitive Comparisons**: The package can perform locale-sensitive comparisons, which is useful for accurately calculating distances between strings in different languages or with different character sets.
+3. **Underlying Implementation**: It leverages the `fastest-levenshtein` package, which offers optimized performance.
+4. **Comprehensive Testing**: The package includes a test suite to ensure accuracy and reliability.
+
+### Usage:
+- **Installation**: You can install the package via npm or access it through a CDN for browser environments.
+- **Default Usage**: By calling `levenshtein.get(str1, str2)`, where `str1` and `str2` are any two strings, you can get the Levenshtein distance between them.
+- **Locale-Sensitive Usage**: By passing an options object `{ useCollator: true }` as the third argument to `levenshtein.get`, you enable locale-sensitive comparison.
+
+### Code Implementation:
+
+```javascript
+const Intl = require('intl'); // Ensure Intl is available
+
+class FastLevenshtein {
+  static get(str1, str2, options = {}) {
+    const useCollator = options.useCollator || false;
+    const collator = new Intl.Collator(undefined, { sensitivity: 'base' });
+
+    if (useCollator) {
+      str1 = str1.normalize('NFC');
+      str2 = str2.normalize('NFC');
+    }
+
+    const len1 = str1.length;
+    const len2 = str2.length;
+    const matrix = [];
+
+    for (let i = 0; i <= len1; i++) {
+      matrix[i] = [i];
+    }
+    for (let j = 0; j <= len2; j++) {
+      matrix[0][j] = j;
+    }
+    for (let i = 1; i <= len1; i++) {
+      for (let j = 1; j <= len2; j++) {
+        const cost = useCollator
+          ? collator.compare(str1[i - 1], str2[j - 1])
+          : str1[i - 1] === str2[j - 1]
+          ? 0
+          : 1;
+
+        matrix[i][j] = Math.min(
+          matrix[i - 1][j] + 1,
+          matrix[i][j - 1] + 1,
+          matrix[i - 1][j - 1] + cost
+        );
+      }
+    }
+    return matrix[len1][len2];
+  }
+}
+
+module.exports = FastLevenshtein;
+```
+
+This code defines a `FastLevenshtein` class that provides a static `get` method to calculate the Levenshtein distance between two strings. It supports both basic and locale-sensitive string comparison and normalization using `Intl.Collator`. The code constructs a 2D array to track the minimum edit distances between substrings and employs a dynamic programming approach for efficient computation.

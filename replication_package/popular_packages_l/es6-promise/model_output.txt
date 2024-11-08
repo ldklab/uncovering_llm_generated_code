@@ -1,0 +1,111 @@
+The functionality described in the README.md is for a Node.js package called `es6-promise`, which is a polyfill for the ES6 Promise. Here's a breakdown of the features and how it works:
+
+1. **Polyfill for ES6 Promise:** The package provides a polyfill that mimics the behavior of native ES6 Promises for environments where they are not available.
+
+2. **Installation and Usage:**
+   - You can install it via `yarn add es6-promise` or `npm install es6-promise`.
+   - In Node.js, you access the Promise via `var Promise = require('es6-promise').Promise;`.
+
+3. **Cross-Environment Support:** 
+   - For browsers, scripts are available via a CDN to include in HTML files to replace missing or broken Promises globally.
+   - The auto-polyfill approach provides a way to include this in the environment to automatically replace or provide Promises without manually importing them.
+
+4. **Reserved Keywords in Older Browsers:** 
+   - In environments like IE<9, `catch` and `finally` are reserved keywords and accessing these methods should be done using bracket notation like `promise['catch'](...)`.
+
+5. **Auto Polyfill:**
+   - Calls to `require('es6-promise').polyfill()` or `require('es6-promise/auto')` replace the global Promise if it's missing or broken.
+
+6. **Building and Testing:**
+   - The package includes scripts for building, running, and testing the build process using PhantomJS.
+
+Below is an implementation of this functionality in a single markdown code block:
+
+```js
+// es6-promise.js
+
+(function (global) {
+  function noop() {}
+
+  function resolvePromise(promise, resolvingFunction) {
+    // simulate resolution of a Promise
+    try {
+      let result = resolvingFunction();
+      resolve(promise, result);
+    } catch (error) {
+      reject(promise, error);
+    }
+  }
+
+  function resolve(promise, value) {
+    if (promise.state !== 'pending') return;
+    promise.state = 'fulfilled';
+    promise.value = value;
+  }
+  
+  function reject(promise, reason) {
+    if (promise.state !== 'pending') return;
+    promise.state = 'rejected';
+    promise.value = reason;
+  }
+  
+  function Promise(executor) {
+    this.state = 'pending';
+    this.value = undefined;
+    
+    const self = this;
+    
+    function resolve(value) {
+      resolvePromise(self, function () { return value; });
+    }
+    
+    function reject(reason) {
+      resolvePromise(self, function () { throw reason; });
+    }
+    
+    executor(resolve, reject);
+  }
+
+  Promise.prototype.then = function(onFulfilled, onRejected) {
+    // further chaining logic
+    var self = this;
+    return new Promise(function (resolve, reject) {
+      if (self.state === 'fulfilled') {
+        resolve(onFulfilled(self.value));
+      } else if (self.state === 'rejected') {
+        reject(onRejected(self.value));
+      }
+    });
+  };
+
+  Promise.prototype['catch'] = function(onRejected) {
+    return this.then(null, onRejected);
+  };
+
+  Promise.prototype['finally'] = function(onFinally) {
+    return this.then(
+      value => Promise.resolve(onFinally()).then(() => value),
+      reason => Promise.resolve(onFinally()).then(() => { throw reason; })
+    );
+  };
+
+  Promise.polyfill = function() {
+    if (!global.Promise) {
+      global.Promise = Promise;
+    }
+  };
+
+  // Auto-polyfill if required
+  if (typeof window !== 'undefined') {
+    Promise.polyfill();
+  }
+  
+  // Exporting the Promise library
+  if (typeof module !== 'undefined') {
+    module.exports = { Promise };
+  }
+
+}(typeof window !== 'undefined' ? window : global));
+```
+
+This code provides basic functionality similar to ES6 Promises allowing for then, catch, and finally operations, as well as auto-polyfilling for environments without native Promise support.

@@ -1,0 +1,114 @@
+The provided Node.js code is a custom PostCSS plugin named `cssnano`, which is used for CSS optimization. This plugin can resolve configuration settings from different sources, handle plugins defined in various forms, and process the CSS accordingly. Here's a breakdown of its functionality:
+
+1. **Module Exports and Imports**: The code imports necessary modules like `path`, `postcss`, `cosmiconfig`, and `is-resolvable`. It defines a default export using `exports.default`.
+
+2. **Initialization of Plugins**: The function `initializePlugin` is responsible for initializing and executing each plugin. It checks if a plugin is an array (with processor and options), then applies the processor function to CSS, unless the `exclude` option is true.
+
+3. **Preset Resolution**: The function `resolvePreset` resolves what set of plugins to use based on a preset configuration. It supports presets defined as strings ("default"), arrays, functions, or directly as a preset object with plugins.
+
+4. **Configuration Resolution**: The `resolveConfig` function determines the configuration settings for `cssnano`. It first checks provided options and then looks for an external configuration using `cosmiconfig`. It falls back to a "default" preset if no configuration is found.
+
+5. **PostCSS Plugin Declaration**: The plugin is defined using `postcss.plugin`, taking care of processing CSS with the resolved configuration. It processes each plugin sequentially through a promise chain within the plugin handler.
+
+Here is the rewritten code based on this explanation:
+
+```javascript
+"use strict";
+
+const path = require("path");
+const postcss = require("postcss");
+const { cosmiconfig } = require("cosmiconfig");
+const isResolvable = require("is-resolvable");
+
+const cssnano = 'cssnano';
+
+function initializePlugin(plugin, css, result) {
+  if (Array.isArray(plugin)) {
+    const [processor, options] = plugin;
+    const opts = options || {};
+
+    if ((typeof opts === 'object' && !opts.exclude) || opts === true) {
+      return Promise.resolve(processor(opts)(css, result));
+    }
+  } else {
+    return Promise.resolve(plugin()(css, result));
+  }
+
+  return Promise.resolve();
+}
+
+function resolvePreset(preset) {
+  let func, options = {};
+
+  if (Array.isArray(preset)) {
+    [func, options] = preset;
+  } else {
+    func = preset;
+  }
+
+  if (preset.plugins) {
+    return Promise.resolve(preset.plugins);
+  }
+
+  if (func === 'default') {
+    return Promise.resolve(require("cssnano-preset-default")(options).plugins);
+  }
+
+  if (typeof func === 'function') {
+    return Promise.resolve(func(options).plugins);
+  }
+
+  if (isResolvable(func)) {
+    return Promise.resolve(require(func)(options).plugins);
+  }
+
+  const sugar = `cssnano-preset-${func}`;
+  if (isResolvable(sugar)) {
+    return Promise.resolve(require(sugar)(options).plugins);
+  }
+
+  throw new Error(`Cannot load preset "${func}". Please check your configuration for errors and try again.`);
+}
+
+function resolveConfig(css, result, options) {
+  if (options.preset) return resolvePreset(options.preset);
+  
+  const inputFile = css.source && css.source.input && css.source.input.file;
+  const searchPath = inputFile ? path.dirname(inputFile) : process.cwd();
+  const configPath = options.configFile ? path.resolve(process.cwd(), options.configFile) : null;
+
+  const configExplorer = cosmiconfig(cssnano);
+  const configSearch = configPath ? configExplorer.load(configPath) : configExplorer.search(searchPath);
+
+  return configSearch.then(config => {
+    if (!config) return resolvePreset('default');
+    return resolvePreset(config.config.preset || config.config);
+  });
+}
+
+module.exports = postcss.plugin(cssnano, (options = {}) => {
+  if (Array.isArray(options.plugins)) {
+    if (!options.preset || !options.preset.plugins) {
+      options.preset = { plugins: [] };
+    }
+
+    options.plugins.forEach(plugin => {
+      if (Array.isArray(plugin)) {
+        const [pluginDef, opts = {}] = plugin;
+        const pluginImport = typeof pluginDef === 'string' && isResolvable(pluginDef) ? require(pluginDef) : pluginDef;
+        options.preset.plugins.push([pluginImport, opts]);
+      } else {
+        const pluginImport = typeof plugin === 'string' && isResolvable(plugin) ? require(plugin) : plugin;
+        options.preset.plugins.push([pluginImport, {}]);
+      }
+    });
+  }
+
+  return (css, result) => {
+    return resolveConfig(css, result, options).then(plugins => {
+      return plugins.reduce((promise, plugin) =>
+        promise.then(() => initializePlugin(plugin, css, result)), Promise.resolve());
+    });
+  };
+});
+```

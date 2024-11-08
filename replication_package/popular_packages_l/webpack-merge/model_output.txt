@@ -1,0 +1,100 @@
+The `webpack-merge` package provides a powerful toolset to merge and manage JavaScript configuration objects, primarily aimed at simplifying Webpack configuration merging but applicable in other domains as well. Here's a breakdown of its functionality:
+
+1. **Merge Functionality**: The core feature provided is the `merge` function, which combines two or more configuration objects into one. It concatenates arrays and merges objects. If functions are encountered in the merging process, they are executed, and the results are processed and wrapped again as functions.
+
+2. **Prioritization**: During the merge, keys from objects provided later in the argument list will take precedence over earlier ones, allowing for easy customization and overriding of specific configurations.
+
+3. **Customization Hooks**: Through `mergeWithCustomize`, users can define custom strategies for merging different types of fields (e.g., arrays, objects). This is managed via `customizeArray` and `customizeObject` functions, which allow field-level customization during the merge process.
+
+4. **Advanced Strategies**: `unique` method ensures only unique instances of elements are preserved in arrays, particularly useful for ensuring no duplicate plugins in Webpack configurations.
+
+5. **Rule-based Merging**: `mergeWithRules` function allows for more granular and advanced merging strategies, particularly aimed at handling complex merges like loaders within Webpack configurations, using a rule-based approach that decides how to merge based on field patterns.
+
+6. **TypeScript Support**: The package natively supports TypeScript, allowing type-safe merging operations.
+
+The following code implements this functionality:
+
+```javascript
+const _ = require('lodash');
+
+function executeFuncs(conf) {
+  return typeof conf === 'function' ? conf() : conf;
+}
+
+function mergeWithCustomize(customizers = {}) {
+  return function merge(...configurations) {
+    const resolvedConfig = configurations.map(executeFuncs).flat();
+    
+    return resolvedConfig.reduce((accumulator, currentConfig) => {
+      return deepMerge(accumulator, currentConfig, customizers);
+    }, {});
+  };
+}
+
+function deepMerge(target, source, customizers) {
+  if (Array.isArray(target) && Array.isArray(source)) {
+    return customizeArray(target, source, customizers);
+  } else if (_.isObject(target) && _.isObject(source)) {
+    return customizeObject(target, source, customizers);
+  }
+  return source;
+}
+
+function customizeArray(targetArray, sourceArray, customizers) {
+  if (customizers && customizers.customizeArray) {
+    const custom = customizers.customizeArray(targetArray, sourceArray);
+    if (custom !== undefined) return custom;
+  }
+  return [...targetArray, ...sourceArray];
+}
+
+function customizeObject(targetObject, sourceObject, customizers) {
+  if (customizers && customizers.customizeObject) {
+    const custom = customizers.customizeObject(targetObject, sourceObject);
+    if (custom !== undefined) return custom;
+  }
+  return _.mergeWith({}, targetObject, sourceObject, (objValue, srcValue) =>
+    deepMerge(objValue, srcValue, customizers)
+  );
+}
+
+function unique(field, fields, matcher) {
+  return function uniqueCustomizer(targetArray, sourceArray) {
+    const set = new Set(
+      targetArray.map(item => fields.map(f => matcher(item[f])))
+    );
+    return [
+      ...targetArray,
+      ...sourceArray.filter(item => !set.has(fields.map(f => matcher(item[f]))))
+    ];
+  };
+}
+
+function mergeWithRules(rules) {
+  return function (...configs) {
+    return configs.reduce((acc, conf) =>
+      _.mergeWith(acc, conf, (objValue, srcValue, key, obj, src, stack) => {
+        if (rules[key] && typeof rules[key] === 'object' && stack.size) {
+          if (rules[key].match === 'match') {
+            return deepMerge(objValue, srcValue, {});
+          }
+          if (rules[key].options === 'replace') {
+            return srcValue;
+          }
+        }
+        return undefined;
+      }),
+    {},
+    );
+  };
+}
+
+module.exports = {
+  merge: mergeWithCustomize({}),
+  mergeWithCustomize,
+  mergeWithRules,
+  unique,
+};
+```
+
+This implementation provides the described functionality for merging configurations with customizable and advanced strategies in JavaScript environments.

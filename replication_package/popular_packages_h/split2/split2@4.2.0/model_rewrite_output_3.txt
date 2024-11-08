@@ -1,0 +1,127 @@
+The provided Node.js code defines a specialized transform stream, built using the Node.js `stream` module, intended to read an incoming data stream of chunks, split the data into lines, process each line via a mapping function, and then emit the processed lines individually. Here's a breakdown of its functionality:
+
+1. **Initialization and Symbols**: It introduces `Transform` from `stream` and `StringDecoder` from `string_decoder`. Two symbols, `kLast` and `kDecoder`, are used to store the last partial line fragment and the string decoder respectively.
+
+2. **Transform Function**: 
+   - Processes each incoming chunk of data.
+   - If the line buffer overflows, it skips contents until the next new line.
+   - Splits the data based on a matcher (typically a newline character).
+   - Maps each split line through a user-provided mapper function.
+   - Handles errors if mapping fails.
+   - Manages overflow by comparing the last line fragment's length with a `maxLength`.
+   
+3. **Flush Function**: Invoked at the end of the stream to process any remaining buffered data that hasn’t been emitted yet.
+
+4. **Push Function**: Emits non-undefined values into the output of the stream.
+
+5. **Noop Function**: Defaults to returning the input, used when no mapper is provided.
+
+6. **Split Function**: 
+   - Configures the transform stream with custom line splitting and mapping logic.
+   - Accepts a matcher for line splits, a mapper for transforming each line, and options for stream behavior.
+   - Handles cases where only some of these arguments are supplied, using defaults for others.
+
+7. **Transforms Handling Logic**:
+   - Ensures automatic destruction and error management for the stream.
+   - Provides a workaround for specific Node.js v12 bugs by manipulating the writable state in `_destroy`.
+
+8. **Export**: The `split` function is exported as a module, for use in other parts of a Node.js application.
+
+Here's a possible rewrite of the given Node.js code:
+
+```javascript
+'use strict';
+
+const { Transform } = require('stream');
+const { StringDecoder } = require('string_decoder');
+
+const kLast = Symbol('last');
+const kDecoder = Symbol('decoder');
+
+function transform(chunk, enc, cb) {
+  let list;
+  if (this.overflow) {
+    const buffer = this[kDecoder].write(chunk);
+    list = buffer.split(this.matcher);
+
+    if (list.length === 1) return cb();
+
+    list.shift();
+    this.overflow = false;
+  } else {
+    this[kLast] += this[kDecoder].write(chunk);
+    list = this[kLast].split(this.matcher);
+  }
+
+  this[kLast] = list.pop();
+
+  for (const line of list) {
+    try {
+      this.push(this.mapper(line));
+    } catch (error) {
+      return cb(error);
+    }
+  }
+
+  this.overflow = this[kLast].length > this.maxLength;
+  if (this.overflow && !this.skipOverflow) {
+    return cb(new Error('maximum buffer reached'));
+  }
+
+  cb();
+}
+
+function flush(cb) {
+  this[kLast] += this[kDecoder].end();
+
+  if (this[kLast]) {
+    try {
+      this.push(this.mapper(this[kLast]));
+    } catch (error) {
+      return cb(error);
+    }
+  }
+
+  cb();
+}
+
+function noop(data) {
+  return data;
+}
+
+function split(matcher = /\r?\n/, mapper = noop, options = {}) {
+  if (typeof matcher === 'function') {
+    [matcher, mapper] = [/\r?\n/, matcher];
+  } else if (typeof matcher === 'object' && !(matcher instanceof RegExp) && !matcher[Symbol.split]) {
+    [matcher, options] = [/\r?\n/, matcher];
+  }
+
+  if (typeof mapper === 'object') {
+    [mapper, options] = [noop, mapper];
+  }
+
+  const stream = new Transform({
+    ...options,
+    autoDestroy: true,
+    transform,
+    flush,
+    readableObjectMode: true
+  });
+
+  stream[kLast] = '';
+  stream[kDecoder] = new StringDecoder('utf8');
+  stream.matcher = matcher;
+  stream.mapper = mapper;
+  stream.maxLength = options.maxLength;
+  stream.skipOverflow = options.skipOverflow || false;
+  stream.overflow = false;
+  stream._destroy = function (err, cb) {
+    this._writableState.errorEmitted = false;
+    cb(err);
+  };
+
+  return stream;
+}
+
+module.exports = split;
+```

@@ -1,0 +1,71 @@
+The provided Node.js code defines a self-invoking function to create a module named `urljoin`. This module is a function that normalizes and joins parts of a URL. The function works by:
+
+1. **Checking the Environment**: It first checks if it's running in a Node.js environment with CommonJS module support, an AMD environment, or a browser/global environment. It exports the `urljoin` function accordingly.
+
+2. **Normalizing the URL**: The key part of the implementation is the `normalize` function, which processes an array of URL components:
+   - **Protocol Handling**: Ensures proper handling of URL protocols, specifically checking for and properly formatting protocols (e.g., `http://`, `file:///`) at the start of URLs.
+   - **Slash Management**: Adjusts slashes '/' in URL components to ensure parts are correctly joined into a proper URL. It removes or adds slashes as necessary to avoid multiple consecutive slashes but ensures leading slashes where needed.
+   - **Query and Hashes**: Correctly formats query parameters by replacing misplaced slashes and ensuring that query parameters are separated properly.
+   
+3. **Usage of the Module**: The main return function takes either an array of strings or a list of string arguments, normalizes these components, and returns a properly joined URL string.
+
+Here is the rewritten code:
+
+```javascript
+(function (name, context, definition) {
+  if (typeof module !== 'undefined' && module.exports) {
+    module.exports = definition();
+  } else if (typeof define === 'function' && define.amd) {
+    define(definition);
+  } else {
+    context[name] = definition();
+  }
+})('urljoin', this, function () {
+
+  function normalizeUrl(parts) {
+    const normalizedParts = [];
+    if (parts.length === 0) return '';
+
+    if (typeof parts[0] !== 'string') {
+      throw new TypeError('Url must be a string. Received ' + parts[0]);
+    }
+
+    if (parts[0].match(/^[^/:]+:\/*$/) && parts.length > 1) {
+      const protocol = parts.shift();
+      parts[0] = protocol + parts[0];
+    }
+
+    parts[0] = parts[0].replace(/^([^/:]+):\/*/, (match, protocol) => protocol === 'file' ? 'file:///' : `${protocol}://`);
+
+    parts.forEach((component, index) => {
+      if (typeof component !== 'string') {
+        throw new TypeError('Url must be a string. Received ' + component);
+      }
+      if (component === '') return;
+
+      if (index > 0) {
+        component = component.replace(/^[\/]+/, '');
+      }
+      if (index < parts.length - 1) {
+        component = component.replace(/[\/]+$/, '');
+      } else {
+        component = component.replace(/[\/]+$/, '/');
+      }
+
+      normalizedParts.push(component);
+    });
+
+    let result = normalizedParts.join('/');
+    result = result.replace(/\/(\?|&|#[^!])/g, '$1');
+    
+    const [base, ...queries] = result.split('?');
+    return base + (queries.length > 0 ? '?' : '') + queries.join('&');
+  }
+
+  return function (...args) {
+    const inputParts = typeof args[0] === 'object' ? args[0] : args;
+    return normalizeUrl(inputParts);
+  };
+
+});
+```

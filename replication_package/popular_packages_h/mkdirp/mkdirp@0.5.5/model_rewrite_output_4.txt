@@ -1,0 +1,80 @@
+The Node.js code provided is a module that offers functionality to create directories recursively, similar to the `mkdir -p` command in UNIX. The module exports two main functions, `mkdirP` and its synchronous version, `mkdirP.sync`. Here's a breakdown of the functionality:
+
+1. **Parameter Handling**: The functions take a path `p` and optional options `opts`. The options can specify a `mode` (permissions) and a custom file system module `fs`.
+
+2. **Asynchronous Directory Creation (`mkdirP`)**:
+   - Attempts to create the directory at path `p` with the specified mode.
+   - If an `ENOENT` error is encountered, which indicates that part of the path doesn't exist, the function recursively attempts to ensure the parent directory exists before trying again.
+   - If another error occurs, it checks if `p` is already a directory and calls the callback function `cb` with either an error or success indication.
+
+3. **Synchronous Directory Creation (`mkdirP.sync`)**:
+   - Similar logic to the asynchronous version but uses synchronous methods (`mkdirSync`, `statSync`) to ensure each part of the directory path exists before proceeding.
+   - Handles `ENOENT` and other errors similarly, recursively ensuring parent directories exist.
+
+4. **Permission Handling**:
+   - Defaults to full permissions (`0777`) if no mode is provided.
+   - Utilizes Node.js's `fs` and `path` modules for filesystem operations and path resolution.
+
+Here is a possible rewrite of the code:
+
+```javascript
+const path = require('path');
+const fs = require('fs');
+
+const DEFAULT_MODE = 0o777;
+
+function mkdirP(directoryPath, opts = {}, callback = () => {}) {
+    if (typeof opts === 'function') {
+        callback = opts;
+        opts = {};
+    }
+
+    const { mode = DEFAULT_MODE, fs: xfs = fs } = opts;
+    const resolvedPath = path.resolve(directoryPath);
+    const createDir = (dirPath, cb) => {
+        xfs.mkdir(dirPath, mode, (err) => {
+            if (!err) return cb(null, dirPath);
+            if (err.code === 'ENOENT') {
+                createDir(path.dirname(dirPath), (err) => {
+                    if (err) return cb(err);
+                    createDir(dirPath, cb);
+                });
+            } else {
+                xfs.stat(dirPath, (err2, stat) => {
+                    if (err2 || !stat.isDirectory()) return cb(err);
+                    cb(null, dirPath);
+                });
+            }
+        });
+    };
+
+    createDir(resolvedPath, callback);
+}
+
+mkdirP.sync = function (directoryPath, opts = {}) {
+    const { mode = DEFAULT_MODE, fs: xfs = fs } = opts;
+    const resolvedPath = path.resolve(directoryPath);
+
+    const createSyncDir = (dirPath) => {
+        try {
+            xfs.mkdirSync(dirPath, mode);
+            return dirPath;
+        } catch (err) {
+            if (err.code === 'ENOENT') {
+                createSyncDir(path.dirname(dirPath));
+                return createSyncDir(dirPath);
+            }
+            try {
+                if (!xfs.statSync(dirPath).isDirectory()) throw err;
+            } catch (err1) {
+                throw err;
+            }
+        }
+        return dirPath;
+    };
+
+    return createSyncDir(resolvedPath);
+};
+
+module.exports = mkdirP;
+```

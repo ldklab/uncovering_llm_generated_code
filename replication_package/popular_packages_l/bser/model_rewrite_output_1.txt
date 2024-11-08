@@ -1,0 +1,77 @@
+The provided Node.js code implements a simplified BSER (Binary Serialization) system using Node's Buffer API and EventEmitter. 
+
+**Functionality Explanation:**
+1. **Bser Class:**
+   - This class offers two static methods: `loadFromBuffer` and `dumpToBuffer`.
+   - `loadFromBuffer(buffer)`: This method reads a buffer, interprets the first 4 bytes as the length of the data, extracts the content based on this length, and parses it into a JSON object.
+   - `dumpToBuffer(value)`: This method takes an object, serializes it into a JSON string, calculates its byte length, and constructs a buffer by prefixing the serialized string with its length in bytes.
+
+2. **BunserBuf Class:**
+   - Extends Node.js's EventEmitter to handle binary data streams that are segmented.
+   - It holds incoming buffer data and processes it into complete messages. When complete messages are extracted, it emits them as 'value' events.
+   - `append(chunk)`: Concatenates incoming buffer chunks and processes them.
+   - `_process()`: Handles buffer processing. It checks if there's enough data to determine a message's length and extract it. It raises a 'value' event with a parsed message when complete data is available, or an 'error' if parsing fails.
+
+**Rewritten Node.js Code:**
+```javascript
+const EventEmitter = require('events');
+
+class Bser {
+  static loadFromBuffer(buffer) {
+    if (!Buffer.isBuffer(buffer)) {
+      throw new Error('Invalid input: expected Buffer');
+    }
+    try {
+      const length = buffer.readUIntBE(0, 4);
+      const content = buffer.slice(4, 4 + length).toString();
+      return JSON.parse(content);
+    } catch (e) {
+      throw new Error('Failed to parse buffer');
+    }
+  }
+
+  static dumpToBuffer(value) {
+    const json = JSON.stringify(value);
+    const buffer = Buffer.alloc(4 + Buffer.byteLength(json));
+    buffer.writeUIntBE(Buffer.byteLength(json), 0, 4);
+    buffer.write(json, 4);
+    return buffer;
+  }
+}
+
+class BunserBuf extends EventEmitter {
+  constructor() {
+    super();
+    this.buffer = Buffer.alloc(0);
+  }
+
+  append(chunk) {
+    this.buffer = Buffer.concat([this.buffer, chunk]);
+    this._process();
+  }
+
+  _process() {
+    try {
+      while (this.buffer.length > 4) {
+        const length = this.buffer.readUIntBE(0, 4);
+        if (this.buffer.length >= 4 + length) {
+          const valueBuffer = this.buffer.slice(4, 4 + length);
+          const value = Bser.loadFromBuffer(Buffer.concat([Buffer.alloc(4), valueBuffer]));
+          this.emit('value', value);
+          this.buffer = this.buffer.slice(4 + length);
+        } else {
+          break;
+        }
+      }
+    } catch (e) {
+      this.emit('error', e);
+    }
+  }
+}
+
+module.exports = {
+  loadFromBuffer: Bser.loadFromBuffer,
+  dumpToBuffer: Bser.dumpToBuffer,
+  BunserBuf: BunserBuf,
+};
+```

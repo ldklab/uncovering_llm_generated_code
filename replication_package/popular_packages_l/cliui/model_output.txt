@@ -1,0 +1,91 @@
+The `cliui` package provides a simple way to generate and style command-line interfaces with multiple columns and rows of text. It allows developers to align, wrap, and format the text output to make CLI tools more user-friendly and visually appealing.
+
+The core functionality of `cliui` includes:
+
+1. **Initialization**: Create a CLI UI instance, which can take options such as `width` for the maximum width of the UI and `wrap` to enable or disable text wrapping.
+
+2. **Column and Row Layout**: Use methods like `div` to define rows in the CLI. Each row can have multiple columns, and developers can specify text, width, alignment, padding, and borders for each column.
+
+3. **Text Layout DSL**: If strings are passed directly to `div`, special characters like `\n`, `\t`, and `\s` are interpreted as new rows, new columns, and padding respectively.
+
+4. **Reset Functionality**: `resetOutput` can be used to clear the current UI layout while retaining configuration settings like `width` and `wrap`.
+
+Here is a simple implementation of a Node.js package that achieves similar functionality:
+
+```js
+const util = require('util');
+
+class CLIUI {
+  constructor(options = {}) {
+    this.options = options;
+    this.width = options.width || 80;
+    this.wrap = options.wrap !== undefined ? options.wrap : true;
+    this.rows = [];
+  }
+
+  div(...cols) {
+    this.rows.push(cols);
+  }
+
+  span(...cols) {
+    if (this.rows.length === 0) this.div(...cols);
+    else this.rows[this.rows.length - 1].push(...cols);
+  }
+
+  resetOutput() {
+    this.rows = [];
+  }
+
+  toString() {
+    let output = '';
+
+    for (const row of this.rows) {
+      const rowOutput = [];
+
+      for (const col of row) {
+        const text = typeof col === 'string' ? col : col.text || '';
+        const width = typeof col === 'object' && col.width ? col.width : this.width / row.length;
+        const padding = typeof col === 'object' && col.padding ? col.padding : [0, 0, 0, 0];
+        const align = typeof col === 'object' && col.align ? col.align : 'left';
+
+        const paddedText = ' '.repeat(padding[3]) + text + ' '.repeat(padding[1]);
+        const wrappedText = this.wrapText(paddedText, width);
+        const alignedText = this.alignText(wrappedText, width, align);
+
+        rowOutput.push(alignedText);
+      }
+
+      output += rowOutput.join('') + '\n';
+    }
+    
+    return output;
+  }
+
+  wrapText(text, width) {
+    if (!this.wrap) return text;
+    const regex = new RegExp(`(.{1,${width}})(\\s+|$)`, 'g');
+    return text.match(regex).join('\n');
+  }
+
+  alignText(text, width, align) {
+    const lines = text.split('\n');
+    return lines.map(line => {
+      const spaces = width - line.length;
+      if (align === 'right') return ' '.repeat(spaces) + line;
+      if (align === 'center') return ' '.repeat(spaces / 2) + line + ' '.repeat(spaces / 2);
+      return line + ' '.repeat(spaces);
+    }).join('');
+  }
+
+  static create(options) {
+    return new CLIUI(options);
+  }
+}
+
+// Export factory function to create a new CLIUI instance
+module.exports = function (options) {
+  return CLIUI.create(options);
+};
+```
+
+This code establishes the functionality described in the `cliui` README by creating a `CLIUI` class that manages UI elements that can be formatted as columns and rows with various options for styling and alignment. The `toString` method compiles the formatted UI text, ready for output.

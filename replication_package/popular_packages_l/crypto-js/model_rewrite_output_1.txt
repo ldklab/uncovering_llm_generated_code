@@ -1,0 +1,92 @@
+The Node.js code is a simple cryptography utility library implementing a few common cryptographic operations using the native `crypto` module. This library acts as a wrapper to facilitate hashing, HMAC, base64 encoding/decoding, and encryption/decryption operations.
+
+1. **SHA256 Hashing**: The function `sha256` takes input data and generates a SHA-256 hash, returning the result in hexadecimal format.
+2. **HMAC with SHA-512**: The function `hmacSHA512` computes an HMAC using the SHA-512 algorithm from input data and a key, returning the result in hexadecimal format.
+3. **Base64 Encoding/Decoding**: Functions `base64Encode` and `base64Decode` perform base64 encoding and decoding, respectively, using the native Buffer class.
+4. **AES-256-CBC Encryption/Decryption**: Two functions, `encryptAES` and `decryptAES`, perform encryption and decryption with the AES-256-CBC algorithm. An initialization vector (IV) is randomly generated for each encryption operation.
+5. **Usage Example**: Demonstrates the use of the utility functions to compute a SHA256 hash, an HMAC, and perform AES encryption/decryption.
+
+Here's the rewritten code:
+
+```json
+// package.json
+{
+  "name": "crypto-native-wrapper",
+  "version": "1.0.0",
+  "main": "index.js",
+  "type": "module"
+}
+```
+
+```javascript
+// index.js
+import {
+  createHash,
+  createHmac,
+  randomBytes,
+  createCipheriv,
+  createDecipheriv
+} from 'crypto';
+
+// Function to create a SHA-256 hash from the input data
+export function sha256(data) {
+  return createHash('sha256').update(data).digest('hex');
+}
+
+// Function for creating a HMAC using SHA-512
+export function hmacSHA512(data, key) {
+  return createHmac('sha512', key).update(data).digest('hex');
+}
+
+// Function to encode the data into base64
+export function base64Encode(data) {
+  return Buffer.from(data).toString('base64');
+}
+
+// Function to decode the data from base64
+export function base64Decode(data) {
+  return Buffer.from(data, 'base64').toString('utf8');
+}
+
+// AES-256-CBC encryption/decryption setup
+const algorithm = 'aes-256-cbc';
+
+// Function to encrypt text using AES-256-CBC
+export function encryptAES(text, secret) {
+  const iv = randomBytes(16);
+  const cipher = createCipheriv(algorithm, Buffer.from(secret, 'hex'), iv);
+  let encrypted = cipher.update(text, 'utf8', 'hex');
+  encrypted += cipher.final('hex');
+  return iv.toString('hex') + ':' + encrypted;
+}
+
+// Function to decrypt text using AES-256-CBC
+export function decryptAES(encryptedText, secret) {
+  const textParts = encryptedText.split(':');
+  const iv = Buffer.from(textParts.shift(), 'hex');
+  const encryptedTextBuff = Buffer.from(textParts.join(':'), 'hex');
+  const decipher = createDecipheriv(algorithm, Buffer.from(secret, 'hex'), iv);
+  let decrypted = decipher.update(encryptedTextBuff, 'hex', 'utf8');
+  decrypted += decipher.final('utf8');
+  return decrypted;
+}
+
+// Usage example:
+const message = 'Hello';
+const nonce = '123';
+const path = '/api/endpoint';
+const privateKey = 'a1b2c3d4';
+
+const hashDigest = sha256(nonce + message);
+const hmacDigest = base64Encode(hmacSHA512(path + hashDigest, privateKey));
+
+console.log('Hash Digest:', hashDigest);
+console.log('HMAC Digest:', hmacDigest);
+
+const secretKey = randomBytes(32).toString('hex');
+const encryptedMessage = encryptAES('my message', secretKey);
+const decryptedMessage = decryptAES(encryptedMessage, secretKey);
+
+console.log('Encrypted Message:', encryptedMessage);
+console.log('Decrypted Message:', decryptedMessage);
+```

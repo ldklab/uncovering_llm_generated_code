@@ -1,0 +1,107 @@
+The provided Node.js code implements encoding and decoding of source maps in the VLQ (Variable-length Quantity) format. This is typically used in JavaScript source maps to encode and compress the mapping from the transpiled or bundled code back to the original source code, allowing tools to map errors in the compiled code to the original code lines.
+
+Here's a concise explanation of the key components:
+
+1. **VLQ Encoding**: The `vlqEncode` function takes a number and converts it into a series of Base64 characters using variable-length encoding to ensure smaller space for small numbers.
+
+2. **VLQ Decoding**: The `vlqDecode` function interprets a VLQ encoded string back into a number.
+
+3. **Base64 Encoding/Decoding**: The `encodeBase64` and `decodeBase64` functions are used to convert numbers to/from a Base64 representation, which is required for VLQ.
+
+4. **Encoding Source Maps**: The `encode` function translates an array of tuples (representing source map segments) into a VLQ encoded string. Each segment has values adjusted based on its previous values to optimize storage.
+
+5. **Decoding Source Maps**: The `decode` function takes a VLQ encoded source map string and reconstructs the original source map lines and segments with their respective values by continuously decoding each segment.
+
+Here's a possible rewrite of the code:
+
+```javascript
+// @jridgewell/sourcemap-codec equivalent implementation
+
+const BASE64_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+
+function vlqEncode(value) {
+  let result = '';
+  let vlq = value < 0 ? (-value << 1) + 1 : value << 1;
+
+  do {
+    let digit = vlq & 31;
+    vlq >>>= 5;
+    if (vlq > 0) {
+      digit |= 32;
+    }
+    result += BASE64_CHARS[digit];
+  } while (vlq > 0);
+
+  return result;
+}
+
+function vlqDecode(encoded, startIndex) {
+  let result = 0, shift = 0, continuation, value;
+
+  let index = startIndex;
+  do {
+    value = BASE64_CHARS.indexOf(encoded[index++]);
+    continuation = value & 32;
+    result += (value & 31) << shift;
+    shift += 5;
+  } while (continuation);
+
+  const finalValue = result & 1 ? ~(result >>> 1) : result >>> 1;
+  return [finalValue, index];
+}
+
+export function encode(decoded) {
+  return decoded.map(line => line.map(segment =>
+    segment.map((value, i) => vlqEncode(value - (segment[i - 1] || 0))).join('')
+  ).join(',')).join(';');
+}
+
+export function decode(encoded) {
+  return encoded.split(';').map(line => {
+    let segments = line.split(',');
+    let prevColumn = 0, prevSourceIndex = 0, prevSourceLine = 0;
+    let prevSourceColumn = 0, prevNameIndex = 0;
+
+    return segments.map(segment => {
+      let decoded = [];
+      let index = 0;
+
+      if (segment) {
+        const [column, newIndex] = vlqDecode(segment, index);
+        prevColumn += column;
+        decoded.push(prevColumn);
+        index = newIndex;
+
+        if (index < segment.length) {
+          const [sourceIndex, newIndex] = vlqDecode(segment, index);
+          prevSourceIndex += sourceIndex;
+          decoded.push(prevSourceIndex);
+          index = newIndex;
+
+          if (index < segment.length) {
+            const [sourceLine, newIndex] = vlqDecode(segment, index);
+            prevSourceLine += sourceLine;
+            decoded.push(prevSourceLine);
+            index = newIndex;
+
+            if (index < segment.length) {
+              const [sourceColumn, newIndex] = vlqDecode(segment, index);
+              prevSourceColumn += sourceColumn;
+              decoded.push(prevSourceColumn);
+              index = newIndex;
+
+              if (index < segment.length) {
+                const [nameIndex, newIndex] = vlqDecode(segment, index);
+                prevNameIndex += nameIndex;
+                decoded.push(prevNameIndex);
+              }
+            }
+          }
+        }
+      }
+
+      return decoded;
+    });
+  });
+}
+```

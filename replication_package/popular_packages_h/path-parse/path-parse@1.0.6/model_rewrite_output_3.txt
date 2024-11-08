@@ -1,0 +1,89 @@
+The provided Node.js code defines utilities for parsing file paths for both Windows and POSIX (Unix-like) systems. It checks if the current operating system is Windows or not and exports the appropriate path parsing function. Both the Windows and POSIX parsers split a file path into components like `root`, `dir`, `base`, `ext`, and `name`.
+
+For Windows:
+- It uses regular expressions (`splitDeviceRe` and `splitTailRe`) to split the path into parts: `device`, `slash`, `tail`, `dir`, `basename`, and `ext`.
+- The `win32SplitPath` function processes the Windows path.
+- The `win32.parse` function uses this utility to return an object with specific path parts.
+
+For POSIX:
+- It uses a regular expression (`splitPathRe`) to decompose a path.
+- The `posixSplitPath` function splits the path.
+- The `posix.parse` function returns a structured representation of the path parts.
+
+The code exports the appropriate path parser based on the operating system, but it also separately exports both parsers for direct access.
+
+Here is a rewrite of the provided code:
+
+```javascript
+'use strict';
+
+const isWindows = process.platform === 'win32';
+
+// Regex to split a windows path into its components.
+const splitDeviceRe = /^([a-zA-Z]:|[\\\/]{2}[^\\\/]+[\\\/]+[^\\\/]+)?([\\\/])?([\s\S]*?)$/;
+const splitTailRe = /^([\s\S]*?)((?:\.{1,2}|[^\\\/]+?|)(\.[^.\/\\]*|))(?:[\\\/]*)$/;
+
+// Function to split a Windows filename.
+function win32SplitPath(filename) {
+  const result = splitDeviceRe.exec(filename);
+  const device = (result[1] || '') + (result[2] || '');
+  const tail = result[3] || '';
+  const result2 = splitTailRe.exec(tail);
+  const dir = result2[1];
+  const basename = result2[2];
+  const ext = result2[3];
+  return [device, dir, basename, ext];
+}
+
+// Windows path parse function.
+function parseWin32(pathString) {
+  if (typeof pathString !== 'string') {
+    throw new TypeError(`Parameter 'pathString' must be a string, not ${typeof pathString}`);
+  }
+  const [root, dir, base, ext] = win32SplitPath(pathString);
+  if (!root && !dir && !base && !ext) {
+    throw new TypeError(`Invalid path '${pathString}'`);
+  }
+  return {
+    root,
+    dir: root + dir.slice(0, -1),
+    base,
+    ext,
+    name: base.slice(0, base.length - ext.length)
+  };
+}
+
+// Regex to split a POSIX path into its components.
+const splitPathRe = /^(\/?|)([\s\S]*?)((?:\.{1,2}|[^\/]+?|)(\.[^.\/]*|))(?:[\/]*)$/;
+
+// Function to split a POSIX filename.
+function posixSplitPath(filename) {
+  return splitPathRe.exec(filename).slice(1);
+}
+
+// POSIX path parse function.
+function parsePosix(pathString) {
+  if (typeof pathString !== 'string') {
+    throw new TypeError(`Parameter 'pathString' must be a string, not ${typeof pathString}`);
+  }
+  const [root, dir, base, ext] = posixSplitPath(pathString);
+  if (!root && !dir && !base && !ext) {
+    throw new TypeError(`Invalid path '${pathString}'`);
+  }
+  return {
+    root,
+    dir: root + dir.slice(0, -1),
+    base,
+    ext,
+    name: base.slice(0, base.length - ext.length)
+  };
+}
+
+// Determine the default export based on the OS.
+const parse = isWindows ? parseWin32 : parsePosix;
+
+// Export the appropriate function depending on the current platform.
+module.exports = parse;
+module.exports.posix = parsePosix;
+module.exports.win32 = parseWin32;
+```

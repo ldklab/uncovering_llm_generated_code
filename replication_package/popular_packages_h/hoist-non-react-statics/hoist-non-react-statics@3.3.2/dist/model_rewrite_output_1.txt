@@ -1,0 +1,104 @@
+The Node.js code provided is a utility function called `hoistNonReactStatics`, which is used to copy non-React statics from a source component to a target component. This is particularly useful in higher-order components (HOCs) in React, where you want to maintain certain static properties of the wrapped component on the HOC itself.
+
+Here's a breakdown of what the code does:
+
+1. **Static Properties Definitions**: It defines several sets of known static properties for different types of React components, such as normal components, `ForwardRef` components, and `Memo` components. These definitions are stored in objects like `REACT_STATICS`, `KNOWN_STATICS`, `FORWARD_REF_STATICS`, `MEMO_STATICS`, and `TYPE_STATICS`.
+
+2. **Get Statics Function**: The function `getStatics` determines which set of statics should be used for a given component, based on whether the component is a `Memo` or `ForwardRef` component, or a regular React component.
+
+3. **Hoisting Functionality**: The main function `hoistNonReactStatics` copies properties (that are not React-specific statics or blacklisted properties) from a `sourceComponent` to a `targetComponent`. It uses reflection methods such as `Object.getOwnPropertyNames` and `Object.getOwnPropertySymbols` to retrieve property names and symbols from the source component.
+
+4. **Prototype Chain**: If the prototype of the source component is not `Object.prototype`, the function recursively hoists statics from the prototype chain.
+
+5. **Property Definition**: Uses `Object.defineProperty` to re-define properties on the target component while handling possible exceptions from read-only properties.
+
+This functionality is necessary when wrapping components with higher-order components, to ensure that all relevant static properties are carried over to the HOC.
+
+Here is the refactored code that achieves the same functionality:
+
+```javascript
+'use strict';
+
+const reactIs = require('react-is');
+
+const REACT_STATICS = {
+  childContextTypes: true,
+  contextType: true,
+  contextTypes: true,
+  defaultProps: true,
+  displayName: true,
+  getDefaultProps: true,
+  getDerivedStateFromError: true,
+  getDerivedStateFromProps: true,
+  mixins: true,
+  propTypes: true,
+  type: true
+};
+
+const KNOWN_STATICS = {
+  name: true,
+  length: true,
+  prototype: true,
+  caller: true,
+  callee: true,
+  arguments: true,
+  arity: true
+};
+
+const FORWARD_REF_STATICS = {
+  '$$typeof': true,
+  render: true,
+  defaultProps: true,
+  displayName: true,
+  propTypes: true
+};
+
+const MEMO_STATICS = {
+  '$$typeof': true,
+  compare: true,
+  defaultProps: true,
+  displayName: true,
+  propTypes: true,
+  type: true
+};
+
+const TYPE_STATICS = {
+  [reactIs.ForwardRef]: FORWARD_REF_STATICS,
+  [reactIs.Memo]: MEMO_STATICS
+};
+
+function getStatics(component) {
+  return reactIs.isMemo(component) ? MEMO_STATICS : TYPE_STATICS[component['$$typeof']] || REACT_STATICS;
+}
+
+function hoistNonReactStatics(targetComponent, sourceComponent, blacklist = {}) {
+  if (typeof sourceComponent !== 'string') {
+    const inheritedComponent = Object.getPrototypeOf(sourceComponent);
+    if (inheritedComponent && inheritedComponent !== Object.prototype) {
+      hoistNonReactStatics(targetComponent, inheritedComponent, blacklist);
+    }
+
+    let keys = Object.getOwnPropertyNames(sourceComponent);
+
+    if (Object.getOwnPropertySymbols) {
+      keys = keys.concat(Object.getOwnPropertySymbols(sourceComponent));
+    }
+
+    const targetStatics = getStatics(targetComponent);
+    const sourceStatics = getStatics(sourceComponent);
+
+    keys.forEach((key) => {
+      if (!KNOWN_STATICS[key] && !blacklist[key] && !sourceStatics[key] && !targetStatics[key]) {
+        const descriptor = Object.getOwnPropertyDescriptor(sourceComponent, key);
+        try {
+          Object.defineProperty(targetComponent, key, descriptor);
+        } catch (e) {}
+      }
+    });
+  }
+
+  return targetComponent;
+}
+
+module.exports = hoistNonReactStatics;
+```

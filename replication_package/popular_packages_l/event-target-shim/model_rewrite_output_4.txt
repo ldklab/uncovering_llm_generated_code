@@ -1,0 +1,77 @@
+The Node.js code provided is a custom implementation of an event handling system which mimics the behavior of the standard `EventTarget` interface commonly used in web browsers. Here's a breakdown of its functionality:
+
+1. **EventShim Class**: This class represents an event and includes properties such as the event type, whether the event is cancelable, and if `preventDefault` has been called.
+
+   - `type`: The type of the event.
+   - `cancelable`: A boolean indicating if the event is cancelable.
+   - `defaultPrevented`: A flag that starts as `false` and can be set to `true` upon calling `preventDefault` if the event is cancelable.
+   - `preventDefault()`: A method to prevent the default behavior of the event. It warns if the event is not cancelable.
+
+2. **EventTargetShim Class**: This class handles registering listeners, removing them, and dispatching events:
+
+   - `listeners`: An object storing event listeners categorized by event type.
+   - `addEventListener(type, listener, options)`: Adds an event listener for a specified event type. It handles options such as capturing and once (which decides if the listener should be called just once). If options include a 'signal', it listens for an 'abort' to automatically remove the listener.
+   - `removeEventListener(type, listener)`: Removes a specific listener for a given event type.
+   - `dispatchEvent(event)`: Dispatches an event, calling all associated listeners. If an event listener has the `once` option, it is removed after being called.
+
+This module exports both classes, allowing them to be used to create custom event systems in a Node.js environment.
+
+```javascript
+// event-target-shim.js
+
+class EventShim {
+  constructor(type, options = {}) {
+    this.type = type;
+    this.cancelable = Boolean(options.cancelable);
+    this.defaultPrevented = false;
+  }
+
+  preventDefault() {
+    if (this.cancelable) {
+      this.defaultPrevented = true;
+    } else {
+      console.warn('Ignored as event is passive.');
+    }
+  }
+}
+
+class EventTargetShim {
+  constructor() {
+    this.listeners = {};
+  }
+
+  addEventListener(type, listener, options = {}) {
+    if (!this.listeners[type]) this.listeners[type] = [];
+
+    const listenerOptions = typeof options === 'boolean' ? { capture: options } : options;
+
+    if (listenerOptions.signal) {
+      listenerOptions.signal.addEventListener('abort', () => {
+        this.removeEventListener(type, listener);
+      });
+    }
+
+    this.listeners[type].push({ listener, options: listenerOptions });
+  }
+
+  removeEventListener(type, listener) {
+    if (!this.listeners[type]) return;
+    this.listeners[type] = this.listeners[type].filter(({ listener: l }) => l !== listener);
+  }
+
+  dispatchEvent(event) {
+    const listeners = this.listeners[event.type] || [];
+    for (const { listener, options } of listeners) {
+      if (options.once) {
+        this.removeEventListener(event.type, listener);
+      }
+      listener.call(this, event);
+    }
+  }
+}
+
+module.exports = {
+  EventShim,
+  EventTargetShim,
+};
+```

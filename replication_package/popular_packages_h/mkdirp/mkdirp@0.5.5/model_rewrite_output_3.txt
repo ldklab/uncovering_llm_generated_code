@@ -1,0 +1,79 @@
+The provided Node.js code defines a utility for creating directories both asynchronously and synchronously, ensuring that the entire path is created (much like `mkdir -p` in Unix). It leverages Node.js's `fs` and `path` modules.
+
+### Functions and Logic
+
+1. **`mkdirP()` (asynchronous):**
+   - Accepts a path `p`, options `opts`, a callback `f`, and a marker for made directories `made`.
+   - Defaults are set if `opts` is not an object (such as mode), and `fs` defaults to the standard Node `fs` module.
+   - `path.resolve()` is used to obtain an absolute path for `p`.
+   - Uses `fs.mkdir()` to create the directory.
+     - If successful, invokes the callback with `null` and the made path.
+     - If it fails due to a non-existent parent directory (`ENOENT`), it recursively attempts to create parent directories.
+     - On other errors, it checks if the path already exists as a directory.
+   
+2. **`mkdirP.sync()` (synchronous):**
+   - Similar logic as `mkdirP()`, but uses synchronous `fs` methods like `fs.mkdirSync()` and `fs.statSync()`.
+   - Returns the path of the directory that was created.
+
+### Rewritten Code
+
+```javascript
+const path = require('path');
+const fs = require('fs');
+const DEFAULT_MODE = parseInt('0777', 8);
+
+function mkdirP(p, opts = {}, callback = () => {}, made = null) {
+    const { mode = DEFAULT_MODE, fs: xfs = fs } = opts;
+    p = path.resolve(p);
+
+    xfs.mkdir(p, mode, (error) => {
+        if (!error) {
+            return callback(null, made || p);
+        }
+
+        switch (error.code) {
+            case 'ENOENT':
+                return path.dirname(p) === p 
+                    ? callback(error)
+                    : mkdirP(path.dirname(p), opts, (err, madePath) => {
+                        if (err) return callback(err, madePath);
+                        mkdirP(p, opts, callback, madePath);
+                    });
+
+            default:
+                xfs.stat(p, (statError, stats) => {
+                    if (statError || !stats.isDirectory()) {
+                        return callback(error, made);
+                    }
+                    callback(null, made);
+                });
+        }
+    });
+}
+
+mkdirP.sync = function sync(p, opts = {}, made = null) {
+    const { mode = DEFAULT_MODE, fs: xfs = fs } = opts;
+    p = path.resolve(p);
+
+    try {
+        xfs.mkdirSync(p, mode);
+        made = p;
+    } catch (error) {
+        switch (error.code) {
+            case 'ENOENT':
+                made = sync(path.dirname(p), opts, made);
+                sync(p, opts, made);
+                break;
+
+            default:
+                const stats = xfs.statSync(p);
+                if (!stats.isDirectory()) {
+                    throw error;
+                }
+        }
+    }
+    return made;
+};
+
+module.exports = mkdirP;
+```

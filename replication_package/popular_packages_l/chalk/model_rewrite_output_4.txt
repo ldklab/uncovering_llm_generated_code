@@ -1,0 +1,107 @@
+The Node.js code defines a customizable chalk-like interface for applying ANSI styles (such as text colors and styles) to console outputs. Here's how the code functions:
+
+1. **Chalk Class**: Encapsulates the creation of styled string outputs. It has methods to apply styles and a static method to determine the color level supported by the current terminal.
+
+2. **`applyStyle` Function**: Takes an array of style objects and an array of strings, applies the ANSI codes for opening and closing those styles, and returns the styled string.
+
+3. **`style` Method**: Returns a function that can be used to style a particular set of strings. The styles passed to this function are applied to the strings provided during the function execution.
+
+4. **Default Color Level**: Checks if the terminal supports styling (i.e., if TTY is enabled) to set a default level of color support.
+
+5. **Styles Definition**: Defines several text and background styles (e.g., bold, underline, colors like red, green) using ANSI escape codes.
+
+6. **Dynamic Style Properties**: Uses `Object.defineProperty` to dynamically add getter properties for each style to the `Chalk` prototype.
+
+7. **Proxy Use**: A Proxy wraps the `chalkInstance` to allow accessing dynamically composed styles as properties (e.g., `chalk.red.bold`).
+
+8. **Expected Outputs**: Examples of using the `chalk` instance to style console outputs, such as `chalk.blue('Hello world!')`.
+
+Here is a simplified rewrite:
+
+```javascript
+const chalk = (() => {
+  class Chalk {
+    constructor(options = {}) {
+      this.level = options.level !== undefined ? options.level : Chalk.defaultColorLevel();
+    }
+
+    applyStyle(styles, strings) {
+      const openCodes = styles.map(style => `\x1b[${style.open}m`).join('');
+      const closeCodes = styles.map(style => `\x1b[${style.close}m`).join('');
+      return openCodes + strings.join(' ') + closeCodes;
+    }
+
+    style(...styles) {
+      return (...strings) => this.applyStyle(styles, strings);
+    }
+
+    static defaultColorLevel() {
+      return process.stdout.isTTY ? 3 : 0;
+    }
+  }
+
+  const styles = {
+    modifier: {
+      bold: { open: 1, close: 22 },
+      dim: { open: 2, close: 22 },
+      italic: { open: 3, close: 23 },
+      underline: { open: 4, close: 24 },
+      inverse: { open: 7, close: 27 },
+      hidden: { open: 8, close: 28 },
+      strikethrough: { open: 9, close: 29 },
+    },
+    color: {
+      black: { open: 30, close: 39 },
+      red: { open: 31, close: 39 },
+      green: { open: 32, close: 39 },
+      yellow: { open: 33, close: 39 },
+      blue: { open: 34, close: 39 },
+      magenta: { open: 35, close: 39 },
+      cyan: { open: 36, close: 39 },
+      white: { open: 37, close: 39 },
+      gray: { open: 90, close: 39 },
+    },
+    bgColor: {
+      bgBlack: { open: 40, close: 49 },
+      bgRed: { open: 41, close: 49 },
+      bgGreen: { open: 42, close: 49 },
+      bgYellow: { open: 43, close: 49 },
+      bgBlue: { open: 44, close: 49 },
+      bgMagenta: { open: 45, close: 49 },
+      bgCyan: { open: 46, close: 49 },
+      bgWhite: { open: 47, close: 49 },
+    }
+  };
+
+  const chalkInstance = new Chalk();
+
+  for (const [groupName, group] of Object.entries(styles)) {
+    for (const [styleName, style] of Object.entries(group)) {
+      Object.defineProperty(Chalk.prototype, styleName, {
+        get() {
+          return this.style(style);
+        }
+      });
+    }
+  }
+
+  return new Proxy(chalkInstance, {
+    get(target, prop) {
+      if (target[prop]) {
+        return target[prop];
+      }
+      const combinedStyles = prop.split('.').map(name => {
+        for (const group of Object.values(styles)) {
+          if (group[name]) return group[name];
+        }
+        throw new Error(`Unknown style: ${name}`);
+      });
+      return (...strings) => target.applyStyle(combinedStyles, strings);
+    }
+  });
+})();
+
+console.log(chalk.blue('Hello world!'));
+console.log(chalk.red.bold('Error!'));
+console.log(chalk.green.whiteBright.bgRed('Success!'));
+```

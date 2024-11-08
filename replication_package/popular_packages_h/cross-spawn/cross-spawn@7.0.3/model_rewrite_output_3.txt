@@ -1,0 +1,39 @@
+The given Node.js code provides functionality for safely spawning child processes using the `child_process` module. The code introduces two main functions: `spawn` and `spawnSync`, which are asynchronous and synchronous versions of starting a child process, respectively. The code makes use of two helper modules, `parse` and `enoent`.
+
+1. **parse**: This module is expected to handle parsing of the command, arguments, and options into a format suitable for spawning processes.
+   
+2. **enoent**: This module is used to manage potential errors related to non-existent commands. It hooks into events or performs checks to ensure proper error handling for cases where the specified command does not exist.
+
+The `spawn` function parses the command, arguments, and options, then uses `cp.spawn` to create a child process. The `enoent` module is used to attach further error handling to the child process. 
+
+The `spawnSync` function does similar parsing and uses `cp.spawnSync` for synchronous behavior. It then checks for errors that might indicate a non-existent command and augments the result with these insights.
+
+The code exports the `spawn` function as the default export and also exposes `spawn` and `spawnSync` as named properties. Additionally, the `_parse` and `_enoent` are exposed for testability or other internal purposes.
+
+```javascript
+'use strict';
+
+const cp = require('child_process');
+const parse = require('./lib/parse');
+const enoent = require('./lib/enoent');
+
+function spawn(command, args, options) {
+    const parsed = parse(command, args, options);
+    const spawned = cp.spawn(parsed.command, parsed.args, parsed.options);
+    enoent.hookChildProcess(spawned, parsed);
+    return spawned;
+}
+
+function spawnSync(command, args, options) {
+    const parsed = parse(command, args, options);
+    const result = cp.spawnSync(parsed.command, parsed.args, parsed.options);
+    result.error = result.error || enoent.verifyENOENTSync(result.status, parsed);
+    return result;
+}
+
+module.exports = spawn;
+module.exports.spawn = spawn;
+module.exports.sync = spawnSync;
+module.exports._parse = parse;
+module.exports._enoent = enoent;
+```

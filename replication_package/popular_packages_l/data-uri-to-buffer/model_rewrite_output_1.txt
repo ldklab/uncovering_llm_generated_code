@@ -1,0 +1,71 @@
+The given Node.js code defines an interface and a function for parsing Data URIs (Uniform Resource Identifiers that allow inclusion of data in-line in web pages), extracting their components, and converting the encoded data into an `ArrayBuffer`. Here is a breakdown of the code's functionality:
+
+1. **ParsedDataURI Interface:** It specifies the structure of the object that the `dataUriToBuffer` function returns. This object includes:
+   - `type`: The MIME type of the data.
+   - `typeFull`: The full media type string, including parameters like the character set.
+   - `charset`: The character set from the media type.
+   - `buffer`: An `ArrayBuffer` containing the decoded data.
+
+2. **dataUriToBuffer Function:** The function takes a Data URI or a URL object, extracts the data and media type, checks if the data is base64-encoded, and decodes it to an `ArrayBuffer`. Here's a detailed look at its steps:
+   - Converts the input `uri` to a string if it is a URL object.
+   - Uses a regular expression to split the URI into its media type and data parts.
+   - Determines if the data is base64-encoded.
+   - Initializes default media type values and parses the media type, extracting the character set if specified.
+   - Decodes the data into an `ArrayBuffer`, using different functions depending on whether the data is base64-encoded or URI-encoded text.
+
+3. **Helper Functions:**
+   - `base64ToArrayBuffer`: Converts a base64 string to an `ArrayBuffer` by decoding it to a binary string, then to a `Uint8Array`.
+   - `textToArrayBuffer`: Converts a text string to an `ArrayBuffer` using the `TextEncoder`.
+
+Here is the equivalent rewritten code:
+
+```typescript
+export interface ParsedDataURI {
+    type: string;
+    typeFull: string;
+    charset: string;
+    buffer: ArrayBuffer;
+}
+
+export function dataUriToBuffer(uri: string | URL): ParsedDataURI {
+    const uriStr = typeof uri === 'object' ? uri.toString() : uri;
+
+    const matches = uriStr.match(/^data:([^,]*?),?([^#]*)/);
+    if (!matches) throw new Error('Invalid data URI');
+
+    const [_, mediaType = '', data = ''] = matches;
+    const isBase64 = /;\s*base64\s*(?:;|$)/i.test(mediaType);
+
+    let type = 'text/plain';
+    let typeFull = 'text/plain;charset=US-ASCII';
+    let charset = 'US-ASCII';
+
+    if (mediaType) {
+        typeFull = mediaType;
+        const mediaTypeParts = mediaType.split(';');
+        type = mediaTypeParts[0] || type;
+
+        mediaTypeParts.slice(1).forEach(part => {
+            if (part.startsWith('charset=')) charset = part.split('=')[1];
+        });
+    }
+
+    const buffer = isBase64 ? base64ToArrayBuffer(data) : textToArrayBuffer(decodeURIComponent(data));
+    if (!mediaType || !/charset=/i.test(mediaType)) charset = '';
+
+    return { type, typeFull, charset, buffer };
+}
+
+function base64ToArrayBuffer(base64: string): ArrayBuffer {
+    const binaryString = atob(base64);
+    const bytes = new Uint8Array(binaryString.length);
+    for (let i = 0; i < binaryString.length; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+    }
+    return bytes.buffer;
+}
+
+function textToArrayBuffer(text: string): ArrayBuffer {
+    return new TextEncoder().encode(text).buffer;
+}
+```

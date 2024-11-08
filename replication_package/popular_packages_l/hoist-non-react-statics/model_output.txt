@@ -1,0 +1,83 @@
+The `hoist-non-react-statics` package is a utility for working with React components, especially in scenarios involving higher-order components (HOCs). Here's what the package does and how it works:
+
+### Functionality
+
+- **Purpose**: The primary function of the package is to copy static properties from one component (often called the source component) to another (the target component).
+- **Static Properties**: These properties are typically methods or properties attached to the component class itself, not its instances. For instance, `defaultProps`, `propTypes`, and custom static methods are static properties.
+- **Exclusion of React-specific Statics**: The package specifically avoids copying properties that are specific to React and could interfere with its lifecycle, such as `propTypes`, `contextTypes`, `childContextTypes`, `defaultProps`, `displayName`, etc.
+- **Custom Exclusions**: Users can specify additional properties that should not be copied over using an options object passed as a third parameter.
+- **Use Case**: This package is particularly useful for Higher-Order Components (HOCs) where static properties of the wrapped component need to be carried over to the new component.
+
+### Usage
+
+1. **Basic Usage**: By calling the `hoistNonReactStatics(targetComponent, sourceComponent)`, static properties from the `sourceComponent` are copied to the `targetComponent` except for the blacklisted React-specific static properties.
+  
+2. **Custom Exclusions**: By using a third parameter like `hoistNonReactStatics(targetComponent, sourceComponent, { myStatic: true })`, you can exclude `myStatic` from being copied even if it's not React-specific.
+
+### Compatibility and Support
+
+- **React Versions**: The library is compatible across different React versions and includes support for React's `ForwardRef`.
+- **Browser Support**: It requires a polyfill for `Object.defineProperty` if you need to use it in IE8 due to its broken implementation there.
+
+Here's how the package can be implemented:
+
+```js
+// hoist-non-react-statics.js
+
+function hoistNonReactStatics(targetComponent, sourceComponent, exclusions = {}) {
+  // List of React-specific static properties that should not be copied over
+  const REACT_STATICS = {
+    childContextTypes: true,
+    contextType: true,
+    contextTypes: true,
+    defaultProps: true,
+    displayName: true,
+    getDefaultProps: true,
+    getDerivedStateFromError: true,
+    getDerivedStateFromProps: true,
+    mixins: true,
+    propTypes: true,
+    type: true
+  };
+
+  // Combine REACT_STATICS and user-provided exclusions
+  const KNOWN_STATICS = Object.assign({}, REACT_STATICS, exclusions);
+
+  // Get all property names from the sourceComponent
+  const sourceKeys = Object.getOwnPropertyNames(sourceComponent);
+
+  // Iterate and copy properties
+  sourceKeys.forEach((key) => {
+    if (!KNOWN_STATICS[key]) {
+      try {
+        // Attempt to copy the property descriptor from the source to the target
+        const descriptor = Object.getOwnPropertyDescriptor(sourceComponent, key);
+        Object.defineProperty(targetComponent, key, descriptor);
+      } catch (e) {
+        // if there's an issue with property definition, you can handle or log it here as needed
+      }
+    }
+  });
+
+  return targetComponent;
+}
+
+module.exports = hoistNonReactStatics;
+
+// Example usage
+/*
+const React = require('react');
+const hoistNonReactStatics = require('./hoist-non-react-statics');
+
+class MyComponent extends React.Component {}
+class MyOtherComponent extends React.Component {
+  static myStatic = "a static property";
+}
+
+hoistNonReactStatics(MyComponent, MyOtherComponent);
+
+console.log(MyComponent.myStatic); // Outputs: "a static property"
+*/
+```
+
+This code captures the core functionality of the `hoist-non-react-statics` package, providing a utility function for transferring non-React-specific static properties between components while allowing for custom exclusion rules.

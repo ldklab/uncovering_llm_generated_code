@@ -1,0 +1,61 @@
+The provided Node.js code defines a URL concatenation or normalization functionality. It consists of two main parts:
+
+1. **normalize Function**: This helper function takes an array of strings (`strArray`), which represent parts of a URL, and processes these parts to produce a normalized URL string. The function performs the following operations:
+   - Checks if the array is empty and returns an empty string if true.
+   - Validates that each array element is a string, throwing a `TypeError` if not.
+   - Concatenates the first part with the second if the first part appears to be a simple protocol (like "http:").
+   - Adjusts the slashes for different protocols, ensuring that URL parts are correctly joined with single slashes.
+   - Joins array elements with a single slash while removing redundant slashes.
+   - Handles trailing slashes, question marks, and hashes to make sure they are formatted properly in the resulting URL.
+   - Replaces any '?' in parameters with '&'.
+
+2. **urlJoin Function**: This function accepts a variable number of arguments that represent URL segments to be joined together. It transfers these arguments to the `normalize` function:
+   - If the first argument is an object, it assumes this is the input array; otherwise, it converts the `arguments` object into an array.
+   - Calls the `normalize` function with this array to produce and return the final URL string.
+
+Here's the rewritten Node.js code following this explanation:
+
+```javascript
+function normalizeURLParts(partsArray) {
+  if (partsArray.length === 0) return '';
+
+  return partsArray.reduce((acc, part, index) => {
+    if (typeof part !== 'string') {
+      throw new TypeError(`Url must be a string. Received ${part}`);
+    }
+
+    if (index === 0) {
+      if (part.match(/^[^/:]+:\/*$/) && partsArray.length > 1) {
+        part += partsArray[index + 1];
+        partsArray.splice(index + 1, 1);
+      }
+
+      part = part.replace(/^([^/:]+):\/*/, '$1://');
+      if (part.match(/^file:\/\/\//)) {
+        part = part.replace(/^([^/:]+):\/*/, '$1:///');
+      }
+    } else {
+      part = part.replace(/^[\/]+/, '');
+    }
+
+    if (index < partsArray.length - 1) {
+      part = part.replace(/[\/]+$/, '');
+    } else {
+      part = part.replace(/[\/]+$/, '/');
+    }
+
+    if (part) {
+      acc.push(part);
+    }
+
+    return acc;
+  }, []).join('/')
+    .replace(/\/(\?|&|#[^!])/g, '$1')
+    .replace(/\?/, match => match.replace('?', '&'));
+}
+
+export default function joinURL() {
+  const inputs = Array.isArray(arguments[0]) ? arguments[0] : Array.from(arguments);
+  return normalizeURLParts(inputs);
+}
+```

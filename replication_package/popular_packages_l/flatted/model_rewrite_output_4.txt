@@ -1,0 +1,108 @@
+The provided Node.js code is a custom implementation of JSON serialization and deserialization called `flatted`. It is particularly designed to handle circular references and references to the same object within a data structure. The code defines four main functions:
+
+1. **stringify**: Converts a JavaScript value to a flatted JSON string while maintaining reference integrity. It uses a recursive helper function, `flatten`, which traverses the structure and assigns unique identifiers to objects to track their references.
+
+2. **parse**: Parses a flatted JSON string back into a JavaScript object. It reconstructs the original object structure and correctly re-establishes object references. It also supports a `reviver` function that can modify the deserialized output.
+
+3. **toJSON**: A convenience function that directly calls `stringify`.
+
+4. **fromJSON**: A convenience function that directly calls `parse`.
+
+Here's a possible rewrite of the code:
+
+```javascript
+'use strict';
+
+const Primitive = String;
+const primitive = 'string';
+
+function stringify(value, replacer, space) {
+  let index = null;
+  let stringified = new Primitive('0');
+
+  function flatten(object, map) {
+    let tmp = (typeof object === primitive) ? object : (map.get(object) || new Primitive('' + (++index)));
+    
+    if (!map.has(object)) {
+      map.set(object, tmp);
+
+      if (typeof object === 'object' && object) {
+        const isArray = Array.isArray(object);
+        const arrTmp = isArray ? [] : {};
+        map.set(tmp, arrTmp);
+
+        if (isArray) {
+          object.forEach((value, i) => arrTmp[i] = flatten(value, map));
+          tmp = arrTmp;
+        } else {
+          for (const key in object) {
+            arrTmp[key] = flatten(object[key], map);
+          }
+          tmp = arrTmp;
+        }
+      }
+    }
+    return tmp;
+  }
+
+  const result = flatten(value, new Map());
+  return JSON.stringify(result, replacer, space);
+}
+
+function parse(text, reviver) {
+  const input = JSON.parse(text);
+  const map = new Map();
+
+  function build(object) {
+    const reconstructed = Array.isArray(object) ? [] : {};
+    map.set(object, reconstructed);
+
+    if (Array.isArray(object)) {
+      object.forEach((item, i) => {
+        if (typeof item == primitive) {
+          map.has(item) ? reconstructed[i] = map.get(item) : map.set(item, reconstructed[i] = []);
+        } else {
+          reconstructed[i] = item;
+        }
+      });
+    } else {
+      for (const key in object) {
+        const value = object[key];
+        if (typeof value == primitive) {
+          map.has(value) ? reconstructed[key] = map.get(value) : map.set(value, reconstructed[key] = {});
+        } else {
+          reconstructed[key] = value;
+        }
+      }
+    }
+    return reconstructed;
+  }
+
+  const fixed = build(input);
+  return reviver ? (function revive(obj, k) {
+    const v = obj[k];
+    if (v && typeof v === 'object') {
+      obj[k] = null;
+      for (k in v) {
+        revive(v, k);
+      }
+      obj[k] = reviver.call(obj, k, v);
+    }
+  })(fixed, '') : fixed;
+}
+
+function toJSON(value) {
+  return stringify(value);
+}
+
+function fromJSON(value, reviver) {
+  return parse(value, reviver);
+}
+
+module.exports = {
+  stringify,
+  parse,
+  toJSON,
+  fromJSON
+};
+```

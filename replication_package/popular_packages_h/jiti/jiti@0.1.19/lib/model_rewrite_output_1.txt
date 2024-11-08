@@ -1,0 +1,38 @@
+The given Node.js code tries to import a `dynamicImport` function from a module `./esm`. If the import fails due to a syntax error or the module not being available, it silently ignores the error by catching and suppressing it. The main exported function of this module takes a `filename` and `opts` as arguments. It requires two modules, `../dist/v8cache` and `../dist/jiti`, and then constructs an options object that includes `dynamicImport`, `onError`, and any other options provided in `opts`. If the `transform` property is not defined in the `opts`, it defaults to a transformation using a module required from `../dist/babel`. Finally, it calls the `jiti` function with the `filename` and constructed `opts` and returns the result.
+
+```javascript
+const { existsSync } = require('fs');
+const { join } = require('path');
+
+function attemptDynamicImport() {
+  const esmPath = join(__dirname, './esm');
+  if (existsSync(esmPath)) {
+    try {
+      return require(esmPath).dynamicImport;
+    } catch (_err) {
+      // Ignore error: dynamic import not supported
+    }
+  }
+  return undefined;
+}
+
+const dynamicImport = attemptDynamicImport();
+
+function onError(err) {
+  throw err;
+}
+
+module.exports = function(filename, userOpts) {
+  require('../dist/v8cache');
+  const jiti = require('../dist/jiti');
+
+  const opts = {
+    dynamicImport,
+    onError,
+    ...userOpts,
+    transform: userOpts.transform || require('../dist/babel')
+  };
+
+  return jiti(filename, opts);
+}
+```

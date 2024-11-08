@@ -1,0 +1,65 @@
+The Node.js code defines a polyfill for `Object.entries` method, which returns an array of a given object's own enumerable string-keyed property `[key, value]` pairs. Here's the functionality breakdown:
+
+- **Module and Variable Setup**: The code sets up necessary requirements and checks for symbol support. It verifies if `Object.entries` is natively supported.
+
+- **Main Function - `entries(O)`**: 
+  - Converts input `O` to an object.
+  - Iterates over own enumerable properties, pushing each `[key, value]` pair to the `entrys` array.
+  - If symbols are supported and the object is a plain object, it includes symbol-keyed properties that are enumerable.
+
+- **Shim Function - `shimObjectEntries()`**: 
+  - This function checks if `Object.entries` exists and works correctly with strings (a known Firefox issue).
+  - If not implemented or faulty, it assigns the polyfill function to `Object.entries`.
+
+The code provides a way to safely use `Object.entries` across all environments, ensuring compatibility even if the native implementation is not present or is buggy.
+
+```javascript
+// object.entries.js
+'use strict';
+
+const callBound = require('call-bind/callBound');
+const hasSymbols = typeof Symbol === 'function' && typeof Symbol('') === 'symbol';
+const $propIsEnumerable = callBound('Object.prototype.propertyIsEnumerable');
+const toObject = require('es-abstract/2019/ToObject');
+const toString = Object.prototype.toString;
+
+// Check for native implementation
+const nativeObjectEntries = Object.entries;
+
+function entries(O) {
+    const obj = toObject(O);
+    const entriesList = [];
+    for (const key in obj) {
+        if ($propIsEnumerable(obj, key)) {
+            entriesList.push([key, obj[key]]);
+        }
+    }
+    if (hasSymbols && toString.call(obj) === '[object Object]') {
+        const symbols = Object.getOwnPropertySymbols(obj);
+        for (const sym of symbols) {
+            if ($propIsEnumerable(obj, sym)) {
+                entriesList.push([sym, obj[sym]]);
+            }
+        }
+    }
+    return entriesList;
+}
+
+function shimObjectEntries() {
+    if (nativeObjectEntries) {
+        const entriesWorksWithStrings = (() => Object.entries('foo')[0][0] === '0')();
+        if (!entriesWorksWithStrings) {
+            const originalEntries = nativeObjectEntries;
+            Object.entries = function (it) {
+                return originalEntries.call(Object, it);
+            };
+        }
+    } else {
+        Object.entries = entries;
+    }
+    return Object.entries;
+}
+
+module.exports = entries;
+module.exports.shim = shimObjectEntries;
+```

@@ -1,0 +1,92 @@
+The provided Node.js code is a module that exports a function designed to convert glob patterns into regular expressions. Glob patterns are simplified syntax patterns used to match filenames or paths. This function processes these patterns and generates equivalent regular expressions that can be used for more advanced and detailed pattern matching. Here's a summary of the functionality:
+
+1. It ensures the input glob pattern is a string.
+2. The function checks options (`opts`) for two features: `extended` for extended matching, allowing features like single character matching and groups; and `globstar` to interpret `**` as matching directories recursively.
+3. The function iterates over the characters of the glob string, converting special glob syntax into the correct regular expression syntax.
+4. It manages and supports characters like `*`, `?`, `{}`, and character classes `[]` when `extended` is true.
+5. For non-extended and non-globstar configurations, it defaults to standard regex matching.
+6. It generates options for regular expression flags and supports specifying them through `opts.flags`.
+7. Finally, it wraps the constructed regular expression pattern into a RegExp object, marking it to match only complete strings unless the global flag is set in the options.
+
+Here's a possible rewrite of this Node.js code:
+
+```javascript
+module.exports = function(glob, opts = {}) {
+  if (typeof glob !== 'string') {
+    throw new TypeError('Expected a string');
+  }
+
+  let reStr = '';
+  const extended = Boolean(opts.extended);
+  const globstar = Boolean(opts.globstar);
+  let inGroup = false;
+  const flags = typeof opts.flags === 'string' ? opts.flags : '';
+
+  for (let i = 0, len = glob.length; i < len; i++) {
+    const c = glob[i];
+
+    switch (c) {
+      case '/':
+      case '$':
+      case '^':
+      case '+':
+      case '.':
+      case '(':
+      case ')':
+      case '=':
+      case '!':
+      case '|':
+        reStr += `\\${c}`;
+        break;
+      case '?':
+        reStr += extended ? '.' : `\\${c}`;
+        break;
+      case '[':
+      case ']':
+        reStr += extended ? c : `\\${c}`;
+        break;
+      case '{':
+        if (extended) {
+          inGroup = true;
+          reStr += '(';
+        } else {
+          reStr += `\\${c}`;
+        }
+        break;
+      case '}':
+        reStr += inGroup && extended ? ')' : `\\${c}`;
+        inGroup = false;
+        break;
+      case ',':
+        reStr += inGroup ? '|' : `\\${c}`;
+        break;
+      case '*':
+        const prevChar = glob[i - 1];
+        let starCount = 1;
+        
+        while (glob[i + 1] === '*') {
+          starCount++;
+          i++;
+        }
+        
+        const nextChar = glob[i + 1];
+        if (!globstar) {
+          reStr += '.*';
+        } else {
+          const isGlobstar = starCount > 1 && (prevChar === '/' || !prevChar) && (nextChar === '/' || !nextChar);
+          reStr += isGlobstar ? '((?:[^/]*(?:/|$))*)' : '([^/]*)';
+          if (isGlobstar) i++;
+        }
+        break;
+      default:
+        reStr += c;
+    }
+  }
+
+  if (!~flags.indexOf('g')) {
+    reStr = `^${reStr}$`;
+  }
+
+  return new RegExp(reStr, flags);
+};
+```

@@ -1,0 +1,111 @@
+The provided Node.js code is a module that is part of a code transformation library, likely using the Sucrase library. Here's a breakdown of the functionality:
+
+1. **Module Imports**: The code imports several modules that are necessary for various parts of the transformation process. It uses a helper function `_interopRequireDefault` to handle default import behavior.
+
+2. **Exported Functions**:
+   - `getVersion()`: Returns the version of the package by reading it from the `package.json` file.
+   - `transform(code, options)`: This function is the centerpiece of the transformation logic. It:
+     - Validates the provided options using the `validateOptions` method from the `Options` module.
+     - Generates a context (`sucraseContext`) for transformation using helper functions and imported modules.
+     - Creates a `RootTransformer` to perform the transformation based on options.
+     - Prepares the transformed result, and if requested, generates a source map.
+     - Handles errors by adding file path information to the error message, if available.
+   - `getFormattedTokens(code, options)`: Returns a formatted string representation of tokens for diagnostic purposes, using Sucrase's internal token processing logic.
+
+3. **Helper Functions**:
+   - `getSucraseContext(code, options)`: A function that prepares the parsing context by performing initial parsing, preprocessing import/export statements, identifying shadowed global variables, and managing names and helpers. This function uses options to determine which transformations are enabled and customizes the parsing accordingly.
+
+The overall structure deals with importing various transformer utilities and facilitating the transformation of JavaScript or TypeScript code using those utilities. Below is the rewritten code:
+
+```javascript
+"use strict";
+
+const fs = require('fs');
+const path = require('path');
+const CJSImportProcessor = require('./CJSImportProcessor').default;
+const computeSourceMap = require('./computeSourceMap').default;
+const { HelperManager } = require('./HelperManager');
+const identifyShadowedGlobals = require('./identifyShadowedGlobals').default;
+const NameManager = require('./NameManager').default;
+const { validateOptions } = require('./Options');
+const { parse } = require('./parser');
+const TokenProcessor = require('./TokenProcessor').default;
+const RootTransformer = require('./transformers/RootTransformer').default;
+const formatTokens = require('./util/formatTokens').default;
+const getTSImportedNames = require('./util/getTSImportedNames').default;
+
+const getVersion = () => {
+  return JSON.parse(fs.readFileSync(path.join(__dirname, '../package.json'), 'utf8')).version;
+};
+
+const transform = (code, options) => {
+  validateOptions(options);
+  try {
+    const sucraseContext = getSucraseContext(code, options);
+    const transformer = new RootTransformer(
+      sucraseContext,
+      options.transforms,
+      Boolean(options.enableLegacyBabel5ModuleInterop),
+      options,
+    );
+    let result = { code: transformer.transform() };
+    if (options.sourceMapOptions) {
+      if (!options.filePath) {
+        throw new Error("filePath must be specified when generating a source map.");
+      }
+      result = {
+        ...result,
+        sourceMap: computeSourceMap(result.code, options.filePath, options.sourceMapOptions),
+      };
+    }
+    return result;
+  } catch (e) {
+    if (options.filePath) {
+      e.message = `Error transforming ${options.filePath}: ${e.message}`;
+    }
+    throw e;
+  }
+};
+
+const getFormattedTokens = (code, options) => {
+  const tokens = getSucraseContext(code, options).tokenProcessor.tokens;
+  return formatTokens(code, tokens);
+};
+
+const getSucraseContext = (code, options) => {
+  const isJSXEnabled = options.transforms.includes("jsx");
+  const isTypeScriptEnabled = options.transforms.includes("typescript");
+  const isFlowEnabled = options.transforms.includes("flow");
+  const file = parse(code, isJSXEnabled, isTypeScriptEnabled, isFlowEnabled);
+  const { tokens, scopes } = file;
+
+  const nameManager = new NameManager(code, tokens);
+  const helperManager = new HelperManager(nameManager);
+  const tokenProcessor = new TokenProcessor(code, tokens, isFlowEnabled, helperManager);
+  const enableLegacyTypeScriptModuleInterop = Boolean(options.enableLegacyTypeScriptModuleInterop);
+
+  let importProcessor = null;
+  if (options.transforms.includes("imports")) {
+    importProcessor = new CJSImportProcessor(
+      nameManager,
+      tokenProcessor,
+      enableLegacyTypeScriptModuleInterop,
+      options,
+      options.transforms.includes("typescript"),
+      helperManager,
+    );
+    importProcessor.preprocessTokens();
+    identifyShadowedGlobals(tokenProcessor, scopes, importProcessor.getGlobalNames());
+    if (options.transforms.includes("typescript")) {
+      importProcessor.pruneTypeOnlyImports();
+    }
+  } else if (options.transforms.includes("typescript")) {
+    identifyShadowedGlobals(tokenProcessor, scopes, getTSImportedNames(tokenProcessor));
+  }
+  return { tokenProcessor, scopes, nameManager, importProcessor, helperManager };
+};
+
+exports.getVersion = getVersion;
+exports.transform = transform;
+exports.getFormattedTokens = getFormattedTokens;
+```

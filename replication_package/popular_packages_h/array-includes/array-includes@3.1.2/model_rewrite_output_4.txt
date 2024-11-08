@@ -1,0 +1,53 @@
+The given Node.js code defines a module that provides a custom implementation of an `includes` function, specifically for determining if an array contains a specified element. The code ensures compatibility with environments that might not support this function natively, using a polyfill.
+
+Here is a breakdown of its functionality:
+
+1. **Imports**: 
+   - The code imports necessary functionalities from several modules, including `define-properties` for adding properties to objects, `RequireObjectCoercible` to ensure that an object is valid for operations.
+   - It uses `call-bind` and `callBind/callBound` to bind function calls to a specific context.
+   - It also imports various modules related to the polyfill implementation: `./implementation`, `./polyfill`, and `./shim`.
+
+2. **Polyfill Handling**:
+   - `getPolyfill` is used to retrieve a polyfill version of the `includes` implementation when the native one is not available.
+   - `polyfill` is bound to the context returned by invoking `getPolyfill`.
+
+3. **Array Slicing**: 
+   - `$slice` is a bound version of `Array.prototype.slice`, used to handle arguments slicing.
+
+4. **Bound Include Function**: 
+   - `boundShim` is a function that leverages the polyfill to execute the `includes` functionality. It ensures that the target object (the array) is coercible to an object using `RequireObjectCoercible`.
+   - It calls the `polyfill` function, passing the array and slicing the additional arguments.
+
+5. **Module Export**: 
+   - `boundShim` is extended using `define` to include the `getPolyfill`, `implementation`, and `shim` as its properties, and is then exported as the module's output. This allows external code to use the `includes` function and related polyfill utilities.
+
+Here's a possible rewrite of the given Node.js code according to the explanation:
+
+```javascript
+'use strict';
+
+const defineProperties = require('define-properties');
+const RequireObjectCoercible = require('es-abstract/2020/RequireObjectCoercible');
+const callBind = require('call-bind');
+const callBound = require('call-bind/callBound');
+
+const implementation = require('./implementation');
+const getPolyfill = require('./polyfill');
+const polyfill = callBind.apply(getPolyfill());
+const shim = require('./shim');
+
+const arraySlice = callBound('Array.prototype.slice');
+
+const arrayIncludes = function(array, searchElement) {
+  RequireObjectCoercible(array);
+  return polyfill(array, arraySlice(arguments, 1));
+};
+
+defineProperties(arrayIncludes, {
+  getPolyfill: getPolyfill,
+  implementation: implementation,
+  shim: shim,
+});
+
+module.exports = arrayIncludes;
+```

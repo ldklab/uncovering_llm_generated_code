@@ -1,0 +1,109 @@
+The provided Node.js code is a CommonJS module that exports a logging middleware for use in a client stack, potentially for AWS SDK or similar command-based client libraries. The main functionality of the code includes:
+
+1. **Middleware Definition (`loggerMiddleware`)**: This is an asynchronous function returning a function to handle commands. It logs the input and output of successful command executions and logs errors during command failures. The middleware uses a logger object (likely to conform to a specific logging interface) that provides `info` and `error` methods.
+
+2. **Middleware Options (`loggerMiddlewareOptions`)**: Describes metadata for the logger middleware, including its name, tags, the step where it should be applied in the middleware stack, and whether it should override an existing middleware. 
+
+3. **Plugin Definition (`getLoggerPlugin`)**: A function that returns an object used to integrate the logger middleware into the command client stack. The function `applyToStack` method takes a `clientStack` and adds the middleware according to `loggerMiddlewareOptions`.
+
+Here is a possible rewrite of this Node.js code using modern JavaScript conventions:
+
+```javascript
+"use strict";
+
+// Helper functions to define and copy properties
+const defineProperty = Object.defineProperty;
+const getOwnPropertyNames = Object.getOwnPropertyNames;
+const hasOwnProperty = Object.prototype.hasOwnProperty;
+
+const defineName = (target, value) => defineProperty(target, "name", { value, configurable: true });
+const exportModule = (target, all) => {
+  for (const name in all) {
+    defineProperty(target, name, { get: all[name], enumerable: true });
+  }
+};
+
+const copyProperties = (to, from, except, desc) => {
+  if (typeof from === "object" || typeof from === "function") {
+    for (const key of getOwnPropertyNames(from)) {
+      if (!hasOwnProperty.call(to, key) && key !== except) {
+        defineProperty(to, key, { get: () => from[key], enumerable: !(desc = Object.getOwnPropertyDescriptor(from, key)) || desc.enumerable });
+      }
+    }
+  }
+  return to;
+};
+
+const toCommonJS = (mod) => copyProperties(defineProperty({}, "__esModule", { value: true }), mod);
+
+// Exports object
+const src_exports = {};
+
+// Logger Middleware
+const loggerMiddleware = defineName(
+  () => (next, context) => async (args) => {
+    try {
+      const response = await next(args);
+      const { clientName, commandName, logger, dynamoDbDocumentClientOptions = {} } = context;
+      const { overrideInputFilterSensitiveLog, overrideOutputFilterSensitiveLog } = dynamoDbDocumentClientOptions;
+      const inputFilterSensitiveLog = overrideInputFilterSensitiveLog ?? context.inputFilterSensitiveLog;
+      const outputFilterSensitiveLog = overrideOutputFilterSensitiveLog ?? context.outputFilterSensitiveLog;
+      const { $metadata, ...outputWithoutMetadata } = response.output;
+      logger?.info?.({
+        clientName,
+        commandName,
+        input: inputFilterSensitiveLog(args.input),
+        output: outputFilterSensitiveLog(outputWithoutMetadata),
+        metadata: $metadata
+      });
+      return response;
+    } catch (error) {
+      const { clientName, commandName, logger, dynamoDbDocumentClientOptions = {} } = context;
+      const { overrideInputFilterSensitiveLog } = dynamoDbDocumentClientOptions;
+      const inputFilterSensitiveLog = overrideInputFilterSensitiveLog ?? context.inputFilterSensitiveLog;
+      logger?.error?.({
+        clientName,
+        commandName,
+        input: inputFilterSensitiveLog(args.input),
+        error,
+        metadata: error.$metadata
+      });
+      throw error;
+    }
+  }, 
+  "loggerMiddleware"
+);
+
+// Middleware options
+const loggerMiddlewareOptions = {
+  name: "loggerMiddleware",
+  tags: ["LOGGER"],
+  step: "initialize",
+  override: true
+};
+
+// Plugin to add the middleware to the stack
+const getLoggerPlugin = defineName(
+  (options) => ({
+    applyToStack: (clientStack) => {
+      clientStack.add(loggerMiddleware(), loggerMiddlewareOptions);
+    }
+  }), 
+  "getLoggerPlugin"
+);
+
+// Export functions
+exportModule(src_exports, {
+  getLoggerPlugin: () => getLoggerPlugin,
+  loggerMiddleware: () => loggerMiddleware,
+  loggerMiddlewareOptions: () => loggerMiddlewareOptions
+});
+
+module.exports = toCommonJS(src_exports);
+
+0 && (module.exports = {
+  loggerMiddleware,
+  loggerMiddlewareOptions,
+  getLoggerPlugin
+});
+```

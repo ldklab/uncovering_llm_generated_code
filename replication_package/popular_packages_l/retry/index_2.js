@@ -1,0 +1,91 @@
+class RetryHandler {
+  constructor(retryIntervals, options = {}) {
+    this.retryIntervals = retryIntervals;
+    this.maxAttempts = options.retries || 10;
+    this.errorLog = [];
+    this.attemptCount = 0;
+    this.indefinite = options.forever || false;
+    this.detach = options.unref || false;
+    this.maxDuration = options.maxRetryTime || Infinity;
+
+    this.initiationTime = Date.now();
+  }
+
+  execute(callback) {
+    if (this.attemptCount < this.maxAttempts || this.indefinite) {
+      const delay = this.retryIntervals[this.attemptCount] || 0;
+      if (Date.now() - this.initiationTime > this.maxDuration) {
+        return callback(new Error('Exceeded maximum retry duration'), this.attemptCount);
+      }
+
+      setTimeout(() => {
+        this.attemptCount++;
+        callback(null, this.attemptCount);
+      }, delay);
+    } else {
+      callback(new Error('Maximum attempts reached'), this.attemptCount);
+    }
+  }
+
+  shouldRetry(err) {
+    if (!err) return false;
+    if (this.indefinite || this.attemptCount < this.maxAttempts) {
+      this.errorLog.push(err);
+      return true;
+    }
+    return false;
+  }
+
+  getErrors() {
+    return this.errorLog;
+  }
+
+  primaryError() {
+    const frequency = this.errorLog.reduce((counts, error) => {
+      counts[error.message] = (counts[error.message] || 0) + 1;
+      return counts;
+    }, {});
+    const frequentError = Object.keys(frequency).reduce((max, message) => 
+      frequency[max] > frequency[message] ? max : message
+    );
+    return this.errorLog.find(error => error.message === frequentError);
+  }
+}
+
+function generateTimeouts(settings = {}) {
+  const retryLimit = settings.retries || 10;
+  const scaleFactor = settings.factor || 2;
+  const initialTimeout = settings.minTimeout || 1000;
+  const capTimeout = settings.maxTimeout || Infinity;
+  const randomized = settings.randomize || false;
+
+  return Array.from({ length: retryLimit }, (_, index) => {
+    let interval = Math.min(initialTimeout * Math.pow(scaleFactor, index), capTimeout);
+    if (randomized) {
+      interval *= Math.random() + 1;
+    }
+    return Math.round(interval);
+  });
+}
+
+function createOperation(settings) {
+  return new RetryHandler(generateTimeouts(settings), settings);
+}
+
+module.exports = {
+  RetryHandler,
+  generateTimeouts,
+  createOperation,
+  createTimeoutValue(attemptIndex, options = {}) {
+    const initialDelay = options.minTimeout || 1000;
+    const growthFactor = options.factor || 2;
+    const maxDelay = options.maxTimeout || Infinity;
+    const randomizeDelay = options.randomize || false;
+
+    let delay = Math.min(initialDelay * Math.pow(growthFactor, attemptIndex), maxDelay);
+    if (randomizeDelay) {
+      delay *= Math.random() + 1;
+    }
+    return Math.round(delay);
+  }
+};

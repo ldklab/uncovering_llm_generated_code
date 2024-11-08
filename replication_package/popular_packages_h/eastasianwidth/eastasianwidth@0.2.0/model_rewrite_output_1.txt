@@ -1,0 +1,102 @@
+The given Node.js code is a module that enables the determination of East Asian Width properties for Unicode characters. It provides a utility for calculating string lengths and slicing based on these width properties. The code consists of the following main functionalities:
+
+1. **Module Export**: The code checks the environment (Node.js vs. browser) to determine how to export the `eaw` object, containing all utility functions, either by assigning it to `module.exports` (Node.js) or `window.eastasianwidth` (browser).
+
+2. **Function `eastAsianWidth`**: This function takes a single character as input and determines its East Asian Width property:
+   - 'F' (Fullwidth)
+   - 'H' (Halfwidth)
+   - 'W' (Wide)
+   - 'N' (Neutral)
+   - 'Na' (Narrow)
+   - 'A' (Ambiguous)
+
+3. **Function `characterLength`**: This determines the display length of a character depending on its East Asian Width:
+   - Characters with 'F', 'W', or 'A' width properties have a length of 2.
+   - Other characters have a length of 1.
+
+4. **Function `stringToArray`**: This splits a string into an array of characters, handling surrogate pairs and ensuring that pairs are not split apart.
+
+5. **Function `length`**: This computes the display length of an entire string by summing the `characterLength` of each character.
+
+6. **Function `slice`**: This function allows slicing a string based on the display length rather than the byte or character count. It uses East Asian Width properties to accurately compute slices, allowing for negative indices as well.
+
+Here is a possible rewrite of the given code:
+
+```javascript
+(function(global, factory) {
+  if (typeof module !== 'undefined' && module.exports) {
+    module.exports = factory();
+  } else {
+    global.eastasianwidth = factory();
+  }
+}(this, function() {
+  var eaw = {};
+
+  eaw.eastAsianWidth = function(character) {
+    var codePoint = character.codePointAt(0);
+
+    if (0xD800 <= codePoint && codePoint <= 0xDBFF) { // Check surrogate pair
+      var high = codePoint;
+      var low = character.codePointAt(1) || 0;
+      if (0xDC00 <= low && low <= 0xDFFF) {
+        codePoint = ((high & 0x3FF) << 10) | (low & 0x3FF) | 0x10000;
+      }
+    }
+
+    if ([0x3000, 0xFF01, 0xFFE0, 0xFFE6].includes(codePoint) || 
+       (0xFF01 <= codePoint && codePoint <= 0xFF60) ||
+       (0xFFE0 <= codePoint && codePoint <= 0xFFE6)) return 'F';
+
+    if ((0x20A9 === codePoint) ||
+        (0xFF61 <= codePoint && codePoint <= 0xFFBE) ||
+        // [omitted for brevity, same conditions for 'H', 'W', 'Na', 'A']
+        (0x100000 <= codePoint && codePoint <= 0x10FFFD)) return 'A';
+
+    return 'N';
+  };
+
+  eaw.characterLength = function(character) {
+    var code = this.eastAsianWidth(character);
+    return (code === 'F' || code === 'W' || code === 'A') ? 2 : 1;
+  };
+
+  function stringToArray(string) {
+    return string.match(/[\uD800-\uDBFF][\uDC00-\uDFFF]|[^\uD800-\uDFFF]/g) || [];
+  }
+
+  eaw.length = function(string) {
+    var characters = stringToArray(string);
+    return characters.reduce((len, char) => len + this.characterLength(char), 0);
+  };
+
+  eaw.slice = function(text, start = 0, end = 1) {
+    var textLen = eaw.length(text);
+
+    start = start < 0 ? textLen + start : start;
+    end = end < 0 ? textLen + end : end;
+
+    var result = '';
+    var eawLen = 0;
+    var chars = stringToArray(text);
+
+    for (var i = 0; i < chars.length; i++) {
+      var char = chars[i];
+      var charLen = eaw.characterLength(char);
+
+      if (eawLen >= start) {
+        if (eawLen + charLen <= end) {
+          result += char;
+        } else {
+          break;
+        }
+      }
+
+      eawLen += charLen;
+    }
+
+    return result;
+  };
+
+  return eaw;
+}));
+```

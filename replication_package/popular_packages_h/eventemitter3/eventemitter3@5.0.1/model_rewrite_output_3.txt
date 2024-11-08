@@ -1,0 +1,202 @@
+The given Node.js code creates a minimal implementation of an `EventEmitter` pattern similar to Node.js's built-in `EventEmitter`. The code manages event listeners and their invocations in response to specific events. Here's a breakdown of the main components and their functionality:
+
+1. **Events Constructor**: Creates an instance to store events without inheriting from `Object.prototype`. It's a plain object storing event names as keys and corresponding listeners as values.
+
+2. **EE (Event Listener) Constructor**: Represents a single event listener, storing the listener function, context, and a flag for one-time listeners.
+
+3. **addListener Function**: Adds a listener for a specified event to an `EventEmitter` instance, supporting both regular and one-time listeners.
+
+4. **clearEvent Function**: Removes a single event by name from the `EventEmitter` instance.
+
+5. **EventEmitter Class**: Provides methods to manage event listeners and emit events:
+   - `eventNames()`: Retrieves the names of events with registered listeners.
+   - `listeners(event)`: Returns the listeners for a specific event.
+   - `listenerCount(event)`: Counts the number of listeners for a specific event.
+   - `emit(event, ...)`: Calls all listeners registered for a specific event.
+   - `on(event, fn, context)`: Adds a listener for an event.
+   - `once(event, fn, context)`: Adds a one-time listener for an event.
+   - `removeListener(event, fn, context, once)`: Removes specified listeners for an event.
+   - `removeAllListeners(event)`: Removes all listeners for a specific event or all events.
+
+6. **Aliasing**: Provides shorthand method aliases for removing and adding listeners.
+
+7. **Prefixing**: Uses a prefix for event names if `Object.create(null)` is supported, aiming to avoid conflicts with object properties in some environments.
+
+8. **Module Export**: Exports the `EventEmitter` class for use in other modules.
+
+Here's a possible rewrite focusing on modernization and simplification:
+
+```javascript
+'use strict';
+
+// Utility to check for own properties
+const hasOwnProp = Object.prototype.hasOwnProperty;
+
+// Prefix for event names, determined by object creation capability
+let prefix = '~';
+
+class Events {
+  constructor() {
+    if (Object.create) {
+      const instance = Object.create(null);
+      if (!('__proto__' in instance)) prefix = false;
+      return instance;
+    }
+    return {};
+  }
+}
+
+class EE {
+  constructor(fn, context, once = false) {
+    this.fn = fn;
+    this.context = context;
+    this.once = once;
+  }
+}
+
+class EventEmitter {
+  constructor() {
+    this._events = new Events();
+    this._eventsCount = 0;
+  }
+
+  _createPrefixedEvent(event) {
+    return prefix ? prefix + event : event;
+  }
+
+  eventNames() {
+    const events = this._events;
+    if (this._eventsCount === 0) return [];
+    const names = [];
+    for (const name in events) {
+      if (hasOwnProp.call(events, name)) {
+        names.push(prefix ? name.slice(1) : name);
+      }
+    }
+    return Object.getOwnPropertySymbols 
+      ? names.concat(Object.getOwnPropertySymbols(events))
+      : names;
+  }
+
+  listeners(event) {
+    const evt = this._createPrefixedEvent(event);
+    const handlers = this._events[evt];
+    if (!handlers) return [];
+    if (handlers.fn) return [handlers.fn];
+    return handlers.map(handler => handler.fn);
+  }
+
+  listenerCount(event) {
+    const evt = this._createPrefixedEvent(event);
+    const listeners = this._events[evt];
+    if (!listeners) return 0;
+    return listeners.fn ? 1 : listeners.length;
+  }
+
+  emit(event, ...args) {
+    const evt = this._createPrefixedEvent(event);
+    if (!this._events[evt]) return false;
+
+    const listeners = this._events[evt];
+    if (listeners.fn) {
+      if (listeners.once) this.removeListener(event, listeners.fn, null, true);
+      listeners.fn.call(listeners.context, ...args);
+    } else {
+      for (let listener of listeners) {
+        if (listener.once) this.removeListener(event, listener.fn, null, true);
+        listener.fn.call(listener.context, ...args);
+      }
+    }
+
+    return true;
+  }
+
+  on(event, fn, context = this) {
+    return this._addListener(event, fn, context, false);
+  }
+
+  once(event, fn, context = this) {
+    return this._addListener(event, fn, context, true);
+  }
+
+  _addListener(event, fn, context, once) {
+    if (typeof fn !== 'function') throw new TypeError('Listener must be a function');
+    const listener = new EE(fn, context, once);
+    const evt = this._createPrefixedEvent(event);
+
+    if (!this._events[evt]) {
+      this._events[evt] = listener;
+      this._eventsCount++;
+    } else if (!this._events[evt].fn) {
+      this._events[evt].push(listener);
+    } else {
+      this._events[evt] = [this._events[evt], listener];
+    }
+
+    return this;
+  }
+
+  removeListener(event, fn, context, once) {
+    const evt = this._createPrefixedEvent(event);
+    const listeners = this._events[evt];
+    if (!listeners) return this;
+
+    if (!fn) {
+      this._clearEvent(evt);
+      return this;
+    }
+
+    if (listeners.fn) {
+      if (
+        listeners.fn === fn &&
+        (!once || listeners.once) &&
+        (!context || listeners.context === context)
+      ) {
+        this._clearEvent(evt);
+      }
+    } else {
+      const events = [];
+      for (let listener of listeners) {
+        if (
+          listener.fn !== fn ||
+          (once && !listener.once) ||
+          (context && listener.context !== context)
+        ) {
+          events.push(listener);
+        }
+      }
+      this._events[evt] = events.length ? events : this._clearEvent(evt);
+    }
+
+    return this;
+  }
+
+  removeAllListeners(event) {
+    if (event) {
+      const evt = this._createPrefixedEvent(event);
+      if (this._events[evt]) this._clearEvent(evt);
+    } else {
+      this._events = new Events();
+      this._eventsCount = 0;
+    }
+    return this;
+  }
+
+  _clearEvent(evt) {
+    if (--this._eventsCount === 0) this._events = new Events();
+    else delete this._events[evt];
+  }
+}
+
+// Aliases for method names
+EventEmitter.prototype.off = EventEmitter.prototype.removeListener;
+EventEmitter.prototype.addListener = EventEmitter.prototype.on;
+
+// Expose whether prefixing is used
+EventEmitter.prefixed = prefix;
+
+// Export the EventEmitter
+if (typeof module !== 'undefined') {
+  module.exports = EventEmitter;
+}
+```

@@ -1,0 +1,81 @@
+The `merge2` Node.js package provides the functionality to merge multiple streams into a single one either in sequence or in parallel. This utility can be highly efficient in managing multiple data streams within applications, particularly when processing files or handling I/O-bound tasks.
+
+### Core Functionalities:
+
+1. **Merging Streams**:
+   - The primary function `merge2()` allows merging of streams while specifying the order or parallel execution of streams. Streams provided in arrays are merged in parallel, and streams outside arrays are merged in sequence.
+  
+2. **Adding Streams**:
+   - The merged stream can have additional streams added to it after the initial creation using `mergedStream.add()`.
+
+3. **Completion Notification**:
+   - The merged stream emits a `queueDrain` event when all the streams provided have been fully merged, allowing the user to handle subsequent actions or end the stream if necessary.
+
+4. **Configuration Options**:
+   - Options can be provided to control the behavior of the merged stream:
+     - `end`: If set to false, the merged stream will not automatically end once the input streams are exhausted.
+     - `pipeError`: If true, errors from any of the source streams are re-emitted by the merged stream.
+     - `objectMode`: Determines if the stream should operate in object mode.
+
+Here is the code for the `merge2` package:
+
+```js
+const { PassThrough } = require('stream');
+
+class MergedStream extends PassThrough {
+  constructor(options) {
+    super(options);
+    this.options = options || {};
+    this.pendingStreams = [];
+    this.activeStreams = 0;
+    this.ended = false;
+  }
+  
+  add(...args) {
+    args.forEach(arg => {
+      if (Array.isArray(arg)) {
+        arg.forEach(stream => this._addStream(stream));
+      } else {
+        this._addStream(arg);
+      }
+    });
+    if (!this.activeStreams && !this.pendingStreams.length) this.emit('queueDrain');
+    return this;
+  }
+  
+  _addStream(stream) {
+    if (this.ended) throw new Error('Cannot add stream after end');
+    this.activeStreams++;
+    stream.on('end', this._onEnd.bind(this));
+    if (this.options.pipeError) {
+      stream.on('error', err => this.emit('error', err));
+    }
+    stream.pipe(this, { end: false });
+  }
+  
+  _onEnd() {
+    this.activeStreams--;
+    if (!this.activeStreams && !this.pendingStreams.length) {
+      this.ended = true;
+      if (this.options.end !== false) this.end();
+      this.emit('queueDrain');
+    }
+  }
+}
+
+function merge2(...args) {
+  const lastArg = args[args.length - 1];
+  const options = (typeof lastArg === 'object' && !Array.isArray(lastArg) && lastArg instanceof PassThrough === false) ? args.pop() : {};
+  const mergedStream = new MergedStream(options);
+  mergedStream.add(...args);
+  return mergedStream;
+}
+
+module.exports = merge2;
+```
+
+In this implementation:
+- We define a `MergedStream` class that extends Node.js's `PassThrough` stream to facilitate merging functionality.
+- The `add` method handles the addition of new streams post-initialization, allowing dynamic stream inputs.
+- `queueDrain` event is emitted once all streams have completed merging.
+- An error handling mechanism is included to manage stream-specific errors based on user settings.

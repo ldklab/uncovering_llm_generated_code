@@ -1,0 +1,188 @@
+The given Node.js code defines the main functionality of an interactive prompt library called "Enquirer." This library enables users to create command-line prompts, gather user input, and handle responses. Below is a brief breakdown of its functionality:
+
+1. **Class Definition**: `Enquirer` extends the `events` module, allowing it to emit and listen to events.
+
+2. **Constructor**: Initializes the Enquirer instance with user-defined options and pre-existing answers.
+
+3. **Register Method**: Registers custom prompt types. Users can add custom types of prompts by passing a type (string) and a function or Class.
+
+4. **Prompt Method**: Handles prompting questions to the user. Accepts a single question or an array of questions. Calls `ask` method to execute each prompt and handle user input.
+
+5. **Ask Method**: Executes a single prompt. This involves rendering the prompt, getting user input, and setting the result in the `answers` object. Also, handles autofill functionality and event bubbling.
+
+6. **Use Method**: Allows plugins to be added to the Enquirer instance, modifying its behavior.
+
+7. **Static and Instance Methods for Prompt Management**: Includes static methods to manage prompts and their types. Attributes like `Prompt`, `prompts`, and others link to corresponding modules/files that define various prompts.
+
+8. **Utilities**: Uses utility functions for merging objects, checking types, and defining exports.
+
+9. **MixinEmitter**: Adds event-emitting capabilities to the `Enquirer` class and its methods using a utility function.
+
+10. **Exports**: The module exports the `Enquirer` class, allowing developers to instantiate and use it in their applications.
+
+Here is the rewritten code:
+
+```javascript
+'use strict';
+
+const assert = require('assert');
+const { EventEmitter } = require('events');
+const utils = require('./lib/utils');
+
+class Enquirer extends EventEmitter {
+  constructor(options = {}, answers = {}) {
+    super();
+    this.options = utils.merge({}, options);
+    this.answers = { ...answers };
+  }
+
+  register(type, fn) {
+    if (utils.isObject(type)) {
+      Object.keys(type).forEach(key => this.register(key, type[key]));
+      return this;
+    }
+
+    assert(typeof fn === 'function', 'expected a function');
+    const name = type.toLowerCase();
+
+    this.prompts[name] = fn.prototype instanceof this.Prompt ? fn : fn(this.Prompt, this);
+    return this;
+  }
+
+  async prompt(questions = []) {
+    questions = Array.isArray(questions) ? questions : [questions];
+    for (let question of questions) {
+      try {
+        question = typeof question === 'function' ? await question.call(this) : question;
+        await this.ask(utils.merge({}, this.options, question));
+      } catch (err) {
+        return Promise.reject(err);
+      }
+    }
+    return this.answers;
+  }
+
+  async ask(question) {
+    question = typeof question === 'function' ? await question.call(this) : question;
+    const opts = utils.merge({}, this.options, question);
+    const { type, name } = question;
+    const { set, get } = utils;
+
+    let promptType = typeof type === 'function' ? await type.call(this, question, this.answers) : type;
+    if (!promptType) return this.answers[name];
+    if (promptType === 'number') promptType = 'numeral';
+
+    assert(this.prompts[promptType], `Prompt "${promptType}" is not registered`);
+
+    const prompt = new this.prompts[promptType](opts);
+    prompt.state.answers = this.answers;
+    prompt.enquirer = this;
+
+    if (name) prompt.on('submit', value => this._handleSubmission(name, value, prompt));
+    this._bubbleEvents(prompt);
+
+    this.emit('prompt', prompt, this);
+
+    const value = opts.autofill && get(this.answers, name) != null
+      ? await this._handleAutofill(prompt, opts)
+      : await prompt.run();
+    return value;
+  }
+
+  _handleSubmission(name, value, prompt) {
+    this.emit('answer', name, value, prompt);
+    utils.set(this.answers, name, value);
+  }
+
+  _bubbleEvents(prompt) {
+    const originalEmit = prompt.emit.bind(prompt);
+    prompt.emit = (...args) => {
+      this.emit(...args);
+      return originalEmit(...args);
+    };
+  }
+
+  async _handleAutofill(prompt, opts) {
+    prompt.value = prompt.input = get(this.answers, prompt.name);
+    if (opts.autofill === 'show') await prompt.submit();
+    return prompt.value;
+  }
+
+  use(plugin) {
+    plugin.call(this, this);
+    return this;
+  }
+
+  set Prompt(value) {
+    this._Prompt = value;
+  }
+
+  get Prompt() {
+    return this._Prompt || this.constructor.Prompt;
+  }
+
+  get prompts() {
+    return this.constructor.prompts;
+  }
+
+  static set Prompt(value) {
+    this._Prompt = value;
+  }
+
+  static get Prompt() {
+    return this._Prompt || require('./lib/prompt');
+  }
+
+  static get prompts() {
+    return require('./lib/prompts');
+  }
+
+  static get types() {
+    return require('./lib/types');
+  }
+
+  static get prompt() {
+    const fn = (questions, ...rest) => {
+      const enquirer = new this(...rest);
+      this._mixinPromptEmitter(fn, enquirer);
+      return enquirer.prompt(questions);
+    };
+    utils.mixinEmitter(fn, new EventEmitter());
+    return fn;
+  }
+
+  static _mixinPromptEmitter(fn, enquirer) {
+    const originalEmit = enquirer.emit.bind(enquirer);
+    enquirer.emit = (...args) => {
+      fn.emit(...args);
+      return originalEmit(...args);
+    };
+  }
+}
+
+utils.mixinEmitter(Enquirer, new EventEmitter());
+const prompts = Enquirer.prompts;
+
+for (let name of Object.keys(prompts)) {
+  const key = name.toLowerCase();
+  const run = options => new prompts[name](options).run();
+  Enquirer.prompt[key] = run;
+  Enquirer[key] = run;
+
+  if (!Enquirer[name]) {
+    Reflect.defineProperty(Enquirer, name, { get: () => prompts[name] });
+  }
+}
+
+const define = name => {
+  utils.defineExport(Enquirer, name, () => Enquirer.types[name]);
+};
+
+define('ArrayPrompt');
+define('AuthPrompt');
+define('BooleanPrompt');
+define('NumberPrompt');
+define('StringPrompt');
+
+module.exports = Enquirer;
+```

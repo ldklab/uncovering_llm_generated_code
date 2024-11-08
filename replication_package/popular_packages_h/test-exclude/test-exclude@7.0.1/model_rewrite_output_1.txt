@@ -1,0 +1,131 @@
+The provided Node.js code defines a `TestExclude` class, which is used to manage include and exclude patterns for file paths. The class is intended for use in scenarios where you need to filter or determine if a file should be processed (instrumented) based on its path and patterns. Here's a breakdown of its functionalities:
+
+- **Initialization**: The constructor accepts an options object where you can specify patterns for including and excluding file paths, file extensions to match, and whether to handle node modules. The constructor processes these options to set up default behaviors and handle various inputs.
+
+- **Pattern Preparation**: Helper functions `prepGlobPatterns` and `getExtensionPattern` are utilized to format inclusion and exclusion patterns into a glob-friendly format. These patterns help in processing files correctly based on their extensions or directory structure.
+
+- **Handle Negation**: The method `handleNegation` processes patterns starting with a '!' to efficiently handle exclusions and transforms them for convenient checks when deciding if a file should be included or excluded.
+
+- **Instrumentation Decision**: The method `shouldInstrument` determines if a file should be processed based on its path, the extensions specified, and the include/exclude patterns.
+
+- **File Matching**: The `globSync` and `glob` methods are used to retrieve a list of files that match given patterns in a synchronous or asynchronous manner, respectively, and filter them using `shouldInstrument`.
+
+Here's a rewritten version of the code that performs the same functionality:
+
+```javascript
+'use strict';
+
+const path = require('path');
+const { glob } = require('glob');
+const { minimatch } = require('minimatch');
+const { defaults } = require('@istanbuljs/schema');
+const isOutsideDir = require('./is-outside-dir');
+
+class TestExclude {
+    constructor(opts = {}) {
+        Object.assign(
+            this,
+            { relativePath: true },
+            defaults.testExclude
+        );
+
+        Object.entries(opts).forEach(([key, value]) => {
+            if (value !== undefined) {
+                this[key] = value;
+            }
+        });
+
+        this.include = this._toArray(this.include);
+        this.exclude = this._toArray(this.exclude);
+        this.extension = this._toArray(this.extension);
+        
+        this.include = this.include.length ? this._prepPatterns(this.include) : false;
+        if (this.excludeNodeModules && !this.exclude.includes('**/node_modules/**')) {
+            this.exclude.push('**/node_modules/**');
+        }
+        this.exclude = this._prepPatterns(this.exclude);
+
+        this._handleNegation();
+    }
+
+    _toArray(value) {
+        return typeof value === 'string' ? [value] : value || [];
+    }
+
+    _handleNegation() {
+        const onlyNegative = pattern => pattern.startsWith('!');
+        const stripNegative = pattern => pattern.slice(1);
+
+        if (Array.isArray(this.include)) {
+            const negated = this.include.filter(onlyNegative).map(stripNegative);
+            this.exclude.push(...this._prepPatterns(negated));
+            this.include = this.include.filter(pattern => !onlyNegative(pattern));
+        }
+
+        this.excludeNegated = this.exclude.filter(onlyNegative).map(stripNegative);
+        this.exclude = this.exclude.filter(pattern => !onlyNegative(pattern));
+        this.excludeNegated = this._prepPatterns(this.excludeNegated);
+    }
+
+    shouldInstrument(filename, relFile) {
+        if (this.extension && !this.extension.some(ext => filename.endsWith(ext))) {
+            return false;
+        }
+
+        const filePath = this.relativePath ? (relFile || path.relative(this.cwd, filename)) : filename;
+        if (this.relativePath && isOutsideDir(this.cwd, filename)) {
+            return false;
+        }
+
+        const normalizedPath = filePath.replace(/^\.[\\/]/, '');
+        const dotOption = { dot: true };
+        const isMatch = pattern => minimatch(normalizedPath, pattern, dotOption);
+
+        return (
+            (!this.include || this.include.some(isMatch)) &&
+            (!this.exclude.some(isMatch) || this.excludeNegated.some(isMatch))
+        );
+    }
+
+    globSync(cwd = this.cwd) {
+        return this._executeGlob(cwd, glob.sync);
+    }
+
+    async glob(cwd = this.cwd) {
+        return this._executeGlob(cwd, glob);
+    }
+
+    async _executeGlob(cwd, globFunc) {
+        const patterns = this._getExtensionPattern(this.extension);
+        const opts = { cwd, nodir: true, dot: true, posix: true };
+
+        if (!this.excludeNegated.length) {
+            opts.ignore = this.exclude;
+        }
+
+        const files = await globFunc(patterns, opts);
+        return files.filter(file => this.shouldInstrument(path.resolve(cwd, file)));
+    }
+
+    _prepPatterns(patterns) {
+        return patterns.reduce((result, pattern) => {
+            if (!/\/\*\*$/.test(pattern)) {
+                result.push(pattern.replace(/\/$/, '') + '/**');
+            }
+            if (/^\*\*\//.test(pattern)) {
+                result.push(pattern.replace(/^\*\*\//, ''));
+            }
+            result.push(pattern);
+            return result;
+        }, []);
+    }
+
+    _getExtensionPattern(extension) {
+        if (extension.length === 0) return '**';
+        if (extension.length === 1) return `**/*${extension[0]}`;
+        return `**/*{${extension.join(',')}}`;
+    }
+}
+
+module.exports = TestExclude;
+```

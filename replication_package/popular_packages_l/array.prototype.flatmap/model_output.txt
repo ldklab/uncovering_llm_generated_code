@@ -1,0 +1,65 @@
+The `array.prototype.flatmap` package is an ES2019 spec-compliant polyfill for the `Array.prototype.flatMap` method, applicable even in older environments that support as low as ES3. This package emulates the behavior of `flatMap`, where it takes an array and a mapping function and returns a new array formed by applying the mapping function, then flattening the result by one level.
+
+### Key Features:
+1. **Polyfill Functionality:** 
+   - This polyfill implements the `flatMap` method as defined in the ECMAScript specification.
+   - It primarily functions by taking the array to operate on as its first argument and the mapping callback function as the second.
+
+2. **Shim Capability:**
+   - The package can install a shim that adds the `flatMap` method directly onto the `Array.prototype` if it is not already available.
+   - It verifies whether the native `flatMap` is present and utilizes the shimmed version if necessary.
+
+3. **Example Usage:**
+   - When `Array.prototype.flatMap` is not present, the package allows you to smoothly upgrade to compliant functionality via a shim.
+   - Otherwise, it directly utilizes the native implementation offering consistency with the latest ECMAScript standard behavior.
+
+4. **Testing and Compatibility:**
+   - Provides test scripts to verify correct implementation behavior.
+   - Designed to conform to the `es-shims API`, ensuring compatibility across different JavaScript execution environments.
+
+Below is the code for the Node.js package implementing this functionality:
+
+```javascript
+// array.prototype.flatmap.js
+var define = require('define-properties');
+var callBind = require('es-abstract/helpers/callBind');
+var bind = callBind(
+    Function.prototype.call,
+    Array.prototype.forEach
+);
+
+var flatMapImplementation = function flatMap(array, mapper, thisArg) {
+    if (typeof mapper !== 'function') {
+        throw new TypeError('mapper is not a function');
+    }
+    var result = [];
+    bind(array, function (value, index, arr) {
+        var mappedValue = mapper.call(thisArg, value, index, arr);
+        if (Array.isArray(mappedValue)) {
+            result.push.apply(result, mappedValue);
+        } else {
+            result.push(mappedValue);
+        }
+    });
+    return result;
+};
+
+var getPolyfill = function getPolyfill() {
+    if (Array.prototype.flatMap) {
+        return Array.prototype.flatMap;
+    }
+    return flatMapImplementation;
+};
+
+var shim = function shimFlatMap() {
+    var polyfill = getPolyfill();
+    define(Array.prototype, { flatMap: polyfill });
+    return polyfill;
+};
+
+module.exports = flatMapImplementation;
+module.exports.shim = shim;
+module.exports.getPolyfill = getPolyfill;
+```
+
+The above code defines an implementation of `flatMap`, checks if the native method exists, and provides a shim to fill in gaps where it does not. The `flatMapImplementation` function does the actual work of mapping and flattening the array. The module exports include utilities for using this implementation directly and shimming it into `Array.prototype`.

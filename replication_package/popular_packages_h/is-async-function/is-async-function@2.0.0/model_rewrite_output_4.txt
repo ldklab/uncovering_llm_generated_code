@@ -1,0 +1,53 @@
+The Node.js code is a utility module that exports a function `isAsyncFunction`. This function checks whether a given argument `fn` is an asynchronous function. Here's how it works:
+
+1. It first checks if the provided `fn` is a function; if not, it returns `false`.
+2. It uses a regular expression to detect if the function's string representation matches that of an async function's.
+3. For environments that do not support Symbol.toStringTag, it falls back to using `Object.prototype.toString` to check the type.
+4. It further checks the function's prototype in environments that support `Symbol.toStringTag`, using `Object.getPrototypeOf`.
+5. If `AsyncFunction` isn't already defined, it attempts to create and define it by evaluating an async function on-the-fly; this gives the accurate prototype to compare against.
+6. Finally, the function returns `true` or `false` depending on whether the provided function is asynchronous.
+
+Here is a possible rewrite of the code:
+
+```javascript
+'use strict';
+
+const toStr = Object.prototype.toString;
+const fnToStr = Function.prototype.toString;
+const isFnRegex = /^\s*async(?:\s+function(?:\s+|\()|\s*\()/;
+const hasToStringTag = require('has-tostringtag/shams')();
+const getProto = Object.getPrototypeOf;
+
+let AsyncFunction;
+
+function getAsyncFunc() {
+  if (!hasToStringTag) {
+    return false;
+  }
+  try {
+    return Function('return async function () {}')();
+  } catch (e) {
+    return false;
+  }
+}
+
+module.exports = function isAsyncFunction(fn) {
+  if (typeof fn !== 'function') {
+    return false;
+  }
+  if (isFnRegex.test(fnToStr.call(fn))) {
+    return true;
+  }
+  if (!hasToStringTag) {
+    return toStr.call(fn) === '[object AsyncFunction]';
+  }
+  if (!getProto) {
+    return false;
+  }
+  if (typeof AsyncFunction === 'undefined') {
+    const asyncFunc = getAsyncFunc();
+    AsyncFunction = asyncFunc ? getProto(asyncFunc) : false;
+  }
+  return getProto(fn) === AsyncFunction;
+};
+```

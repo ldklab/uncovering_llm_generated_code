@@ -1,0 +1,103 @@
+The provided Node.js code is designed to detect the C standard library being used on a Linux system. It primarily distinguishes between "glibc" and "musl" and determines their versions. Here's a step-by-step explanation of how the script works:
+
+1. **Imports and Constants**: The script imports required modules (`os`, `child_process`, `fs`) and defines constants `GLIBC` and `MUSL`.
+
+2. **Default `spawnSync` Function**: A fallback function is provided in case `spawnSync` is not available, which simulates a command that exits with a status code 126.
+
+3. **Helper Functions**:
+   - `contains`: Checks if a given string (`needle`) exists in another string (`haystack`).
+   - `versionFromMuslLdd`: Extracts the version number from the output of the `ldd --version` command for musl.
+   - `safeReaddirSync`: Safely lists the files in a directory, returns an empty array if there's an error.
+
+4. **Primary Logic**: The script only processes further if the platform is Linux:
+   - It first tries to get the glibc version using `getconf GNU_LIBC_VERSION`.
+   - If unsuccessful, it tries `ldd --version` and looks for musl in the output.
+   - If both methods fail, it falls back to checking the filesystem for known library patterns.
+
+5. **Result Storage**: The detected family, version, and method used are stored in variables.
+
+6. **Exported Module**: The module exports the constants, detected family, version, detection method, and a boolean indicating if the system is using a non-glibc C library.
+
+Here is the rewritten code:
+
+```javascript
+'use strict';
+
+const os = require('os');
+const { spawnSync: originalSpawnSync } = require('child_process');
+const { readdirSync } = require('fs');
+
+const GLIBC = 'glibc';
+const MUSL = 'musl';
+
+const spawnOptions = {
+  encoding: 'utf8',
+  env: process.env
+};
+
+const spawnSync = originalSpawnSync || (() => ({ status: 126, stdout: '', stderr: '' }));
+
+const contains = (needle) => (haystack) => haystack.includes(needle);
+
+function versionFromMuslLdd(out) {
+  return out.split(/[\r\n]+/)[1].trim().split(/\s/)[1];
+}
+
+function safeReaddirSync(path) {
+  try {
+    return readdirSync(path);
+  } catch {
+    return [];
+  }
+}
+
+let family = '';
+let version = '';
+let method = '';
+
+if (os.platform() === 'linux') {
+  const glibc = spawnSync('getconf', ['GNU_LIBC_VERSION'], spawnOptions);
+  if (glibc.status === 0) {
+    family = GLIBC;
+    version = glibc.stdout.trim().split(' ')[1];
+    method = 'getconf';
+  } else {
+    const ldd = spawnSync('ldd', ['--version'], spawnOptions);
+    if (ldd.status === 0 && ldd.stdout.includes(MUSL)) {
+      family = MUSL;
+      version = versionFromMuslLdd(ldd.stdout);
+      method = 'ldd';
+    } else if (ldd.status === 1 && ldd.stderr.includes(MUSL)) {
+      family = MUSL;
+      version = versionFromMuslLdd(ldd.stderr);
+      method = 'ldd';
+    } else {
+      const lib = safeReaddirSync('/lib');
+      if (lib.some(contains('-linux-gnu'))) {
+        family = GLIBC;
+        method = 'filesystem';
+      } else if (lib.some(contains('libc.musl-')) || lib.some(contains('ld-musl-'))) {
+        family = MUSL;
+        method = 'filesystem';
+      } else {
+        const usrSbin = safeReaddirSync('/usr/sbin');
+        if (usrSbin.some(contains('glibc'))) {
+          family = GLIBC;
+          method = 'filesystem';
+        }
+      }
+    }
+  }
+}
+
+const isNonGlibcLinux = (family && family !== GLIBC);
+
+module.exports = {
+  GLIBC,
+  MUSL,
+  family,
+  version,
+  method,
+  isNonGlibcLinux
+};
+```

@@ -1,0 +1,121 @@
+The provided Node.js code is a module that exports two functions: `normalizeFgArgs` and `foregroundChild`. 
+
+1. **normalizeFgArgs**: 
+   - This function takes an array of arguments used by the `foregroundChild` function and normalizes them into a standard format:
+     - It's meant to handle various cases where the optional `args`, `spawnOpts`, and `cleanup` arguments can be omitted or specified in a different order.
+     - It returns an array: `[program, args, spawnOpts, cleanup]`.
+
+2. **foregroundChild**:
+   - This function manages spawning a child process to run a specified program with given arguments and options, while handling IPC communication and cleanup.
+   - It normalizes input arguments using `normalizeFgArgs` and spawns the program using `child_process.spawn` or `cross-spawn` based on the platform.
+   - Sets up signal handlers to proxy signals and handle child process termination, and ensures proper cleanup when the process exits.
+   - It uses the `signal-exit`, `proxy-signals`, and `watchdog` modules to handle exit signals, proxy signals to the child process, and to initiate a "watchdog" for monitoring the child.
+   - Manages communication through IPC channels if `process.send` is available, handling messages back and forth between the main process and the child.
+   - It includes a utility function, `isPromise`, to check if the cleanup callback returns a promise, allowing for asynchronous cleanup handling.
+
+```javascript
+"use strict";
+
+const { spawn: nodeSpawn } = require("child_process");
+const crossSpawn = require("cross-spawn");
+const { onExit } = require("signal-exit");
+const { proxySignals } = require("./proxy-signals.js");
+const { watchdog } = require("./watchdog.js");
+
+const isPromise = (o) => !!o && typeof o === 'object' && typeof o.then === 'function';
+
+// Chooses spawn function based on platform
+const spawn = process?.platform === 'win32' ? crossSpawn : nodeSpawn;
+
+// Normalizes arguments for foregroundChild function
+const normalizeFgArgs = (fgArgs) => {
+    let [program, args = [], spawnOpts = {}, cleanup = () => { }] = fgArgs;
+    if (typeof args === 'function') {
+        cleanup = args;
+        spawnOpts = {};
+        args = [];
+    } else if (args && typeof args === 'object' && !Array.isArray(args)) {
+        if (typeof spawnOpts === 'function') cleanup = spawnOpts;
+        spawnOpts = args;
+        args = [];
+    } else if (typeof spawnOpts === 'function') {
+        cleanup = spawnOpts;
+        spawnOpts = {};
+    }
+    if (Array.isArray(program)) {
+        const [pp, ...pa] = program;
+        program = pp;
+        args = pa;
+    }
+    return [program, args, { ...spawnOpts }, cleanup];
+};
+
+// Spawns a child process, proxies signals, and handles cleanup
+function foregroundChild(...fgArgs) {
+    const [program, args, spawnOpts, cleanup] = normalizeFgArgs(fgArgs);
+    spawnOpts.stdio = [0, 1, 2];
+    if (process.send) {
+        spawnOpts.stdio.push('ipc');
+    }
+
+    const child = spawn(program, args, spawnOpts);
+    const childHangup = () => {
+        try {
+            child.kill('SIGHUP');
+        } catch (_) {
+            child.kill('SIGTERM');
+        }
+    };
+
+    const removeOnExit = onExit(childHangup);
+    proxySignals(child);
+    const dog = watchdog(child);
+    let done = false;
+    
+    child.on('close', async (code, signal) => {
+        if (done) return;
+        done = true;
+        const result = cleanup(code, signal, {
+            watchdogPid: dog.pid,
+        });
+        const res = isPromise(result) ? await result : result;
+        removeOnExit();
+        
+        if (res === false) return;
+        else if (typeof res === 'string') {
+            signal = res;
+            code = null;
+        } else if (typeof res === 'number') {
+            code = res;
+            signal = null;
+        }
+        
+        if (signal) {
+            setTimeout(() => { }, 2000);
+            try {
+                process.kill(process.pid, signal);
+            } catch (_) {
+                process.kill(process.pid, 'SIGTERM');
+            }
+        } else {
+            process.exit(code || 0);
+        }
+    });
+
+    if (process.send) {
+        process.removeAllListeners('message');
+        child.on('message', (message, sendHandle) => {
+            process.send?.(message, sendHandle);
+        });
+        process.on('message', (message, sendHandle) => {
+            child.send(message, sendHandle);
+        });
+    }
+    return child;
+}
+
+module.exports = {
+    normalizeFgArgs,
+    foregroundChild
+};
+```

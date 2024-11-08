@@ -1,0 +1,81 @@
+The Node.js code provided implements three asynchronous utility functions: `each`, `eachSeries`, and `parallel`.
+
+- **each**: Executes a provided asynchronous `iteratee` function for each element of `collection` in parallel. Once all operations complete, it calls the `callback`. If any iteratee calls with an error, the callback is invoked with that error immediately.
+
+- **eachSeries**: Executes the provided asynchronous `iteratee` function for each element of `collection`, but it does so one at a time (in series). After processing all elements, it calls the `callback`. If any iteratee calls with an error, processing stops, and the callback is invoked with that error.
+
+- **parallel**: Accepts an array of asynchronous `tasks` and runs them in parallel. Once all tasks have completed, it calls the `callback` with the results in the corresponding order. If any task calls with an error, the callback is immediately invoked with that error.
+
+### Rewritten Code:
+
+```js
+function each(collection, iteratee, callback) {
+  const length = collection.length;
+  let completed = 0;
+
+  if (length === 0) {
+    return callback(null);
+  }
+
+  collection.forEach((item) => {
+    iteratee(item, (err) => {
+      if (err) {
+        callback(err);
+        callback = () => {};
+      } else {
+        completed += 1;
+        if (completed === length) {
+          callback(null);
+        }
+      }
+    });
+  });
+}
+
+function eachSeries(collection, iteratee, callback) {
+  const length = collection.length;
+  let index = 0;
+
+  function iterate() {
+    if (index < length) {
+      iteratee(collection[index], (err) => {
+        if (err) {
+          callback(err);
+        } else {
+          index++;
+          iterate();
+        }
+      });
+    } else {
+      callback(null);
+    }
+  }
+
+  iterate();
+}
+
+function parallel(tasks, callback) {
+  const results = [];
+  let completed = 0;
+  const total = tasks.length;
+
+  if (total === 0) {
+    return callback(null, results);
+  }
+
+  tasks.forEach((task, index) => {
+    task((err, result) => {
+      if (err) {
+        callback(err);
+        callback = () => {};
+      } else {
+        results[index] = result;
+        completed += 1;
+        if (completed === total) {
+          callback(null, results);
+        }
+      }
+    });
+  });
+}
+```

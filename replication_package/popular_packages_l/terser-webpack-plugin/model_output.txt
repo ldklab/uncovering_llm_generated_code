@@ -1,0 +1,111 @@
+The `terser-webpack-plugin` is a plugin for Webpack that utilizes Terser to minify or minimize JavaScript files. This plugin is part of Webpack v5, but can be customized by installing it separately. It provides several configuration options to fine-tune the minification process. Here's a breakdown of the available features and options:
+
+1. **Basic Setup**: 
+   - Install the plugin using `npm`, `yarn`, or `pnpm`.
+   - Add it to your Webpack configuration to reduce the size of JavaScript assets.
+
+2. **Configuration Options**:
+   - `test`: Define which files should be minimized by specifying a pattern as a string, regex, or array.
+   - `include`/`exclude`: Specify which files to include or exclude from minification.
+   - `parallel`: Use multi-process which can significantly improve build time. It can be either a boolean or a number (specifying the number of parallel workers).
+   - `minify`: Custom function to override the default minification, useful for alternative or custom implementations of minification logic.
+   - `terserOptions`: Pass options directly to Terser to control aspects like compress, mangle, and more.
+   - `extractComments`: Control whether and how comments are extracted during the minification process. Different ways are supported, such as extracting based on a pattern or to a specific file.
+
+3. **Plugins for Other Minification Tools**:
+   - The plugin supports using alternative minifiers like `uglify-js`, `swc`, and `esbuild` with similar configuration using the `minify` option.
+
+4. **Source Maps**:
+   - The plugin handles source maps, which are important for debugging in production.
+
+5. **Custom Minify Function**:
+   - You can provide a custom minification function for scenarios where you need precise control or wish to use an alternative minifier.
+
+Here's the code for implementing this functionality:
+
+```js
+// terser-webpack-plugin/index.js
+
+const { cpus } = require('os');
+const { terserMinify } = require('terser');
+
+class TerserPlugin {
+  constructor(options = {}) {
+    this.options = {
+      test: /\.m?js(\?.*)?$/i,
+      parallel: true,
+      extractComments: true,
+      terserOptions: {},
+      ...options,
+    };
+  }
+
+  apply(compiler) {
+    const { test, include, exclude, parallel, minify, terserOptions, extractComments } = this.options;
+
+    compiler.hooks.compilation.tap('TerserPlugin', (compilation) => {
+      compilation.hooks.optimizeChunkAssets.tapPromise('TerserPlugin', async (chunks) => {
+        const files = {};
+
+        chunks.forEach((chunk) => {
+          chunk.files.forEach((file) => {
+            if (this.isFile(file, test, include, exclude)) {
+              files[file] = compilation.assets[file];
+            }
+          });
+        });
+
+        const tasks = Object.keys(files).map((file) => async () => {
+          const asset = files[file];
+          const source = asset.source();
+
+          let result;
+          try {
+            const minifyFunc = minify || terserMinify;
+            result = await minifyFunc({ [file]: source }, null, terserOptions, extractComments);
+          } catch (error) {
+            compilation.errors.push(error);
+            return;
+          }
+
+          // Update the asset with minified content
+          compilation.assets[file] = {
+            source: () => result.code,
+            size: () => Buffer.byteLength(result.code, 'utf8'),
+          };
+
+          if (result.extractedComments && extractComments) {
+            // Process extracted comments
+            const commentsFile = `${file}.LICENSE.txt`;
+            compilation.assets[commentsFile] = {
+              source: () => result.extractedComments.join('\n\n'),
+              size: () => result.extractedComments.reduce((sum, comment) => sum + comment.length + 2, 0),
+            };
+          }
+        });
+
+        const parallelCount = parallel === true ? cpus().length - 1 : parallel;
+        await this.runTasksInParallel(tasks, parallelCount);
+      });
+    });
+  }
+
+  isFile(filename, test, include, exclude) {
+    return (
+      (!test || new RegExp(test).test(filename)) &&
+      (!include || new RegExp(include).test(filename)) &&
+      (!exclude || !new RegExp(exclude).test(filename))
+    );
+  }
+
+  async runTasksInParallel(tasks, parallelCount) {
+    const parallelTasks = tasks.splice(0, parallelCount);
+    await Promise.all(parallelTasks.map((task) => task()));
+    if (tasks.length > 0) {
+      await this.runTasksInParallel(tasks, parallelCount);
+    }
+  }
+}
+
+module.exports = TerserPlugin;
+```

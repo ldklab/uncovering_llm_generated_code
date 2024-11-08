@@ -1,0 +1,23 @@
+The provided Node.js code is a polyfill for the `queueMicrotask` function, which schedules a callback function to run in a future microtask. In environments where `queueMicrotask` is natively supported, it simply uses the native function. In environments where it is not available, it uses a resolved `Promise` to simulate similar behavior by appending the callback to the microtask queue. If the promise-based approach encounters an error during the execution of the callback, the error is thrown after a delay using `setTimeout` to prevent it from being unhandled.
+
+```javascript
+/*! queue-microtask. MIT License. Feross Aboukhadijeh <https://feross.org/opensource> */
+let promiseCache;
+
+const queueMicrotaskPolyfill = (callback) => {
+  if (!promiseCache) {
+    promiseCache = Promise.resolve();
+  }
+  promiseCache
+    .then(callback)
+    .catch(error => setTimeout(() => { throw error; }, 0));
+};
+
+const isFunctionAvailable = (fn) => typeof fn === 'function';
+
+const queueMicrotaskFunc = isFunctionAvailable(queueMicrotask)
+  ? queueMicrotask.bind(typeof window !== 'undefined' ? window : global)
+  : queueMicrotaskPolyfill;
+
+module.exports = queueMicrotaskFunc;
+```

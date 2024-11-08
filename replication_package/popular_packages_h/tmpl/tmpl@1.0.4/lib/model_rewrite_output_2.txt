@@ -1,0 +1,36 @@
+The provided Node.js code defines a templating function that interpolates data into a template string. The function transforms a template string (`str`) containing placeholders (enclosed in `{}`) into a new string with JavaScript expressions using a specified `data` object. The interpolation follows these steps:
+
+1. The template string is transformed into a JavaScript function body that uses an array (`__p`) and a dynamic object (`obj`) scope to render the template.
+2. It replaces special characters in the template (like backslashes, single quotes, carriage returns, newlines, and tabs) to ensure proper JavaScript syntax.
+3. Placeholders (`{}`) with expressions are replaced by dynamic JavaScript statements that are injected into the resulting array.
+4. This code directly uses the `Function` constructor to generate and execute a new function, allowing for dynamic code evaluation.
+5. Finally, if `data` is provided, it executes the constructed function with this `data`. If not, it returns the templating function itself, allowing delayed evaluation.
+
+Below is a possible rewrite of the code:
+
+```javascript
+const INTERPOLATE = /{([\s\S]+?)}/g;
+
+module.exports = function(template, data) {
+  let templateCode = `
+    var result = [];
+    var print = function() { result.push(...arguments); };
+    with(obj || {}) {
+      result.push('
+        ${template.replace(/\\/g, '\\\\')
+                  .replace(/'/g, "\\'")
+                  .replace(INTERPOLATE, (match, code) => {
+                    return "'," + code.replace(/\\'/g, "'") + ",'";
+                  })
+                  .replace(/\r/g, '\\r')
+                  .replace(/\n/g, '\\n')
+                  .replace(/\t/g, '\\t')
+      }');
+    }
+    return result.join('');
+  `;
+  
+  const generateFunction = new Function('obj', templateCode);
+  return data ? generateFunction(data) : generateFunction;
+};
+```

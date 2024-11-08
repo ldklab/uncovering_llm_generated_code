@@ -1,0 +1,133 @@
+The `jest-validate` package is a configuration validation tool designed to provide warnings, errors, and deprecation messages for user configurations. It also suggests examples of correct configurations for easy understanding and troubleshooting. Here's an in-depth explanation of its functionality:
+
+### Installation
+You can install `jest-validate` using npm:
+```bash
+npm install --save jest-validate
+```
+
+### Main Functionality
+The core function of this package is `validate`, which checks the provided configuration against expected valid configurations. It takes two arguments:
+
+1. `config`: The user's configuration object.
+2. `validationOptions`: An object representing the validation configuration, including an example configuration to test against.
+
+The function returns an object with:
+- `hasDeprecationWarnings`: A boolean indicating if there were any deprecation warnings.
+- `isValid`: A boolean indicating if the configuration is valid.
+
+### ValidationOptions
+The `ValidationOptions` object offers customizable options to tailor the validation process, including:
+- `comment`: Additional comments to render below warning/error messages.
+- `condition`: Custom validation conditions.
+- `deprecate`: Handles deprecated options.
+- `deprecatedConfig`: Maps deprecated configuration keys to their replacement messages.
+- `exampleConfig`: A required configuration to validate against.
+- `recursive`: Allows for deep validation checking.
+- `recursiveDenylist`: Excludes specific keyPaths from recursive validation.
+- `title`: Custom titles for errors and warnings.
+- `unknown`: Handles unknown configuration options.
+
+### Example Usage
+You can invoke the `validate` function simply by passing a configuration and the example configuration like so:
+```js
+validate(config, {exampleConfig});
+```
+With modifications, you can customize the behavior and the output, for example:
+```js
+validate(config, {
+  comment: '  Documentation: http://custom-docs.com',
+  deprecatedConfig,
+  exampleConfig,
+  title: {
+    deprecation: 'Custom Deprecation',
+  },
+});
+```
+
+### Special Syntax: MultipleValidOptions
+The `multipleValidOptions` function allows for specifying multiple acceptable types for configuration values.
+
+### Example Validations
+- **Warning Example**: Unknown option detection with user guidance on correction.
+- **Error Example**: Type mismatch warnings with examples of valid types.
+- **Deprecation Example**: Displays custom messages for deprecated configuration options.
+
+### CLI Arguments Validation
+Special utility for validating CLI arguments with similar principles applies using `validateCLIOptions`.
+
+The following code implements this package in a self-contained manner:
+
+```javascript
+// jest-validate.js
+class ValidateError extends Error {
+  constructor(message, comment, example) {
+    super(message);
+    this.comment = comment;
+    this.example = example;
+  }
+
+  toString() {
+    return `● Validation Error:\n\n  ${this.message}\n\n  Example:\n  ${JSON.stringify(this.example, null, 2)}\n\n  ${this.comment}`;
+  }
+}
+
+class ValidateWarning extends Error {
+  constructor(message, comment) {
+    super(message);
+    this.comment = comment;
+  }
+
+  toString() {
+    return `● Validation Warning:\n\n  ${this.message}\n\n  ${this.comment}`;
+  }
+}
+
+function validate(config, options) {
+  const { exampleConfig, comment = '', condition, deprecate, deprecatedConfig, error, recursive = true, recursiveDenylist = [], title: { deprecation = 'Deprecation', error: errorTitle = 'Error', warning: warningTitle = 'Warning' } = {}, unknown } = options;
+
+  const validateRecursively = (obj, example, path = []) => {
+    for (const key in obj) {
+      if (deprecatedConfig && key in deprecatedConfig) {
+        deprecate ? deprecate(config, key, deprecatedConfig, options) : console.warn(`● ${deprecation}:\n\n  ${deprecatedConfig[key].description}`);
+      }
+      if (!example.hasOwnProperty(key)) {
+        const message = `Unknown option ${key} with value ${JSON.stringify(obj[key])} was found.\n  This is either a typing error or a user mistake.`;
+        unknown ? unknown(config, exampleConfig, key, options, path) : console.warn(new ValidateWarning(message, comment));
+      }
+
+      if (recursive && !recursiveDenylist.includes(key) && typeof obj[key] === 'object' && typeof example[key] === 'object') {
+        validateRecursively(obj[key], example[key], path.concat(key));
+      } else {
+        if (!condition ? typeof obj[key] !== typeof example[key] : !condition(obj[key], example[key])) {
+          const message = `Option ${path.concat(key).join('.')} must be of type:\n    ${typeof example[key]}\n  but instead received:\n    ${typeof obj[key]}`;
+          error ? error(key, obj[key], example[key], options, path) : console.error(new ValidateError(message, comment, {[key]: example[key]}));
+        }
+      }
+    }
+  };
+
+  validateRecursively(config, exampleConfig);
+
+  return {
+    hasDeprecationWarnings: !!deprecatedConfig,
+    isValid: (typeof config === typeof exampleConfig)
+  };
+}
+
+function multipleValidOptions(...options) {
+  return options;
+}
+
+function validateCLIOptions(argv, { allowedOptions, deprecatedOptions }) {
+  for (const option in argv) {
+    if (deprecatedOptions && option in deprecatedOptions && !allowedOptions.includes(option)) {
+      throw new ValidateError(`Option "${option}" was replaced by "${deprecatedOptions[option]}"`, "CLI Options Documentation: https://jestjs.io/docs/en/cli.html", {});
+    } else if (deprecatedOptions && option in deprecatedOptions) {
+      console.warn(`● Deprecation:\n\n  Option "${option}" was replaced by "${deprecatedOptions[option]}", which support multiple options.`);
+    }
+  }
+}
+
+module.exports = { validate, multipleValidOptions, validateCLIOptions };
+```

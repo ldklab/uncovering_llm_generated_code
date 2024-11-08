@@ -1,0 +1,99 @@
+The `esrecurse` package provides functionality for recursively traversing ECMAScript (JavaScript) syntax trees (ASTs). The main features of this package can be summarized as follows:
+
+1. **Basic Traversal**: It enables clients to define custom visitor functions for traversing AST nodes. These functions can be associated with different node types in the syntax tree.
+
+2. **Visitor Instances**: Users can create `Visitor` instances, which provide methods for visiting nodes. These instances can customize how different node types are handled by adding methods corresponding to the node types.
+
+3. **Inheritance**: Users can extend the `Visitor` class to create their own custom visitors, either using JavaScript's classical inheritance pattern or ES6 class syntax.
+
+4. **Custom Visiting Logic**: Inside these custom visitor methods, clients can choose to explicitly visit the children of a node (`visitChildren`), or they can perform operations on individual child nodes using `visit`.
+
+5. **Configuration Options**:
+   - **`childVisitorKeys`**: Allows for customization of which properties of custom or extended node types should be visited automatically. You can define which keys within a node are considered child nodes.
+   - **`fallback`**: Provides additional control over node traversal when dealing with unknown node types:
+     - If set to `"iteration"`, `esrecurse` traverses all enumerable properties.
+     - A function can be provided to specify how to determine which properties of unknown nodes should be visited.
+
+6. **Handling Custom or Extended Nodes**: The package supports user-defined nodes, enabling users to specify how custom node types should be traversed and which properties to consider as child nodes.
+
+Below is a Node.js implementation of this functionality based on the description:
+
+```javascript
+const util = require('util');
+
+class Visitor {
+    constructor(visitor, options = {}) {
+        this.visitor = visitor || {};
+        this.childVisitorKeys = options.childVisitorKeys || {};
+        this.fallback = options.fallback || null;
+        this.visitedNodes = new Set();
+    }
+
+    visit(node) {
+        if (!node || typeof node !== 'object' || this.visitedNodes.has(node)) return;
+        
+        this.visitedNodes.add(node);
+        const nodeType = node.type;
+        const visitFn = this.visitor[nodeType] || null;
+        
+        if (visitFn) {
+            visitFn.call(this, node);
+        }
+
+        this.visitChildren(node);
+    }
+
+    visitChildren(node) {
+        const keys = this.getVisitKeys(node);
+        for (const key of keys) {
+            const childNode = node[key];
+            if (Array.isArray(childNode)) {
+                for (const cn of childNode) {
+                    this.visit(cn);
+                }
+            } else {
+                this.visit(childNode);
+            }
+        }
+    }
+
+    getVisitKeys(node) {
+        let keys = this.childVisitorKeys[node.type] || [];
+        if (this.fallback === 'iteration') {
+            keys = Object.keys(node);
+        } else if (typeof this.fallback === 'function') {
+            keys = this.fallback(node);
+        }
+        return keys;
+    }
+}
+
+function visit(ast, visitor, options) {
+    const v = new Visitor(visitor, options);
+    v.visit(ast);
+}
+
+// Example usage
+const ast = {
+    type: 'Program',
+    body: [
+        { type: 'Literal', value: 1 },
+        { type: 'Literal', value: 2 }
+    ]
+};
+
+visit(ast, {
+    Literal(node) {
+        console.log(`Found literal with value: ${node.value}`);
+    }
+}, {
+    fallback: 'iteration'
+});
+
+module.exports = {
+    Visitor,
+    visit
+};
+```
+
+This code provides the core functionality for traversing AST nodes, creating and extending visitors, and configuring behavior with options for custom keys and fallback strategies.

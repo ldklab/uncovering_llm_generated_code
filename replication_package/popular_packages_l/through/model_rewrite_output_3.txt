@@ -1,0 +1,80 @@
+The given Node.js code defines a function `through` that creates a custom duplex stream using the core `Stream` module. This stream is both readable and writable, and allows you to pass data through it while optionally transforming or handling it in different ways. Here's a breakdown:
+
+- **Write Function**: When data is written to the stream, a provided `write` function processes it, and data is then queued using the `queue` method.
+- **End Function**: A provided `end` handler can be invoked when the stream is ending, with the option to pass final data to the stream.
+- **Queue Method**: Queues data into the stream, emitting `data` events, and `end` when there is no more data (null).
+- **Pause and Resume**: Control the flow of data through the stream using `pause` and `resume` methods, which toggle the stream's paused state.
+- **Auto-destruction**: Automatically closes the stream once it's no longer readable or writable, configurable with an `opts` object.
+- **Event Emission**: Uses the Stream API to emit events for 'data', 'end', 'pause', 'resume', and 'close'.
+
+Here's the rewritten code, maintaining similar functionality:
+
+```javascript
+const { Stream } = require('stream');
+
+function through(write, end, opts) {
+  write = write || function (data) { this.queue(data); };
+  end = end || function () { this.queue(null); };
+  
+  const stream = new Stream();
+  stream.readable = true;
+  stream.writable = true;
+  stream.paused = false;
+  
+  stream.write = function (data) {
+    write.call(this, data);
+    return !this.paused;
+  };
+
+  stream.queue = function (data) {
+    if (data === null) {
+      this.emit('end');
+    } else {
+      this.emit('data', data);
+    }
+    return this;
+  };
+
+  stream.end = function (data) {
+    if (arguments.length) {
+      this.write(data);
+    }
+    end.call(this);
+    return this;
+  };
+
+  stream.pause = function () {
+    if (!this.paused) {
+      this.paused = true;
+      this.emit('pause');
+    }
+    return this;
+  };
+
+  stream.resume = function () {
+    if (this.paused) {
+      this.paused = false;
+      this.emit('resume');
+    }
+    return this;
+  };
+
+  stream.autoDestroy = !(opts && opts.autoDestroy === false);
+
+  if (stream.autoDestroy) {
+    stream.on('end', function () {
+      process.nextTick(() => {
+        if (stream.readable && stream.writable) {
+          stream.readable = false;
+          stream.writable = false;
+          stream.emit('close');
+        }
+      });
+    });
+  }
+
+  return stream;
+}
+
+module.exports = through;
+```

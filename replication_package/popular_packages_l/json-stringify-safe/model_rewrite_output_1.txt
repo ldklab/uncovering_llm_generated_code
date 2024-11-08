@@ -1,0 +1,69 @@
+The provided Node.js code defines a utility function `jsonStringifySafe` that safely converts JavaScript objects into JSON strings. Its purpose is to handle and serialize circular references within objects, something the standard `JSON.stringify` cannot do. When such circular references are encountered, they are replaced with a specified string `"[Circular]"` (or another custom value if provided by a `decycler` function). 
+
+The `jsonStringifySafe` function accepts four parameters:
+- `obj`: The object to be stringified.
+- `serializer`: An optional function to customize the serialization process.
+- `indent`: A string or number used to control spacing in the resulting JSON string.
+- `decycler`: An optional function that returns a value when a circular reference is detected.
+
+The code contains an internal function `serializerWrapper` that helps detect circular references. It maintains stacks (`stack` and `keys`) to track objects and keys to identify cycles. The provided function also extends the main function by adding a `getSerialize` method that returns a serializer function that works in the same way as `serializerWrapper`, but can be used independently.
+
+Here's a possible rewrite of the code for clarity and structure:
+
+```javascript
+'use strict';
+
+function jsonStringifySafe(obj, serializer = null, indent, decycler = () => '[Circular]') {
+    const stack = [];
+    const keys = [];
+
+    function serializerWrapper(key, value) {
+        if (stack.length) {
+            const thisPos = stack.indexOf(this);
+            if (~thisPos) {
+                stack.splice(thisPos + 1);
+                keys.splice(thisPos, Infinity, key);
+            } else {
+                stack.push(this);
+                keys.push(key);
+            }
+            if (~stack.indexOf(value)) {
+                value = decycler.call(this, key, value);
+            }
+        } else {
+            stack.push(value);
+        }
+
+        return serializer ? serializer.call(this, key, value) : value;
+    }
+
+    return JSON.stringify(obj, serializerWrapper, indent);
+}
+
+jsonStringifySafe.getSerialize = function(serializer = null, decycler = () => '[Circular]') {
+    const stack = [];
+    const keys = [];
+
+    return function(key, value) {
+        if (stack.length) {
+            const thisPos = stack.indexOf(this);
+            if (~thisPos) {
+                stack.splice(thisPos + 1);
+                keys.splice(thisPos, Infinity, key);
+            } else {
+                stack.push(this);
+                keys.push(key);
+            }
+            if (~stack.indexOf(value)) {
+                value = decycler.call(this, key, value);
+            }
+        } else {
+            stack.push(value);
+        }
+
+        return serializer ? serializer.call(this, key, value) : value;
+    };
+};
+
+module.exports = jsonStringifySafe;
+```

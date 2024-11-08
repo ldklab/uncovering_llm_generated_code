@@ -1,0 +1,87 @@
+The provided Node.js code defines a custom writable stream utility function called `concatStream`. This function is designed to collect chunks of data written to the stream, concatenate them based on their detected or specified encoding, and then pass the combined result to a callback function once the writing is completed.
+
+Here's a breakdown of its functionality:
+
+1. **Parameters and Setup:**
+   - The `concatStream` function accepts two parameters: `opts` and `cb`.
+   - If `opts` is a function, it is reassigned to `cb`, and `opts` is set to an empty object. This allows for `opts` to be optional and placed as the first argument.
+   - It initializes an empty array `data` to store chunks of data and a variable `encoding` to store the detected data type encoding.
+
+2. **Stream Construction:**
+   - A `Writable` stream is created with `objectMode` set to `true`, which allows non-buffer objects to be written into the stream.
+   - The `write` method processes each chunk, detects its encoding if not already set, and pushes it to the `data` array.
+   - The `final` method is invoked when the stream ends, concatenates the accumulated data according to its encoding, and invokes the callback `cb` with the concatenated result.
+
+3. **Helper Functions:**
+   - `detectEncoding`: Determines the encoding type of a chunk. Supported encodings include 'buffer', 'string', 'array', 'uint8array', and 'object'.
+   - `concatenateData`: Combines the data array into a single entity based on the determined or set encoding type.
+
+4. **Export:**
+   - The `concatStream` function is exported as a module, allowing it to be used in other parts of the application or package.
+
+Here's a possible rewrite of the code, maintaining its functionality:
+
+```javascript
+const { Writable } = require('stream');
+
+function concatStream(options, callback) {
+  if (typeof options === 'function') {
+    callback = options;
+    options = {};
+  }
+
+  const chunks = [];
+  let detectedEncoding = options.encoding;
+
+  const stream = new Writable({
+    objectMode: true,
+    write(chunk, enc, next) {
+      if (!detectedEncoding) detectedEncoding = getEncoding(chunk);
+      chunks.push(chunk);
+      next();
+    },
+    final(done) {
+      const combinedData = mergeData(chunks, detectedEncoding);
+      callback(combinedData);
+      done();
+    }
+  });
+
+  return stream;
+}
+
+function getEncoding(chunk) {
+  if (Buffer.isBuffer(chunk)) return 'buffer';
+  if (typeof chunk === 'string') return 'string';
+  if (Array.isArray(chunk)) return 'array';
+  if (chunk instanceof Uint8Array) return 'uint8array';
+  return 'object';
+}
+
+function mergeData(chunks, encoding) {
+  switch (encoding) {
+    case 'string':
+      return chunks.join('');
+    case 'buffer':
+      return Buffer.concat(chunks.map(c => Buffer.isBuffer(c) ? c : Buffer.from(c)));
+    case 'array':
+      return chunks.flat();
+    case 'uint8array':
+      const length = chunks.reduce((len, c) => len + c.length, 0);
+      const merged = new Uint8Array(length);
+      let position = 0;
+      chunks.forEach(c => {
+        c = c instanceof Uint8Array ? c : Uint8Array.from(Buffer.from(c));
+        merged.set(c, position);
+        position += c.length;
+      });
+      return merged;
+    case 'object':
+      return chunks;
+    default:
+      return Buffer.concat(chunks.map(c => Buffer.from(c)));
+  }
+}
+
+module.exports = concatStream;
+```

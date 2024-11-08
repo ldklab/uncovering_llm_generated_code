@@ -1,0 +1,57 @@
+The provided Node.js code defines a class `FastLevenshtein` with a static method `get()` that calculates the Levenshtein distance between two strings. The Levenshtein distance is a measure of the difference between two sequences, calculated as the minimum number of insertions, deletions, or substitutions required to change one string into the other.
+
+Here's a breakdown of the code:
+- It optionally uses the `Intl.Collator` to handle string comparison depending on the `useCollator` option.
+- It initializes a 2D array `matrix` to store the distances between substrings.
+- It fills the first row and column of the matrix with incremental values corresponding to the scenario of transforming an empty string into the current prefix of the other string or vice versa.
+- It iteratively calculates costs for transforming substrings and fills the matrix based on the possible operations (insert, delete, substitute).
+- The final value in the matrix (`matrix[len1][len2]`) represents the Levenshtein distance between the two input strings.
+
+Here is a possible rewrite of the original code:
+
+```javascript
+const Intl = require('intl'); // Ensure Intl is available for Node.js environments
+
+class FastLevenshtein {
+  static calculateDistance(str1, str2, options = {}) {
+    const { useCollator = false } = options; // Extract useCollator from options
+    const collator = new Intl.Collator(undefined, { sensitivity: 'base' });
+
+    if (useCollator) {
+      str1 = str1.normalize('NFC');
+      str2 = str2.normalize('NFC');
+    }
+
+    const len1 = str1.length;
+    const len2 = str2.length;
+    const distanceMatrix = Array.from({ length: len1 + 1 }, () => []);
+
+    for (let i = 0; i <= len1; i++) {
+      distanceMatrix[i][0] = i;
+    }
+    for (let j = 0; j <= len2; j++) {
+      distanceMatrix[0][j] = j;
+    }
+
+    for (let i = 1; i <= len1; i++) {
+      for (let j = 1; j <= len2; j++) {
+        const substitutionCost = useCollator
+          ? collator.compare(str1[i - 1], str2[j - 1])
+          : str1[i - 1] === str2[j - 1]
+          ? 0
+          : 1;
+
+        distanceMatrix[i][j] = Math.min(
+          distanceMatrix[i - 1][j] + 1,  // Deletion
+          distanceMatrix[i][j - 1] + 1,  // Insertion
+          distanceMatrix[i - 1][j - 1] + substitutionCost  // Substitution
+        );
+      }
+    }
+
+    return distanceMatrix[len1][len2];
+  }
+}
+
+module.exports = FastLevenshtein;
+```

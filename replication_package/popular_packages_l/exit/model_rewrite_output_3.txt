@@ -1,0 +1,33 @@
+The code defines a function `exit` that accepts an optional `exitCode` parameter, defaulting to 0. The purpose of this function is to ensure that any pending writes to the standard output (stdout) and standard error (stderr) streams are fully processed before the Node.js process exits. This function is useful when you need to ensure that all output has been delivered before terminating the application.
+
+To achieve this, the function `drainAndExit` is defined and invoked immediately. Within this function, it checks whether writes to `stdout` and `stderr` succeed without buffering. If either stream is not fully drained (i.e., writes return false), it schedules itself to be called again using `setImmediate`. Once both streams are fully drained, it calls `process.exit(exitCode)` to terminate the program with the specified exit code.
+
+Here's a possible rewrite of the code:
+
+```javascript
+// File: exit.js
+const exit = (exitCode = 0) => {
+  const waitForDraining = () => {
+    const stdoutDrained = process.stdout.write('');
+    const stderrDrained = process.stderr.write('');
+
+    if (!stdoutDrained || !stderrDrained) {
+      setImmediate(waitForDraining);
+    } else {
+      process.exit(exitCode);
+    }
+  };
+
+  waitForDraining();
+};
+
+module.exports = exit;
+
+// Example Usage:
+// const exit = require('./exit');
+// console.log("omg");
+// console.error("yay");
+// exit(5);  // Ensures "omg" and "yay" are fully written before exiting
+// console.log("wtf"); // These lines shouldn't appear
+// console.error("bro");
+```

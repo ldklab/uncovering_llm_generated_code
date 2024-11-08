@@ -1,0 +1,116 @@
+The `path-to-regexp` package allows developers to convert path strings like `/user/:name` into regular expressions, enabling dynamic URL matching in applications. It provides various functions for handling paths and parameters:
+
+1. **match(path[, options])**: This function generates a matcher function for a given path, capable of matching strings against that path. It can handle parameters, wildcards, and optional segments.
+
+   - **Parameters**: Defined by prefixing `:`. Capture any string up to the next token or end of segment.
+   - **Wildcard**: Prefixed with `*`, it captures one or multiple segments.
+   - **Optional**: Encapsulated in `{}`, these parts can be missing in the actual matching path.
+
+2. **pathToRegexp(path[, options])**: Generates a regular expression for the given path, providing options for case sensitivity, segment delimiters, and more.
+
+3. **compile(path[, options])**: Produces a function that compiles the input parameters into a valid path string, using specified segment encoding methods.
+
+4. **parse(path[, options])**: Parses a path into `TokenData`, a structured representation of defined tokens and parameters, useful for detailed path processing.
+
+5. **stringify(data)**: Converts `TokenData` back into a path string.
+
+The `path-to-regexp` package is primarily designed for handling structured paths efficiently, not arbitrarily ordered data such as query strings or JSON. It enforces structured path definitions, with specific rules around parameter naming, usage of characters like `?`, `*`, `+`, and certain characters being reserved to avoid ambiguity.
+
+Below is a basic Node.js package code that fulfills the described functionality by implementing these main features:
+
+```javascript
+// path-to-regexp/index.js
+
+function parse(path, options = {}) {
+  const tokens = [];
+  let i = 0, key = 0, isEscaping = false, isParameter = false;
+  let nameBuffer = '', pathBuffer = '';
+
+  while (i < path.length) {
+    const char = path[i];
+    if (isEscaping) {
+      pathBuffer += char;
+      isEscaping = false;
+    } else if (char === '\\') {
+      isEscaping = true;
+    } else if (char === ':' && !isParameter) {
+      tokens.push({ type: 'text', value: pathBuffer });
+      pathBuffer = '';
+      nameBuffer = '';
+      isParameter = true;
+    } else if (isParameter && (char === '/' || i === path.length - 1)) {
+      if (i === path.length - 1 && char !== '/') nameBuffer += char;
+      tokens.push({ type: 'parameter', name: nameBuffer.trim() });
+      isParameter = false;
+      pathBuffer = '';
+    } else {
+      if (isParameter) nameBuffer += char;
+      else pathBuffer += char;
+    }
+    i++;
+  }
+
+  if (pathBuffer) tokens.push({ type: 'text', value: pathBuffer });
+
+  return { tokens };
+}
+
+function pathToRegexp(path, options = {}) {
+  const tokenData = parse(path, options);
+  const keys = tokenData.tokens.filter(t => t.type === 'parameter');
+  const regexpString = tokenData.tokens.map(token => {
+    if (token.type === 'parameter') return `(?<${token.name}>[^/]+?)`;
+    return token.value.replace(/([.+*?=^!:${}()[\]|/\\])/g, '\\$1');
+  }).join('');
+  const endOption = options.end !== false;
+  const flags = options.sensitive ? '' : 'i';
+  return {
+    regexp: new RegExp(`^${regexpString}${endOption ? '$' : ''}`, flags),
+    keys
+  };
+}
+
+function compile(path, options = {}) {
+  const tokenData = parse(path, options);
+  return params => {
+    return tokenData.tokens.map(token => {
+      if (token.type === 'parameter') {
+        const param = params[token.name];
+        if (Array.isArray(param)) return param.join('/');
+        return encodeURIComponent(param || '');
+      }
+      return token.value;
+    }).join('');
+  };
+}
+
+function match(path, options = {}) {
+  const { regexp, keys } = pathToRegexp(path, options);
+  return against => {
+    const match = regexp.exec(against);
+    if (!match) return false;
+    const params = keys.reduce((acc, key, index) => {
+      acc[key.name] = match.groups[key.name];
+      return acc;
+    }, {});
+    return { path: against, params };
+  };
+}
+
+function stringify(tokenData) {
+  return tokenData.tokens.map(token => {
+    if (token.type === 'parameter') return `:${token.name}`;
+    return token.value;
+  }).join('');
+}
+
+module.exports = { parse, pathToRegexp, compile, match, stringify };
+```
+
+To use this code, save it into a file, say `index.js`, and then you can include it in a Node.js application with:
+
+```js
+const { match, pathToRegexp, compile, parse, stringify } = require('./index');
+```
+
+These functions provide various capabilities for dynamic path matching and parsing, as described in the package functionality.

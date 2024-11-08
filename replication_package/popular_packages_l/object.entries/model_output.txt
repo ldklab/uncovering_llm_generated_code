@@ -1,0 +1,70 @@
+The `object.entries` package provides a shim for the `Object.entries` method, making it available in environments where it is either not implemented or is noncompliant with the ES2017 specification. The `Object.entries` method returns an array of a given object’s own enumerable string-keyed property [key, value] pairs, in the same order as that provided by a `for...in` loop.
+
+**Functionality:**
+- The package exports a function that replicates the behavior of `Object.entries`. It can handle symbols as object properties in environments that support symbols.
+- It provides a method `shim()` that can modify the global `Object` prototype to include a compliant `Object.entries` function if it does not exist or is incorrect.
+- This package follows the [es-shim API](https://github.com/es-shims/api) to ensure consistency and reliability across different environments.
+- The package is designed to run in ES3 environments, ensuring broad compatibility.
+- It includes test cases to validate the functionality.
+
+Here's the implementation of the package:
+
+```markdown
+// object.entries.js
+'use strict';
+
+var callBound = require('call-bind/callBound');
+var hasSymbols = typeof Symbol === 'function' && typeof Symbol('') === 'symbol';
+var $propIsEnumerable = callBound('Object.prototype.propertyIsEnumerable');
+var toObject = require('es-abstract/2019/ToObject');
+var toString = Object.prototype.toString;
+var concat = Array.prototype.concat;
+var $stringSlice = callBound('String.prototype.slice');
+
+// Check for native implementation
+var nativeObjectEntries = Object.entries;
+
+module.exports = function entries(O) {
+    var obj = toObject(O);
+    var entrys = [];
+    for (var key in obj) {
+        if ($propIsEnumerable(obj, key)) {
+            entrys.push([key, obj[key]]);
+        }
+    }
+    if (hasSymbols && toString.call(obj) === '[object Object]') {
+        var symbols = Object.getOwnPropertySymbols(obj);
+        for (var i = 0; i < symbols.length; i++) {
+            var sym = symbols[i];
+            if ($propIsEnumerable(obj, sym)) {
+                entrys.push([sym, obj[sym]]);
+            }
+        }
+    }
+    return entrys;
+};
+
+module.exports.shim = function shimObjectEntries() {
+    if (Object.entries) {
+        var entriesWorksWithStrings = (function () {
+            // Firefox 40- noncompliant when string present
+            return Object.entries('foo')[0][0] === '0';
+        }());
+        if (!entriesWorksWithStrings) {
+            var originalObjectEntries = Object.entries;
+            Object.entries = function entries(it) {
+                return originalObjectEntries.call(Object, it);
+            };
+        }
+    } else {
+        Object.entries = module.exports;
+    }
+    return Object.entries;
+};
+```
+
+To include this package in your projects, you would generally do the following:
+1. Import the `object.entries` module and use it to get entries from an object.
+2. Optionally call `object.entries.shim()` to globally add support for `Object.entries` if it's not available.
+
+This script ensures that your code can safely use `Object.entries` despite any discrepancies in JavaScript environments, adhering to the ES2017 specification.

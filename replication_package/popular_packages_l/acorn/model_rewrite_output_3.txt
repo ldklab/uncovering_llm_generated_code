@@ -1,0 +1,124 @@
+The provided Node.js code is a minimal implementation of a JavaScript parser library. It consists of a `Parser` class with static methods to parse JavaScript code, tokenize it, and manage parsing options. The `Acorn` class acts as a facade to expose the `Parser` class's methods and options.
+
+1. **SyntaxError Class**: A custom error class extending the default `Error` class to include position and location information.
+
+2. **Parser Class**:
+   - **Options**: Static property that holds default parsing options such as ECMAScript version and source type.
+   - **parse**: Static method simulating parsing an input string. It throws a `SyntaxError` if the string "error" is detected.
+   - **parseExpressionAt**: Parses input starting at a specified offset using the `parse` method.
+   - **tokenizer**: Returns a simple tokenizer that can process identifiers (names) and numbers from the input string. It discards spaces and throws an error for unexpected characters.
+   - **getLineInfo**: Returns the line and column number at a specific offset in the input string.
+   - **extend**: Allows creating an extended version of the parser with added plugins.
+
+3. **Acorn Class**: 
+   - Exposes `Parser` methods for use as `Acorn` methods to facilitate usage as a library module.
+
+The module exports the `Acorn` class, making its methods and properties available for importing in other files.
+
+```javascript
+// acorn.js
+
+class SyntaxError extends Error {
+  constructor(message, pos, loc) {
+    super(message);
+    this.pos = pos;
+    this.loc = loc;
+  }
+}
+
+class Parser {
+  // Default ECMAScript and source type settings
+  static Options = {
+    ecmaVersion: 2020,
+    sourceType: "script",
+  };
+
+  static parse(input, options = {}) {
+    const opts = { ...Parser.Options, ...options };
+    console.log(`Parsing with ECMAScript version ${opts.ecmaVersion}...`);
+    if (input.includes("error")) {
+      throw new SyntaxError("Unexpected token", 5, { line: 1, column: 5 });
+    }
+    return { type: "Program", body: [{ type: "ExpressionStatement", expression: { type: "Literal", value: 1 } }] };
+  }
+
+  static parseExpressionAt(input, offset, options) {
+    return this.parse(input.slice(offset), options);
+  }
+
+  static tokenizer(input, options) {
+    let currentIndex = 0;
+    const tokens = [];
+
+    while (currentIndex < input.length) {
+      let currentChar = input[currentIndex];
+
+      if (currentChar === ' ') {
+        currentIndex++;
+        continue;
+      }
+
+      if (/[a-zA-Z]/.test(currentChar)) {
+        let identifier = '';
+        while (/[a-zA-Z]/.test(currentChar)) {
+          identifier += currentChar;
+          currentChar = input[++currentIndex];
+        }
+        tokens.push({ type: 'name', value: identifier });
+        continue;
+      }
+
+      if (/\d/.test(currentChar)) {
+        let numberValue = '';
+        while (/\d/.test(currentChar)) {
+          numberValue += currentChar;
+          currentChar = input[++currentIndex];
+        }
+        tokens.push({ type: 'number', value: numberValue });
+        continue;
+      }
+
+      throw new Error(`Unexpected character: ${currentChar}`);
+    }
+
+    tokens.push({ type: 'eof' });
+    return {
+      getToken: function () {
+        return tokens.shift();
+      }
+    };
+  }
+
+  static getLineInfo(input, offset) {
+    const lines = input.split('\n');
+    let position = 0;
+    for (let lineNumber = 0; lineNumber < lines.length; lineNumber++) {
+      const line = lines[lineNumber];
+      if (position + line.length >= offset) {
+        return { line: lineNumber + 1, column: offset - position };
+      }
+      position += line.length + 1;
+    }
+  }
+
+  static extend(...plugins) {
+    class ExtendedParser extends Parser {
+      constructor() {
+        super();
+        plugins.forEach(plugin => plugin(this));
+      }
+    }
+    return ExtendedParser;
+  }
+}
+
+class Acorn {
+  static parse = Parser.parse;
+  static parseExpressionAt = Parser.parseExpressionAt;
+  static tokenizer = Parser.tokenizer;
+  static getLineInfo = Parser.getLineInfo;
+  static Parser = Parser;
+}
+
+module.exports = Acorn;
+```

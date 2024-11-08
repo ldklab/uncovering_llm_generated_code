@@ -1,0 +1,35 @@
+The functionality described in the README.md for the `char-regex` Node.js package is to provide a regular expression that can match any full character, taking into account complex character sequences like emojis and characters that consist of multiple code points. This is particularly useful because default JavaScript regex patterns using the dot `.` by itself may fail to correctly match and split emojis or certain Unicode characters, resulting in incorrect or incomplete matches. The `char-regex` package ensures that each element, such as emojis with skin tones or multi-part emoji sequences, is matched as a single character.
+
+The API exposes a single function, `charRegex()`, which returns the regex pattern when called. This can then be used to perform regular expression operations on strings, correctly matching complete characters.
+
+Now, I will generate the code to implement this functionality in a Node.js package:
+
+```javascript
+// index.js
+'use strict';
+
+const buildCharRegex = () => {
+    // This pattern accounts for extended grapheme clusters which are used for emoji sequences and other multi-codepoint characters.
+    // The pattern consists of matching a character (including emoji) using Unicode property escapes.
+    // - `\p{RI}` matches regional indicators for flags.
+    // - `\p{Emoji}` ensures we are targeting emojis.
+    // - Various other code points and patterns catch complex sequences including 'zwj' and keycap sequence.
+    return new RegExp(
+        '(?:' +
+            // Match a standalone combining mark, when not preceded by a potential base.
+            '(?!\\p{L}\\p{M}*\\p{M})\\p{M}' + 
+            '|' +
+            // Match certain characters only when not followed by an extended sequence continuation marker.
+            '\\P{M}\\p{M}*?' + 
+            '|' +
+            // Match a full character grapheme, possibly combining marks, modifiers, and zero width joiners.
+            '\\P{M}\\p{M}*\\p{Emoji}(?:\\u200D\\p{Emoji})*' + 
+            ')',
+        'gu' // Global flag to find all matches. Unicode flag for handling Unicode code points properly.
+    );
+};
+
+module.exports = buildCharRegex;
+```
+
+In this package, `buildCharRegex` returns a regular expression. This regex is designed to match individual characters in a Unicode-compliant manner, including emojis and other multi-codepoint sequences. The pattern uses Unicode property escapes and accounts for combinations of reusable components like emoji modifiers and zero-width joiners (`\u200D`). This ensures that composite forms such as `👊🏽` or country flags are correctly matched as a single entity.

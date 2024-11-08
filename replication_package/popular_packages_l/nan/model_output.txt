@@ -1,0 +1,95 @@
+The "Native Abstractions for Node.js" (NAN) library provides a set of tools and abstractions to simplify the development of native C++ add-ons for Node.js. Its main purpose is to offer compatibility across various versions of Node.js and V8 (the JavaScript engine used by Node.js) by abstracting away the differences in these APIs over time. 
+
+### Key Functionalities
+
+1. **Version Compatibility**: NAN supports Node.js versions from 0.8 to 22, adapting to V8 changes and Node core modifications so developers don't have to manually handle compatibility issues.
+
+2. **Macro Utilities**: NAN offers macros to assist with common tasks in native module development, reducing the likelihood of encountering compatibility issues or getting involved in complex version checks.
+
+3. **Templates and Methods**: It facilitates wrapping C++ functions and objects for JavaScript by providing standardized method signatures and abstractions for function and object templates, regardless of V8 version differences.
+
+4. **Handles and Scopes**: Provides abstractions for handle scopes and persistent references which are essential for memory management in V8 and ensures these are handled consistently across supported Node/V8 versions.
+
+5. **Asynchronous Work**: NAN provides tools like `Nan::AsyncWorker` to simplify handling asynchronous tasks in native add-ons, integrating with Node's event loop.
+
+6. **Error Handling**: Offers utilities to create and throw JavaScript errors, abstracting error management across different V8 releases.
+
+7. **Buffers and Strings**: Provides utilities for buffer creation and string encoding, ensuring consistent behavior across Node versions.
+
+8. **API Documentation**: Comprehensive API documentation facilitates easy adoption and integration of NAN into Node.js add-ons.
+
+9. **Building and Testing**: Instructions are provided for installing dependencies and running tests, ensuring add-on compatibility across supported versions.
+
+Here is a minimal implementation example in a single markdown code block that shows a basic setup of a Node.js add-on using NAN to expose a simple C++ function to JavaScript:
+
+```cpp
+// hello.cc
+#include <nan.h>
+
+// This is the C++ function that takes input from JavaScript
+NAN_METHOD(SayHello) {
+    if (info.Length() < 1 || !info[0]->IsString()) {
+        Nan::ThrowTypeError("String argument expected");
+        return;
+    }
+
+    v8::String::Utf8Value str(info[0]->ToString());
+    printf("Hello %s\n", *str);
+    
+    info.GetReturnValue().Set(Nan::New("Hello from C++ add-on!").ToLocalChecked());
+}
+
+// Initialize the module with the method we're exporting
+NAN_MODULE_INIT(Init) {
+    Nan::Set(target, Nan::New("sayHello").ToLocalChecked(),
+        Nan::GetFunction(Nan::New<v8::FunctionTemplate>(SayHello)).ToLocalChecked());
+}
+
+// Macro to initialize the module
+NODE_MODULE(hello, Init)
+```
+
+```json
+// package.json
+{
+  "name": "hello-addon",
+  "version": "1.0.0",
+  "main": "index.js",
+  "gypfile": true,
+  "dependencies": {
+    "nan": "^2.21.0"
+  }
+}
+```
+
+```python
+# binding.gyp
+{
+  "targets": [
+    {
+      "target_name": "hello",
+      "sources": ["hello.cc"],
+      "include_dirs": [
+        "<!(node -e \"require('nan')\")"
+      ]
+    }
+  ]
+}
+```
+
+```js
+// index.js
+const addon = require('bindings')('hello');
+console.log(addon.sayHello("NAN"));
+// Expected Output: Hello NAN
+//                  Hello from C++ add-on!
+```
+
+### Build Instructions
+
+1. Ensure you have Node.js and npm installed.
+2. Install `node-gyp` globally if not already installed: `npm install -g node-gyp`.
+3. Run `npm install` to pull in the required dependencies, this includes NAN.
+4. Use `node-gyp` to build the module: `node-gyp configure build`.
+
+This setup provides the basic scaffolding for developing a native Node.js add-on using the NAN library, ensuring compatibility with various Node.js versions.

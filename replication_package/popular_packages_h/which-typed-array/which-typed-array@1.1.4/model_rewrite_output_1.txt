@@ -1,0 +1,76 @@
+The given Node.js code is a module that provides a function `whichTypedArray` to determine which kind of TypedArray a given value is, if any. A TypedArray represents array-like objects that provide a mechanism for reading and writing raw binary data in memory buffers.
+
+### Functionality Explanation:
+1. **Dependencies and Polyfills**: 
+   - The code first imports several modules. These help check for TypedArray types, available TypedArrays, support for ES6 symbols, and facilitate method bindings for native methods.
+   - A detection for `Symbol.toStringTag` support is included to adjust behavior based on the environment's capabilities.
+
+2. **TypedArray Handling**:
+   - It retrieves the available TypedArrays in the environment and sets up checks to retrieve their names by accessing their prototype's `Symbol.toStringTag`.
+
+3. **Helper Function - `tryTypedArrays`**:
+   - This function attempts to determine a TypedArray's name by invoking a getter method that leverages `Symbol.toStringTag` for each TypedArray. If `Symbol.toStringTag` property is available, it verifies if it corresponds to the particular typed array name.
+
+4. **Main Function - `whichTypedArray`**:
+   - Accepts a value and checks if it is a TypedArray using the `isTypedArray` module. 
+   - If symbols are supported, it uses `tryTypedArrays` to find the exact TypedArray name.
+   - The function returns the type name of the TypedArray or `false` if the value is not a TypedArray.
+
+### Rewritten Code:
+```javascript
+'use strict';
+
+const forEach = require('foreach');
+const availableTypedArrays = require('available-typed-arrays');
+const callBound = require('call-bind/callBound');
+const hasSymbols = require('has-symbols')();
+const isTypedArray = require('is-typed-array');
+const getOwnPropertyDescriptor = require('es-abstract/helpers/getOwnPropertyDescriptor');
+const getPrototypeOf = Object.getPrototypeOf;
+
+const $toString = callBound('Object.prototype.toString');
+const $slice = callBound('String.prototype.slice');
+const hasToStringTag = hasSymbols && typeof Symbol.toStringTag === 'symbol';
+
+const typedArrays = availableTypedArrays();
+const toStrTags = {};
+
+if (hasToStringTag && getOwnPropertyDescriptor && getPrototypeOf) {
+    forEach(typedArrays, (typedArray) => {
+        const TypedArrayConstructor = global[typedArray];
+        if (typeof TypedArrayConstructor === 'function') {
+            const instance = new TypedArrayConstructor();
+            if (!(Symbol.toStringTag in instance)) {
+                throw new EvalError(`Expected Symbol.toStringTag in ${typedArray}`);
+            }
+            let descriptor = getOwnPropertyDescriptor(getPrototypeOf(instance), Symbol.toStringTag);
+            if (!descriptor) {
+                descriptor = getOwnPropertyDescriptor(getPrototypeOf(getPrototypeOf(instance)), Symbol.toStringTag);
+            }
+            if (descriptor) {
+                toStrTags[typedArray] = descriptor.get;
+            }
+        }
+    });
+}
+
+function tryTypedArrays(value) {
+    let foundName = false;
+    forEach(toStrTags, (getter, typedArrayName) => {
+        if (!foundName) {
+            try {
+                const name = getter.call(value);
+                if (name === typedArrayName) {
+                    foundName = name;
+                }
+            } catch (e) {}
+        }
+    });
+    return foundName;
+}
+
+module.exports = function whichTypedArray(value) {
+    if (!isTypedArray(value)) return false;
+    return hasToStringTag ? tryTypedArrays(value) : $slice($toString(value), 8, -1);
+};
+```

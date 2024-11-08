@@ -1,0 +1,112 @@
+The provided code is a utility for creating memoized selector functions using a customizable approach. Here's a brief overview of its main functionalities:
+
+1. **Default Equality Check**: A function `defaultEqualityCheck` that checks if two values are strictly equal.
+
+2. **Arguments Equality Checker**: A function `areArgumentsShallowlyEqual` that checks if two sets of arguments (arrays) are shallowly equal using an equality check function.
+
+3. **Memoization Function**: A function `defaultMemoize` that takes a function (`func`) and an optional equality check function (`equalityCheck`). It caches the result of the `func` and returns the cached result if the arguments are equal to those of the previous invocation as per the equality check, avoiding recomputation.
+
+4. **Dependencies Extractor**: A function `getDependencies` that ensures all elements in a passed array are functions and returns this array.
+
+5. **Selector Creator**: A function `createSelectorCreator` that generates memoized selector functions using the specified memoize function. It allows the creation of selectors composed of input-selectors (dependencies) and a result function. It also keeps track of how many times recomputation occurs.
+
+6. **Structured Selector Creator**: A function `createStructuredSelector` that creates a structured selector. It takes an object of selectors and returns a new selector that returns an object composed of the results of these individual selectors.
+
+7. **Exported Utilities**:
+   - The `defaultMemoize` and `createSelectorCreator` functions are exported for use elsewhere.
+   - A default `createSelector` is created using `createSelectorCreator` with `defaultMemoize`.
+   - The `createStructuredSelector` function is also exported, allowing the creation of selectors based on an object structure.
+
+Here's a possible rewrite of the code maintaining the same functionality:
+
+```javascript
+'use strict';
+
+exports.__esModule = true;
+exports.defaultMemoize = defaultMemoize;
+exports.createSelectorCreator = createSelectorCreator;
+exports.createStructuredSelector = createStructuredSelector;
+
+function defaultEqualityCheck(a, b) {
+  return a === b;
+}
+
+function areArgumentsShallowlyEqual(equalityCheck, prev, next) {
+  if (prev === null || next === null || prev.length !== next.length) {
+    return false;
+  }
+
+  for (let i = 0; i < prev.length; i++) {
+    if (!equalityCheck(prev[i], next[i])) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function defaultMemoize(func, equalityCheck = defaultEqualityCheck) {
+  let lastArgs = null;
+  let lastResult = null;
+  return function () {
+    if (!areArgumentsShallowlyEqual(equalityCheck, lastArgs, arguments)) {
+      lastResult = func.apply(null, arguments);
+    }
+    lastArgs = arguments;
+    return lastResult;
+  };
+}
+
+function getDependencies(funcs) {
+  const dependencies = Array.isArray(funcs[0]) ? funcs[0] : funcs;
+  if (!dependencies.every(dep => typeof dep === 'function')) {
+    const dependencyTypes = dependencies.map(dep => typeof dep).join(', ');
+    throw new Error(`Selector creators expect all input-selectors to be functions, instead received the following types: [${dependencyTypes}]`);
+  }
+  return dependencies;
+}
+
+function createSelectorCreator(memoize, ...memoizeOptions) {
+  return function (...funcs) {
+    let recomputations = 0;
+    const resultFunc = funcs.pop();
+    const dependencies = getDependencies(funcs);
+
+    const memoizedResultFunc = memoize(
+      function () {
+        recomputations++;
+        return resultFunc.apply(null, arguments);
+      },
+      ...memoizeOptions
+    );
+
+    const selector = memoize(function () {
+      const params = dependencies.map(dep => dep.apply(null, arguments));
+      return memoizedResultFunc.apply(null, params);
+    });
+
+    selector.resultFunc = resultFunc;
+    selector.dependencies = dependencies;
+    selector.recomputations = () => recomputations;
+    selector.resetRecomputations = () => (recomputations = 0);
+
+    return selector;
+  };
+}
+
+const createSelector = exports.createSelector = createSelectorCreator(defaultMemoize);
+
+function createStructuredSelector(selectors, selectorCreator = createSelector) {
+  if (typeof selectors !== 'object') {
+    throw new Error(`createStructuredSelector expects first argument to be an object where each property is a selector, instead received a ${typeof selectors}`);
+  }
+  const objectKeys = Object.keys(selectors);
+
+  return selectorCreator(
+    objectKeys.map(key => selectors[key]),
+    (...values) => values.reduce((composition, value, index) => {
+      composition[objectKeys[index]] = value;
+      return composition;
+    }, {})
+  );
+}
+```

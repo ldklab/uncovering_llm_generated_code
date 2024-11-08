@@ -1,0 +1,47 @@
+The Node.js code is a utility module that checks if a given object is an instance of `ArrayBuffer`. It uses several strategies depending on the environment and the availability of certain methods on the `ArrayBuffer` prototype. The function `isArrayBuffer` uses:
+
+1. **`$byteLength` Approach**: If the `ArrayBuffer.prototype.byteLength` method is available, it tries to access it to determine if the object is an `ArrayBuffer`.
+
+2. **`$abSlice` Approach**: In environments where the `ArrayBuffer.prototype.byteLength` is not available but an own slice method exists, it uses the slice method to perform the check.
+
+3. **`$toString` Fallback**: In very old Node.js versions (like 0.8), where neither prototype methods nor the Symbol.toStringTag exists, it uses `Object.prototype.toString` to check if the object is an `ArrayBuffer`.
+
+4. **Default False**: As a final fallback, if none of the methods are available, it simply returns `false`.
+
+Here's a rewritten version of the described functionality:
+
+```javascript
+'use strict';
+
+const callBind = require('call-bind');
+const callBound = require('call-bind/callBound');
+const GetIntrinsic = require('get-intrinsic');
+
+const $ArrayBuffer = GetIntrinsic('%ArrayBuffer%', true);
+const $byteLength = callBound('ArrayBuffer.prototype.byteLength', true);
+const $toString = callBound('Object.prototype.toString');
+
+const abSlice = $ArrayBuffer && !$byteLength && new $ArrayBuffer(0).slice;
+const $abSlice = abSlice && callBind(abSlice);
+
+function isArrayBuffer(obj) {
+    if (!obj || typeof obj !== 'object') {
+        return false;
+    }
+    try {
+        if ($byteLength) {
+            $byteLength(obj); // Attempt to access byteLength
+        } else if ($abSlice) {
+            $abSlice(obj, 0); // Attempt to use the slice method
+        } else if ($ArrayBuffer) {
+            return $toString(obj) === '[object ArrayBuffer]'; // Use Object.prototype.toString
+        }
+        return true;
+    } catch (e) {
+        return false;
+    }
+    return false;
+}
+
+module.exports = isArrayBuffer;
+```

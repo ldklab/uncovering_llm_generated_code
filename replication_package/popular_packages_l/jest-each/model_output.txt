@@ -1,0 +1,133 @@
+The Node.js package `jest-each` facilitates parameterized testing in Jest, inspired by `mocha-each`. This package simplifies the process of running the same test with different inputs by allowing developers to specify multiple sets of input arguments and expected outputs for a single test function or test suite. Here's a detailed breakdown of its functionality:
+
+### Primary Functions
+1. **Parameterized Testing**:
+    - **`.test`**: This runs multiple tests with parameterized data.
+    - **`.describe`**: This runs test suites with parameterized data.
+
+2. **Tagged Template Literals**:
+    - Provide a more readable syntax for defining parameterized inputs using template strings.
+
+3. **Output Formatting**:
+    - Customizable test titles using `printf`-style formatting or by injecting properties from the test case object.
+
+4. **Asynchronous Support**:
+    - Supports asynchronous tests with the `done` callback.
+
+### API Variants
+- **Selection of Tests**:
+    - `.only`: Runs only the specified test(s) or suite(s).
+    - `.skip`: Skips the specified test(s) or suite(s).
+    - `.concurrent`: Run tests in parallel for faster test execution.
+
+- **Using Aliases**: 
+    - Tests and suites can be accessed via aliases like `.it`, `.fit`, `.xit`, `.fdescribe`, etc., providing flexible options to control test execution.
+
+- **Tagged Template Literals**:
+    - Define inputs via a table-style format, using placeholders for variable values.
+
+### Installation and Importing
+- Can be installed using npm or yarn and imported as a default export, which allows flexible naming during import.
+
+Now, based on the functionality described, here's the code for a Node.js package that implements `jest-each` functionality:
+
+```javascript
+// jest-each.js
+
+const { format } = require('util');
+
+// Helper to format test titles
+function formatTitle(title, args) {
+  return format.apply(null, [title, ...args]);
+}
+
+// Execute test cases with given parameters
+function executeTestCases(name, testFn, params, testExecutor) {
+  params.forEach((args, index) => {
+    // Generate test title using printf-style formatting
+    const testName = formatTitle(name, args);
+    testExecutor(testName, () => testFn(...args));
+  });
+}
+
+// Core each function
+function each(params) {
+  if (!Array.isArray(params)) {
+    throw new Error('Parameter should be an array');
+  }
+
+  function test(name, testFn) {
+    executeTestCases(name, testFn, params, global.test);
+  }
+
+  test.only = function(name, testFn) {
+    executeTestCases(name, testFn, params, global.test.only);
+  };
+
+  test.skip = function(name, testFn) {
+    executeTestCases(name, testFn, params, global.test.skip);
+  };
+
+  // Concurrent execution
+  test.concurrent = function(name, testFn) {
+    executeTestCases(name, testFn, params, global.test.concurrent);
+  };
+  
+  test.concurrent.only = function(name, testFn) {
+    executeTestCases(name, testFn, params, global.test.concurrent.only);
+  };
+
+  test.concurrent.skip = function(name, testFn) {
+    executeTestCases(name, testFn, params, global.test.concurrent.skip);
+  };
+
+  test.it = test;
+  test.fit = test.only;
+  test.xit = test.skip;
+
+  function describe(name, suiteFn) {
+    params.forEach((args) => {
+      const suiteName = formatTitle(name, args);
+      global.describe(suiteName, () => suiteFn(...args));
+    });
+  }
+  
+  describe.only = function(name, suiteFn) {
+    params.forEach((args) => {
+      const suiteName = formatTitle(name, args);
+      global.describe.only(suiteName, () => suiteFn(...args));
+    });
+  };
+
+  describe.skip = function(name, suiteFn) {
+    params.forEach((args) => {
+      const suiteName = formatTitle(name, args);
+      global.describe.skip(suiteName, () => suiteFn(...args));
+    });
+  };
+
+  return {
+    test,
+    describe,
+  };
+}
+
+// Tagged template support
+function taggedEach(strings, ...expressions) {
+  const [header, ...rows] = strings[0].split('\n').map(s => s.trim()).filter(Boolean);
+  const headers = header.split('|').map(h => h.trim());
+  const params = rows.map(row => {
+    const values = row.split('|').map(r => r.trim());
+    const obj = {};
+    headers.forEach((h, i) => {
+      obj[h] = expressions[i] ? expressions[i](values[i]) : values[i];
+    });
+    return obj;
+  });
+
+  return each(params);
+}
+
+each.only = taggedEach;
+module.exports = each;
+```

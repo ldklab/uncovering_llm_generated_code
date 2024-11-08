@@ -1,0 +1,83 @@
+The provided Node.js code is a class `TR46` for processing domain names according to certain standards. It uses the `punycode` module to handle conversion between Unicode and ASCII representations of domain labels (Punycode). The class provides two main static methods:
+
+1. `toASCII(domainName, options)`: Converts a Unicode domain name to its ASCII representation.
+   - Splits the domain into labels, processes each label based on the options, and converts it to ASCII using Punycode.
+   - Validates the length of the final ASCII domain if the `verifyDNSLength` option is enabled.
+
+2. `toUnicode(domainName, options)`: Converts an ASCII-encoded domain name (Punycode) to its Unicode representation.
+   - Splits the domain into labels and attempts to convert each from Punycode to Unicode.
+   - Handles errors for invalid Punycode labels, optionally ignoring them based on the options.
+
+Additional static methods and properties include:
+- `processLabel(label, options)`: Processes individual labels in relation to hyphen positions, joiner characters, and optional transitional processing specific to certain characters.
+- `hasJoinerIssues(label)`: Checks labels for illegal joiner sequences (e.g., Zero Width Joiner).
+- `checkOptions(options)`: Validates option keys to ensure they are among predefined valid keys.
+
+Here's a rewritten version of the provided code:
+
+```javascript
+const punycode = require('punycode/');
+
+class TR46 {
+  static toASCII(domainName, options = {}) {
+    this.validateOptions(options);
+    let result = domainName.split('.').map(label => {
+      const processedLabel = this.preprocessLabel(label, options);
+      return punycode.toASCII(processedLabel);
+    }).join('.');
+    
+    if (options.verifyDNSLength && result.length > 253) {
+      throw new Error("DNS name exceeds maximum length");
+    }
+    return result;
+  }
+
+  static toUnicode(domainName, options = {}) {
+    this.validateOptions(options);
+    let result = domainName.split('.').map(label => {
+      try {
+        return punycode.toUnicode(label);
+      } catch {
+        if (!options.ignoreInvalidPunycode) {
+          throw new Error("Invalid Punycode detected");
+        }
+        return label;
+      }
+    }).join('.');
+    return result;
+  }
+
+  static preprocessLabel(label, options) {
+    if (options.checkHyphens && /^-|-$/.test(label)) {
+      throw new Error("Invalid hyphen positions");
+    }
+    if (options.checkJoiners && this.containsInvalidJoiner(label)) {
+      throw new Error("Invalid joiner characters");
+    }
+
+    if (options.transitionalProcessing) {
+      return label.replace(/[\u00DF\u03C2\u200D]/g, ''); // Remove specific characters
+    }
+    return label;
+  }
+
+  static containsInvalidJoiner(label) {
+    return /\u200D/.test(label);
+  }
+
+  static validateOptions(options) {
+    const validOptions = [
+      'checkBidi', 'checkHyphens', 'checkJoiners', 
+      'ignoreInvalidPunycode', 'transitionalProcessing', 
+      'useSTD3ASCIIRules', 'verifyDNSLength'
+    ];
+    for (const key of Object.keys(options)) {
+      if (!validOptions.includes(key)) {
+        throw new Error(`Invalid option: ${key}`);
+      }
+    }
+  }
+}
+
+module.exports = TR46;
+```

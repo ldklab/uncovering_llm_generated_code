@@ -1,0 +1,47 @@
+The provided Node.js code defines a class `CoverageInstrumenter` that utilizes the Node.js `inspector` module to interact with the V8 JavaScript engine for gathering coverage data of the JavaScript code execution. Here's a breakdown of what each part of the code does:
+
+1. **Imports**: It imports the `Session` class from the `inspector` module for creating a debugging session, and `promisify` from the `util` module to convert callback-based functions to promise-based.
+
+2. **CoverageInstrumenter Class**: A class that provides methods to start and stop collecting detailed code coverage information.
+
+   - **Constructor**: Initializes a new `Session` instance and creates a promise-based version of the `post` method for sending commands to the V8 engine.
+
+   - **startInstrumenting**: Connects the session to the V8 engine and enables the `Profiler` to start collecting detailed execution coverage data, which includes call counts.
+
+   - **stopInstrumenting**: Stops the coverage data collection, retrieves the coverage data using `Profiler.takePreciseCoverage`, and then disables the profiler. Returns the retrieved coverage results.
+
+3. **Export**: The class is exported for use in other modules.
+
+Here's a rewritten version of the code:
+
+```javascript
+'use strict';
+
+const { Session } = require('inspector');
+const { promisify } = require('util');
+
+class CoverageInstrumenter {
+  constructor() {
+    this.session = new Session();
+    this.postSession = promisify(this.session.post.bind(this.session));
+  }
+
+  async startInstrumenting() {
+    this.session.connect();
+    await this.postSession('Profiler.enable');
+    await this.postSession('Profiler.startPreciseCoverage', {
+      callCount: true,
+      detailed: true,
+    });
+  }
+
+  async stopInstrumenting() {
+    const { result } = await this.postSession('Profiler.takePreciseCoverage');
+    await this.postSession('Profiler.stopPreciseCoverage');
+    await this.postSession('Profiler.disable');
+    return result;
+  }
+}
+
+module.exports.CoverageInstrumenter = CoverageInstrumenter;
+```

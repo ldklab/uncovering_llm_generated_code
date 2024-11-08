@@ -1,0 +1,114 @@
+The Node.js code defines a module that exports a class named `Worker`. The `Worker` class is designed to manage parallel execution of tasks by distributing them across multiple child processes, called "workers". The parallelization helps in processing tasks more efficiently by utilizing multiple CPUs. The functionality can be broken down as follows:
+
+1. **Module Exports**:
+   - The module exports an object `messageParent` and a class `Worker`.
+   - `messageParent` is imported from a separate file and is made available for export through a getter.
+
+2. **Imports**:
+   - Several internal modules are imported using `_interopRequireDefault` to support ES module interoperability.
+   - The `os` module is used to obtain CPU information for determining the default number of worker processes.
+
+3. **Helper Function (`getExposedMethods`)**:
+   - Determines which methods of the worker module are exposed for parallel execution.
+   - If no specific methods are provided via options, it inspects the worker module to find all functions.
+
+4. **Worker Class**:
+   - The `Worker` class can be instantiated with a path to a worker module and an options object.
+   - Handles setup of worker pool configuration, such as enabling worker threads, handling process forks, number of retries, etc.
+   - Utilizes a worker pool to manage the workers and synchronizes function calls to the correct worker.
+
+5. **Task Distribution and Execution**:
+   - The class dynamically binds methods from the worker module to the `Worker` instance, excluding private methods (those starting with an underscore).
+   - Implements functionality to call these methods, sending them to child processes for execution.
+
+6. **Worker Pool Management**:
+   - Outlines methods to retrieve standard error and output logs from worker processes.
+   - Provides an async method (`end`) to terminate worker processes once all tasks have been completed.
+
+Here is the rewritten code:
+
+```javascript
+'use strict';
+
+const os = require('os');
+const Farm = require('./Farm').default;
+const WorkerPool = require('./WorkerPool').default;
+const messageParent = require('./workers/messageParent').default;
+
+Object.defineProperty(exports, '__esModule', {
+  value: true
+});
+exports.messageParent = messageParent;
+exports.Worker = class Worker {
+  constructor(workerPath, options) {
+    this._options = {...options};
+    this._ending = false;
+
+    const workerPoolOptions = {
+      enableWorkerThreads: this._options.enableWorkerThreads || false,
+      forkOptions: this._options.forkOptions || {},
+      maxRetries: this._options.maxRetries || 3,
+      numWorkers: this._options.numWorkers || Math.max(os.cpus().length - 1, 1),
+      resourceLimits: this._options.resourceLimits || {},
+      setupArgs: this._options.setupArgs || []
+    };
+
+    this._workerPool = this._options.WorkerPool 
+      ? new this._options.WorkerPool(workerPath, workerPoolOptions)
+      : new WorkerPool(workerPath, workerPoolOptions);
+
+    this._farm = new Farm(
+      workerPoolOptions.numWorkers,
+      this._workerPool.send.bind(this._workerPool),
+      this._options.computeWorkerKey
+    );
+
+    this._bindExposedWorkerMethods(workerPath, this._options);
+  }
+
+  _bindExposedWorkerMethods(workerPath, options) {
+    getExposedMethods(workerPath, options).forEach(name => {
+      if (!name.startsWith('_') && !this.constructor.prototype.hasOwnProperty(name)) {
+        this[name] = this._callFunctionWithArgs.bind(this, name);
+      }
+    });
+  }
+
+  _callFunctionWithArgs(method, ...args) {
+    if (this._ending) {
+      throw new Error('Farm is ended, no more calls can be done to it');
+    }
+    return this._farm.doWork(method, ...args);
+  }
+
+  getStderr() {
+    return this._workerPool.getStderr();
+  }
+
+  getStdout() {
+    return this._workerPool.getStdout();
+  }
+
+  async end() {
+    if (this._ending) {
+      throw new Error('Farm is ended, no more calls can be done to it');
+    }
+    this._ending = true;
+    return this._workerPool.end();
+  }
+};
+
+function getExposedMethods(workerPath, options) {
+  let exposedMethods = options.exposedMethods;
+
+  if (!exposedMethods) {
+    const module = require(workerPath);
+    exposedMethods = Object.keys(module).filter(name => typeof module[name] === 'function');
+    if (typeof module === 'function') {
+      exposedMethods.push('default');
+    }
+  }
+
+  return exposedMethods;
+}
+```

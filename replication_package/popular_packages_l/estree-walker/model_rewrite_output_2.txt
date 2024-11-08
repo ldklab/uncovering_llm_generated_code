@@ -1,0 +1,98 @@
+The provided Node.js code is a module that exports a function called `walk`, designed for traversing and manipulating Abstract Syntax Trees (AST) using a recursive depth-first strategy. The function takes an AST and an options object containing `enter` and `leave` callbacks as arguments. Here's a breakdown of its functionality:
+
+1. **Traversal**: The `walk` function traverses nodes in the AST. For each node, it invokes a helper function `visit`.
+
+2. **Visit Function**: This function is recursively called for each node in the AST. It accepts four parameters: the current node, its parent node, the property name within the parent, and the index within the parent's property if the property is an array.
+
+3. **Context**: For each node, a context object is created to track actions like skipping the node, removing it, or replacing it with another node.
+
+4. **Enter Callback**: Before visiting a node's children, if the `enter` callback is provided, it's called with the current node and the context. The callback can modify the traversal by updating the context (e.g., `skip()`, `remove()`, or `replace(newNode)`).
+
+5. **Child Nodes**: After calling the `enter` callback, the function visits each child node recursively, and if the traversal should not be skipped.
+
+6. **Leave Callback**: After visiting a node's children, if the `leave` callback is provided and the node isn't removed or replaced, it gets called similarly to `enter`.
+
+7. **Node Manipulation**: The helper functions `replaceNode` and `removeNode` are used to modify the AST in response to context changes indicated by the `enter` or `leave` callbacks.
+
+Here is the rewritten code:
+
+```javascript
+// estree-walker/index.js
+
+function walk(ast, { enter, leave }) {
+
+    function visit(node, parent, prop, index) {
+        if (!node) return;
+        
+        const context = {
+            skip: () => context.shouldSkip = true,
+            remove: () => context.removed = true,
+            replace: (newNode) => {
+                context.replaced = true;
+                context.newNode = newNode;
+            },
+            shouldSkip: false,
+            removed: false,
+            replaced: false,
+            newNode: null
+        };
+
+        if (enter) {
+            enter.call(context, node, parent, prop, index);
+            if (context.replaced) {
+                replaceNode(parent, prop, index, context.newNode);
+            }
+            if (context.removed || context.shouldSkip) {
+                return;
+            }
+        }
+
+        for (let key of Object.keys(node)) {
+            const value = node[key];
+            if (Array.isArray(value)) {
+                for (let i = 0; i < value.length; i++) {
+                    if (value[i] && typeof value[i].type === 'string') {
+                        visit(value[i], node, key, i);
+                    }
+                }
+            } else if (value && typeof value.type === 'string') {
+                visit(value, node, key, null);
+            }
+        }
+
+        if (leave && !context.removed && !context.replaced) {
+            leave.call(context, node, parent, prop, index);
+            if (context.replaced) {
+                replaceNode(parent, prop, index, context.newNode);
+            }
+            if (context.removed) {
+                removeNode(parent, prop, index);
+            }
+        }
+    }
+
+    function replaceNode(parent, prop, index, newNode) {
+        if (parent) {
+            if (index !== null) {
+                parent[prop][index] = newNode;
+            } else {
+                parent[prop] = newNode;
+            }
+        }
+    }
+
+    function removeNode(parent, prop, index) {
+        if (parent) {
+            if (index !== null) {
+                parent[prop].splice(index, 1);
+            } else {
+                delete parent[prop];
+            }
+        }
+    }
+
+    visit(ast, null, null, null);
+}
+
+module.exports = { walk };
+```

@@ -1,0 +1,82 @@
+The provided Node.js code defines logic to gather and organize information about system signals identified by both name and number. It imports signal data possibly from two modules, `./signals.js` for general signals and `./realtime.js` for real-time signals, and uses system constants from the `os` module to validate signal numbers.
+
+Here's a concise breakdown of what each part of the code does:
+
+1. **Importing Modules**:
+   - `os` module to access system signal constants.
+   - `./signals.js` to import general signals.
+   - `./realtime.js` to import real-time signals information, specifically `SIGRTMAX`.
+
+2. **Function - `getSignalsByName`**:
+   - Retrieves all signals using `getSignals` function from `./signals.js`.
+   - Reduces the list of signals to an object, mapping each signal by its name.
+
+3. **Function - `getSignalByName`**:
+   - Helper for `getSignalsByName` that adds full signal details (like number, description, etc.) into an object using the signal's name as the key.
+
+4. **Function - `getSignalsByNumber`**:
+   - Retrieves all signals.
+   - Constructs an array with slots up to real-time signals' maximum number (`SIGRTMAX`), filling it with signal information found by numbers.
+   - Converts the resulting array of objects into a single object indexed by signal numbers.
+
+5. **Function - `getSignalByNumber`**:
+   - Finds signal details based on the given signal number, returning an object containing signal details if found.
+
+6. **Function - `findSignalByNumber`**:
+   - Searches through signals to find one that matches the given number, either by comparing against `os.constants.signals` or directly by signal number.
+
+7. **Exports**:
+   - Two objects `signalsByName` and `signalsByNumber` are exported, enabling external access to signals indexed both by name and number, respectively.
+
+Here's the rewritten version of the code:
+
+```javascript
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.signalsByNumber = exports.signalsByName = void 0;
+
+const { constants: { signals: osSignals } } = require("os");
+
+const { getSignals } = require("./signals.js");
+const { SIGRTMAX } = require("./realtime.js");
+
+const mapSignalsByName = () => {
+  const signals = getSignals();
+  return signals.reduce((acc, { name, number, description, supported, action, forced, standard }) => {
+    acc[name] = { name, number, description, supported, action, forced, standard };
+    return acc;
+  }, {});
+};
+
+const signalsByName = mapSignalsByName();
+exports.signalsByName = signalsByName;
+
+const mapSignalsByNumber = () => {
+  const signals = getSignals();
+  const maxNumber = SIGRTMAX + 1;
+  const indexedSignals = Array.from({ length: maxNumber }, (_, number) => findSignalPropertiesByNumber(number, signals));
+  return Object.assign({}, ...indexedSignals);
+};
+
+const findSignalPropertiesByNumber = (number, signals) => {
+  const signal = locateSignalByNumber(number, signals);
+  
+  if (!signal) {
+    return {};
+  }
+
+  const { name, description, supported, action, forced, standard } = signal;
+  
+  return {
+    [number]: { name, number, description, supported, action, forced, standard }
+  };
+};
+
+const locateSignalByNumber = (number, signals) => {
+  return signals.find(({ name }) => osSignals[name] === number) ||
+         signals.find(signal => signal.number === number);
+};
+
+const signalsByNumber = mapSignalsByNumber();
+exports.signalsByNumber = signalsByNumber;
+```

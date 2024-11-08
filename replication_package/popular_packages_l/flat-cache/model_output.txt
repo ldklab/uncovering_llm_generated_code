@@ -1,0 +1,186 @@
+The `flat-cache` package in Node.js provides a simple key/value storage solution using files to persist data on disk. Here's a breakdown of its primary functionalities and features:
+
+1. **In-Memory Storage with Disk Persistence**: It uses an in-memory cache (via `CacheableMemory`) for primary storage and persists data to disk. This means that while data is cached in memory for quick access, it's also stored in files for persistence across application restarts.
+
+2. **Automatic Disk Save**: The package can automatically save the data to disk at regular intervals defined by `persistInterval`. This helps keep the on-disk data up-to-date without needing manual intervention.
+
+3. **TTL and LRU Cache Management**: You can define `ttl` (time-to-live) and `lruSize` (Least Recently Used) limits to manage cache size and expiration. This ensures that the cache does not grow indefinitely and older or unused items are deleted automatically.
+
+4. **Efficient Disk Writes**: It only writes to disk if there's a change in the cache, saving resources. It can do this even if `persistInterval` is set or if `save()` is explicitly called.
+
+5. **Custom Data Parsing and Stringifying**: By default, `flat-cache` uses `flatted` for parsing and stringifying data, which allows for more complex data structures than JSON. However, this can be customized by providing custom `parse` and `stringify` functions.
+
+6. **Legacy and Modern API Methods**: It maintains some legacy methods (`load`, `loadFile`, `create`, etc.) for compatibility with older versions but also provides a modern interface using class instantiation.
+
+7. **Events Integration**: The package allows for event handling, offering hooks for actions like save, load, delete, clear, destroy, and error. This helps in keeping track of cache operations or integrating custom logging or monitoring solutions.
+
+8. **Global Utility Functions**: It offers functions to create caches, clear particular caches by ID, or clear all caches, enhancing its flexibility.
+
+Now, let's generate the code for this functionality in a single block:
+
+```javascript
+import fs from 'fs';
+import path from 'path';
+import EventEmitter from 'events';
+import { stringify as flattedStringify, parse as flattedParse } from 'flatted';
+
+class CacheableMemory {
+  constructor(options = {}) {
+    this.cache = new Map();
+    this.ttl = options.ttl || 0;
+    this.lruSize = options.lruSize || 0;
+    this.expirationInterval = options.expirationInterval || 0;
+    this.useClone = options.useClone || false;
+
+    if (this.expirationInterval > 0) {
+      setInterval(() => this.pruneExpired(), this.expirationInterval);
+    }
+  }
+
+  set(key, value, ttl = this.ttl) {
+    const expiresAt = ttl ? Date.now() + ttl : null;
+    this.cache.set(key, { value, expiresAt });
+    this.pruneLru();
+  }
+
+  get(key) {
+    const entry = this.cache.get(key);
+    if (entry && (entry.expiresAt === null || entry.expiresAt > Date.now())) {
+      return this.useClone ? JSON.parse(JSON.stringify(entry.value)) : entry.value;
+    }
+    this.cache.delete(key);
+    return undefined;
+  }
+
+  pruneExpired() {
+    const now = Date.now();
+    for (const [key, { expiresAt }] of this.cache) {
+      if (expiresAt !== null && expiresAt < now) {
+        this.cache.delete(key);
+      }
+    }
+  }
+
+  pruneLru() {
+    if (this.lruSize > 0 && this.cache.size > this.lruSize) {
+      const keys = this.cache.keys();
+      this.cache.delete(keys.next().value);
+    }
+  }
+
+  keys() {
+    return Array.from(this.cache.keys());
+  }
+
+  clear() {
+    this.cache.clear();
+  }
+}
+
+class FlatCache extends EventEmitter {
+  constructor(options = {}) {
+    super();
+    this.memoryCache = new CacheableMemory(options);
+    this.cacheDir = options.cacheDir || './cache';
+    this.cacheId = options.cacheId || 'cache1';
+    this.cacheFilePath = path.join(this.cacheDir, this.cacheId);
+    this.persistInterval = options.persistInterval || 0;
+    this.changesSinceLastSave = false;
+    this.parse = options.parse || flattedParse;
+    this.stringify = options.stringify || flattedStringify;
+
+    if (this.persistInterval > 0) {
+      setInterval(() => this.save(), this.persistInterval);
+    }
+  }
+
+  setKey(key, value, ttl) {
+    this.memoryCache.set(key, value, ttl);
+    this.changesSinceLastSave = true;
+  }
+
+  getKey(key) {
+    return this.memoryCache.get(key);
+  }
+
+  delete(key) {
+    if (this.memoryCache.cache.delete(key)) {
+      this.changesSinceLastSave = true;
+      this.emit('delete', key);
+    }
+  }
+
+  clear() {
+    this.memoryCache.clear();
+    this.changesSinceLastSave = true;
+    this.emit('clear');
+  }
+
+  save(force = false) {
+    if (!force && !this.changesSinceLastSave) return;
+    try {
+      if (!fs.existsSync(this.cacheDir)) {
+        fs.mkdirSync(this.cacheDir, { recursive: true });
+      }
+      fs.writeFileSync(this.cacheFilePath, this.stringify(Array.from(this.memoryCache.cache.entries())));
+      this.changesSinceLastSave = false;
+      this.emit('save');
+    } catch (error) {
+      this.emit('error', error);
+    }
+  }
+
+  load(cacheId = this.cacheId, cacheDir = this.cacheDir) {
+    try {
+      const filePath = path.join(cacheDir, cacheId);
+      if (fs.existsSync(filePath)) {
+        const data = fs.readFileSync(filePath, 'utf-8');
+        const entries = this.parse(data);
+        this.memoryCache.clear();
+        for (const [key, value] of entries) {
+          this.memoryCache.cache.set(key, value);
+        }
+        this.emit('load');
+      }
+    } catch (error) {
+      this.emit('error', error);
+    }
+  }
+
+  destroy() {
+    try {
+      if (fs.existsSync(this.cacheFilePath)) {
+        fs.unlinkSync(this.cacheFilePath);
+      }
+      this.memoryCache.clear();
+      this.emit('destroy');
+    } catch (error) {
+      this.emit('error', error);
+    }
+  }
+}
+
+export { FlatCache, CacheableMemory };
+
+// Global functions for managing caches
+function createNewCache(options = {}) {
+  const cache = new FlatCache(options);
+  cache.load();
+  return cache;
+}
+
+function clearAllCaches(cacheDirectory = './cache') {
+  fs.readdirSync(cacheDirectory).forEach(file => {
+    fs.unlinkSync(path.join(cacheDirectory, file));
+  });
+}
+
+function clearCacheById(cacheId, cacheDirectory = './cache') {
+  const filePath = path.join(cacheDirectory, cacheId);
+  if (fs.existsSync(filePath)) {
+    fs.unlinkSync(filePath);
+  }
+}
+
+export { createNewCache, clearAllCaches, clearCacheById };
+```

@@ -1,0 +1,71 @@
+The given Node.js code defines a module responsible for creating archive instances using different formats. Here's a breakdown of the code's functionality:
+
+1. **Dependencies and Setup**: 
+   - The `Archiver` class is required from an external `./lib/core` module. This class is assumed to handle the core functionality of creating an archive.
+   - An empty object `formats` is initialized to keep track of available archive formats and their respective modules.
+
+2. **Vending Function**: 
+   - The `vending` function is a constructor function that delegates the creation of an archive instance to the `vending.create` method.
+
+3. **Create Method**: 
+   - `vending.create` is responsible for instantiating a new `Archiver` object with a specific format and options if the format has been registered. It throws an error if the format isn't registered.
+
+4. **Register Format**:
+   - `vending.registerFormat` is used to register a new format. It checks whether the format is already registered, if the given module is a function, and ensures the module has `append` and `finalize` methods, throwing errors for any violations.
+   
+5. **Format Check**:
+   - `vending.isRegisteredFormat` checks if a given format is already registered.
+
+6. **Initial Format Registrations**:
+   - Three formats ('zip', 'tar', and 'json') are pre-registered by requiring their respective modules.
+
+```javascript
+const Archiver = require('./lib/core');
+
+class Vending {
+  constructor() {
+    this.formats = {};
+  }
+  
+  create(format, options) {
+    if (this.formats[format]) {
+      const instance = new Archiver(format, options);
+      instance.setFormat(format);
+      instance.setModule(new this.formats[format](options));
+      return instance;
+    } else {
+      throw new Error(`create(${format}): format not registered`);
+    }
+  }
+
+  registerFormat(format, module) {
+    if (this.formats[format]) {
+      throw new Error(`register(${format}): format already registered`);
+    }
+
+    if (typeof module !== 'function') {
+      throw new Error(`register(${format}): format module invalid`);
+    }
+
+    const requiredMethods = ['append', 'finalize'];
+    for (const method of requiredMethods) {
+      if (typeof module.prototype[method] !== 'function') {
+        throw new Error(`register(${format}): format module missing ${method} method`);
+      }
+    }
+
+    this.formats[format] = module;
+  }
+
+  isRegisteredFormat(format) {
+    return !!this.formats[format];
+  }
+}
+
+const vending = new Vending();
+vending.registerFormat('zip', require('./lib/plugins/zip'));
+vending.registerFormat('tar', require('./lib/plugins/tar'));
+vending.registerFormat('json', require('./lib/plugins/json'));
+
+module.exports = vending;
+```

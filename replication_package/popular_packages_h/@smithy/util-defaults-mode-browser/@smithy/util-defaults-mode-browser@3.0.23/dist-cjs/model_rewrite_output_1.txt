@@ -1,0 +1,56 @@
+The provided Node.js code helps manage and re-export modules with some custom utility functions. Here's a breakdown of its key functionality:
+
+1. **Property Handling**: It defines utility functions to handle property definitions and manipulations:
+   - `__defProp`: A shorthand for `Object.defineProperty`.
+   - `__getOwnPropDesc`: A shorthand for `Object.getOwnPropertyDescriptor`.
+   - `__getOwnPropNames`: A shorthand for `Object.getOwnPropertyNames`.
+   - `__hasOwnProp`: A shorthand for `Object.prototype.hasOwnProperty`.
+
+2. **Property Copying with Exclusions**: The `__copyProps` function copies properties from a source object to a target object, excluding a specified property (usually "default"), and incorporates property descriptors to maintain properties' characteristics.
+
+3. **Module Re-Exports**: The `__reExport` function uses `__copyProps` to re-export all properties except "default" from a module to a target module object, potentially also copying them to a secondary target.
+
+4. **CommonJS to ESM Conversion**: By using `__toCommonJS`, the code wraps the export logic to define the module as `__esModule: true`, providing compatibility between CommonJS and ESM modules.
+
+5. **Export Management**: It exports content from `./resolveDefaultsModeConfig`, excluding the "default" export, and aims to make these exports compatible with both CommonJS and ESM patterns.
+
+Here is a possible rewrite of this code:
+
+```javascript
+const defineProperty = Object.defineProperty;
+const getOwnPropertyDescriptor = Object.getOwnPropertyDescriptor;
+const getOwnPropertyNames = Object.getOwnPropertyNames;
+const hasOwnProperty = Object.prototype.hasOwnProperty;
+
+const copyProperties = (target, source, excludeKey, descriptor) => {
+  if (source && (typeof source === "object" || typeof source === "function")) {
+    for (const key of getOwnPropertyNames(source)) {
+      if (!hasOwnProperty.call(target, key) && key !== excludeKey) {
+        defineProperty(target, key, {
+          get: () => source[key],
+          enumerable: !(descriptor = getOwnPropertyDescriptor(source, key)) || descriptor.enumerable,
+        });
+      }
+    }
+  }
+  return target;
+};
+
+const reExport = (target, moduleContent, secondTarget) => {
+  copyProperties(target, moduleContent, "default");
+  if (secondTarget) {
+    copyProperties(secondTarget, moduleContent, "default");
+  }
+};
+
+const toCommonJS = (moduleContent) => copyProperties(defineProperty({}, "__esModule", { value: true }), moduleContent);
+
+const srcExports = {};
+module.exports = toCommonJS(srcExports);
+reExport(srcExports, require("././resolveDefaultsModeConfig"), module.exports);
+
+// Annotation for conditional re-export (currently unused but prepared for ESM imports)
+0 && (module.exports = {
+  resolveDefaultsModeConfig,
+});
+```

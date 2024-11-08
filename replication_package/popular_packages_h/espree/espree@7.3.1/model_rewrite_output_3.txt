@@ -1,0 +1,78 @@
+The main functionality of the Node.js code provided is to create a JavaScript parsing and tokenizing utility that leverages the Acorn library. This code configures Acorn to parse regular JavaScript or JSX syntax and produces an Abstract Syntax Tree (AST) compatible with Esprima's output format. The utility exports functions to tokenize and parse code, along with metadata about syntax kinds and supported ECMAScript versions.
+
+The code defines:
+1. A `parsers` object that lazily initializes parser instances for regular JavaScript and JSX by extending Acorn with the necessary plugins.
+2. The `tokenize` function, which tokenizes JavaScript or JSX code using the configured parser.
+3. The `parse` function, which parses the JavaScript or JSX code into an AST.
+4. It exports several elements like `version`, `Syntax`, and `VisitorKeys`, which provide information about the parser's capabilities and syntax structure types.
+
+Here's a possible rewrite for this Node.js code:
+
+```javascript
+"use strict";
+
+const acorn = require("acorn");
+const jsx = require("acorn-jsx");
+const astNodeTypes = require("./lib/ast-node-types");
+const espree = require("./lib/espree");
+const { getLatestEcmaVersion, getSupportedEcmaVersions } = require("./lib/options");
+
+const parsers = {
+    _regular: null,
+    _jsx: null,
+
+    get regular() {
+        if (!this._regular) {
+            this._regular = acorn.Parser.extend(espree());
+        }
+        return this._regular;
+    },
+
+    get jsx() {
+        if (!this._jsx) {
+            this._jsx = acorn.Parser.extend(jsx(), espree());
+        }
+        return this._jsx;
+    },
+
+    get(options) {
+        return (options && options.ecmaFeatures && options.ecmaFeatures.jsx) ? this.jsx : this.regular;
+    }
+};
+
+function tokenize(code, options) {
+    const Parser = parsers.get(options);
+
+    if (!options || options.tokens !== true) {
+        options = { ...options, tokens: true };
+    }
+
+    return new Parser(options, code).tokenize();
+}
+
+function parse(code, options) {
+    const Parser = parsers.get(options);
+
+    return new Parser(options, code).parse();
+}
+
+exports.version = require("./package.json").version;
+
+exports.tokenize = tokenize;
+exports.parse = parse;
+
+exports.Syntax = (() => {
+    const types = (typeof Object.create === "function") ? Object.create(null) : {};
+    for (const name in astNodeTypes) {
+        if (Object.hasOwnProperty.call(astNodeTypes, name)) {
+            types[name] = astNodeTypes[name];
+        }
+    }
+    return (typeof Object.freeze === "function") ? Object.freeze(types) : types;
+})();
+
+exports.VisitorKeys = (() => require("eslint-visitor-keys").KEYS)();
+
+exports.latestEcmaVersion = getLatestEcmaVersion();
+exports.supportedEcmaVersions = getSupportedEcmaVersions();
+```

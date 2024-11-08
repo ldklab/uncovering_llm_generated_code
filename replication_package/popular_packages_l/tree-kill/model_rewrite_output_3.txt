@@ -1,0 +1,74 @@
+The Node.js code is a script that provides functionality to terminate a process and its child processes across different operating systems (Windows, macOS, and Linux). It exports a function `treeKill` that uses the appropriate system command to kill the specified process tree based on the operating system. The function takes a process ID (PID), an optional signal (defaulting to `SIGTERM`), and a callback function to be executed after attempting to kill the process.
+
+Key points of functionality:
+1. **Parameter handling:** Supports optional callback and signal parameters. Defaults are `callback` as a no-op function and `signal` as `'SIGTERM'`.
+2. **Input sanitation:** Validates and sanitizes PID input to prevent code injection vulnerabilities by ensuring the PID is an integer.
+3. **OS-based commands:** Uses different commands for killing process trees depending on the operating system:
+   - **Windows (`win32`):** Uses `taskkill` to forcefully terminate the process and its children.
+   - **macOS (`darwin`):** Uses `pgrep` and `xargs` to identify and send signals to child processes.
+   - **Linux:** Uses `ps` and `xargs` in a similar fashion to macOS to achieve the same goal.
+4. **Error Handling:** Calls the callback with an error if PID is invalid or if the platform is unsupported. Executes system commands and invokes a callback on completion, handling any errors that might occur.
+5. **Command Line Interface:** When run as a standalone script, it accepts a PID and an optional signal as arguments, utilizing the `treeKill` function.
+
+Here is the rewritten Node.js code based on this explanation:
+
+```javascript
+// tree-kill.js
+const { exec } = require('child_process');
+
+function treeKill(pid, signal = 'SIGTERM', callback = function() {}) {
+  if (typeof signal === 'function') {
+    callback = signal;
+    signal = 'SIGTERM';
+  }
+
+  pid = parseInt(pid, 10);
+  if (isNaN(pid)) {
+    return process.nextTick(() => callback(new Error('Invalid PID')));
+  }
+
+  const platform = process.platform;
+  let cmd;
+
+  switch (platform) {
+    case 'win32':
+      cmd = `taskkill /pid ${pid} /T /F`;
+      break;
+    case 'darwin':
+      cmd = `pgrep -P ${pid} | xargs kill -s ${signal}`;
+      break;
+    case 'linux':
+      cmd = `ps -o pid --no-headers --ppid ${pid} | xargs kill -s ${signal}`;
+      break;
+    default:
+      return process.nextTick(() => callback(new Error('Unsupported platform')));
+  }
+
+  exec(cmd, (err) => {
+    if (err) {
+      return callback(err);
+    }
+    exec(`kill -s ${signal} ${pid}`, callback);
+  });
+}
+
+module.exports = treeKill;
+
+// CLI Interface
+if (require.main === module) {
+  const [pid, signal = 'SIGTERM'] = process.argv.slice(2);
+  if (!pid) {
+    console.error('Usage: tree-kill <pid> [signal]');
+    process.exit(1);
+  }
+
+  treeKill(pid, signal, (err) => {
+    if (err) {
+      console.error(`Failed to kill process tree with PID ${pid}:`, err);
+      process.exit(1);
+    } else {
+      console.log(`Successfully killed process tree with PID ${pid}`);
+    }
+  });
+}
+```

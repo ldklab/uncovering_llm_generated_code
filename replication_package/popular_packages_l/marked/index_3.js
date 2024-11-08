@@ -1,0 +1,48 @@
+// index.js
+
+// This Node.js application converts markdown files to sanitized HTML using the 'marked' library and DOMPurify.
+const marked = require('marked');
+const fs = require('fs');
+const path = require('path');
+const DOMPurify = require('dompurify');
+const { JSDOM } = require('jsdom');
+
+// Function to parse a markdown file and convert it to sanitized HTML
+function parseAndSanitizeMarkdown(filePath) {
+  // Read the file asynchronously
+  fs.readFile(filePath, 'utf8', (err, markdownContent) => {
+    if (err) {
+      console.error('Error reading markdown file:', err);
+      return;
+    }
+
+    // Convert markdown content to HTML
+    const rawHTML = marked.parse(markdownContent);
+
+    // Setup a DOM environment to use DOMPurify for sanitization
+    const { window } = new JSDOM('');
+    const purify = DOMPurify(window);
+
+    // Sanitize the converted HTML
+    const sanitizedHTML = purify.sanitize(rawHTML);
+    console.log('Sanitized HTML Output:', sanitizedHTML);
+
+    // Write the sanitized HTML to an output file
+    const outputFilePath = path.resolve(__dirname, 'output.html');
+    fs.writeFile(outputFilePath, sanitizedHTML, (writeErr) => {
+      if (writeErr) {
+        console.error('Error writing HTML file:', writeErr);
+      } else {
+        console.log('HTML file written successfully:', outputFilePath);
+      }
+    });
+  });
+}
+
+// Handle command line arguments for file processing
+const args = process.argv.slice(2);
+if (args.length) {
+  parseAndSanitizeMarkdown(args[0]);
+} else {
+  console.error('Usage: node index.js <markdown-file-path>');
+}

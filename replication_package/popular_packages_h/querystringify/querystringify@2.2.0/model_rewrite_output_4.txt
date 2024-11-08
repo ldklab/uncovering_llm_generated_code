@@ -1,0 +1,109 @@
+The Node.js code provided is a utility for handling query strings. It includes functions for parsing a query string into an object and forming a query string from an object. Here's a breakdown of each section:
+
+1. **`decode` function**: This function takes a URI encoded string as input and returns the decoded string. If the decoding fails (e.g., the input is not properly encoded), it returns `null`.
+
+2. **`encode` function**: This function takes a string input and returns its URI encoded version. If encoding fails, it returns `null`.
+
+3. **`querystring` function**: This function parses a query string (e.g., URL parameters) and converts it into an object where keys and values are the decoded versions of the original string. It safeguards against replacing object properties by skipping existing keys to avoid malicious query strings from overriding JavaScript object methods.
+
+4. **`querystringify` function**: This function constructs a query string from a given object. It iterates over the object's properties, encoding both keys and values. If a key or value cannot be encoded, it skips them. The result is returned as a query string with an optional prefix.
+
+5. **Exports**: The last section exports the `querystringify` function as `stringify` and the `querystring` function as `parse`, making them available for use in other modules that require this utility.
+
+Here's a rewrite of the original code with improved structure for clarity:
+
+```js
+'use strict';
+
+const has = Object.prototype.hasOwnProperty;
+
+/**
+ * Decode a URI encoded string.
+ *
+ * @param {String} input The URI encoded string.
+ * @returns {String|Null} The decoded string.
+ * @api private
+ */
+function decode(input) {
+  try {
+    return decodeURIComponent(input.replace(/\+/g, ' '));
+  } catch (e) {
+    return null;
+  }
+}
+
+/**
+ * Attempts to encode a given input.
+ *
+ * @param {String} input The string that needs to be encoded.
+ * @returns {String|Null} The encoded string.
+ * @api private
+ */
+function encode(input) {
+  try {
+    return encodeURIComponent(input);
+  } catch (e) {
+    return null;
+  }
+}
+
+/**
+ * Simple query string parser.
+ *
+ * @param {String} query The query string that needs to be parsed.
+ * @returns {Object}
+ * @api public
+ */
+function querystring(query) {
+  const parser = /([^=?#&]+)=?([^&]*)/g;
+  const result = {};
+  let part;
+
+  while (part = parser.exec(query)) {
+    const key = decode(part[1]);
+    const value = decode(part[2]);
+
+    // Prevent property overriding and omit failed decodings
+    if (key === null || value === null || key in result) continue;
+    result[key] = value;
+  }
+
+  return result;
+}
+
+/**
+ * Transform a query string to an object.
+ *
+ * @param {Object} obj Object that should be transformed.
+ * @param {String} prefix Optional prefix.
+ * @returns {String}
+ * @api public
+ */
+function querystringify(obj, prefix = '?') {
+  const pairs = [];
+
+  for (let key in obj) {
+    if (has.call(obj, key)) {
+      let value = obj[key];
+
+      // Encode value to an empty string for certain edge cases
+      if (!value && (value === null || value === undefined || isNaN(value))) {
+        value = '';
+      }
+
+      key = encode(key);
+      value = encode(value);
+
+      // Skip if encoding fails
+      if (key === null || value === null) continue;
+      pairs.push(`${key}=${value}`);
+    }
+  }
+
+  return pairs.length ? prefix + pairs.join('&') : '';
+}
+
+// Expose the module
+exports.stringify = querystringify;
+exports.parse = querystring;
+```

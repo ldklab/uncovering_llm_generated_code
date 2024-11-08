@@ -1,0 +1,95 @@
+The provided code defines a module named `estraverse`, which is used to traverse and manipulate abstract syntax trees (ASTs). The module contains two main functions: `traverse` and `replace`. 
+
+1. **traverse**: This function allows the user to visit each node in the AST. It takes a `tree` (the AST) and a `visitor` object. The `visitor` can have two methods: `enter` and `leave`, allowing the user to define actions to take when entering or leaving a node. Traversal can be controlled using options like `Break`, `Skip`, and `Remove`.
+
+2. **replace**: Similar to `traverse`, but in addition to visiting nodes, it allows replacing nodes. If the `enter` or `leave` method of the visitor returns a value, that value replaces the current node. Traversal can be terminated using the `Break` option.
+
+Both functions iterate through the AST using the node's keys, either based on a custom visitor's keys map or the default object's keys.
+
+Here is a rewritten version of the code:
+
+```javascript
+const estraverse = {
+    VisitorOption: {
+        Skip: 'skip',
+        Break: 'break',
+        Remove: 'remove'
+    },
+
+    traverse: function (ast, visitor) {
+        const visitNode = (node, parent) => {
+            let result;
+            if (visitor.enter) {
+                result = visitor.enter.call(visitor, node, parent);
+                if (result === estraverse.VisitorOption.Break) return result;
+            }
+
+            const keys = (visitor.keys && visitor.keys[node.type]) || Object.keys(node);
+            for (const key of keys) {
+                const child = node[key];
+                
+                if (Array.isArray(child)) {
+                    for (let i = 0; i < child.length; i++) {
+                        if (child[i] && typeof child[i] === 'object') {
+                            result = visitNode(child[i], node);
+                            if (result === estraverse.VisitorOption.Break) return result;
+                        }
+                    }
+                } else if (child && typeof child === 'object') {
+                    result = visitNode(child, node);
+                    if (result === estraverse.VisitorOption.Break) return result;
+                }
+            }
+            
+            if (visitor.leave) {
+                return visitor.leave.call(visitor, node, parent);
+            }
+        };
+        
+        visitNode(ast, null);
+    },
+
+    replace: function (ast, visitor) {
+        const visitNode = (node, parent, key) => {
+            let result;
+            if (visitor.enter) {
+                result = visitor.enter.call(visitor, node, parent);
+                if (result === estraverse.VisitorOption.Break) return result;
+                if (result !== undefined) {
+                    if (parent) parent[key] = result;
+                    node = result;
+                }
+            }
+
+            const keys = (visitor.keys && visitor.keys[node.type]) || Object.keys(node);
+            for (const key of keys) {
+                const child = node[key];
+                
+                if (Array.isArray(child)) {
+                    for (let i = 0; i < child.length; i++) {
+                        if (child[i] && typeof child[i] === 'object') {
+                            result = visitNode(child[i], node, i);
+                            if (result === estraverse.VisitorOption.Break) return result;
+                        }
+                    }
+                } else if (child && typeof child === 'object') {
+                    result = visitNode(child, node, key);
+                    if (result === estraverse.VisitorOption.Break) return result;
+                }
+            }
+
+            if (visitor.leave) {
+                result = visitor.leave.call(visitor, node, parent);
+                if (result !== undefined && parent) {
+                    parent[key] = result;
+                }
+            }
+        };
+        
+        visitNode(ast, null, null);
+        return ast;
+    }
+};
+
+module.exports = estraverse;
+```

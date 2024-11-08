@@ -1,0 +1,78 @@
+```javascript
+// signal-exit.js
+const signals = [
+  'SIGINT', 'SIGTERM', 'SIGQUIT', 'SIGHUP', 'SIGBREAK',
+  'SIGUSR1', 'SIGUSR2', 'SIGPIPE'
+];
+const originalEmit = process.emit;
+
+function onExit(callback, options = {}) {
+  if (!process || typeof process.emit !== 'function') {
+    return () => {}; // Return a no-op for non-applicable processes
+  }
+
+  let fired = false; // Prevent the callback from running more than once
+  let hookedSignals = new Set(); // Track signals that triggered the handler
+
+  function exitHandler(exitCode, signal) {
+    if (fired) return;
+    fired = true;
+
+    // If the callback doesn't return true, proceed with process exit
+    if (!hookedSignals.has(signal) || callback(exitCode, signal) !== true) {
+      process.exit(exitCode);
+    }
+  }
+
+  function signalHandler(signal) {
+    hookedSignals.add(signal);
+    exitHandler(null, signal);
+  }
+
+  process.on('exit', exitHandler); // Handle standard exit events
+
+  signals.forEach(signal => {
+    try {
+      process.on(signal, signalHandler); // Attach handlers for each signal
+    } catch (err) {
+      // Ignore errors if signal can't be attached
+    }
+  });
+
+  if (options.alwaysLast) {
+    process.emit = function (...args) {
+      const type = args[0];
+      if (type === 'exit') {
+        process.removeListener('exit', exitHandler); // Temporarily detach
+        const result = originalEmit.apply(process, args); // Emit event
+        process.on('exit', exitHandler); // Reattach
+        return result;
+      }
+      return originalEmit.apply(process, args);
+    };
+  }
+
+  return function remove() {
+    if (fired) return;
+    process.removeListener('exit', exitHandler);
+    signals.forEach(signal => process.removeListener(signal, signalHandler));
+    if (options.alwaysLast) {
+      process.emit = originalEmit; // Restore original process.emit method
+    }
+  };
+}
+
+// browser.js (No operation shim for browser)
+function onExitForBrowser(callback, options = {}) {
+  return () => {}; // No-op, as signals/events do not apply in browsers
+}
+
+export { onExit, onExitForBrowser as onExit };
+```
+
+Explanation:
+1. The `onExit` function is designed to execute a callback when the process exits or receives specific signals (e.g., `SIGINT` or `SIGTERM`).
+2. It attaches handlers for various POSIX signals to call the callback on such signals.
+3. It returns a function `remove` that can be used to detach the handlers and restore the original state.
+4. If `options.alwaysLast` is set, the function modifies `process.emit` to ensure that the handlers are always the last ones to run on exit.
+5. The shim for browsers is a no-op since signal handling is not relevant in that environment.

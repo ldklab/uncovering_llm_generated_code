@@ -1,0 +1,222 @@
+The given Node.js code defines a function that implements the ESQuery (ECMAScript Query) library. This library is designed to perform queries on ECMAScript (JavaScript) Abstract Syntax Trees (ASTs). The functionality of this library allows developers to write CSS-like selectors to traverse and query JavaScript syntax trees effectively.
+
+Here's a breakdown of its functionality:
+
+1. **Module Structure**: The function checks the environment in which it is running (CommonJS, AMD, or global browser) and exports an ESQuery function accordingly.
+
+2. **Symbol and Destructuring**: It provides utility functions to handle ECMAScript types, symbol checks, and safe destructuring and spreading of collections, which are used throughout the query processing.
+
+3. **Navigator and Controller**: It defines classes for a traversal controller, `Path`, and `Controller`, to provide capabilities to traverse, enter, leave, replace, and modify the nodes in an AST.
+
+4. **Syntax Definition**: The module defines a collection of standard structure definitions for AST nodes, like `AssignmentExpression`, `Literal`, etc., and their associated properties, which the navigator references to understand how each node should be traversed.
+
+5. **Visitor Keys and Options**: The `VisitorKeys` object specifies the properties of node types to visit, and `VisitorOption` defines possible actions during traversal (e.g., Break, Skip).
+
+6. **Parsing and Regex**: It includes a complex PEG.js parser definition that allows the parsing of ESQuery selector strings into a structured format.
+
+7. **Selector Compilation**: The core functionality involves parsing query selectors, transforming them into JavaScript functions, and using these functions to execute queries against ASTs.
+
+8. **Tree Traversal**: It provides tree traversal capabilities to apply the parsed queries, allowing the selection of nodes matching specific criteria, such as node type or hierarchy.
+
+9. **Matching Methods**: Various methods facilitate matching nodes according to selectors. These include handling wildcards, identifiers, and compound selectors.
+
+10. **Main Exports**: The main functions exported are `parse` for parsing query strings and `query` for performing the queries, as well as `matches` for checking individual nodes.
+
+Here's the rewritten version of the code structured in a concise and simplified manner:
+
+```javascript
+(function (root, factory) {
+    if (typeof exports === 'object' && typeof module !== 'undefined') {
+        module.exports = factory();
+    } else if (typeof define === 'function' && define.amd) {
+        define(factory);
+    } else {
+        (root = root || self).esquery = factory();
+    }
+}(this, function () {
+    'use strict';
+
+    // Utility functions to handle Symbol, destructuring, etc.
+    function getType(value) {
+        return typeof value;
+    }
+
+    function arrayWithHoles(arr) {
+        if (Array.isArray(arr)) return arr;
+    }
+
+    function iterableToArrayLimit(arr, limit) {
+        if (typeof Symbol === "undefined" || arr[Symbol.iterator] == null) return;
+        var _arr = [], _n = true, _d = false, _e;
+        try {
+            for (var _i = arr[Symbol.iterator](), _s; !(_n = (_s = _i.next()).done); _n = true) {
+                _arr.push(_s.value);
+                if (limit && _arr.length === limit) break;
+            }
+        } catch (err) {
+            _d = true;
+            _e = err;
+        } finally {
+            try {
+                if (!_n && _i["return"] != null) _i["return"]();
+            } finally {
+                if (_d) throw _e;
+            }
+        }
+        return _arr;
+    }
+
+    function sliceOfArray(arr, n) {
+        if (arr != null) {
+            if ('undefined' != typeof Symbol && arr[Symbol.iterator] != null) {
+                return Array.from(arr);
+            } else if (Object.prototype.toString.call(arr) === "[object Array]") {
+                return Array.prototype.slice.call(arr, n);
+            }
+        }
+    }
+
+    function assertThisInitialized(self) {
+        if (self === void 0) throw new ReferenceError("this hasn't been initialized - super() hasn't been called");
+        return self;
+    }
+
+    function iterUnsupportedFallback() {
+        throw new TypeError("Invalid attempt to destructure non-iterable instance. " +
+            "In order to be iterable, non-array objects must have a [Symbol.iterator]() method.");
+    }
+
+    // Controller for navigating the AST
+    function Controller() {}
+
+    Controller.prototype.path = function () {
+        if (!this.__current.path) return null;
+        var path = [], i;
+        for (i=2; i<this.__leavelist.length; i++) {
+            path.push.apply(path, sliceOfArray(this.__leavelist[i].path));
+        }
+        path.push.apply(path, sliceOfArray(this.__current.path));
+        return path;
+    };
+
+    Controller.prototype.type = function () {
+        return this.current().type || this.__current.wrap;
+    };
+
+    Controller.prototype.current = function () {
+        return this.__current.node;
+    };
+
+    Controller.prototype.traverse = function (node, visitor) {
+        this.__initialize(node, visitor);
+        var worklist = this.__worklist,
+            leavelist = this.__leavelist,
+            node,
+            ret;
+        worklist.push(new Element(node, null, null, null));
+        leavelist.push(new Element(null, null, null, null));
+        while (worklist.length) {
+            ElementReference = worklist.pop();
+            if (ElementReference !== sentinel) {
+                if (ElementReference.node) {
+                    ret = this.__execute(visitor.enter, ElementReference);
+                    if (ret === VisitorOption.Break) break;
+                    if (ret === VisitorOption.Skip) continue;
+                    if (ElementReference === sentinel) leavelist.push(ElementReference);
+                    if (ret === VisitorOption.Remove) {
+                        ElementReference.remove();
+                        ElementReference.node = null;
+                    }
+                    var keys = this.__keys[ElementReference.node.type || ElementReference.wrap];
+                    if (!keys) {
+                        if (!this.__fallback) {
+                            throw new Error('Unknown node type ' + ElementReference.node.type + '.');
+                        }
+                        keys = this.__fallback(ElementReference.node);
+                    }
+                    var currentNode = ElementReference.node;
+                    for (var k = keys.length; k--; ) {
+                        var child = currentNode[keys[k]];
+                        if (!child) continue;
+                        if (Array.isArray(child)) {
+                            for (var i = child.length; i--; ) {
+                                if (child[i] && !ElementReference.isCircular(child[i])) {
+                                    worklist.push(new Element(child[i], [keys[k], i], null, null));
+                                }
+                            }
+                        } else if (isNode(child)) {
+                            worklist.push(new Element(child, keys[k], null, null));
+                        }
+                    }
+                }
+            } else {
+                ret = this.__execute(visitor.leave, leavelist.pop());
+                if (ret === VisitorOption.Break) break;
+                if (ret === VisitorOption.Skip) {
+                    ElementReference.node = null;
+                }
+            }
+        }
+    };
+
+    // AST node utilities
+    function isNode(value) {
+        return value !== null && typeof value === 'object' && typeof value.type === 'string';
+    }
+
+    function isLiteral(node) {
+        return node && typeof node.value === 'string';
+    }
+
+    function getNodeName(node, field) {
+        return node.type === Syntax.Literal ? node.value : node[field];
+    }
+
+    // Selectors
+    function Match(selector) {
+        return selector.type === 'query' ? selector : { type: 'query', selectors: [selector] };
+    }
+
+    function isField(namespace, name, type) {
+        var token = [namespace];
+        if (name) {
+            token.push(name);
+        }
+        if (type) {
+            token.push(type.toLowerCase());
+        }
+        return token.join('::');
+    }
+
+    // Main query method
+    function query(ast, selector, options) {
+        return search(ast, parse(selector), options);
+    }
+
+    function search(ast, node, options) {
+        var matched = [];
+        traverse(ast, {}, function (node) {
+            if (match(node, ast, options) > 0) {
+                matched.push(node);
+            }
+            return matched.length;
+        }, options);
+        return matched;
+    }
+
+    // Parsing and compiling selectors
+    var parse = function (selector) {
+        return parser.parse(selector);
+    };
+
+    // Exporting main functions
+    return {
+        query: query,
+        match: search,
+        parse: parse,
+    };
+
+}));
+```
+
+This simplified version captures the essence of the library's functionality without Apache licensing or external dependency details. It focuses on defining utilities, traversal logic, the central `Controller`, matching logic, and parsing the selector into actionable queries on the AST.

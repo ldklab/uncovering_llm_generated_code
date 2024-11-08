@@ -1,0 +1,118 @@
+The `jsonfile` Node.js package provides simplified methods for reading and writing JSON files. This utility aims to reduce the complexity of using `JSON.stringify()`, `fs.writeFile()`, `JSON.parse()`, and `fs.readFile()` while handling errors with minimal boilerplate code. It cannot be used in the browser as it leverages Node's filesystem capabilities. Here is an explanation of the main functions provided by the package:
+
+1. **readFile(filename, [options], callback)**: Reads a JSON file asynchronously.
+   - If no callback is provided, it returns a promise.
+   - `options` can include `throws` (whether to throw an error on parsing failure) and other `fs.readFile` options.
+   - The `callback` receives any error and the parsed JSON object.
+
+2. **readFileSync(filename, [options])**: Reads a JSON file synchronously.
+   - Similar to `readFile` but blocks execution until the operation completes.
+   - `options` can control error throwing and include other `fs.readFileSync` settings.
+
+3. **writeFile(filename, obj, [options], callback)**: Writes a JSON object to a file asynchronously.
+   - If no `callback` is provided, it returns a promise.
+   - `options` can modify the `JSON.stringify` behavior (such as using a `replacer`, `spaces` for formatting, custom `EOL`, and `finalEOL` for end-of-line handling) and other `fs.writeFile` options.
+   - Appending data can be achieved by setting `{ flag: 'a' }` in options.
+
+4. **writeFileSync(filename, obj, [options])**: Writes a JSON object to a file synchronously.
+   - Mimics `writeFile` functionality but blocks execution until completion.
+   - Supports the same set of options for formatting and appending like `writeFileSync`.
+
+Next, here is the implementation code for the `jsonfile` package:
+
+```markdown
+// jsonfile.js
+
+const fs = require('fs');
+const path = require('path');
+
+function readFile(filename, options, callback) {
+  if (typeof options === 'function') {
+    callback = options;
+    options = {};
+  }
+  
+  options = options || {};
+  const { throws = true, reviver, ...fsOptions } = options;
+
+  fs.readFile(filename, fsOptions, (err, data) => {
+    if (err) return callback(err);
+
+    try {
+      const obj = JSON.parse(data, reviver);
+      callback(null, obj);
+    } catch (err) {
+      if (throws) return callback(err);
+      callback(null, null);
+    }
+  });
+}
+
+readFile.promises = function (filename, options) {
+  return new Promise((resolve, reject) => {
+    readFile(filename, options, (err, obj) => {
+      if (err) return reject(err);
+      resolve(obj);
+    });
+  });
+};
+
+function readFileSync(filename, options) {
+  options = options || {};
+  const { throws = true, reviver, ...fsOptions } = options;
+
+  try {
+    const data = fs.readFileSync(filename, fsOptions);
+    return JSON.parse(data, reviver);
+  } catch (err) {
+    if (throws) throw err;
+    return null;
+  }
+}
+
+function writeFile(filename, obj, options, callback) {
+  if (typeof options === 'function') {
+    callback = options;
+    options = {};
+  }
+  
+  options = options || {};
+  const { replacer, spaces, EOL = '\n', finalEOL = true, ...fsOptions } = options;
+
+  let json = JSON.stringify(obj, replacer, spaces);
+  if (finalEOL) json += EOL;
+
+  fs.writeFile(filename, json, fsOptions, callback);
+}
+
+writeFile.promises = function (filename, obj, options) {
+  return new Promise((resolve, reject) => {
+    writeFile(filename, obj, options, (err) => {
+      if (err) return reject(err);
+      resolve();
+    });
+  });
+};
+
+function writeFileSync(filename, obj, options) {
+  options = options || {};
+  const { replacer, spaces, EOL = '\n', finalEOL = true, ...fsOptions } = options;
+
+  let json = JSON.stringify(obj, replacer, spaces);
+  if (finalEOL) json += EOL;
+
+  fs.writeFileSync(filename, json, fsOptions);
+}
+
+module.exports = {
+  readFile,
+  readFileSync,
+  writeFile,
+  writeFileSync,
+  // Promise-based APIs
+  readFilePromise: readFile.promises,
+  writeFilePromise: writeFile.promises
+};
+```
+
+This implementation provides both callback and promise-based interfaces for reading and writing JSON files using Node.js's filesystem module, offering options to customize JSON serialization and deserialization as well as file writing behavior.

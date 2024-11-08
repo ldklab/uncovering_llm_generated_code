@@ -1,0 +1,105 @@
+The provided Node.js code is a set of functions that utilize several modules to process and transform JavaScript code, potentially involving TypeScript or JSX. The key functionalities include:
+
+- **Version Retrieval:** The `getVersion` function fetches and returns the library version from the `package.json` file.
+- **Code Transformation:** The `transform` function takes JavaScript code and options as inputs and applies transformations such as JSX or TypeScript processing. It performs error handling and can generate a source map if options request it.
+- **Token Formatting:** The `getFormattedTokens` function returns a string representation of the tokens in the code, useful for debugging.
+- **Context Generation:** The `getSucraseContext` function prepares a context object by parsing the code, managing token processing, handling import/export statements, and setting up tooling like `NameManager` and `HelperManager`.
+
+The code imports several helper classes and functions to achieve these tasks, including a parser, token processor, import processor, and various utilities for managing names and identifying shadowed globals (variables that are globally scoped but overwritten locally).
+
+Here's a possible rewrite of this code:
+
+```javascript
+"use strict";
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+
+const CJSImportProcessor = require('./CJSImportProcessor').default;
+const computeSourceMap = require('./computeSourceMap').default;
+const { HelperManager } = require('./HelperManager');
+const identifyShadowedGlobals = require('./identifyShadowedGlobals').default;
+const NameManager = require('./NameManager').default;
+const { validateOptions } = require('./Options');
+const { parse } = require('./parser');
+const TokenProcessor = require('./TokenProcessor').default;
+const RootTransformer = require('./transformers/RootTransformer').default;
+const formatTokens = require('./util/formatTokens').default;
+const getTSImportedNames = require('./util/getTSImportedNames').default;
+
+function getVersion() {
+  return require("../package.json").version;
+}
+exports.getVersion = getVersion;
+
+function transform(code, options) {
+  validateOptions(options);
+  try {
+    const sucraseContext = getSucraseContext(code, options);
+    const transformer = new RootTransformer(
+      sucraseContext,
+      options.transforms,
+      Boolean(options.enableLegacyBabel5ModuleInterop),
+      options,
+    );
+    let result = { code: transformer.transform() };
+    if (options.sourceMapOptions) {
+      if (!options.filePath) {
+        throw new Error("filePath must be specified when generating a source map.");
+      }
+      result = {
+        ...result,
+        sourceMap: computeSourceMap(result.code, options.filePath, options.sourceMapOptions),
+      };
+    }
+    return result;
+  } catch (e) {
+    if (options.filePath) {
+      e.message = `Error transforming ${options.filePath}: ${e.message}`;
+    }
+    throw e;
+  }
+}
+exports.transform = transform;
+
+function getFormattedTokens(code, options) {
+  const tokens = getSucraseContext(code, options).tokenProcessor.tokens;
+  return formatTokens(code, tokens);
+}
+exports.getFormattedTokens = getFormattedTokens;
+
+function getSucraseContext(code, options) {
+  const isJSXEnabled = options.transforms.includes("jsx");
+  const isTypeScriptEnabled = options.transforms.includes("typescript");
+  const isFlowEnabled = options.transforms.includes("flow");
+  const file = parse(code, isJSXEnabled, isTypeScriptEnabled, isFlowEnabled);
+  const tokens = file.tokens;
+  const scopes = file.scopes;
+
+  const nameManager = new NameManager(code, tokens);
+  const helperManager = new HelperManager(nameManager);
+  const tokenProcessor = new TokenProcessor(code, tokens, isFlowEnabled, helperManager);
+  const enableLegacyTypeScriptModuleInterop = Boolean(options.enableLegacyTypeScriptModuleInterop);
+
+  let importProcessor = null;
+  if (options.transforms.includes("imports")) {
+    importProcessor = new CJSImportProcessor(
+      nameManager,
+      tokenProcessor,
+      enableLegacyTypeScriptModuleInterop,
+      options,
+      options.transforms.includes("typescript"),
+      helperManager,
+    );
+    importProcessor.preprocessTokens();
+    identifyShadowedGlobals(tokenProcessor, scopes, importProcessor.getGlobalNames());
+    if (options.transforms.includes("typescript")) {
+      importProcessor.pruneTypeOnlyImports();
+    }
+  } else if (options.transforms.includes("typescript")) {
+    identifyShadowedGlobals(tokenProcessor, scopes, getTSImportedNames(tokenProcessor));
+  }
+  return { tokenProcessor, scopes, nameManager, importProcessor, helperManager };
+}
+```

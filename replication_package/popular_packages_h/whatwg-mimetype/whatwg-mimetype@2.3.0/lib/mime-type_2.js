@@ -1,0 +1,169 @@
+"use strict";
+
+const parse = require("./parser.js");
+const serialize = require("./serializer.js");
+const {
+  asciiLowercase,
+  solelyContainsHTTPTokenCodePoints,
+  soleyContainsHTTPQuotedStringTokenCodePoints
+} = require("./utils.js");
+
+class MIMEType {
+  constructor(string) {
+    const parsedString = String(string);
+    const result = parse(parsedString);
+    
+    if (result === null) {
+      throw new Error(`Could not parse MIME type string "${parsedString}"`);
+    }
+
+    this._type = result.type;
+    this._subtype = result.subtype;
+    this._parameters = new MIMETypeParameters(result.parameters);
+  }
+
+  static parse(string) {
+    try {
+      return new this(string);
+    } catch (error) {
+      return null;
+    }
+  }
+
+  get essence() {
+    return `${this.type}/${this.subtype}`;
+  }
+
+  get type() {
+    return this._type;
+  }
+
+  set type(value) {
+    const valueLowercase = asciiLowercase(String(value));
+
+    if (valueLowercase.length === 0) {
+      throw new Error("Invalid type: must be a non-empty string");
+    }
+
+    if (!solelyContainsHTTPTokenCodePoints(valueLowercase)) {
+      throw new Error(`Invalid type ${valueLowercase}: must contain only HTTP token code points`);
+    }
+
+    this._type = valueLowercase;
+  }
+
+  get subtype() {
+    return this._subtype;
+  }
+
+  set subtype(value) {
+    const valueLowercase = asciiLowercase(String(value));
+
+    if (valueLowercase.length === 0) {
+      throw new Error("Invalid subtype: must be a non-empty string");
+    }
+
+    if (!solelyContainsHTTPTokenCodePoints(valueLowercase)) {
+      throw new Error(`Invalid subtype ${valueLowercase}: must contain only HTTP token code points`);
+    }
+
+    this._subtype = valueLowercase;
+  }
+
+  get parameters() {
+    return this._parameters;
+  }
+
+  toString() {
+    return serialize(this);
+  }
+
+  isJavaScript({ allowParameters = false } = {}) {
+    const isJavaScriptType = this._type === "text" && [
+      "ecmascript", "javascript", "javascript1.0", "javascript1.1", "javascript1.2",
+      "javascript1.3", "javascript1.4", "javascript1.5", "jscript", "livescript",
+      "x-ecmascript", "x-javascript"
+    ].includes(this._subtype);
+
+    const isJavaScriptApplication = this._type === "application" && [
+      "ecmascript", "javascript", "x-ecmascript", "x-javascript"
+    ].includes(this._subtype);
+
+    return (isJavaScriptType || isJavaScriptApplication) && (allowParameters || this._parameters.size === 0);
+  }
+
+  isXML() {
+    return (this._subtype === "xml" && ["text", "application"].includes(this._type)) ||
+           this._subtype.endsWith("+xml");
+  }
+
+  isHTML() {
+    return this._subtype === "html" && this._type === "text";
+  }
+}
+
+class MIMETypeParameters {
+  constructor(map) {
+    this._map = map;
+  }
+
+  get size() {
+    return this._map.size;
+  }
+
+  get(name) {
+    const lowercaseName = asciiLowercase(String(name));
+    return this._map.get(lowercaseName);
+  }
+
+  has(name) {
+    const lowercaseName = asciiLowercase(String(name));
+    return this._map.has(lowercaseName);
+  }
+
+  set(name, value) {
+    const lowercaseName = asciiLowercase(String(name));
+    const stringValue = String(value);
+
+    if (!solelyContainsHTTPTokenCodePoints(lowercaseName)) {
+      throw new Error(`Invalid MIME type parameter name "${lowercaseName}": only HTTP token code points are valid.`);
+    }
+
+    if (!soleyContainsHTTPQuotedStringTokenCodePoints(stringValue)) {
+      throw new Error(`Invalid MIME type parameter value "${stringValue}": only HTTP quoted-string token code points are valid.`);
+    }
+
+    return this._map.set(lowercaseName, stringValue);
+  }
+
+  clear() {
+    this._map.clear();
+  }
+
+  delete(name) {
+    const lowercaseName = asciiLowercase(String(name));
+    return this._map.delete(lowercaseName);
+  }
+
+  forEach(callbackFn, thisArg) {
+    this._map.forEach(callbackFn, thisArg);
+  }
+
+  keys() {
+    return this._map.keys();
+  }
+
+  values() {
+    return this._map.values();
+  }
+
+  entries() {
+    return this._map.entries();
+  }
+
+  [Symbol.iterator]() {
+    return this._map[Symbol.iterator]();
+  }
+}
+
+module.exports = MIMEType;

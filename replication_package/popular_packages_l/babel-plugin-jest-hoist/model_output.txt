@@ -1,0 +1,66 @@
+The `babel-plugin-jest-hoist` is a Babel plugin designed to automatically hoist Jest-related function calls such as `jest.disableAutomock`, `jest.enableAutomock`, `jest.unmock`, and `jest.mock` above `import` statements in JavaScript files. This modification is beneficial because Jest mocking functions need to be executed before the module imports to ensure the mocks affect the imported modules correctly.
+
+### Installation
+
+To use this plugin, you typically install it as a development dependency via a package manager like Yarn or npm.
+
+### Usage
+
+Once installed, there are several ways to use `babel-plugin-jest-hoist`:
+
+1. **Babel Configuration File**: The plugin is added to the `plugins` array in the `babel.config.js` file, which is the recommended setup. This ensures that every module transformed by Babel will have the Jest mock calls hoisted as needed.
+
+2. **CLI**: It can be utilized through the Babel CLI with the `--plugins` flag, allowing you to specify the plugin when transforming a file directly from the command line.
+
+3. **Node API**: The plugin can also be used programmatically via Babel's Node API. This involves calling Babel's `transform` function and passing the necessary code along with the plugin configuration.
+
+### Code Implementation
+
+```js
+// babel-plugin-jest-hoist.js
+
+module.exports = function({ types: t }) {
+  return {
+    visitor: {
+      Program(path) {
+        // Collect jest calls
+        const jestCalls = [];
+
+        // Traverse through the program body to identify jest function calls
+        path.traverse({
+          ExpressionStatement(exprPath) {
+            const { expression } = exprPath.node;
+            if (
+              t.isCallExpression(expression) &&
+              t.isMemberExpression(expression.callee) &&
+              t.isIdentifier(expression.callee.object, { name: 'jest' })
+            ) {
+              const jestMethodName = expression.callee.property.name;
+              if (
+                ['disableAutomock', 'enableAutomock', 'unmock', 'mock'].includes(jestMethodName)
+              ) {
+                jestCalls.push(exprPath.node);
+                exprPath.remove(); // Remove original from original spot
+              }
+            }
+          }
+        });
+
+        // Find the first import statement to insert before
+        const firstImportIndex = path.node.body.findIndex((stm) => 
+          t.isImportDeclaration(stm)
+        );
+
+        // Insert jest calls before the first import statement or at the program start
+        if (firstImportIndex !== -1) {
+          path.node.body.splice(firstImportIndex, 0, ...jestCalls);
+        } else {
+          path.node.body.unshift(...jestCalls);
+        }
+      }
+    }
+  };
+};
+```
+
+In this implementation, the plugin registers a visitor for the AST traversal. It specifically looks for function calls on the `jest` object and collects these calls when they match the specified Jest functions (`disableAutomock`, `enableAutomock`, `unmock`, `mock`). It then removes these calls from their original location and re-inserts them at the top of the file, before any import declarations, thereby ensuring they are executed in the correct order relative to module imports.

@@ -1,0 +1,84 @@
+The Node.js code defines a module that validates package names according to specified rules and conditions. It checks whether the input is a valid string and evaluates it against certain constraints, listing warnings and errors when the input doesn't meet the criteria. Below is a detailed explanation of the functionality:
+
+1. **Imports**: 
+   - The code uses `require('builtins')` to get a list of Node.js core module names and utilizes them for checks.
+   
+2. **Validation Function**:
+   - The main function exported by the module is `validate(name)`. It validates the `name`, which is expected to be a string.
+   - The function returns an object that indicates whether the name is valid for new and old packages, and includes any warnings or errors.
+
+3. **Validation Checks**:
+   - **Null and Undefined Check**: Returns an error if the name is `null` or `undefined`.
+   - **Type and Length Check**: Ensures the name is a non-empty string.
+   - **Format Restrictions**: Checks that the name does not start with a period or underscore and has no leading or trailing spaces.
+   - **Blacklist Check**: Prevents the name from being blacklisted terms like `'node_modules'` and `'favicon.ico'`.
+   - **Builtin Module Check**: Issues warnings if the name matches any Node.js core module names.
+   - **Length Limit**: Warns if the package name exceeds 214 characters.
+   - **Case Sensitivity**: Warns if the name contains uppercase letters.
+   - **Special Characters**: Warns if the name includes certain special characters.
+   - **URL-Friendliness**: Ensures the name contains URL-friendly characters or matches a scoped package format (`@user/package`).
+
+4. **Helper Functions**:
+   - `done(warnings, errors)`: Constructs the result object, omitting `warnings` or `errors` properties if they are empty.
+
+Here's a rewritten version of the code:
+
+```javascript
+'use strict';
+
+const builtins = require('builtins');
+const scopedPackagePattern = /^(?:@([^/]+?)[/])?([^/]+?)$/;
+const blacklist = ['node_modules', 'favicon.ico'];
+
+function validate(name) {
+  const warnings = [];
+  const errors = [];
+
+  if (name === null) return prepareResult(errors.push('name cannot be null'));
+  if (name === undefined) return prepareResult(errors.push('name cannot be undefined'));
+  if (typeof name !== 'string') return prepareResult(errors.push('name must be a string'));
+  if (!name.length) errors.push('name length must be greater than zero');
+  if (/^\./.test(name)) errors.push('name cannot start with a period');
+  if (/^_/.test(name)) errors.push('name cannot start with an underscore');
+  if (name.trim() !== name) errors.push('name cannot contain leading or trailing spaces');
+
+  blacklist.forEach(item => {
+    if (name.toLowerCase() === item) errors.push(`${item} is a blacklisted name`);
+  });
+
+  builtins.forEach(builtin => {
+    if (name.toLowerCase() === builtin) warnings.push(`${builtin} is a core module name`);
+  });
+
+  if (name.length > 214) warnings.push('name can no longer contain more than 214 characters');
+  if (name.toLowerCase() !== name) warnings.push('name can no longer contain capital letters');
+  if (/[~'!()*]/.test(name.split('/').slice(-1)[0])) warnings.push('name can no longer contain special characters ("~\'!()*")');
+
+  if (encodeURIComponent(name) !== name) {
+    const nameMatch = name.match(scopedPackagePattern);
+    if (nameMatch) {
+      const [_, user, pkg] = nameMatch;
+      if (encodeURIComponent(user) === user && encodeURIComponent(pkg) === pkg) {
+        return prepareResult(warnings, errors);
+      }
+    }
+    errors.push('name can only contain URL-friendly characters');
+  }
+
+  return prepareResult(warnings, errors);
+}
+
+validate.scopedPackagePattern = scopedPackagePattern;
+
+function prepareResult(warnings, errors) {
+  const result = {
+    validForNewPackages: errors.length === 0 && warnings.length === 0,
+    validForOldPackages: errors.length === 0,
+    warnings: warnings.length ? warnings : undefined,
+    errors: errors.length ? errors : undefined
+  };
+  return result;
+}
+
+module.exports = validate;
+```

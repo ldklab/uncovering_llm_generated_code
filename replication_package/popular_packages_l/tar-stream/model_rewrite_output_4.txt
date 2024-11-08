@@ -1,0 +1,85 @@
+The given Node.js code simulates the packing and extracting of files in a tar-like archive format using streams. The primary functionality is as follows:
+
+1. **Packing Functionality:** The `pack` function creates a stream that can accept file entries. Each entry is a combination of a header metadata (such as the file name and size) and file content data. The entries are piped to a `PassThrough` stream, representing an archive being generated. The `pack` function provides an `entry` method to add a new file to this stream, and a `finalize` method to mark the completion of the archive.
+
+2. **Extracting Functionality:** The `extract` function creates a writable stream that "extracts" files from an input tar-like stream. It collects stream data into an `entries` array and processes each entry by pushing it in and resuming it until the end is reached.
+
+3. **Example Usage:**
+   - Creates a tar-like archive named `example.tar` with one file, `hello.txt`, containing the text "Hello world."
+   - Simulates extracting by piping another generated archive containing a file named `test.txt` to the extract function. Upon completion, it logs the names of extracted entries.
+
+Here's a rewrite of the code with the same functionality:
+
+```javascript
+const { PassThrough, Writable } = require('stream');
+const fs = require('fs');
+
+class Entry extends PassThrough {
+  constructor(header, callback) {
+    super();
+    this.header = header;
+    process.nextTick(callback);
+  }
+}
+
+function pack() {
+  const output = new PassThrough();
+
+  output.entry = (header, data, callback) => {
+    const entryStream = new Entry(header, callback);
+    if (data) {
+      entryStream.end(data);
+    }
+    entryStream.pipe(output, { end: false });
+    return entryStream;
+  };
+
+  output.finalize = () => {
+    output.end();
+  };
+
+  return output;
+}
+
+function extract() {
+  const extractStream = new Writable({ objectMode: true });
+  extractStream.entries = [];
+  
+  extractStream._write = (entry, encoding, callback) => {
+    extractStream.entries.push(entry);
+    entry.resume();
+    entry.on('end', callback);
+  };
+
+  extractStream.on('pipe', (src) => {
+    src.unpipe(extractStream);
+    for (const entry of src.entries) {
+      extractStream.write(entry);
+    }
+    extractStream.end();
+  });
+
+  return extractStream;
+}
+
+module.exports = { pack, extract };
+
+// Example usage
+const p = pack();
+p.entry({ name: 'hello.txt', size: 11 }, 'Hello world', (err) => {
+  if (err) throw err;
+  p.finalize();
+});
+
+p.pipe(fs.createWriteStream('example.tar'));
+
+const e = extract();
+const source = pack();
+source.entry({ name: 'test.txt' }, 'Test content').end();
+source.finalize();
+
+source.pipe(e);
+e.on('finish', () => {
+  console.log('Extracted entries:', e.entries.map(e => e.header.name));
+});
+```

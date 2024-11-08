@@ -1,0 +1,69 @@
+The Node.js code `raf.js` provides a cross-platform polyfill for the `requestAnimationFrame` and `cancelAnimationFrame` functions. These functions standardize how animations render in a web page and run callbacks before the next repaint. Here's a breakdown of how the code works:
+
+1. **Vendor Prefixes**: It attempts to detect and use browser-specific implementations of `requestAnimationFrame` and `cancelAnimationFrame` using common vendor prefixes (`ms`, `moz`, `webkit`, `o`).
+
+2. **Fallback Mechanism**: If a native implementation is not found, it falls back to using `setTimeout` to create a similar repeating callback mechanism that simulates the `requestAnimationFrame` with an approximate interval of 16 milliseconds (which corresponds to around 60 frames per second).
+
+3. **Module Export**: It checks if it's running in a CommonJS environment (like Node.js) and exports the `raf` function. If not, it attaches the `raf` function to the global object, making it accessible globally in the browser environment.
+
+4. **Additional Methods**: The `raf` function has two additional methods:
+   - `raf.cancel`: Cancels a scheduled animation frame using a handle returned by `requestAnimationFrame`.
+   - `raf.polyfill`: Copies the `requestAnimationFrame` and `cancelAnimationFrame` methods from the global object to another specified object (useful for ensurances in different contexts).
+
+Here is a rewrite of the provided code:
+
+```javascript
+// raf.js
+(function(global) {
+  const vendors = ['ms', 'moz', 'webkit', 'o'];
+  let lastTime = 0;
+
+  // Define fallback functions
+  const fallbackRequestAnimationFrame = function(callback) {
+    const currTime = new Date().getTime();
+    const timeToCall = Math.max(0, 16 - (currTime - lastTime));
+    const id = global.setTimeout(() => { callback(currTime + timeToCall); }, timeToCall);
+    lastTime = currTime + timeToCall;
+    return id;
+  };
+
+  const fallbackCancelAnimationFrame = function(id) {
+    global.clearTimeout(id);
+  };
+
+  // Attempt to set native raf/caf
+  vendors.some(prefix => {
+    if (!global.requestAnimationFrame) {
+      global.requestAnimationFrame = global[`${prefix}RequestAnimationFrame`];
+      global.cancelAnimationFrame = global[`${prefix}CancelAnimationFrame`] ||
+                                    global[`${prefix}CancelRequestAnimationFrame`];
+    }
+    return global.requestAnimationFrame;
+  });
+
+  // Use fallback if raf not available
+  if (!global.requestAnimationFrame) {
+    global.requestAnimationFrame = fallbackRequestAnimationFrame;
+    global.cancelAnimationFrame = fallbackCancelAnimationFrame;
+  }
+
+  function raf(callback) {
+    return global.requestAnimationFrame(callback);
+  }
+
+  raf.cancel = function(handle) {
+    global.cancelAnimationFrame(handle);
+  };
+
+  raf.polyfill = function(object = (typeof window !== 'undefined' ? window : global)) {
+    object.requestAnimationFrame = global.requestAnimationFrame;
+    object.cancelAnimationFrame = global.cancelAnimationFrame;
+  };
+
+  if (typeof module !== 'undefined' && module.exports) {
+    module.exports = raf;
+  } else {
+    global.raf = raf;
+  }
+})(typeof window !== 'undefined' ? window : global);
+```

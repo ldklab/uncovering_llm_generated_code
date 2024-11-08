@@ -1,0 +1,84 @@
+The `entities` package is a Node.js library designed for encoding and decoding HTML and XML entities quickly and efficiently. It offers several key functions that help manage character entities in a variety of settings, such as webpages or XML documents.
+
+### Core Functions Explained:
+
+1. **Encoding Functions:**
+    - `escapeUTF8`: Converts characters into their equivalent HTML entities while keeping UTF-8 characters intact. Useful when UTF-8 is supported and you want to avoid converting UTF-8 characters into entities.
+    - `encodeXML`: Encodes characters for XML documents, translating special symbols into XML-safe entities.
+    - `encodeHTML`: Converts special characters into HTML entities, ensuring compatibility with HTML documents.
+
+2. **Decoding Functions:**
+    - `decodeXML`: Transforms XML entities back into their original characters, allowing proper interpretation of XML content.
+    - `decodeHTML`: Converts HTML entities into their respective characters, making HTML content human-readable again.
+
+### Example Usage:
+
+- **Encoding:** Convert strings with special characters into their corresponding entities to prevent issues when rendering HTML or XML.
+- **Decoding:** Process encoded strings, turning entities back into their original form, often necessary when parsing HTML or XML documents received from external sources.
+
+The library is known for its speed and is often included in other popular libraries as a dependency, meaning it might already be available in projects using similar tools. It provides configurability in choosing encoding/decoding strategies based on whether UTF-8 support is present or if ASCII-only output is needed.
+
+### Implementation of the entities package:
+
+```javascript
+// entities.js
+
+class Entities {
+  constructor() {
+    this.htmlEntitiesMap = {
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      '\'': '&apos;',
+      'ü': '&uuml;',
+      'ÿ': '&yuml;',
+    };
+    this.xmlEntitiesMap = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', '\'': '&apos;' };
+  }
+
+  escapeUTF8(str) {
+    return str.replace(/[&]/g, this.htmlEntitiesMap['&']);
+  }
+
+  encodeXML(str) {
+    return str.replace(/[&<>"']/g, (char) => this.xmlEntitiesMap[char]);
+  }
+
+  encodeHTML(str) {
+    return str.replace(/[&<>"'üÿ]/g, (char) => this.htmlEntitiesMap[char] || char);
+  }
+
+  decodeXML(str) {
+    const xmlEntityRegex = /&(?:#(\d+)|#x([a-fA-F0-9]+)|(\w+));/g;
+    const xmlEntitiesReverseMap = this.reverseMap(this.xmlEntitiesMap);
+    return this.decodeEntities(str, xmlEntitiesReverseMap, xmlEntityRegex);
+  }
+
+  decodeHTML(str) {
+    const htmlEntityRegex = /&(?:#(\d+)|#x([a-fA-F0-9]+)|(\w+));/g;
+    const htmlEntitiesReverseMap = this.reverseMap(this.htmlEntitiesMap);
+    return this.decodeEntities(str, htmlEntitiesReverseMap, htmlEntityRegex);
+  }
+
+  decodeEntities(str, reverseMap, regex) {
+    return str.replace(regex, (match, dec, hex, named) => {
+      if (dec) return String.fromCharCode(dec);
+      if (hex) return String.fromCharCode(parseInt(hex, 16));
+      return reverseMap[named] || match;
+    });
+  }
+
+  reverseMap(map) {
+    const reverseMap = {};
+    for (const key in map) {
+      reverseMap[map[key].slice(1, -1)] = key;
+    }
+    return reverseMap;
+  }
+}
+
+module.exports = new Entities();
+```
+
+This implementation provides encoding and decoding functions in a structured manner, using regular expressions to efficiently parse and convert strings. The approach is modular, allowing easy adaptation or extension for additional entities if needed.

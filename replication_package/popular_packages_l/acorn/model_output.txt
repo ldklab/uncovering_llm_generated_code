@@ -1,0 +1,134 @@
+The Acorn package is a fast and tiny JavaScript parser written in JavaScript. It provides a main parsing function `parse`, which converts JavaScript code strings into an abstract syntax tree (AST) compliant with the ESTree specification. Additionally, it supports a variety of options to customize parsing behavior for different ECMAScript versions, source types (scripts or modules), and syntactic features.
+
+Key functionalities of Acorn include:
+1. **Parser Interface**:
+   - `parse(input, options)`: Parses a given JavaScript code string and returns its AST. Options must specify `ecmaVersion` and can include other configurations listed.
+   - `parseExpressionAt(input, offset, options)`: Parses a single JavaScript expression starting at a specific offset within a string.
+   - `tokenizer(input, options)`: Tokenizes the JavaScript input, generating tokens with properties like `start`, `end`, `type`, and `value`.
+
+2. **Options**:
+   - `ecmaVersion`: Specifies the ECMAScript version to parse.
+   - `sourceType`: Specifies whether the code is a script or module.
+   - `onInsertedSemicolon`, `onTrailingComma`: Callbacks for inserted semicolons and trailing commas, respectively.
+   - Additional options like `allowReserved`, `allowReturnOutsideFunction`, `locations`, and more, to customize parsing behavior.
+
+3. **Parser Class and Plugins**:
+   - Contains static methods `parse`, `parseExpressionAt`, and `tokenizer`.
+   - Support for extending the parser with plugins enhances its capabilities, such as parsing JSX with the `acorn-jsx` plugin.
+   - `extend(...plugins)`: Extends the parser with additional syntax capabilities from plugins.
+
+4. **Command Line Interface**:
+   - Provides a command-line tool `bin/acorn` to parse files directly with flags for ECMAScript version, parsing mode, and other parsing options. It outputs the AST as JSON.
+
+Below is the implementation of a basic version of the Acorn package, demonstrating the stated functionalities:
+
+```javascript
+// acorn.js
+
+class SyntaxError extends Error {
+  constructor(message, pos, loc) {
+    super(message);
+    this.pos = pos;
+    this.loc = loc;
+  }
+}
+
+class Parser {
+  // Option to set the ECMAScript to parse
+  static Options = {
+    ecmaVersion: 2020,
+    sourceType: "script",
+  };
+
+  static parse(input, options = {}) {
+    const opts = { ...Parser.Options, ...options };
+    // Simulating a parsing process
+    console.log(`Parsing with ECMAScript version ${opts.ecmaVersion}...`);
+    if (input.includes("error")) {
+      throw new SyntaxError("Unexpected token", 5, { line: 1, column: 5 });
+    }
+    return { type: "Program", body: [{ type: "ExpressionStatement", expression: { type: "Literal", value: 1 } }] };
+  }
+
+  static parseExpressionAt(input, offset, options) {
+    return this.parse(input.slice(offset), options);
+  }
+
+  static tokenizer(input, options) {
+    let current = 0;
+    const tokens = [];
+
+    while (current < input.length) {
+      let char = input[current];
+
+      if (char === ' ') {
+        current++;
+        continue;
+      }
+
+      if (/[a-zA-Z]/.test(char)) {
+        let value = '';
+        while (/[a-zA-Z]/.test(char)) {
+          value += char;
+          char = input[++current];
+        }
+        tokens.push({ type: 'name', value });
+        continue;
+      }
+
+      if (/\d/.test(char)) {
+        let value = '';
+        while (/\d/.test(char)) {
+          value += char;
+          char = input[++current];
+        }
+        tokens.push({ type: 'number', value });
+        continue;
+      }
+
+      throw new Error(`Unexpected character: ${char}`);
+    }
+
+    tokens.push({ type: 'eof' });
+    return {
+      getToken: function () {
+        return tokens.shift();
+      }
+    };
+  }
+
+  static getLineInfo(input, offset) {
+    const lines = input.split('\n');
+    let pos = 0;
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      if (pos + line.length >= offset) {
+        return { line: i + 1, column: offset - pos };
+      }
+      pos += line.length + 1;
+    }
+  }
+
+  static extend(...plugins) {
+    class ExtendedParser extends Parser {
+      constructor() {
+        super();
+        plugins.forEach(plugin => plugin(this));
+      }
+    }
+    return ExtendedParser;
+  }
+}
+
+class Acorn {
+  static parse = Parser.parse;
+  static parseExpressionAt = Parser.parseExpressionAt;
+  static tokenizer = Parser.tokenizer;
+  static getLineInfo = Parser.getLineInfo;
+  static Parser = Parser;
+}
+
+module.exports = Acorn;
+```
+
+Note: This implementation is a simplified version for illustration purposes and lacks full parsing functionality. For real-life usage, Acorn would handle complex JavaScript syntax and offer extensive parsing options.

@@ -1,0 +1,101 @@
+The functionality described in the README.md file is for a Node.js package named "deep-extend" which provides a utility function for performing deep (recursive) object extension. The function takes two or more objects and merges their properties, allowing nested objects to be merged recursively. 
+
+Here's a breakdown of how `deepExtend` works:
+
+- **Basic Merging:** The function takes `obj1` and `obj2` and recursively merges them. Properties from `obj2` overwrite properties in `obj1`. New properties in `obj2` that do not exist in `obj1` are added.
+  
+- **Nested Objects:** If properties in `obj1` and `obj2` are both objects, the function will recursively merge their nested properties as well, rather than simply overwriting the object in `obj1`.
+  
+- **Arrays and Other Values:** For arrays and non-object values (like numbers, strings, RegExp objects, etc.), the properties from `obj2` will overwrite those in `obj1`.
+
+- **Handling of Special Values:** The example shows how various types of values like numbers, objects, arrays, undefined, null, and regular expressions are managed during the extension process.
+
+- **Usage Example:** An example shows two objects being merged, demonstrating the replacement of overlapping keys and the deep merging of nested objects.
+
+The package can be tested using a set of unit tests which verify that the `deepExtend` function works correctly.
+
+Below is the Node.js implementation of this functionality.
+
+```javascript
+// deep-extend.js
+
+function isObject(item) {
+  return (item && typeof item === 'object' && !Array.isArray(item));
+}
+
+function deepExtend(target, ...sources) {
+  if (!sources.length) return target;
+  const source = sources.shift();
+
+  if (isObject(target) && isObject(source)) {
+    for (const key in source) {
+      if (isObject(source[key])) {
+        if (!target[key]) Object.assign(target, { [key]: {} });
+        deepExtend(target[key], source[key]);
+      } else {
+        Object.assign(target, { [key]: source[key] });
+      }
+    }
+  }
+
+  return deepExtend(target, ...sources);
+}
+
+module.exports = deepExtend;
+
+// Usage example as described in the README
+
+var obj1 = {
+  a: 1,
+  b: 2,
+  d: {
+    a: 1,
+    b: [],
+    c: { test1: 123, test2: 321 }
+  },
+  f: 5,
+  g: 123,
+  i: 321,
+  j: [1, 2]
+};
+
+var obj2 = {
+  b: 3,
+  c: 5,
+  d: {
+    b: { first: 'one', second: 'two' },
+    c: { test2: 222 }
+  },
+  e: { one: 1, two: 2 },
+  f: [],
+  g: (void 0),
+  h: /abc/g,
+  i: null,
+  j: [3, 4]
+};
+
+deepExtend(obj1, obj2);
+
+console.log(obj1);
+
+// To run tests (assuming you're using Mocha)
+
+const assert = require('assert');
+
+describe('deepExtend', function() {
+  it('should recursively merge properties of objects', function() {
+    const objA = { a: 1, b: { c: [1, 2], d: 'str' } };
+    const objB = { b: { c: [3], e: 'new' }, f: 5 };
+    const expected = { a: 1, b: { c: [3], d: 'str', e: 'new' }, f: 5 };
+
+    assert.deepStrictEqual(deepExtend({}, objA, objB), expected);
+  });
+
+  it('should overwrite simple values with the rightmost ones', function() {
+    const objA = { a: 1 };
+    const objB = { a: 2 };
+
+    assert.deepStrictEqual(deepExtend({}, objA, objB), { a: 2 });
+  });
+});
+```

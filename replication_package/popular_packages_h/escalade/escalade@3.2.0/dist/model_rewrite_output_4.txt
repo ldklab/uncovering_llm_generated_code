@@ -1,0 +1,45 @@
+The given Node.js code exports an asynchronous function that traverses up the directory hierarchy starting from a specified `start` directory. It does so by repeatedly moving to the parent directory of the current directory. The function takes two parameters: `start`, which is the starting directory path, and `callback`, which is a function that is called with each directory's path and contents.
+
+Here's a breakdown of how it works:
+
+1. It resolves the starting directory path to an absolute path.
+2. It checks if this path is a directory using `fs.stat`.
+3. If it's not a directory, it changes the starting path to the parent directory.
+4. It enters a loop where it repeatedly:
+   - Calls the `callback` function, providing it with the current directory's path and the names of the files within that directory (using `fs.readdir`).
+   - If the callback function returns a truthy value, it returns the resolved path of the directory combined with this value.
+   - If the callback doesn't return a truthy value, it continues the traversal by moving to the parent directory of the current directory.
+   - The loop will only stop if it has traversed up to the root directory and can't move further upwards.
+
+The code employs the `util.promisify` method to convert the callback-based `fs.stat` and `fs.readdir` functions into Promises, allowing for the use of `async/await` syntax.
+
+Here's a possible rewrite of the code:
+
+```javascript
+const { dirname, resolve } = require('path');
+const { readdir, stat } = require('fs').promises;
+
+module.exports = async function traverseDirectories(start, callback) {
+    let dir = resolve('.', start);
+
+    try {
+        let stats = await stat(dir);
+
+        if (!stats.isDirectory()) {
+            dir = dirname(dir);
+        }
+
+        while (true) {
+            const files = await readdir(dir);
+            const result = await callback(dir, files);
+            if (result) return resolve(dir, result);
+
+            const parentDir = dirname(dir);
+            if (parentDir === dir) break;
+            dir = parentDir;
+        }
+    } catch (error) {
+        console.error('Error traversing directories:', error);
+    }
+}
+```

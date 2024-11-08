@@ -1,0 +1,278 @@
+The provided Node.js code is essentially a module for handling webpack development middleware. Here's a breakdown of its functionality:
+
+1. **Dependencies and Validation**:
+   - Uses `schema-utils` to validate options against a predefined schema imported from `./options.json`.
+   - Imports essential utilities and functions related to middleware, hooks setup, and file/system handling.
+
+2. **Type Definitions**:
+   - Contains JSDoc type definitions for various objects and data structures used within the middleware.
+
+3. **Middleware Creator Function - `wdm`**:
+   - The `wdm` function initializes the middleware by validating options, setting up compiler hooks, determining if files should be written to disk, and configuring the output file system.
+   - It starts watching the files for changes, with error handling for any compilation issues.
+   - Exposes a middleware instance with additional functionality including methods to retrieve file names from URLs, wait for compilation validity, force invalidation, and close the watching process.
+
+4. **Hapi and Koa Framework Compatibility**:
+   - Provides functions `hapiWrapper` and `koaWrapper` to integrate with Hapi and Koa servers respectively, ensuring the middleware can be used in these server environments.
+   - These wrappers adapt the middleware interface to the specific needs and APIs of the Hapi and Koa frameworks.
+
+5. **Hono Framework Compatibility**:
+   - Includes a `honoWrapper` to integrate the middleware with the Hono framework, handling request and response objects specific to that framework.
+
+```javascript
+"use strict";
+
+const { validate } = require("schema-utils");
+const mime = require("mime-types");
+const middleware = require("./middleware");
+const getFilenameFromUrl = require("./utils/getFilenameFromUrl");
+const setupHooks = require("./utils/setupHooks");
+const setupWriteToDisk = require("./utils/setupWriteToDisk");
+const setupOutputFileSystem = require("./utils/setupOutputFileSystem");
+const ready = require("./utils/ready");
+const schema = require("./options.json");
+const noop = () => {};
+
+/**
+ * Middleware setup function.
+ * Initializes and returns middleware compatible with different server environments.
+ * @param {Compiler | MultiCompiler} compiler - Webpack compiler instance.
+ * @param {Options<RequestInternal, ResponseInternal>} [options] - Configuration options.
+ * @returns {API<RequestInternal, ResponseInternal>}
+ */
+function wdm(compiler, options = {}) {
+  validate(schema, options, { name: "Dev Middleware", baseDataPath: "options" });
+
+  const { mimeTypes } = options;
+  if (mimeTypes) {
+    mime.types = { ...mime.types, ...mimeTypes };
+  }
+
+  const context = {
+    state: false,
+    stats: undefined,
+    callbacks: [],
+    options,
+    compiler,
+    logger: compiler.getInfrastructureLogger("webpack-dev-middleware"),
+  };
+
+  setupHooks(context);
+  if (options.writeToDisk) {
+    setupWriteToDisk(context);
+  }
+  setupOutputFileSystem(context);
+
+  if (context.compiler.watching) {
+    context.watching = context.compiler.watching;
+  } else {
+    const errorHandler = error => {
+      if (error) context.logger.error(error);
+    };
+
+    if (Array.isArray(context.compiler.compilers)) {
+      const c = /** @type {MultiCompiler} */(context.compiler);
+      const watchOptions = c.compilers.map(childCompiler => childCompiler.options.watchOptions || {});
+      context.watching = compiler.watch(watchOptions, errorHandler);
+    } else {
+      const c = /** @type {Compiler} */(context.compiler);
+      const watchOptions = c.options.watchOptions || {};
+      context.watching = compiler.watch(watchOptions, errorHandler);
+    }
+  }
+
+  const filledContext = context;
+  const instance = middleware(filledContext);
+
+  instance.getFilenameFromUrl = (url, extra) => getFilenameFromUrl(filledContext, url, extra);
+  instance.waitUntilValid = (callback = noop) => ready(filledContext, callback);
+  instance.invalidate = (callback = noop) => {
+    ready(filledContext, callback);
+    filledContext.watching.invalidate();
+  };
+  instance.close = (callback = noop) => filledContext.watching.close(callback);
+  instance.context = filledContext;
+
+  return instance;
+}
+
+/**
+ * Hapi plugin wrapper for the middleware.
+ * Allows integration with the Hapi framework.
+ * @template S
+ * @template O
+ * @returns {HapiPlugin<HapiServer, HapiOptionsInternal>}
+ */
+function hapiWrapper() {
+  return {
+    pkg: { name: "webpack-dev-middleware" },
+    multiple: true,
+    register(server, options) {
+      const { compiler, ...rest } = options;
+
+      if (!compiler) throw new Error("The compiler options is required.");
+      const devMiddleware = wdm(compiler, rest);
+
+      if (!server.decorations.server.includes("webpackDevMiddleware")) {
+        server.decorate("server", "webpackDevMiddleware", devMiddleware);
+      }
+
+      server.ext("onRequest", (request, h) => new Promise((resolve, reject) => {
+        let isFinished = false;
+
+        request.raw.res.send = data => {
+          isFinished = true;
+          request.raw.res.end(data);
+        };
+
+        request.raw.res.finish = data => {
+          isFinished = true;
+          request.raw.res.end(data);
+        };
+
+        devMiddleware(request.raw.req, request.raw.res, error => {
+          if (error) {
+            reject(error);
+            return;
+          }
+          if (!isFinished) {
+            resolve(request);
+          }
+        });
+      }).then(() => h.continue).catch(error => { throw error; }));
+    }
+  };
+}
+wdm.hapiWrapper = hapiWrapper;
+
+/**
+ * Koa middleware wrapper.
+ * Adapts middleware for use with Koa framework.
+ * @template {IncomingMessage} [RequestInternal=IncomingMessage]
+ * @template {ServerResponse} [ResponseInternal=ServerResponse]
+ * @param {Compiler | MultiCompiler} compiler
+ * @param {Options<RequestInternal, ResponseInternal>} [options]
+ * @returns {(ctx: any, next: Function) => Promise<void> | void}
+ */
+function koaWrapper(compiler, options) {
+  const devMiddleware = wdm(compiler, options);
+
+  const wrapper = async function webpackDevMiddleware(ctx, next) {
+    const { req, res } = ctx;
+    res.locals = ctx.state;
+    let { status } = ctx;
+
+    res.getStatusCode = () => status;
+
+    res.setStatusCode = statusCode => {
+      status = statusCode;
+      ctx.status = statusCode;
+    };
+
+    res.getReadyReadableStreamState = () => "open";
+
+    try {
+      await new Promise((resolve, reject) => {
+        res.stream = stream => { ctx.body = stream; };
+        res.send = data => { ctx.body = data; };
+        res.finish = data => {
+          ctx.status = status;
+          res.end(data);
+        };
+        devMiddleware(req, res, err => {
+          if (err) {
+            reject(err);
+            return;
+          }
+          resolve();
+        });
+      });
+    } catch (err) {
+      ctx.status = err.statusCode || err.status || 500;
+      ctx.body = { message: err.message };
+    }
+
+    await next();
+  };
+
+  wrapper.devMiddleware = devMiddleware;
+  return wrapper;
+}
+wdm.koaWrapper = koaWrapper;
+
+/**
+ * Hono framework middleware wrapper.
+ * Provides integration with Hono framework.
+ * @template {IncomingMessage} [RequestInternal=IncomingMessage]
+ * @template {ServerResponse} [ResponseInternal=ServerResponse]
+ * @param {Compiler | MultiCompiler} compiler
+ * @param {Options<RequestInternal, ResponseInternal>} [options]
+ * @returns {(ctx: any, next: Function) => Promise<void> | void}
+ */
+function honoWrapper(compiler, options) {
+  const devMiddleware = wdm(compiler, options);
+
+  const wrapper = async function webpackDevMiddleware(c, next) {
+    const { req, res } = c;
+    c.set("webpack", { devMiddleware: devMiddleware.context });
+
+    req.getMethod = () => c.req.method;
+    req.getHeader = name => c.req.header(name);
+    req.getURL = () => c.req.url;
+    let { status } = c.res;
+
+    res.getStatusCode = () => status;
+
+    res.setStatusCode = code => {
+      status = code;
+    };
+
+    res.getHeader = name => c.res.headers.get(name);
+
+    res.setHeader = (name, value) => {
+      c.res.headers.append(name, value);
+      return c.res;
+    };
+
+    res.removeHeader = name => {
+      c.res.headers.delete(name);
+    };
+
+    res.getResponseHeaders = () => Array.from(c.res.headers.keys());
+
+    res.getOutgoing = () => c.env.outgoing;
+    res.getHeadersSent = () => c.env.outgoing.headersSent;
+
+    let body;
+    try {
+      await new Promise((resolve, reject) => {
+        res.stream = stream => { body = stream; };
+        res.send = data => { body = data; };
+        res.finish = data => { body = data || null; };
+        devMiddleware(req, res, err => {
+          if (err) {
+            reject(err);
+            return;
+          }
+          resolve();
+        });
+      });
+    } catch (err) {
+      c.status(500);
+      return c.json({ message: err.message });
+    }
+
+    if (typeof body !== "undefined") {
+      return c.body(body, status);
+    }
+
+    await next();
+  };
+
+  wrapper.devMiddleware = devMiddleware;
+  return wrapper;
+}
+wdm.honoWrapper = honoWrapper;
+
+module.exports = wdm;
+```

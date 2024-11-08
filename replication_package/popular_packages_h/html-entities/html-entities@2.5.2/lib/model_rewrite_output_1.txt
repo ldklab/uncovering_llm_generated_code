@@ -1,0 +1,159 @@
+The provided Node.js code is a module for encoding and decoding HTML entities in text. It includes the following major components:
+
+1. **Named References**: It imports named character references from other modules for HTML entities (like `&amp;`, `&lt;`, etc.), numeric unicode mapping for special characters, and surrogate pairs for handling code points above the Basic Multilingual Plane (BMP).
+
+2. **Combine References**: It uses a function `__assign` to merge different sets of named references, combining HTML5 references into one object named `allNamedReferences`.
+
+3. **Replace Function**: A utility function `replaceUsingRegExp` is defined to replace pattern matches in text using a regular expression and a replacement function.
+
+4. **Encoding**:
+   - Regular expressions for various encoding modes are defined in `encodeRegExps`, which include handling special characters, non-ASCII, and extensive character sets.
+   - The `encode` function takes text and options to encode HTML entities in the text according to the given encoding mode, numeric format (decimal/hexadecimal), and character level.
+
+5. **Decoding**:
+   - Decoding regular expressions are organized in `baseDecodeRegExps`, structured for XML and HTML (versions 4 and 5) scopes such as `strict`, `attribute`, and `body`.
+   - `decodeEntity` uses the character level from options to decode a single HTML entity to its character.
+   - `decode` uses decoding options to process text by replacing HTML entities with their corresponding characters, based on the specified level and scope (strict, body, or attribute).
+
+6. **Utility Functions**:
+   - `getDecodedEntity` calculates the decoded character from an entity using the reference maps and various checks for conditions like entity type and strictness.
+   - It provides default options for both encoding and decoding that can be overridden.
+
+Here's a possible rewrite of the code, maintaining similar functionality, but organizing and tidying it for readability:
+
+```javascript
+"use strict";
+const { namedReferences, bodyRegExps } = require("./named-references");
+const { numericUnicodeMap } = require("./numeric-unicode-map");
+const { getCodePoint, fromCodePoint } = require("./surrogate-pairs");
+
+const allNamedReferences = (() => {
+    return {
+        ...namedReferences,
+        all: namedReferences.html5
+    };
+})();
+
+function replaceUsingRegExp(text, regExp, replacer) {
+    regExp.lastIndex = 0;
+    let match, result = "";
+    let lastIndex = 0;
+
+    while ((match = regExp.exec(text)) !== null) {
+        if (lastIndex !== match.index) {
+            result += text.substring(lastIndex, match.index);
+        }
+
+        const input = match[0];
+        result += replacer(input);
+        lastIndex = match.index + input.length;
+    }
+
+    if (lastIndex !== text.length) {
+        result += text.substring(lastIndex);
+    }
+
+    return result || text;
+}
+
+const encodeRegExps = {
+    specialChars: /[<>'"&]/g,
+    nonAscii: /[\u0080-\uFFFF]/g,
+    extensive: /[\x01-\x1F\x7F-\uFFFF]/g
+};
+
+const defaultEncodeOptions = {
+    mode: "specialChars",
+    level: "all",
+    numeric: "decimal"
+};
+
+function encode(text, options = defaultEncodeOptions) {
+    if (!text) return "";
+
+    const { mode = "specialChars", level = "all", numeric = "decimal" } = options;
+    const encodeRegExp = encodeRegExps[mode];
+    const references = allNamedReferences[level].characters;
+    const isHex = numeric === "hexadecimal";
+
+    return replaceUsingRegExp(text, encodeRegExp, (input) => {
+        let result = references[input];
+        if (!result) {
+            const code = input.length > 1 ? getCodePoint(input, 0) : input.charCodeAt(0);
+            result = isHex ? `&#x${code.toString(16)};` : `&#${code};`;
+        }
+        return result;
+    });
+}
+
+exports.encode = encode;
+
+const defaultDecodeOptions = {
+    scope: "body",
+    level: "all"
+};
+
+const strict = /&(?:#\d+|#[xX][\da-fA-F]+|[0-9a-zA-Z]+);/g;
+const attribute = /&(?:#\d+|#[xX][\da-fA-F]+|[0-9a-zA-Z]+)[;=]?/g;
+
+const baseDecodeRegExps = {
+    xml: { strict, attribute, body: bodyRegExps.xml },
+    html4: { strict, attribute, body: bodyRegExps.html4 },
+    html5: { strict, attribute, body: bodyRegExps.html5 }
+};
+
+const decodeRegExps = { ...baseDecodeRegExps, all: baseDecodeRegExps.html5 };
+
+const fromCharCode = String.fromCharCode;
+const outOfBoundsChar = fromCharCode(65533);
+
+const defaultDecodeEntityOptions = { level: "all" };
+
+function getDecodedEntity(entity, references, isAttribute, isStrict) {
+    let result = entity;
+    const lastChar = entity[entity.length - 1];
+
+    if (isAttribute && lastChar === "=") {
+        result = entity;
+    } else if (isStrict && lastChar !== ";") {
+        result = entity;
+    } else {
+        const refResult = references[entity];
+        if (refResult) {
+            result = refResult;
+        } else if (entity.startsWith("&#")) {
+            const code = entity[2].toLowerCase() === "x"
+                ? parseInt(entity.substr(3), 16)
+                : parseInt(entity.substr(2));
+            result = code > 1114111 ? outOfBoundsChar : code > 65535
+                ? fromCodePoint(code)
+                : fromCharCode(numericUnicodeMap[code] || code);
+        }
+    }
+    return result;
+}
+
+function decodeEntity(entity, options = defaultDecodeEntityOptions) {
+    const { level = "all" } = options;
+    if (!entity) return "";
+    return getDecodedEntity(entity, allNamedReferences[level].entities, false, false);
+}
+
+exports.decodeEntity = decodeEntity;
+
+function decode(text, options = defaultDecodeOptions) {
+    if (!text) return "";
+
+    const { level = "all", scope = level === "xml" ? "strict" : "body" } = options;
+    const decodeRegExp = decodeRegExps[level][scope];
+    const references = allNamedReferences[level].entities;
+    const isAttribute = scope === "attribute";
+    const isStrict = scope === "strict";
+
+    return replaceUsingRegExp(text, decodeRegExp, (entity) => {
+        return getDecodedEntity(entity, references, isAttribute, isStrict);
+    });
+}
+
+exports.decode = decode;
+```

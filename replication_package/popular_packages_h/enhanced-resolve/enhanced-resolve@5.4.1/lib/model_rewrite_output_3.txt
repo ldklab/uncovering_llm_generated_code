@@ -1,0 +1,128 @@
+The given Node.js code creates a module that provides a flexible and efficient way to resolve module paths in a Node.js environment. The code leverages a file system with caching capabilities to enhance performance, and it supports both synchronous and asynchronous resolution methods. Here's a summary of its functionality:
+
+1. **File System and Environment Setup:**
+   - It uses `graceful-fs` along with a custom `CachedInputFileSystem` to manage file operations efficiently with a 4000ms cache time.
+   - The `nodeContext` specifies environments such as Node.js and JavaScript versions.
+
+2. **Resolvers:**
+   - Two main resolver functions are defined: `resolve` for asynchronous resolution and `resolveSync` for synchronous resolution. These functions facilitate resolving module paths considering Node.js compatibility.
+
+3. **Custom Resolver Creation:**
+   - `create` and `createSync` functions allow for the creation of custom resolvers with specific options, merging with the default file system.
+
+4. **Merging Exports:**
+   - The `mergeExports` utility function combines properties from two objects and freezes the resulting object, ensuring immutability of exports.
+
+5. **Module Exports:**
+   - The module exports the `resolve` function along with an object that includes factory methods for creating new resolvers, plugins, and utilities for path resolution.
+
+The rewritten version of the code below retains all functionalities while potentially improving readability or maintainability.
+
+```javascript
+"use strict";
+
+const fs = require("graceful-fs");
+const CachedInputFileSystem = require("./CachedInputFileSystem");
+const ResolverFactory = require("./ResolverFactory");
+
+const nodeFileSystem = new CachedInputFileSystem(fs, 4000);
+const nodeContext = { environments: ["node+es3+es5+process+native"] };
+
+const asyncResolver = ResolverFactory.createResolver({
+  conditionNames: ["node"],
+  extensions: [".js", ".json", ".node"],
+  fileSystem: nodeFileSystem
+});
+
+function resolve(context, path, request, resolveContext, callback) {
+  ({ context, path, request, callback } = normalizeParams(context, path, request, resolveContext, callback));
+  asyncResolver.resolve(context, path, request, resolveContext, callback);
+}
+
+const syncResolver = ResolverFactory.createResolver({
+  conditionNames: ["node"],
+  extensions: [".js", ".json", ".node"],
+  useSyncFileSystemCalls: true,
+  fileSystem: nodeFileSystem
+});
+
+function resolveSync(context, path, request) {
+  ({ context, path, request } = normalizeSyncParams(context, path, request));
+  return syncResolver.resolveSync(context, path, request);
+}
+
+function create(options) {
+  return createResolverFunction({
+    ...options,
+    fileSystem: nodeFileSystem
+  });
+}
+
+function createSync(options) {
+  return createSyncResolverFunction({
+    ...options,
+    useSyncFileSystemCalls: true,
+    fileSystem: nodeFileSystem
+  });
+}
+
+function createResolverFunction(options) {
+  const resolver = ResolverFactory.createResolver(options);
+  return (context, path, request, resolveContext, callback) => {
+    ({ context, path, request, callback } = normalizeParams(context, path, request, resolveContext, callback));
+    resolver.resolve(context, path, request, resolveContext, callback);
+  };
+}
+
+function createSyncResolverFunction(options) {
+  const resolver = ResolverFactory.createResolver(options);
+  return (context, path, request) => {
+    ({ context, path, request } = normalizeSyncParams(context, path, request));
+    return resolver.resolveSync(context, path, request);
+  };
+}
+
+function normalizeParams(context, path, request, resolveContext, callback) {
+  if (typeof context === "string") {
+    [callback, resolveContext] = [resolveContext, request];
+    [request, path, context] = [path, context, nodeContext];
+  } else if (typeof callback !== "function") {
+    callback = resolveContext;
+  }
+  return { context, path, request, callback };
+}
+
+function normalizeSyncParams(context, path, request) {
+  if (typeof context === "string") {
+    [request, path, context] = [path, context, nodeContext];
+  }
+  return { context, path, request };
+}
+
+const mergeExports = (obj, exports) => {
+  Object.defineProperties(obj, Object.getOwnPropertyDescriptors(exports));
+  return Object.freeze(obj);
+};
+
+module.exports = mergeExports(resolve, {
+  get sync() {
+    return resolveSync;
+  },
+  create: mergeExports(create, {
+    get sync() {
+      return createSync;
+    }
+  }),
+  ResolverFactory,
+  CachedInputFileSystem,
+  get CloneBasenamePlugin() {
+    return require("./CloneBasenamePlugin");
+  },
+  get LogInfoPlugin() {
+    return require("./LogInfoPlugin");
+  },
+  get forEachBail() {
+    return require("./forEachBail");
+  }
+});
+```

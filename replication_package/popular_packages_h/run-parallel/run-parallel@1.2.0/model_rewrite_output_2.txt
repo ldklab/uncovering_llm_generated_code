@@ -1,0 +1,71 @@
+The provided code is a Node.js module that defines and exports a function called `runParallel`. This function allows you to execute a collection of asynchronous tasks in parallel and receive a callback when all tasks are completed or when an error occurs.
+
+Here is a breakdown of the functionality:
+- The function `runParallel` takes two arguments:
+  - `tasks`: This can be an array or an object of functions. Each function in `tasks` is expected to take a callback with the signature `(err, result)`.
+  - `cb`: A callback function that is called after all tasks have been executed. It takes two parameters `(err, results)` where `err` is any error from the tasks or `null`, and `results` contains the results of the tasks.
+
+- If `tasks` is an array, `results` is initialized as an empty array, otherwise as an empty object (for when `tasks` is an object).
+- The number of pending tasks is determined by the length of the array or the number of keys in the object.
+
+- The function `done` is responsible for executing the final callback `cb` with the error and results. If the execution is still synchronous, it defers `cb` using `queueMicrotask`.
+
+- The `each` function updates the `results` for each task when it completes and decrements the pending counter. If there's an error or all tasks are done, `done` is called.
+
+- Depending on whether `tasks` is an array or an object, `forEach` is used to call each task with its own callback to track its completion.
+
+- Initially, the execution is marked as synchronous (`isSync = true`) to properly defer the end callback using `queueMicrotask` if needed.
+
+Here's the rewritten code:
+
+```javascript
+const queueMicrotask = require('queue-microtask');
+
+function runParallel(tasks, cb) {
+  let results;
+  let pending;
+  let keys;
+  let isSync = true;
+
+  if (Array.isArray(tasks)) {
+    results = [];
+    pending = tasks.length;
+  } else {
+    keys = Object.keys(tasks);
+    results = {};
+    pending = keys.length;
+  }
+
+  function done(err) {
+    function end() {
+      if (cb) cb(err, results);
+      cb = null;
+    }
+    if (isSync) queueMicrotask(end);
+    else end();
+  }
+
+  function each(i, err, result) {
+    results[i] = result;
+    if (--pending === 0 || err) {
+      done(err);
+    }
+  }
+
+  if (!pending) {
+    done(null);
+  } else if (keys) {
+    keys.forEach(key => {
+      tasks[key]((err, result) => each(key, err, result));
+    });
+  } else {
+    tasks.forEach((task, i) => {
+      task((err, result) => each(i, err, result));
+    });
+  }
+
+  isSync = false;
+}
+
+module.exports = runParallel;
+```

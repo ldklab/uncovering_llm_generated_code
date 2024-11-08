@@ -1,0 +1,95 @@
+The provided code defines a Node.js module, which serves to load and merge application configuration settings from various sources including configuration files, environment variables, and command-line arguments. Here's a brief explanation of the main components:
+
+1. **parseConfigFile(filePath)**: Reads and parses a configuration file. It first attempts to parse the file as JSON, stripping out any comments. If that fails, it tries to parse the content as an INI file.
+
+2. **loadConfigs(appname, configPaths)**: Loads configurations from a list of file paths. It returns an object composed of merged configurations found in the specified files, and a list of paths to the files that were successfully loaded.
+
+3. **findConfigFiles(appname)**: Generates a list of potential file paths where configuration files might reside, based on the application name. It includes common locations like `/etc`, the user's home directory, and recursively checks parent directories starting from the current directory.
+
+4. **loadEnvVariables(appname)**: Loads configuration settings from environment variables prefixed by the application name, and transforms them into a nested object structure.
+
+5. **exported rc function**: The main function provided by the module. It takes in the application name and optional default settings, command-line arguments, and a custom parser function. It gathers configuration data from files, environment variables, and command-line arguments, then merges them into a single configuration object.
+
+```javascript
+const fs = require('fs');
+const path = require('path');
+const minimist = require('minimist');
+const stripJsonComments = require('strip-json-comments');
+
+function parseConfigFile(filePath) {
+  const content = fs.readFileSync(filePath, 'utf8');
+  try {
+    return JSON.parse(stripJsonComments(content));
+  } catch (e) {
+    return require('ini').parse(content);
+  }
+}
+
+function loadConfigs(appname, configPaths) {
+  const configs = [];
+  const result = configPaths.reduce((acc, filePath) => {
+    if (fs.existsSync(filePath)) {
+      const confPart = parseConfigFile(filePath);
+      configs.push(filePath);
+      return { ...acc, ...confPart };
+    }
+    return acc;
+  }, {});
+  return { config: result, configs };
+}
+
+function findConfigFiles(appname) {
+  const home = process.env.HOME || process.env.USERPROFILE;
+  const configPaths = [
+    path.join('/etc', `${appname}rc`),
+    path.join('/etc', `${appname}`, 'config'),
+    path.join(home, `.${appname}rc`),
+    path.join(home, `.${appname}`, 'config'),
+    path.join(home, '.config', `${appname}`),
+    path.join(home, '.config', `${appname}`, 'config'),
+  ];
+
+  let dir = process.cwd();
+  do {
+    configPaths.push(path.join(dir, `.${appname}rc`));
+    dir = path.join(dir, '..');
+  } while (dir !== path.resolve(dir, '..'));
+
+  return configPaths;
+}
+
+function loadEnvVariables(appname) {
+  const prefix = `${appname}_`;
+  return Object.entries(process.env)
+    .filter(([key]) => key.startsWith(prefix))
+    .reduce((acc, [key, value]) => {
+      const path = key.slice(prefix.length).split('__').map(part => part.toLowerCase());
+      let curr = acc;
+      while (path.length > 1) {
+        const segment = path.shift();
+        curr = curr[segment] = curr[segment] || {};
+      }
+      curr[path[0]] = value;
+      return acc;
+    }, {});
+}
+
+module.exports = function rc(appname, defaults = {}, argv = null, customParser = null) {
+  const args = argv || process.argv.slice(2);
+  const parsedArgs = minimist(args);
+  const configsFromFile = parsedArgs.config ? [parsedArgs.config] : findConfigFiles(appname);
+  const { config: configFromFiles, configs } = loadConfigs(appname, configsFromFile);
+  const configFromEnv = loadEnvVariables(appname);
+
+  const mergedConfig = {
+    ...configFromFiles,
+    ...configFromEnv,
+    ...defaults,
+    ...customParser ? customParser(parsedArgs) : parsedArgs,
+  };
+
+  mergedConfig.configs = configs;
+  mergedConfig.config = configs[configs.length - 1];
+  return mergedConfig;
+};
+```

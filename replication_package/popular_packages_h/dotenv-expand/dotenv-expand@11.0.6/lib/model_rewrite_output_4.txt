@@ -1,0 +1,96 @@
+The Node.js code handles environment variable expansion, similar to Unix shell variable expansion but adapted for use in JavaScript applications like those using dotenv for loading `.env` files. Here's a step-by-step explanation of its functionality:
+
+1. **Regex for Matching Variables**: The `DOTENV_SUBSTITUTION_REGEX` is a regular expression designed to match variables declared with a dollar sign `$`, optionally wrapped in braces `{}`, potentially having a default value after `:-`, and considering escape sequences like `\$`.
+
+2. **Escape Sequence Resolution**: The `_resolveEscapeSequences` function replaces escaped dollar signs (`\$`) with a literal dollar sign (`$`).
+
+3. **Interpolation**: The `interpolate` function replaces occurrences of environment variables found within a given string. It checks if a variable is escaped, resolves nested environment variables, and handles defaults using a recursive approach. If a variable in `processEnv` or `parsed` matches, it retrieves and interpolates its value. It uses depth-first recursion to process defaults denoted by `:-`.
+
+4. **Expansion**: The `expand` function manages the overall environment variable expansion process. It determines the effective environment by checking if `processEnv` overrides are provided in `options`. Then, it iterates over keys in the parsed `.env` data:
+   - If the variable exists in both `parsed` and `processEnv`, and values match, it interpolates the value.
+   - If the value differs, it uses the `processEnv` value directly.
+   - If absent in `processEnv`, it performs interpolation on the `.env` parsed value.
+
+5. **Updating Process Environment**: After processing, it updates `processEnv` with interpolated values, ensuring environment variables are set with potentially expanded contents.
+
+The module is designed to be exported with an `expand` function available for use in other parts of an application.
+
+```js
+'use strict';
+
+// This is a regex used to identify and capture environment variable patterns
+const DOTENV_SUBSTITUTION_REGEX = /(\\)?(\$)(?!\()(\{?)([\w.]+)(?::?-((?:\$\{(?:\$\{(?:\$\{[^}]*\}|[^}])*}|[^}])*}|[^}])+))?(\}?)/gi;
+
+// Function to resolve escape sequences in strings
+function _resolveEscapeSequences(value) {
+  return value.replace(/\\\$/g, '$'); // Replace escaped $ with $
+}
+
+// Function that recursively performs variable interpolation
+function interpolate(value, processEnv, parsed) {
+  return value.replace(DOTENV_SUBSTITUTION_REGEX, (match, escaped, dollarSign, openBrace, key, defaultValue, closeBrace) => {
+    if (escaped === '\\') {
+      return match.slice(1);
+    } else {
+      if (processEnv[key]) {
+        if (processEnv[key] === parsed[key]) {
+          return processEnv[key];
+        } else {
+          return interpolate(processEnv[key], processEnv, parsed); // Handle nested interpolation
+        }
+      }
+
+      if (parsed[key]) {
+        if (parsed[key] === value) {
+          return parsed[key];
+        } else {
+          return interpolate(parsed[key], processEnv, parsed);
+        }
+      }
+
+      if (defaultValue) {
+        if (defaultValue.startsWith('$')) {
+          return interpolate(defaultValue, processEnv, parsed);
+        } else {
+          return defaultValue;
+        }
+      }
+
+      return '';
+    }
+  });
+}
+
+// Main function to expand variables in a provided .env parsed object
+function expand(options) {
+  let processEnv = process.env;
+  if (options && options.processEnv != null) {
+    processEnv = options.processEnv;
+  }
+
+  for (const key in options.parsed) {
+    let value = options.parsed[key];
+
+    const inProcessEnv = Object.prototype.hasOwnProperty.call(processEnv, key);
+    if (inProcessEnv) {
+      if (processEnv[key] === options.parsed[key]) {
+        value = interpolate(value, processEnv, options.parsed);
+      } else {
+        value = processEnv[key];
+      }
+    } else {
+      value = interpolate(value, processEnv, options.parsed);
+    }
+
+    options.parsed[key] = _resolveEscapeSequences(value);
+  }
+
+  for (const processKey in options.parsed) {
+    processEnv[processKey] = options.parsed[processKey];
+  }
+
+  return options;
+}
+
+module.exports.expand = expand;
+```

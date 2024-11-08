@@ -1,0 +1,133 @@
+The Node.js code provides functionality for walking through directories and caching directory contents. It uses a `PathScurry` class to track a current working directory, handle path resolution, and cache directory listings for improved performance. The code supports both synchronous and asynchronous directory traversal and caching through the use of `LRUCache`. Here's a breakdown of the main components and functionalities:
+
+1. **Caching**: It caches the directory contents using an LRU cache (`LRUCache`), which is configured to have a maximum cache size and a time-to-live value for entries, helping to improve performance by avoiding repeated filesystem calls.
+
+2. **Path Resolution**: The `_resolvePath` method uses the `path.resolve` function to compute absolute paths from given path components.
+
+3. **Directory Traversal**: The `walk` and `walkSync` methods recursively process directory entries, adding each entry to a result array and traversing into directories. They utilize the `readdir` and `readdirSync` methods for reading directory contents, which are cached for efficiency.
+
+4. **Directory Reading**: The `readdir` and `readdirSync` methods read directory contents optionally using a cached result. These methods return file and directory entries as `Path` objects, which provide methods for further path handling.
+
+5. **Platform Awareness**: It automatically configures case-sensitivity based on the operating system type.
+
+6. **Path Object**: The `Path` class encapsulates individual paths, allowing for directory checks and further resolution based on associated `PathScurry` objects.
+
+Here is a possible rewrite of this code while maintaining the same functionality:
+
+```javascript
+const fs = require('fs');
+const path = require('path');
+const { LRUCache } = require('lru-cache');
+
+class PathScurry {
+    constructor(cwd = process.cwd(), options = {}) {
+        this.cwd = this._resolvePath(cwd);
+        this.nocase = options.nocase !== undefined ? options.nocase : process.platform === 'win32' || process.platform === 'darwin';
+        this.cache = new LRUCache({
+            max: options.childrenCacheSize || 16 * 1024,
+            ttl: 1000 * 60 * 5,
+            allowStale: true,
+        });
+        this.fs = options.fs || fs.promises;
+        this.root = path.parse(this.cwd).root;
+    }
+
+    _resolvePath(...paths) {
+        return path.resolve(...paths);
+    }
+
+    async walk(entry = this.cwd, opts = {}) {
+        const options = { ...opts, withFileTypes: true };
+        const startPath = this._asPath(entry);
+        const results = [];
+        
+        const processNodes = async (pt) => {
+            results.push(pt);
+            if (pt.isDirectory()) {
+                const children = await this.readdir(pt, options);
+                await Promise.all(children.map(processNodes));
+            }
+        };
+        await processNodes(startPath);
+        return results;
+    }
+
+    walkSync(entry = this.cwd, opts = {}) {
+        const options = { ...opts, withFileTypes: true };
+        const startPath = this._asPath(entry);
+        const results = [];
+
+        const processNodes = (pt) => {
+            results.push(pt);
+            if (pt.isDirectory()) {
+                const children = this.readdirSync(pt, options);
+                children.forEach(processNodes);
+            }
+        };
+        processNodes(startPath);
+        return results;
+    }
+
+    async readdir(dir = this.cwd, opts = {}) {
+        const options = { ...opts, withFileTypes: true };
+        const directoryPath = this._asPath(dir);
+        if (!directoryPath.isDirectory()) return [];
+        const cached = this.cache.get(directoryPath);
+        if (cached) return cached;
+
+        const result = await this.fs.readdir(directoryPath, options);
+        const resolvedResult = result.map(entry => this._asPath(path.join(directoryPath, entry.name || entry)));
+        this.cache.set(directoryPath, resolvedResult);
+        return resolvedResult;
+    }
+
+    readdirSync(dir = this.cwd, opts = {}) {
+        const options = { ...opts, withFileTypes: true };
+        const directoryPath = this._asPath(dir);
+        if (!directoryPath.isDirectory()) return [];
+        const cached = this.cache.get(directoryPath);
+        if (cached) return cached;
+
+        const result = fs.readdirSync(directoryPath, options);
+        const resolvedResult = result.map(entry => this._asPath(path.join(directoryPath, entry.name || entry)));
+        this.cache.set(directoryPath, resolvedResult);
+        return resolvedResult;
+    }
+
+    _asPath(entry) {
+        if (entry instanceof Path) return entry;
+        const resolved = this._resolvePath(entry);
+        return new Path(resolved, this);
+    }
+
+    resolve(...paths) {
+        const resolved = this._resolvePath(...paths);
+        return this._asPath(resolved);
+    }
+}
+
+class Path {
+    constructor(name, scurry) {
+        this.name = name;
+        this.scurry = scurry;
+    }
+
+    isDirectory() {
+        try {
+            return fs.lstatSync(this.name).isDirectory();
+        } catch {
+            return false;
+        }
+    }
+
+    resolve(p) {
+        return this.scurry.resolve(this.name, p);
+    }
+
+    fullpath() {
+        return this.name;
+    }
+}
+
+module.exports = { PathScurry, Path };
+```

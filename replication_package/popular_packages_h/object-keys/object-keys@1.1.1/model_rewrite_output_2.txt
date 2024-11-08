@@ -1,0 +1,38 @@
+This Node.js code snippet provides a `keysShim` function to ensure compatibility with older environments where `Object.keys` may not behave as expected, particularly in the case of arguments objects. The shim attempts to assign a proper implementation of `Object.keys` that correctly handles arguments objects by checking if the original `Object.keys` function works correctly with them. If it doesn't, the code assigns a custom implementation that uses `Array.prototype.slice` to convert arguments objects to arrays, then applies `Object.keys` on them.
+
+Here is a possible rewritten version of the code:
+
+```javascript
+'use strict';
+
+const slice = Array.prototype.slice;
+const isArgs = require('./isArguments');
+const origKeys = Object.keys;
+const keysShim = origKeys ? (obj) => origKeys(obj) : require('./implementation');
+
+const originalKeys = Object.keys;
+
+keysShim.shim = function shimObjectKeys() {
+	if (Object.keys) {
+		const keysWorksWithArguments = (() => {
+			// Safari 5.0 bug check
+			const args = Object.keys(arguments);
+			return args && args.length === arguments.length;
+		})(1, 2);
+
+		if (!keysWorksWithArguments) {
+			Object.keys = function enhancedKeys(object) {
+				if (isArgs(object)) {
+					return originalKeys(slice.call(object));
+				}
+				return originalKeys(object);
+			};
+		}
+	} else {
+		Object.keys = keysShim;
+	}
+	return Object.keys || keysShim;
+};
+
+module.exports = keysShim;
+```

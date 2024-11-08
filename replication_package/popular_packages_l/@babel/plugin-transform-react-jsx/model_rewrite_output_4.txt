@@ -1,0 +1,81 @@
+The functionality of the given Node.js code is to define and use a custom Babel plugin that transforms JSX syntax into `React.createElement` calls. This is a simple example replicating what Babel's JSX processing does under the hood. Here's a breakdown of the code:
+
+1. The `jsxTransformPlugin` function returns a Babel visitor object that traverses the AST (Abstract Syntax Tree) of the code. It targets JSX elements and transforms them.
+
+2. Within the visitor, the `JSXElement` node is transformed by replacing it with a `React.createElement` call. This is managed by the `createElementFromJSX` helper function.
+
+3. The `createElementFromJSX` function constructs a simple representation of `React.createElement` calls:
+   - It extracts the tag type from the JSX opening element name.
+   - It processes the JSX attributes into an object for element properties.
+   - It processes JSX children, converting them to string literals or recursively handling nested JSX elements.
+
+4. The input JSX code defines a simple React element with a `div` containing a string and a nested `strong` element.
+
+5. The Babel `transformSync` function is used to apply the custom JSX transformation plugin to the input code, and the resulting transformed code is logged to the console.
+
+Here is a rewritten version of the original code:
+
+```javascript
+// index.js
+const babel = require('@babel/core');
+
+// Define a straightforward Babel plugin to transform JSX into React.createElement calls
+function jsxToReactCreateElement() {
+  return {
+    visitor: {
+      JSXElement(path) {
+        const reactElementCall = convertJSXToCreateElement(path.node);
+        path.replaceWith(reactElementCall);
+      },
+    },
+  };
+}
+
+// Helper function simulating `React.createElement` conversion
+function convertJSXToCreateElement(jsxNode) {
+  const elementType = jsxNode.openingElement.name.name;
+  const elementProps = jsxNode.openingElement.attributes.reduce((props, attr) => {
+    const value = attr.value.type === 'JSXExpressionContainer' ? attr.value.expression : attr.value;
+    props[attr.name.name] = value;
+    return props;
+  }, {});
+  const elementChildren = jsxNode.children.map(child => {
+    return child.type === 'JSXText' ? child.value : convertJSXToCreateElement(child);
+  });
+
+  return {
+    type: 'CallExpression',
+    callee: {
+      type: 'MemberExpression',
+      object: { type: 'Identifier', name: 'React' },
+      property: { type: 'Identifier', name: 'createElement' },
+    },
+    arguments: [
+      { type: 'StringLiteral', value: elementType },
+      { type: 'ObjectExpression', properties: Object.entries(elementProps).map(([key, value]) => ({
+        type: 'ObjectProperty',
+        key: { type: 'Identifier', name: key },
+        value: value.type ? value : { type: 'StringLiteral', value },
+      }))},
+      ...elementChildren,
+    ],
+  };
+}
+
+// Sample input code with JSX
+const inputCode = `
+  const element = (
+    <div className="container">
+      Hello, <strong>world!</strong>
+    </div>
+  );
+`;
+
+// Transform the JSX code using the custom plugin
+const transformedOutput = babel.transformSync(inputCode, {
+  plugins: [jsxToReactCreateElement],
+});
+
+// Output the transformed code
+console.log(transformedOutput.code);
+```

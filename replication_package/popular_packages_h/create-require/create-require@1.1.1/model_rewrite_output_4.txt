@@ -1,0 +1,49 @@
+The given Node.js code defines a function `createRequire` that is used to create a `require` function for a specific file path. This can be useful when you want to require modules relative to a certain directory or file. It checks for the availability of native methods `createRequire` and `createRequireFromPath` and uses them if available. Otherwise, it uses a custom polyfill `_createRequire`. Here's a breakdown of its functionality:
+
+1. **Fallback Handling**: If no filename is provided, it defaults to the current working directory.
+2. **Directory Handling**: If the provided filename is a directory, it appends `'index.js'` to create a full path.
+3. **Native Methods**: It first attempts to use `nativeModule.createRequire`, available from Node.js v12.2.0. If not available, it tries `nativeModule.createRequireFromPath` available since Node.js v10.12.0 but deprecated in v12.2.0.
+4. **Polyfill**: If neither native method is available, the `_createRequire` function serves as a custom implementation to provide similar functionality.
+5. **Directory Check**: Uses the `isDir` function to determine whether a given path is a directory.
+
+Here's a possible rewrite of the provided code:
+
+```javascript
+const { Module } = require('module');
+const { join, dirname } = require('path');
+const { lstatSync } = require('fs');
+
+function createRequire(filename = process.cwd()) {
+  if (isDirectory(filename)) {
+    filename = join(filename, 'index.js');
+  }
+
+  if (Module.createRequire) {
+    return Module.createRequire(filename);
+  }
+
+  if (Module.createRequireFromPath) {
+    return Module.createRequireFromPath(filename);
+  }
+
+  return polyfillCreateRequire(filename);
+}
+
+function polyfillCreateRequire(filename) {
+  const mod = new Module(filename, null);
+  mod.filename = filename;
+  mod.paths = Module._nodeModulePaths(dirname(filename));
+  mod._compile('module.exports = require;', filename);
+  return mod.exports;
+}
+
+function isDirectory(path) {
+  try {
+    return lstatSync(path).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+module.exports = createRequire;
+```

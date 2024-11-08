@@ -1,0 +1,109 @@
+The Node.js code provided is a module designed for querying and selecting nodes in a DOM-like structure. It appears to be part of a library for handling CSS selectors on a DOM constructed with some custom or external method (possibly similar to libraries like Cheerio, which is used for server-side manipulation of HTML). Here's a breakdown of its functionality:
+
+1. **Module Import and Setup:** 
+   - It uses `__importStar` to import all exports from the 'domutils' module and assigns them to `DomUtils`. 
+   - It imports several functions and constants from internal files (`compile`, `subselects`, `pseudo-selectors`, and `boolbase`).
+
+2. **Default Options:**
+   - The script defines `defaultEquals` as a basic equality function. If not provided via the options, this function checks if two nodes are identical.
+   - Default `options` are set, using `DomUtils` as the adapter and `defaultEquals` as the equality function.
+
+3. **Option Conversion:**
+   - `convertOptionFormats` standardizes the format of provided options, ensuring adapters and equality functions are set from defaults if not provided.
+
+4. **Wrapper Functions:**
+   - `wrapCompile` wraps compilation functions to include option conversion before actual execution.
+
+5. **Core Functions:**
+   - **`compile`, `_compileUnsafe`, `_compileToken`:** These functions wrap imports used to compile a CSS selector into a query function.
+   - **`getSelectorFunc`:** This creates a function to select nodes or elements based on a query. It applies a search function to elements, using compiled queries or direct functions.
+   - **`prepareContext`:** Ensures the context for queries includes necessary sibling elements if the query requires.
+   - **`appendNextSiblings`:** Provides helper functionality to add siblings to the list of elements being queried.
+
+6. **Selection Functions:**
+   - **`selectAll`:** Finds all elements matching a selector or query within a set of elements. 
+   - **`selectOne`:** Finds the first element matching a selector or query.
+   - **`is`:** Checks if an element matches a selector or query, returning a boolean result.
+
+7. **Exports:**
+   - It exports functions and utilities for external use, such as selectors (`selectAll`, `selectOne`, `is`), and offers access to customizable filter and pseudo-selector functionality.
+
+The purpose of the module is essentially to compile CSS selectors into query functions for a custom or external DOM, and perform various selection and matching operations on the DOM nodes.
+
+```javascript
+"use strict";
+const { compile, compileUnsafe, compileToken } = require("./compile");
+const { getNextSiblings } = require("./pseudo-selectors/subselects");
+const DomUtils = require("domutils");
+const { falseFunc } = require("boolbase");
+const { filters, pseudos } = require("./pseudo-selectors");
+
+const defaultEquals = (a, b) => a === b;
+const defaultOptions = {
+    adapter: DomUtils,
+    equals: defaultEquals,
+};
+
+function convertOptionFormats(options) {
+    const opts = options || { ...defaultOptions };
+    opts.adapter = opts.adapter || DomUtils;
+    opts.equals = opts.equals || (opts.adapter.equals || defaultEquals);
+    return opts;
+}
+
+function wrapCompile(func) {
+    return function (selector, options, context) {
+        const opts = convertOptionFormats(options);
+        return func(selector, opts, context);
+    };
+}
+
+exports.compile = wrapCompile(compile);
+exports._compileUnsafe = wrapCompile(compileUnsafe);
+exports._compileToken = wrapCompile(compileToken);
+
+function getSelectorFunc(searchFunc) {
+    return function (query, elements, options) {
+        const opts = convertOptionFormats(options);
+        if (typeof query !== "function") {
+            query = compileUnsafe(query, opts, elements);
+        }
+        const filteredElements = prepareContext(elements, opts.adapter, query.shouldTestNextSiblings);
+        return searchFunc(query, filteredElements, opts);
+    };
+}
+
+function prepareContext(elems, adapter, shouldTestNextSiblings = false) {
+    if (shouldTestNextSiblings) {
+        elems = appendNextSiblings(elems, adapter);
+    }
+    return Array.isArray(elems) ? adapter.removeSubsets(elems) : adapter.getChildren(elems);
+}
+
+function appendNextSiblings(elem, adapter) {
+    const elems = Array.isArray(elem) ? elem.slice() : [elem];
+    for (let i = 0; i < elems.length; i++) {
+        elems.push(...getNextSiblings(elems[i], adapter));
+    }
+    return elems;
+}
+
+exports.selectAll = getSelectorFunc((query, elems, options) => {
+    return query === falseFunc || !elems || elems.length === 0 ? [] : options.adapter.findAll(query, elems);
+});
+
+exports.selectOne = getSelectorFunc((query, elems, options) => {
+    return query === falseFunc || !elems || elems.length === 0 ? null : options.adapter.findOne(query, elems);
+});
+
+function is(elem, query, options) {
+    const opts = convertOptionFormats(options);
+    return (typeof query === "function" ? query : compile(query, opts))(elem);
+}
+
+exports.is = is;
+exports.prepareContext = prepareContext;
+exports.default = exports.selectAll;
+exports.filters = filters;
+exports.pseudos = pseudos;
+```

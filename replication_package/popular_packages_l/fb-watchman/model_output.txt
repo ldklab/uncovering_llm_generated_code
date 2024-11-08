@@ -1,0 +1,91 @@
+The `fb-watchman` package is a Node.js wrapper for Facebook's Watchman service, which is used for watching changes in the filesystem. Here's an explanation of its functionality based on the README:
+
+1. **Filesystem Watcher**: `fb-watchman` acts as a binding to the Watchman service, allowing you to watch directories efficiently for file changes.
+
+2. **Recursive Watches**: Watchman is capable of recursively watching entire directories, which means that it monitors all sub-directories and files within a specified root directory.
+
+3. **Watch Projects**: To begin watching a directory, you start a "watch-project" on it. This step is necessary before subscribing to any change notifications. The "watch-project" command ensures that Watchman efficiently manages the watches relative to a single root, potentially avoiding the overhead of separately watching many sibling directories.
+
+4. **Change Notifications**: Once a project is being watched, you can subscribe to notifications about changes. These notifications are relative to the project root, making it easier to handle events in larger projects.
+
+5. **Expression Syntax**: Watchman allows the use of powerful expressions to query changes, providing advanced matching capabilities.
+
+6. **Installation and Usage**: First, watchman needs to be installed independently. Once installed, `fb-watchman` can be added to a project via npm, and it provides an interface to interact with Watchman's capabilities in a Node.js environment.
+
+Here is a simple implementation of a package that uses the `fb-watchman` library:
+
+```javascript
+const watchman = require('fb-watchman');
+
+// Function to initialize a watch on a given directory
+function initWatch(path) {
+  return new Promise((resolve, reject) => {
+    const client = new watchman.Client();
+    
+    client.capabilityCheck({optional:[], required:['relative_root']}, (error, resp) => {
+      if (error) {
+        console.error(error);
+        client.end();
+        reject(error);
+        return;
+      }
+      
+      // Initiate a watch on the given path
+      client.command(['watch-project', path], (error, resp) => {
+        if (error) {
+          console.error('Error initiating watch: ', error);
+          client.end();
+          reject(error);
+          return;
+        }
+        
+        console.log(`Watch established on ${resp.watch}`);
+        
+        const watch = resp.watch;
+        const relativePath = resp.relative_path ? resp.relative_path : '';
+
+        resolve({client, watch, relativePath});
+      });
+    });
+  });
+}
+
+// Function to subscribe to changes
+function subscribeToChanges({client, watch, relativePath}, subscriptionName) {
+  const sub = {
+    expression: ['allof', ['match', '*.*']], // Customize based on need
+    fields: ['name', 'size', 'mtime_ms', 'exists', 'type'],
+    relative_root: relativePath,
+  };
+
+  client.command(['subscribe', watch, subscriptionName, sub], (error, resp) => {
+    if (error) {
+      console.error('Failed to subscribe: ', error);
+      client.end();
+      return;
+    }
+
+    console.log(`Subscription ${subscriptionName} established.`);
+  });
+
+  client.on('subscription', (resp) => {
+    if (resp.subscription !== subscriptionName) return;
+    resp.files.forEach(file => {
+      console.log(`File ${file.name} changed.`);
+    });
+  });
+}
+
+// Example usage
+(async () => {
+  try {
+    const path = '/path/to/watch';
+    const {client, watch, relativePath} = await initWatch(path);
+    subscribeToChanges({client, watch, relativePath}, 'my-subscription');
+  } catch (error) {
+    console.error('Error setting up watch:', error);
+  }
+})();
+```
+
+This code initializes a Watchman watch on a specified directory and subscribes to changes using the `fb-watchman` client. It logs any file changes detected by Watchman. Note that you should replace `'/path/to/watch'` with the actual path to be monitored.

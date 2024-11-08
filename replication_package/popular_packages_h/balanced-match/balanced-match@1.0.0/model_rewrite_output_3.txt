@@ -1,0 +1,76 @@
+The provided Node.js code is used to find a balanced string in a given input. The function `balanced(a, b, str)` looks for the first occurrence of the substring `str` that starts with a pattern `a` and ends with a pattern `b`. The function works with both string and regular expression inputs for `a` and `b`. If the patterns `a` or `b` are regular expressions, the code uses `maybeMatch` to get the matched string. It uses the `range` function to determine the starting and ending indexes of the matched balanced substring within `str`. 
+
+Here's how it works in detail:
+
+- `maybeMatch(reg, str)`: If `reg` is a regex, it attempts to find a match in `str` and returns the matched text, or `null` if no match is found.
+  
+- `range(a, b, str)`: This function calculates and returns the start and end indices of the balanced substring in `str` that starts with `a` and ends with `b`. It handles nested structures by maintaining a stack (`begs`) of starting positions.
+
+- `balanced(a, b, str)`: This is the main function exported by the module. It takes inputs `a`, `b`, and `str`, and returns an object with the positions of the balanced substring and its parts: `pre` (before the balanced substring), `body` (the balanced substring), and `post` (after the balanced substring).
+
+Here's the rewritten version:
+
+```javascript
+'use strict';
+
+module.exports = findBalancedSubstring;
+
+function findBalancedSubstring(start, end, input) {
+  if (start instanceof RegExp) start = extractMatch(start, input);
+  if (end instanceof RegExp) end = extractMatch(end, input);
+
+  const rangeIndexes = findRange(start, end, input);
+
+  return rangeIndexes && {
+    start: rangeIndexes[0],
+    end: rangeIndexes[1],
+    pre: input.slice(0, rangeIndexes[0]),
+    body: input.slice(rangeIndexes[0] + start.length, rangeIndexes[1]),
+    post: input.slice(rangeIndexes[1] + end.length)
+  };
+}
+
+function extractMatch(pattern, input) {
+  const match = input.match(pattern);
+  return match ? match[0] : null;
+}
+
+findBalancedSubstring.findRange = findRange;
+
+function findRange(start, end, input) {
+  let openIndices = [], startPos, tempStart, tempEnd, balancedSubstring;
+  let initialStartIndex = input.indexOf(start);
+  let initialEndIndex = input.indexOf(end, initialStartIndex + 1);
+  let position = initialStartIndex;
+
+  if (initialStartIndex >= 0 && initialEndIndex > 0) {
+    openIndices = [];
+    tempStart = input.length;
+
+    while (position >= 0 && !balancedSubstring) {
+      if (position === initialStartIndex) {
+        openIndices.push(position);
+        initialStartIndex = input.indexOf(start, position + 1);
+      } else if (openIndices.length === 1) {
+        balancedSubstring = [openIndices.pop(), initialEndIndex];
+      } else {
+        startPos = openIndices.pop();
+        if (startPos < tempStart) {
+          tempStart = startPos;
+          tempEnd = initialEndIndex;
+        }
+
+        initialEndIndex = input.indexOf(end, position + 1);
+      }
+
+      position = initialStartIndex < initialEndIndex && initialStartIndex >= 0 ? initialStartIndex : initialEndIndex;
+    }
+
+    if (openIndices.length) {
+      balancedSubstring = [tempStart, tempEnd];
+    }
+  }
+
+  return balancedSubstring;
+}
+```

@@ -1,0 +1,57 @@
+```javascript
+// minimatch.js
+
+const path = require('path');
+
+// Helper function to escape special regex characters
+const escapeRegex = (str) => str.replace(/([.?*+^$[\]\\(){}|-])/g, "\\$1");
+
+// Converts glob patterns to regex expressions
+const globToRegex = (pattern, options = {}) => {
+  let regexPattern = escapeRegex(pattern);
+  regexPattern = regexPattern.replace(/\\\*/g, '.*').replace(/\\\?/g, '.');
+  if (options.dot) {
+    regexPattern = regexPattern.replace(/\\\./g, '\\.');
+  }
+  return new RegExp(`^${regexPattern}$`);
+}
+
+// Function to test if a string matches a specified pattern
+const minimatch = (str, pattern, options = {}) => {
+  const regexParts = pattern.split(path.sep).map(part => globToRegex(part, options));
+  return regexParts.every(regex => regex.test(str));
+};
+
+// Function to create a filter for arrays using the minimatch function
+minimatch.filter = (pattern, options) => (file) => minimatch(file, pattern, options);
+
+// Function to escape all special regex characters in a pattern
+minimatch.escape = (pattern) => escapeRegex(pattern);
+
+// Class to handle a Minimatch pattern with methods for matching and checking for special characters
+class Minimatch {
+  constructor(pattern, options = {}) {
+    this.pattern = pattern;
+    this.options = options;
+    this.set = pattern.split(path.sep).map(part => globToRegex(part, options));
+  }
+
+  // Method to return a compiled regex for the entire pattern
+  makeRe() {
+    return new RegExp(this.pattern.split(path.sep).map(part => globToRegex(part, this.options)).join(''));
+  }
+
+  // Method to check if a filename matches the pattern
+  match(fname) {
+    return this.set.every(regex => regex.test(fname));
+  }
+
+  // Method to determine if the pattern contains special characters
+  hasMagic() {
+    return /\*|\?/.test(this.pattern);
+  }
+}
+
+// Export the minimatch function and Minimatch class for use in other files
+module.exports = { minimatch, Minimatch };
+```

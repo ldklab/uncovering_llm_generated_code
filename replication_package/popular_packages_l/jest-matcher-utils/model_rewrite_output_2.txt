@@ -1,0 +1,142 @@
+The given Node.js code is a module for `jest-matcher-utils`, which provides utility functions primarily for formatting and displaying matcher-related information in tests. It includes methods for stringifying values, highlighting differences between expected and received output, formatting error messages, and handling some input validation.
+
+Here are the main functionalities explained:
+
+1. **Color and Formatting Constants**: Constants are defined to add colors and styles to strings, such as red for received values and green for expected values, using ANSI escape codes.
+
+2. **Stringification and Printing**: 
+   - `stringify(value)`: Converts values into a pretty-printed JSON string.
+   - `printReceived(value)`, `printExpected(value)`: Prepends colored formatting to stringified values for output.
+   
+3. **Validation Functions**:
+   - Functions like `ensureNoExpected`, `ensureActualIsNumber`, etc., perform type checks or validations on inputs, throwing errors if checks fail.
+
+4. **Diffing Utilities**:
+   - Uses the `diff` library to compare two strings line by line, highlighting additions and removals.
+
+5. **Error Messaging**:
+   - `matcherErrorMessage()`, `matcherHint()`: Constructs and formats error messages for explaining mismatches in test assertions.
+
+6. **Auxiliary Functions**:
+   - `getLabelPrinter()`, `pluralize()`, etc., provide helper functionalities to format text or determine the plural form of words.
+
+7. **Exporting**: The module exports all utility functions, constants, and some stub types to be used in other parts of the application.
+
+Here's a concise rewrite of the original code with the same functionality:
+
+```javascript
+// jest-matcher-utils/index.js
+
+const { diffLines } = require('diff');
+
+// Styling Constants
+const COLORS = {
+  EXPECTED: '\x1b[32m',
+  RECEIVED: '\x1b[31m',
+  INVERTED: '\x1b[7m',
+  BOLD: '\x1b[1m',
+  DIM: '\x1b[2m'
+};
+
+const SUGGEST_TO_CONTAIN_EQUAL = 'Did you mean to use .toContainEqual()?';
+
+function stringify(value) {
+  return JSON.stringify(value, null, 2);
+}
+
+function highlightTrailingWhitespace(text) {
+  return text.replace(/[\s]+$/g, match => COLORS.INVERTED + match + COLORS.EXPECTED);
+}
+
+function printReceived(value) {
+  return COLORS.RECEIVED + stringify(value) + '\x1b[0m';
+}
+
+function printExpected(value) {
+  return COLORS.EXPECTED + stringify(value) + '\x1b[0m';
+}
+
+function printWithType(name, value) {
+  return `${name}: ${typeof value} = ${stringify(value)}`;
+}
+
+function ensureNoExpected(expected) {
+  if (typeof expected !== 'undefined') {
+    throw new Error('Expected has to be undefined');
+  }
+}
+
+function ensureActualIsNumber(actual) {
+  if (typeof actual !== 'number') {
+    throw new Error('Actual value must be a number');
+  }
+}
+
+function ensureExpectedIsNumber(expected) {
+  if (typeof expected !== 'number') {
+    throw new Error('Expected value must be a number');
+  }
+}
+
+function ensureNumbers(actual, expected) {
+  ensureActualIsNumber(actual);
+  ensureExpectedIsNumber(expected);
+}
+
+function ensureExpectedIsNonNegativeInteger(expected) {
+  if (!Number.isInteger(expected) || expected < 0) {
+    throw new Error('Expected value must be a non-negative integer');
+  }
+}
+
+function printDiffOrStringify(expected, received) {
+  const result = diff(stringify(expected), stringify(received));
+  return result || COLORS.RECEIVED + stringify(received);
+}
+
+function diff(a, b) {
+  return diffLines(a, b).map(change => {
+    const color = change.added ? COLORS.EXPECTED : (change.removed ? COLORS.RECEIVED : COLORS.DIM);
+    return color + change.value + '\x1b[0m';
+  }).join('');
+}
+
+function pluralize(word, count) {
+  return count === 1 ? word : word + 's';
+}
+
+function getLabelPrinter(...strings) {
+  const maxLength = Math.max(...strings.map(s => s.length));
+  return str => str + ':'.padEnd(maxLength - str.length + 2, ' ');
+}
+
+function matcherErrorMessage(hint, received, expected) {
+  return `${hint}\n\nReceived:\n${printReceived(received)}\nExpected:\n${printExpected(expected)}`;
+}
+
+function matcherHint(matcherName, received = 'received', expected = 'expected', options = {}) {
+  return `${COLORS.BOLD}${matcherName}${COLORS.DIM}(${received}${options.secondArgument ? `, ${expected}` : ''})\x1b[0m`;
+}
+
+module.exports = {
+  stringify,
+  highlightTrailingWhitespace,
+  printReceived,
+  printExpected,
+  printWithType,
+  ensureNoExpected,
+  ensureActualIsNumber,
+  ensureExpectedIsNumber,
+  ensureNumbers,
+  ensureExpectedIsNonNegativeInteger,
+  printDiffOrStringify,
+  diff,
+  pluralize,
+  getLabelPrinter,
+  matcherErrorMessage,
+  matcherHint,
+  
+  COLORS,
+  SUGGEST_TO_CONTAIN_EQUAL
+};
+```

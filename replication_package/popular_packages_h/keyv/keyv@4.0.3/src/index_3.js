@@ -1,0 +1,84 @@
+'use strict';
+
+const { EventEmitter } = require('events');
+const JSONB = require('json-buffer');
+
+class Keyv extends EventEmitter {
+  constructor(uriOrOptions = {}, options = {}) {
+    super();
+    const isStringUri = typeof uriOrOptions === 'string';
+    this.options = Object.assign(
+      {
+        namespace: 'keyv',
+        serialize: JSONB.stringify,
+        deserialize: JSONB.parse
+      },
+      isStringUri ? { uri: uriOrOptions } : uriOrOptions,
+      options
+    );
+
+    this.options.store = this.options.store || this._initializeStore();
+
+    if (typeof this.options.store.on === 'function') {
+      this.options.store.on('error', (error) => this.emit('error', error));
+    }
+
+    this.options.store.namespace = this.options.namespace;
+  }
+
+  _initializeStore() {
+    const adapters = {
+      redis: '@keyv/redis',
+      mongodb: '@keyv/mongo',
+      mongo: '@keyv/mongo',
+      sqlite: '@keyv/sqlite',
+      postgresql: '@keyv/postgres',
+      postgres: '@keyv/postgres',
+      mysql: '@keyv/mysql',
+    };
+    const adapterKey = this.options.adapter || this.options.uri.match(/^[^:]*/)[0];
+    const Adapter = require(adapters[adapterKey]);
+    return new Adapter(this.options);
+  }
+
+  _getKeyWithNamespace(key) {
+    return `${this.options.namespace}:${key}`;
+  }
+
+  async get(key, opts = {}) {
+    const keyWithNamespace = this._getKeyWithNamespace(key);
+    const storedValue = await this.options.store.get(keyWithNamespace);
+
+    if (typeof storedValue !== 'string') return storedValue;
+
+    const deserialized = this.options.deserialize(storedValue);
+
+    if (deserialized && deserialized.expires && Date.now() > deserialized.expires) {
+      await this.delete(key);
+      return undefined;
+    }
+
+    return opts.raw ? deserialized : deserialized.value;
+  }
+
+  async set(key, value, ttl) {
+    const keyWithNamespace = this._getKeyWithNamespace(key);
+    ttl = ttl !== undefined ? ttl : this.options.ttl;
+    const expires = typeof ttl === 'number' ? Date.now() + ttl : null;
+    const serializedValue = this.options.serialize({ value, expires });
+
+    await this.options.store.set(keyWithNamespace, serializedValue, ttl);
+    return true;
+  }
+
+  async delete(key) {
+    const keyWithNamespace = this._getKeyWithNamespace(key);
+    return this.options.store.delete(keyWithNamespace);
+  }
+
+  async clear() {
+    return this.options.store.clear();
+  }
+}
+
+module.exports = Keyv;

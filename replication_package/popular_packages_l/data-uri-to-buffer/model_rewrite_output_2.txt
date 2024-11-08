@@ -1,0 +1,66 @@
+```typescript
+export interface ParsedDataURI {
+    type: string;
+    typeFull: string;
+    charset: string;
+    buffer: ArrayBuffer;
+}
+
+export function dataUriToBuffer(uri: string | URL): ParsedDataURI {
+    if (typeof uri === 'object') {
+        uri = uri.toString();
+    }
+
+    const matches = /^data:([^,]*?),?([^#]*)/.exec(uri);
+    if (!matches) throw new Error('Invalid data URI');
+
+    const mediaType = matches[1];
+    const data = matches[2];
+
+    const isBase64 = /;\s*base64\s*(?:;|$)/i.test(mediaType);
+
+    let type = 'text/plain';
+    let typeFull = 'text/plain;charset=US-ASCII';
+    let charset = 'US-ASCII';
+
+    if (mediaType) {
+        typeFull = mediaType;
+        const mediaTypeParts = mediaType.split(';');
+        type = mediaTypeParts[0] || type;
+
+        for (const part of mediaTypeParts.slice(1)) {
+            if (part.toLowerCase().startsWith('charset=')) {
+                charset = part.split('=')[1];
+            }
+        }
+    }
+
+    const buffer = isBase64 ? base64ToArrayBuffer(data) : textToArrayBuffer(decodeURIComponent(data));
+
+    if (!mediaType || (mediaType && !/charset=/i.test(mediaType))) {
+        charset = '';
+    }
+
+    return { type, typeFull, charset, buffer };
+}
+
+function base64ToArrayBuffer(base64: string): ArrayBuffer {
+    const binaryString = atob(base64);
+    const length = binaryString.length;
+    const bytes = new Uint8Array(length);
+
+    for (let i = 0; i < length; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+    }
+
+    return bytes.buffer;
+}
+
+function textToArrayBuffer(text: string): ArrayBuffer {
+    const encoder = new TextEncoder();
+    return encoder.encode(text).buffer;
+}
+```
+
+Explanation:
+The Node.js code provides a utility to parse a data URI and convert it into an `ArrayBuffer`. It defines an interface `ParsedDataURI` to structure the parsed information. The `dataUriToBuffer` function takes a string or `URL` type input, extracts the media type and data, determines if base64 encoding is used, and decodes the data appropriately. It retrieves and parses the media type and charset if specified. Two helper functions, `base64ToArrayBuffer` and `textToArrayBuffer`, handle the conversion of base64 and text respectively into an `ArrayBuffer`. This allows the function to handle different types of data URIs, producing a structured output based on the defined interface.

@@ -1,0 +1,41 @@
+The `queue-microtask` package provides a lightweight shim for the `queueMicrotask` function, ensuring it is available in environments where it might not be natively supported, such as Node.js versions prior to 12 and older browsers. `queueMicrotask` is a standard method to queue microtasks, which are executed after the current task is completed and before the JavaScript engine regains control to process the next task in the event loop.
+
+The core functionality of the package is:
+1. In modern environments that support `queueMicrotask`, the native function is used.
+2. For environments where `queueMicrotask` is unavailable, the package falls back to using `Promise.resolve().then(fn)`, achieving a similar microtask queuing behavior.
+3. It doesn't rely on any external dependencies and is optimized for performance by providing minimal overhead.
+4. It prioritizes small bundle size and optimal performance in modern environments over supporting older browsers without Promise support.
+5. It doesn't support environments where `Promise` is unavailable, targeting only those which support this API or newer.
+
+Here's the implementation of the `queue-microtask` package:
+
+```javascript
+// queue-microtask.js
+
+function queueMicrotask(fn) {
+  if (typeof window !== 'undefined' && typeof window.queueMicrotask === 'function') {
+    // If 'queueMicrotask' is supported in the environment, use it
+    window.queueMicrotask(fn);
+  } else if (typeof global !== 'undefined' && typeof global.queueMicrotask === 'function') {
+    // If 'queueMicrotask' is supported in Node.js, use it
+    global.queueMicrotask(fn);
+  } else {
+    // Fallback to using Promise for environments without 'queueMicrotask'
+    Promise.resolve().then(fn);
+  }
+}
+
+module.exports = queueMicrotask;
+```
+
+Usage:
+
+```javascript
+const queueMicrotask = require('./queue-microtask');
+
+queueMicrotask(() => {
+  console.log('This will run as a microtask');
+});
+```
+
+This code exports a function that checks for native support of `queueMicrotask` in the current environment, leveraging native implementations when possible. If not available, it degrades gracefully to using a `Promise`-based microtask queuing strategy, which provides nearly identical behavior.

@@ -1,0 +1,51 @@
+The Node.js code is a Babel plugin that adds polyfills for the `regenerator-runtime` package, which is commonly required for supporting generator and async functions in environments that do not natively support them. The plugin operates based on the `method` option provided in `state.opts`:
+
+1. **entry-global**: Ensures the `regenerator-runtime/runtime` is imported at the start of the program if it does not already exist. This is a global, all-or-nothing approach for polyfilling.
+
+2. **usage-global**: Adds a runtime import at the beginning of the body of each async or generator function. Only `regenerator-runtime/runtime` is added, ensuring that the function can execute properly in environments lacking support.
+
+3. **usage-pure**: Similar to `usage-global`, but the import added is `regenerator-runtime` instead of `regenerator-runtime/runtime`. This may be used when a more minimal polyfill is desired.
+
+The code ensures that the polyfill is only added when necessary, checking for existing imports to avoid duplication. The transformations occur at the Program level for `entry-global` and at the function level for `usage-global` and `usage-pure`.
+
+Here’s a rewritten version of the code:
+
+```javascript
+// babel-plugin-polyfill-regenerator.js
+module.exports = function({ types: t }) {
+  const addImportIfNeeded = (path, importSource, condition) => {
+    if (!condition) {
+      path.unshift(t.importDeclaration([], t.stringLiteral(importSource)));
+    }
+  };
+
+  return {
+    name: 'babel-plugin-polyfill-regenerator',
+    visitor: {
+      Program(path, state) {
+        const { method } = state.opts;
+        const body = path.node.body;
+        const hasRuntime = body.some(statement =>
+          t.isImportDeclaration(statement) &&
+          statement.source.value === 'regenerator-runtime'
+        );
+
+        if (method === 'entry-global') {
+          addImportIfNeeded(body, 'regenerator-runtime/runtime', hasRuntime);
+        } else if (method === 'usage-global' || method === 'usage-pure') {
+          path.traverse({
+            Function(funcPath) {
+              if ((funcPath.node.async || funcPath.node.generator) && !hasRuntime) {
+                const importSource = method === 'usage-global'
+                  ? 'regenerator-runtime/runtime'
+                  : 'regenerator-runtime';
+                addImportIfNeeded(funcPath.node.body.body, importSource, false);
+              }
+            }
+          });
+        }
+      }
+    }
+  };
+};
+```

@@ -1,0 +1,81 @@
+The Node.js code defines a class called `Graphemer` which is responsible for handling grapheme cluster segmentation. A grapheme cluster is a sequence of one or more code points that are displayed as a single, combined element or character.
+
+**Functionality Breakdown:**
+1. **Constructor**: Initializes an instance of the `Graphemer` class and loads the grapheme break rules based on (albeit hypothetical) Unicode specifications.
+2. **`loadBreakRules` Method**: Sets up break rules that determine how characters are grouped together into graphemes. The rules are simplified and do not cover the full complexity of Unicode grapheme breaking rules.
+3. **`isBaseChar` and `isCombiningMark` Methods**: Checks if a code point is a base character or a combining mark. This check is simplified for demonstration purposes.
+4. **`splitGraphemes` Method**: Splits a given string into an array of grapheme clusters based on the defined grapheme break rules.
+5. **`iterateGraphemes` Method**: Returns an iterator for the grapheme clusters in the string using the `splitGraphemes` method.
+6. **`countGraphemes` Method**: Counts the number of grapheme clusters in the string.
+7. **`shouldBreak` Method**: Determines if a grapheme break should occur between two code points by checking against the defined break rules.
+
+Finally, the class is exported for use in a Node.js environment if the module system is available.
+
+Here's a possible rewritten version of the code:
+
+```javascript
+// graphemer.js
+
+class Graphemer {
+    constructor() {
+        this.breakRules = this.loadBreakRules();
+    }
+    
+    loadBreakRules() {
+        return {
+            isSurrogatePair: (curr, next) => (0xD800 <= curr && curr <= 0xDBFF) && (0xDC00 <= next && next <= 0xDFFF),
+            isCombiningMark: (curr, next) => (this.isBaseChar(curr) && this.isCombiningMark(next)),
+        };
+    }
+
+    isBaseChar(codePoint) {
+        return codePoint >= 0x0041 && codePoint <= 0x007A;
+    }
+
+    isCombiningMark(codePoint) {
+        return codePoint >= 0x0300 && codePoint <= 0x036F;
+    }
+
+    splitGraphemes(string) {
+        let graphemes = [];
+        let currentGrapheme = '';
+
+        for (let i = 0; i < string.length; i++) {
+            const currentChar = string.charCodeAt(i);
+            const nextChar = string.charCodeAt(i + 1);
+
+            currentGrapheme += string[i];
+
+            if (this.shouldBreak(currentChar, nextChar)) {
+                graphemes.push(currentGrapheme);
+                currentGrapheme = '';
+            }
+        }
+
+        if (currentGrapheme) {
+            graphemes.push(currentGrapheme);
+        }
+
+        return graphemes;
+    }
+
+    iterateGraphemes(string) {
+        return this.splitGraphemes(string).values();
+    }
+
+    countGraphemes(string) {
+        return this.splitGraphemes(string).length;
+    }
+
+    shouldBreak(current, next) {
+        if (next === undefined) return true;
+        if (this.breakRules.isSurrogatePair(current, next)) return false;
+        if (this.breakRules.isCombiningMark(current, next)) return false;
+        return true;
+    }
+}
+
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports.default = Graphemer;
+}
+```

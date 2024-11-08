@@ -1,0 +1,121 @@
+The provided Node.js code is a utility for creating temporary files and directories. Here's a detailed breakdown of what the code does:
+
+1. **Dependencies**: The code uses Node.js built-in modules:
+   - `fs` for filesystem operations,
+   - `path` for handling file paths,
+   - `os` to retrieve OS-related information like the temporary directory,
+   - `crypto` to generate random strings.
+
+2. **Default Options**: It sets default options for file and directory creation, such as directory location (`os.tmpdir()`), file permissions (`0o600` for files, `0o700` for directories), prefixes, postfixed names, and a flag for keeping the files after process exits.
+
+3. **Random Filename Generator**: The `randomChars` function generates a string of random hexadecimal characters using `crypto.randomBytes`.
+
+4. **Temporary Name Generation**:
+   - The `tmpNameSync` function attempts to generate a unique temporary file or directory name using given or default options. If a generated name already exists, it tries again up to a specified number of times (`opts.tries`).
+
+5. **File Creation**:
+   - The `fileSync` function creates a temporary file with a unique name. It uses `fs.openSync` to open a new file, registers a cleanup function to close and remove the file, and returns basic details about the created file.
+
+6. **Directory Creation**:
+   - The `dirSync` function creates a temporary directory in a similar fashion to `fileSync`, registering a cleanup function to remove the directory.
+
+7. **Graceful Cleanup**:
+   - The `setGracefulCleanup` function sets an event listener on the process's `exit` event to ensure that all temporary files and directories are cleaned up when the process exits.
+
+8. **Module Exports**: The functions are exported for use in other files.
+
+9. **Example Usage**: Shows how to use the module to create temporary files and directories and immediately cleans them up.
+
+Here's a possible rewrite of the code:
+
+```javascript
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
+const crypto = require('crypto');
+
+const tempFiles = [];
+const defaultOptions = {
+  dir: os.tmpdir(),
+  mode: 0o600,
+  prefix: 'tmp-',
+  postfix: '',
+  keep: false,
+  tries: 3,
+};
+
+function generateRandomHex() {
+  return crypto.randomBytes(3).toString('hex');
+}
+
+function generateTempNameSync(options = {}) {
+  const opts = { ...defaultOptions, ...options };
+  for (let attempt = 0; attempt < opts.tries; attempt++) {
+    const filename = path.join(opts.dir, `${opts.prefix}${generateRandomHex()}${opts.postfix}`);
+    if (!fs.existsSync(filename)) {
+      return filename;
+    }
+  }
+  throw new Error('Unable to generate a unique temporary filename');
+}
+
+function createTempFileSync(options = {}) {
+  const tempName = generateTempNameSync(options);
+  const fileDescriptor = fs.openSync(tempName, 'w', options.mode || 0o600);
+  const cleanupFunction = () => {
+    try {
+      fs.closeSync(fileDescriptor);
+    } catch (error) {}
+    try {
+      if (!options.keep) fs.unlinkSync(tempName);
+    } catch (error) {}
+  };
+
+  if (!options.keep) {
+    tempFiles.push(cleanupFunction);
+  }
+
+  return { name: tempName, fd: fileDescriptor, cleanupCallback: cleanupFunction };
+}
+
+function createTempDirSync(options = {}) {
+  const dirName = generateTempNameSync(options);
+  fs.mkdirSync(dirName, { mode: options.mode || 0o700 });
+  const cleanupFunction = () => {
+    try {
+      fs.rmdirSync(dirName, { recursive: options.unsafeCleanup || false });
+    } catch (error) {}
+  };
+
+  if (!options.keep) {
+    tempFiles.push(cleanupFunction);
+  }
+
+  return { name: dirName, cleanupCallback: cleanupFunction };
+}
+
+function enableGracefulCleanup() {
+  process.on('exit', () => {
+    tempFiles.forEach(callback => callback());
+  });
+}
+
+module.exports = {
+  fileSync: createTempFileSync,
+  dirSync: createTempDirSync,
+  tmpNameSync: generateTempNameSync,
+  setGracefulCleanup: enableGracefulCleanup,
+};
+
+// Example usage:
+const tmp = require('./tmp');  // Import the module
+tmp.setGracefulCleanup();
+
+const tempFile = tmp.fileSync();
+console.log('Temp file created at:', tempFile.name);
+tempFile.cleanupCallback();
+
+const tempDir = tmp.dirSync();
+console.log('Temp directory created at:', tempDir.name);
+tempDir.cleanupCallback();
+```

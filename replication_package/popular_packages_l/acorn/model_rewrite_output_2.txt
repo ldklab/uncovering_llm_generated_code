@@ -1,0 +1,124 @@
+The provided Node.js code defines a simple syntax parser for JavaScript-like code. Here's a breakdown of its functionality:
+
+1. **SyntaxError Class**: A custom error class extending JavaScript's `Error`, used to throw syntax-related errors with additional `pos` (position) and `loc` (location) information.
+
+2. **Parser Class**: 
+   - Contains static options for ECMAScript version and source type, which can be overridden by provided options while parsing.
+   - `parse`: A method that simulates parsing a given input string. It throws a `SyntaxError` if the string "error" is included in the input. It returns a mock AST (Abstract Syntax Tree) structure.
+   - `parseExpressionAt`: Parses a substring starting from a specific offset.
+   - `tokenizer`: Converts an input string into a sequence of tokens, supporting simple space, letter, and number tokenization. It returns an object with a `getToken` method to retrieve tokens one by one.
+   - `getLineInfo`: Computes the line and column information for a given offset within a string.
+   - `extend`: Allows creating an extended parser class by applying provided plugins.
+
+3. **Acorn Class**: Provides static methods that mirror those in the `Parser` class, exposing the core functionality of the parser to be exported and used elsewhere.
+
+4. **Exports**: The `Acorn` class is exported as the module's interface.
+
+Here's the rewritten code for the given explanation:
+
+```javascript
+// acorn.js
+
+class SyntaxError extends Error {
+  constructor(message, pos, loc) {
+    super(message);
+    this.pos = pos;
+    this.loc = loc;
+  }
+}
+
+class Parser {
+  static Options = {
+    ecmaVersion: 2020,
+    sourceType: "script",
+  };
+
+  static parse(input, options = {}) {
+    const opts = { ...Parser.Options, ...options };
+    console.log(`Parsing with ECMAScript version ${opts.ecmaVersion}...`);
+    if (input.includes("error")) {
+      throw new SyntaxError("Unexpected token", 5, { line: 1, column: 5 });
+    }
+    return { type: "Program", body: [{ type: "ExpressionStatement", expression: { type: "Literal", value: 1 } }] };
+  }
+
+  static parseExpressionAt(input, offset, options) {
+    return this.parse(input.slice(offset), options);
+  }
+
+  static tokenizer(input, options) {
+    let current = 0;
+    const tokens = [];
+
+    while (current < input.length) {
+      let char = input[current];
+
+      if (char === ' ') {
+        current++;
+        continue;
+      }
+
+      if (/[a-zA-Z]/.test(char)) {
+        let value = '';
+        while (/[a-zA-Z]/.test(char)) {
+          value += char;
+          char = input[++current];
+        }
+        tokens.push({ type: 'name', value });
+        continue;
+      }
+
+      if (/\d/.test(char)) {
+        let value = '';
+        while (/\d/.test(char)) {
+          value += char;
+          char = input[++current];
+        }
+        tokens.push({ type: 'number', value });
+        continue;
+      }
+
+      throw new Error(`Unexpected character: ${char}`);
+    }
+
+    tokens.push({ type: 'eof' });
+    return {
+      getToken: function () {
+        return tokens.shift();
+      }
+    };
+  }
+
+  static getLineInfo(input, offset) {
+    const lines = input.split('\n');
+    let pos = 0;
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      if (pos + line.length >= offset) {
+        return { line: i + 1, column: offset - pos };
+      }
+      pos += line.length + 1;
+    }
+  }
+
+  static extend(...plugins) {
+    class ExtendedParser extends Parser {
+      constructor() {
+        super();
+        plugins.forEach(plugin => plugin(this));
+      }
+    }
+    return ExtendedParser;
+  }
+}
+
+class Acorn {
+  static parse = Parser.parse;
+  static parseExpressionAt = Parser.parseExpressionAt;
+  static tokenizer = Parser.tokenizer;
+  static getLineInfo = Parser.getLineInfo;
+  static Parser = Parser;
+}
+
+module.exports = Acorn;
+```

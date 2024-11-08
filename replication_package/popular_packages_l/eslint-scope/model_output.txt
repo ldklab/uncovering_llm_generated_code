@@ -1,0 +1,75 @@
+The `eslint-scope` package provides a mechanism for analyzing the scope in JavaScript code, particularly ECMAScript. This package is a fork of the `escope` library and is used by ESLint to perform scope analysis. Here's a detailed explanation of its functionality and how it can be used:
+
+- **Installation**: The package can be installed via npm using the command `npm i eslint-scope --save`.
+
+- **Usage**: The library can be imported into a JavaScript environment using either ESM (`import * as eslintScope from 'eslint-scope';`) or CommonJS (`const eslintScope = require('eslint-scope');`).
+
+- **Scope Analysis**: The package works by taking an Abstract Syntax Tree (AST) that is compliant with ESTree standards and analyzing it to provide scope information. This is typically done through the `eslintScope.analyze()` method. The analysis results in a `ScopeManager` object that can be used to acquire scope information for various nodes in the AST.
+
+- **Options for Analysis**: 
+  - The `analyze` method takes an AST and an options object.
+  - Options you can specify include `ignoreEval`, `nodejsScope`, `impliedStrict`, `ecmaVersion`, `sourceType`, `childVisitorKeys`, and `fallback`.
+  - These options control aspects like whether to ignore `eval()` calls, whether to treat the code as a CommonJS module, the ECMAScript version, whether to assume strict mode, etc.
+
+- **Example**: An example is provided in the README to demonstrate how to parse code into an AST using `espree`, analyze the scope with `eslintScope`, and then traverse the AST using `estraverse`. During traversal, you can enter and leave functions to ascertain the current scope within the code.
+
+Here is a possible implementation of the core `eslint-scope` functionality in Node.js:
+
+```javascript
+// index.js
+const { EventEmitter } = require('events');
+
+class ScopeManager extends EventEmitter {
+  constructor(options) {
+    super();
+    this.options = options;
+    this.scopes = [];
+    this.currentScope = null;
+  }
+
+  acquire(node) {
+    return this.scopes.find(scope => scope.node === node) || null;
+  }
+
+  enterScope(node) {
+    const scope = { node, upper: this.currentScope };
+    this.scopes.push(scope);
+    this.currentScope = scope;
+  }
+
+  leaveScope() {
+    this.currentScope = this.currentScope.upper;
+  }
+
+  analyze(ast) {
+    const traverse = (node, parent) => {
+      // Emit events for entering and leaving scopes
+      this.enterScope(node);
+      for (let key in node) {
+        if (node[key] && typeof node[key] === 'object') {
+          traverse(node[key], node);
+        }
+      }
+      this.leaveScope();
+    };
+
+    traverse(ast, null);
+    return this;
+  }
+}
+
+function analyze(ast, options = {}) {
+  const manager = new ScopeManager(options);
+  return manager.analyze(ast);
+}
+
+module.exports = { analyze };
+```
+
+In this code module:
+
+- A `ScopeManager` class is implemented. It constructs a scope management tool with the given options and tracks the current scope during traversal of an AST.
+- The `acquire`, `enterScope`, and `leaveScope` functions manage the current scope and provide easy access to it for external tools.
+- The `analyze` function takes an AST and constructs a `ScopeManager`, which traverses the AST and emits appropriate scope events.
+
+Note: For a complete working system in a real-world scenario, you'd integrate this with a full JavaScript parser like `espree` for generating ASTs and `estraverse` for traversing them. Proper error handling and deeper integration are important when creating a utility to handle JavaScript source code analysis effectively.

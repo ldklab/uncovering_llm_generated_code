@@ -1,0 +1,83 @@
+The provided Node.js code is a utility library that aims to enhance the functionality of loading environment variables from a `.env` file by performing variable expansion. This is achieved with the dotenv and dotenv-expand functionality. Here's a breakdown of the code:
+
+1. **Dependencies**: 
+   - `path` and `fs` are native Node.js modules used for file operations and path manipulations.
+   - `dotenv` is a library that loads environment variables from a `.env` file into `process.env`.
+
+2. **Function: `expand`**:
+   - Takes an object `env` with properties `parsed` containing the key-value pairs of environment variables and `processEnv` for the current process environment.
+   - Uses a regular expression to identify and replace variables formatted as `${VAR_NAME}` or `$VAR_NAME` with their corresponding value from `process.env`. It also supports a default value using a `:-` separator in the syntax `${VAR_NAME:-defaultValue}`.
+
+3. **Function: `config`**:
+   - Configures environment variable loading by setting a default path to the `.env` file and allowing encoding overrides.
+   - Reads and parses the `.env` file using `dotenv.parse`.
+   - Calls the `expand` function to replace any environment variable placeholders in the parsed variables.
+   - Returns the processed environment variables with applied expansions, or an error if reading the `.env` file fails.
+
+4. **Exports**: 
+   - The module exports two main functions: `expand` and `config`.
+  
+5. **Self-invocation Block (Usage example)**:
+   - If the module is executed directly (as a standalone script rather than imported), it invokes `config()` and logs the expanded environment variables to the console.
+
+Here's how the code can be rewritten:
+
+```javascript
+// dotenv-expand.js
+
+const path = require('path');
+const fs = require('fs');
+const dotenv = require('dotenv');
+
+// Function to expand environment variable placeholders to actual values
+function expand(env) {
+  const regex = /\$(?:\{([^}]+)\}|([A-Z0-9_]+))/gi;
+  
+  const parseVariables = (str) => {
+    return str.replace(regex, (_, $1, $2) => {
+      if ($1) {
+        const [varName, defaultValue] = $1.split(':-');
+        return process.env[varName] || defaultValue || '';
+      }
+      return process.env[$2] || '';
+    });
+  };
+
+  if (env.parsed) {
+    for (const key in env.parsed) {
+      if (env.parsed.hasOwnProperty(key)) {
+        env.processEnv[key] = parseVariables(env.parsed[key]);
+      }
+    }
+  }
+  return env;
+}
+
+// Configuration function for loading and expanding environment variables
+function config(options = {}) {
+  const defaultOptions = {
+    path: path.resolve(process.cwd(), '.env'),
+    encoding: 'utf8',
+    processEnv: process.env
+  };
+  const configOptions = { ...defaultOptions, ...options };
+
+  try {
+    const fileContent = fs.readFileSync(configOptions.path, { encoding: configOptions.encoding });
+    const parsed = dotenv.parse(fileContent);
+    const env = { parsed, processEnv: configOptions.processEnv };
+
+    return expand(env);
+  } catch (error) {
+    return { error };
+  }
+}
+
+module.exports = { expand, config };
+
+// Usage example: if this file is executed directly, load and log .env configuration.
+if (require.main === module) {
+  const expandedEnv = config();
+  console.log(expandedEnv.processEnv);
+}
+```

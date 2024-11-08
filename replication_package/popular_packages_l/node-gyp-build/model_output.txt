@@ -1,0 +1,51 @@
+The `node-gyp-build` package is designed to simplify the process of building native modules in Node.js projects by supporting prebuilt binaries. It complements the `prebuildify` package to make it easier to distribute precompiled binaries for various platforms, thereby avoiding the need for end-users to compile source code during installation.
+
+### Key Features
+1. **Automatic Build/Prebuild Check**: It checks if a prebuilt binary exists before attempting to compile the native module, streamlining the installation process and reducing the need for platform-specific build tools and dependencies.
+
+2. **Installation Script Integration**: By including `node-gyp-build` in the `install` script of an npm package's `package.json`, you can ensure that it automatically tries to load prebuilt modules or compile if necessary.
+
+3. **Binding Loader**: Instead of using the traditional `bindings` module, it provides a way to load the correct binary automatically by supplying the directory path during module import.
+
+4. **Platform and Runtime Compatibility**: It supports different platforms, including specific flavors like `musl` for Alpine Linux, by checking prebuild files in the `prebuilds` directory relative to module path and execution path.
+
+5. **Manual Compilation Override**: Users can force the source code compilation by specifying the `--build-from-source` flag during installation if prebuilt binaries do not fit their needs or device specifications.
+
+6. **Prebuild Filename Tagging**: The package supports prebuild filename configurations that incorporate various tags (e.g., `libc`, `armv`) to ensure compatibility. These tags can be modified using environment variables if necessary.
+
+Below is an implementation of the `node-gyp-build` module in Node.js:
+
+```javascript
+// node-gyp-build/index.js
+
+const { existsSync } = require('fs');
+const { join } = require('path');
+
+function loadBinding(dir) {
+  const prebuildDir = join(dir, 'prebuilds', process.platform + '-' + process.arch);
+  const prebuildFiles = [
+    join(prebuildDir, `node-${process.versions.node}.node`),
+    join(prebuildDir, `abi-${process.versions.modules}.node`),
+    join(prebuildDir, `napi.node`)
+  ];
+
+  for (const file of prebuildFiles) {
+    if (existsSync(file)) {
+      return require(file);
+    }
+  }
+
+  // If no prebuilds are found, fall back to node-gyp rebuild
+  const { execSync } = require('child_process');
+  console.log('No prebuild found, compiling...');
+  execSync('node-gyp rebuild', { stdio: 'inherit', cwd: dir });
+
+  // Load compiled binary
+  const bindingFile = join(dir, 'build', 'Release', 'binding.node');
+  return require(bindingFile);
+}
+
+module.exports = loadBinding;
+```
+
+This module checks if precompiled binaries exist and attempts to load them. If they do not exist, it tries to compile the binary using `node-gyp`. This is the file you would require in your main code, providing it the directory path to use for resolving your native module binaries.

@@ -1,0 +1,58 @@
+The provided Node.js code defines a `SideChannel` class used to create an abstraction layer for storing data associated with keys that can either use a `WeakMap` or a regular object, depending on the environment support for `WeakMap`. 
+
+### Functionality:
+- **Constructor:** Initializes a `SideChannel` with a `WeakMap` if supported; otherwise, it uses a regular object.
+- **set(key, value):** Associates a value with a key. For `WeakMap`, it only accepts objects and throws a `TypeError` if the key is not an object. For regular objects, it attaches the value directly to the key object using a unique property.
+- **get(key):** Retrieves the value associated with the key. For `WeakMap`, it checks if the key is an object; otherwise, it uses the attached property.
+- **has(key):** Checks if a key has an associated value. Uses `WeakMap`'s built-in `has` method or checks for the presence of the unique property in regular objects.
+- **isObjectType(value):** Utility to check if a value can be used as a key in a `WeakMap`, which requires it to be an object or a function.
+
+### Possible Rewrite:
+```javascript
+// side-channel.js
+class SideChannel {
+  constructor() {
+    this.supportsWeakMap = typeof WeakMap !== 'undefined';
+    this.storage = this.supportsWeakMap ? new WeakMap() : Object.create(null);
+  }
+
+  set(key, value) {
+    if (this.supportsWeakMap) {
+      if (this.isValidWeakMapKey(key)) {
+        this.storage.set(key, value);
+      } else {
+        throw new TypeError('WeakMap keys must be objects or functions');
+      }
+    } else {
+      key.__side_channel_id__ = value;
+    }
+  }
+
+  get(key) {
+    if (this.supportsWeakMap) {
+      if (this.isValidWeakMapKey(key)) {
+        return this.storage.get(key);
+      } else {
+        return undefined;
+      }
+    } else {
+      return key.__side_channel_id__;
+    }
+  }
+
+  has(key) {
+    if (this.supportsWeakMap) {
+      return this.isValidWeakMapKey(key) ? this.storage.has(key) : false;
+    } else {
+      return typeof key === 'object' && key !== null && '__side_channel_id__' in key;
+    }
+  }
+
+  isValidWeakMapKey(value) {
+    const valueType = typeof value;
+    return value !== null && (valueType === 'object' || valueType === 'function');
+  }
+}
+
+module.exports = SideChannel;
+```

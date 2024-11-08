@@ -1,0 +1,84 @@
+The provided Node.js code defines a custom transform stream class named `Split2` that extends the `Transform` stream from Node.js's built-in `stream` module. Its primary function is to split incoming data into chunks based on a specified delimiter (matcher) and optionally transform each chunk using a provided mapper function. The class handles data streaming by buffering input data, splitting it according to the delimiter (defaulting to newline characters), and processing each resultant line. Within this process, it checks if each line exceeds a specified `maxLength` and either throws an error or skips that line, depending on the `skipOverflow` flag.
+
+Here's a breakdown of the key features:
+
+1. **Delimiter Matching**: It splits the data based on a customizable matcher, which defaults to a newline regex `/\r?\n/`.
+
+2. **Line Transformation**: Lines can be transformed using a `mapper` function before being pushed to the readable side.
+
+3. **Buffer Management**: The class maintains a buffer to handle cases where the input data doesn't contain the matcher.
+
+4. **Line Length Management**: Lines that exceed the specified `maxLength` can either trigger an error or be skipped over, based on the `skipOverflow` flag.
+
+5. **Stream Finalization**: Implements `_flush()` to process any remaining data in the buffer at the end of the input stream.
+
+6. **Custom Options**: Accepts stream options, including `maxLength` and `skipOverflow`, and indicates whether the output is in object mode based on whether a mapper function is provided.
+
+Finally, it provides a factory function to create instances of the `Split2` stream, passing in the desired matcher, mapper, and options.
+
+Here is the rewritten version of the code with the same functionality:
+
+```javascript
+const { Transform } = require('stream');
+
+class SplitStream extends Transform {
+  constructor(delimiter = /\r?\n/, transformFunc, opts = {}) {
+    super({ readableObjectMode: !!transformFunc, ...opts });
+    this.delimiter = delimiter;
+    this.transformFunc = transformFunc;
+    this.buffer = '';
+    this.maxLen = opts.maxLength;
+    this.skipLongLines = opts.skipOverflow || false;
+  }
+
+  _transform(chunk, encoding, callback) {
+    this.buffer += chunk.toString();
+
+    let parts = this.buffer.split(this.delimiter);
+    this.buffer = parts.pop();
+
+    for (let part of parts) {
+      if (this.maxLen && part.length > this.maxLen) {
+        if (!this.skipLongLines) return callback(new Error('Line exceeded maxLength'));
+        continue;
+      }
+      
+      if (this.transformFunc) {
+        try {
+          part = this.transformFunc(part);
+        } catch (e) {
+          return callback(e);
+        }
+      }
+
+      this.push(part);
+    }
+
+    callback();
+  }
+
+  _flush(callback) {
+    if (this.buffer) {
+      let line = this.buffer;
+      if (this.maxLen && line.length > this.maxLen) {
+        if (!this.skipLongLines) return callback(new Error('Line exceeded maxLength'));
+      } else {
+        try {
+          if (this.transformFunc) line = this.transformFunc(line);
+          this.push(line);
+        } catch (e) {
+          return callback(e);
+        }
+      }
+    }
+    callback();
+  }
+  
+  destroy() {
+    this.emit('close');
+    super.destroy();
+  }
+}
+
+module.exports = (delimiter, transformFunc, opts) => new SplitStream(delimiter, transformFunc, opts);
+```

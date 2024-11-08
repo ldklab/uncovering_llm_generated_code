@@ -1,0 +1,140 @@
+The Chokidar library is a file watching utility for Node.js that offers a more efficient and feature-rich alternative to the native `fs.watch` and `fs.watchFile` functions. Below is a detailed explanation of Chokidar's capabilities and features, followed by the implementation code for the Chokidar library as described in the README.
+
+### Functionality Overview
+
+1. **Event Reporting**: 
+    - Provides accurate events with filenames, avoiding duplicate events.
+    - It reports meaningful events like `add`, `change`, and `unlink` instead of `rename`.
+    
+2. **Writing Operations Support**:
+    - **Atomic Writes**: Supports atomic file writes that some editors use, controlled by the `atomic` option.
+    - **Chunked Writes**: Supports chunked file writes using `awaitWriteFinish` to emit events only after write operations are completed.
+
+3. **File and Directory Monitoring**:
+    - Filters changes based on file types, such as ignoring or watching specific extensions or files.
+    - Supports recursive watching of directories (optionally with depth control).
+
+4. **Additional Features**:
+    - Handles symbolic links.
+    - Provides a persistent watching feature if needed.
+    - Offers a performance-improving option by using `fs.watch` which avoids polling by default.
+
+5. **Options**:
+    - Includes options for path filtering, following symbolic links, using polling, error handling, and performance adjustments like polling interval.
+    
+6. **Events and Methods**:
+    - Supports events like `add`, `change`, `unlink`, and `ready`.
+    - Offers methods for adding, unwatching paths, closing the watcher, and retrieving watched paths.
+
+7. **Setup Options**:
+    - You can customize options like ignored files, whether to follow symlinks, use polling, and more.
+
+8. **Command Line Interface (CLI)**:
+    - Third-party support for CLI tools like chokidar-cli to watch files and trigger scripts on changes.
+
+9. **Troubleshooting**:
+    - Provides solutions for common platform-specific errors and issues like running out of file handles.
+
+### Node.js Package Implementation
+
+```javascript
+import { watch, stat } from 'fs';
+import { promises as fsPromises } from 'fs';
+
+class FSWatcher {
+  constructor(options) {
+    this.options = options || {};
+    this.watchedPaths = new Map();
+    this.listeners = new Map();
+  }
+
+  watchPath(path) {
+    if (!this.watchedPaths.has(path)) {
+      const watcher = watch(path, { recursive: true }, (eventType, filename) => {
+        this.handleEvent(eventType, filename);
+      });
+
+      this.watchedPaths.set(path, watcher);
+    }
+  }
+
+  async handleEvent(eventType, filename) {
+    const path = `${process.cwd()}/${filename}`;
+    try {
+      const stats = await fsPromises.stat(path);
+      if (eventType === 'rename' && !stats.isFile()) {
+        this.emit('unlink', path);
+      } else if (eventType === 'change') {
+        this.emit('change', path, stats);
+      }
+    } catch {
+      this.emit('unlink', path);
+    }
+  }
+
+  add(path) {
+    const paths = Array.isArray(path) ? path : [path];
+    for (const singlePath of paths) {
+      this.watchPath(singlePath);
+    }
+  }
+
+  on(event, callback) {
+    if (!this.listeners.has(event)) {
+      this.listeners.set(event, []);
+    }
+    this.listeners.get(event).push(callback);
+  }
+
+  emit(event, ...args) {
+    if (this.listeners.has(event)) {
+      for (const callback of this.listeners.get(event)) {
+        callback(...args);
+      }
+    }
+  }
+
+  unwatch(path) {
+    const paths = Array.isArray(path) ? path : [path];
+    for (const singlePath of paths) {
+      if (this.watchedPaths.has(singlePath)) {
+        this.watchedPaths.get(singlePath).close();
+        this.watchedPaths.delete(singlePath);
+      }
+    }
+  }
+
+  close() {
+    for (const [path, watcher] of this.watchedPaths) {
+      watcher.close();
+    }
+    this.watchedPaths.clear();
+  }
+
+  getWatched() {
+    const watched = {};
+    this.watchedPaths.forEach((watcher, path) => {
+      watched[path] = [ path ];
+    });
+    return watched;
+  }
+}
+
+function chokidarWatch(paths, options) {
+  const watcher = new FSWatcher(options);
+  watcher.add(paths);
+  return watcher;
+}
+
+export default chokidarWatch;
+
+// How to use:
+const watcher = chokidarWatch('.', {
+  ignored: (path, stats) => stats?.isFile() && !path.endsWith('.js'),
+  persistent: true
+});
+
+watcher.on('add', path => console.log(`File ${path} has been added`));
+watcher.on('change', (path, stats) => console.log(`File ${path} changed size to ${stats.size}`));
+watcher.on('unlink', path => console.log(`File ${path} has been removed`));
+```

@@ -1,0 +1,72 @@
+The provided Node.js code module introduces a custom implementation of the `realpath` and `realpathSync` functions, overriding the default behaviors provided by the Node.js `fs` (file system) module. The purpose of these custom functions is to handle specific errors that might occur in older versions of Node.js (version 5 and below), where the default `realpath` and `realpathSync` may throw errors like `ELOOP`, `ENOMEM`, or `ENAMETOOLONG`. In such cases, the code delegates to an implementation provided by another module (`old.js`). The code also includes functions to replace the default `fs.realpath` and `fs.realpathSync` functions with these custom implementations (`monkeypatch`) and restore the original functions (`unmonkeypatch`).
+
+Here’s a possible rewrite of the Node.js code:
+
+```javascript
+const fs = require('fs');
+const old = require('./old.js');
+const originalRealpath = fs.realpath;
+const originalRealpathSync = fs.realpathSync;
+const version = process.version;
+const isOldVersion = /^v[0-5]\./.test(version);
+
+function handleRealpathError(err) {
+  return err && err.syscall === 'realpath' && (
+    err.code === 'ELOOP' ||
+    err.code === 'ENOMEM' ||
+    err.code === 'ENAMETOOLONG'
+  );
+}
+
+function realpath(path, cache, callback) {
+  if (isOldVersion) {
+    return originalRealpath(path, cache, callback);
+  }
+
+  if (typeof cache === 'function') {
+    callback = cache;
+    cache = null;
+  }
+
+  originalRealpath(path, cache, (err, result) => {
+    if (handleRealpathError(err)) {
+      old.realpath(path, cache, callback);
+    } else {
+      callback(err, result);
+    }
+  });
+}
+
+function realpathSync(path, cache) {
+  if (isOldVersion) {
+    return originalRealpathSync(path, cache);
+  }
+
+  try {
+    return originalRealpathSync(path, cache);
+  } catch (err) {
+    if (handleRealpathError(err)) {
+      return old.realpathSync(path, cache);
+    } else {
+      throw err;
+    }
+  }
+}
+
+function monkeypatch() {
+  fs.realpath = realpath;
+  fs.realpathSync = realpathSync;
+}
+
+function unmonkeypatch() {
+  fs.realpath = originalRealpath;
+  fs.realpathSync = originalRealpathSync;
+}
+
+module.exports = {
+  realpath,
+  realpathSync,
+  monkeypatch,
+  unmonkeypatch
+};
+```

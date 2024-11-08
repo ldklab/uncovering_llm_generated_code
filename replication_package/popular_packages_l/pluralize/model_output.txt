@@ -1,0 +1,122 @@
+The `pluralize` Node.js package is a utility that allows you to pluralize and singularize English words based on predefined rules. It can also support custom rules for handling exceptions and irregular nouns. Here's a breakdown of its functionality:
+
+1. **Installation**: 
+   - This package can be installed using npm, yarn, or bower.
+
+2. **Usage**:
+   - The package exports a function `pluralize` which can take up to three arguments:
+     - `word` (string): The word to pluralize or singularize.
+     - `count` (optional number): If provided, the function will return the singular form of the word only when the count is 1.
+     - `inclusive` (optional boolean): If true, returns the count prefixed to the word (e.g., "3 ducks").
+
+3. **Rule Extensions**:
+   - **Add Plural Rule**: Add custom pluralization rules using `addPluralRule` by providing a regular expression pattern and a replacement.
+   - **Add Singular Rule**: Add singularization rules using `addSingularRule`.
+   - **Irregular Nouns**: Specify irregular noun forms with `addIrregularRule`.
+   - **Uncountable Nouns**: Define nouns that do not have a singular or plural form with `addUncountableRule`.
+
+4. **Inspection**:
+   - Use `isPlural` and `isSingular` methods to determine if a given word is plural or singular respectively.
+
+5. **Examples**:
+   - Basic usage includes pluralizing or singularizing words and handling both regular and custom cases through various rules and settings.
+
+Below is the code implementation of the described functionality:
+
+```javascript
+(function(root, factory) {
+  if (typeof exports === 'object') {
+    module.exports = factory();
+  } else if (typeof define === 'function' && define.amd) {
+    define(factory);
+  } else {
+    root.pluralize = factory();
+  }
+}(this, function() {
+  var pluralRules = [];
+  var singularRules = [];
+  var irregularRules = {};
+  var uncountableRules = {};
+
+  function addPluralRule(regex, replacement) {
+    pluralRules.push([regex, replacement]);
+  }
+  
+  function addSingularRule(regex, replacement) {
+    singularRules.push([regex, replacement]);
+  }
+
+  function addIrregularRule(singular, plural) {
+    irregularRules[singular.toLowerCase()] = plural.toLowerCase();
+    irregularRules[plural.toLowerCase()] = singular.toLowerCase();
+  }
+
+  function addUncountableRule(word) {
+    uncountableRules[word.toLowerCase()] = true;
+  }
+
+  function isUncountable(word) {
+    return !!uncountableRules[word.toLowerCase()];
+  }
+
+  function pluralize(word, count, inclusive) {
+    if (count != null && count === 1) {
+      return inclusive ? `${count} ${singular(word)}` : singular(word);
+    }
+
+    var pluralWord = isUncountable(word) ? word : plural(word);
+    return inclusive ? `${count || 0} ${pluralWord}` : pluralWord;
+  }
+
+  function plural(word) {
+    if(isUncountable(word)) return word;
+    for (var rule in irregularRules) {
+      if (word.toLowerCase() === rule) return irregularRules[rule];
+    }
+    return applyRules(word, pluralRules);
+  }
+
+  function singular(word) {
+    if(isUncountable(word)) return word;
+    for (var rule in irregularRules) {
+      if (word.toLowerCase() === rule) return irregularRules[rule];
+    }
+    return applyRules(word, singularRules);
+  }
+
+  function applyRules(word, rules) {
+    var lower = word.toLowerCase();
+    for (var i = 0; i < rules.length; i++) {
+      if (rules[i][0].test(lower)) {
+        return word.replace(rules[i][0], rules[i][1]);
+      }
+    }
+    return word;
+  }
+
+  function isPlural(word) {
+    return plural(word) === word && !isSingular(word);
+  }
+
+  function isSingular(word) {
+    return singular(word) === word && !isPlural(word);
+  }
+  
+  // Predefined rule examples. Users can extend with addPluralRule, etc.
+  addPluralRule(/$/, 's');
+  addPluralRule(/s$/i, 's');
+  addSingularRule(/s$/i, '');
+
+  return {
+    pluralize,
+    plural,
+    singular,
+    addPluralRule,
+    addSingularRule,
+    addIrregularRule,
+    addUncountableRule,
+    isPlural,
+    isSingular
+  };
+}));
+```

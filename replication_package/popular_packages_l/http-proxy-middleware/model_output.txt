@@ -1,0 +1,148 @@
+The `http-proxy-middleware` Node.js package is designed to proxy HTTP requests to another server and manipulate these requests and responses seamlessly. This middleware is ideal for use with server frameworks like Express, Connect, and more. Here's how the main functionality works based on the documentation:
+
+1. **Proxy Requests**: The package allows you to create middleware that proxies incoming requests to a different server or endpoint. For example, requests coming to your server at `/api` can be forwarded to `http://www.example.org/api`.
+
+2. **Configuration Options**:
+   - **`target`**: The endpoint to which the requests will be proxied.
+   - **`changeOrigin`**: Alters the origin of the host header to the target URL. Useful for name-based virtual hosting.
+   - **`pathRewrite`**: Modify the request paths before they hit the target server.
+   - **`router`**: Allows dynamic routing based on request parameters.
+   - Additional options can control behavior such as SSL configurations, protocol handling, path settings, and more.
+
+3. **WebSocket Support**: Handles both regular HTTP requests and WebSocket connections, with configurations to proxy upgrades.
+
+4. **Request and Response Interception**:
+   - **Intercept Requests**: You can modify the headers or data of outgoing requests before they are sent to the target.
+   - **Intercept Responses**: You can also modify incoming responses before they are sent back to clients.
+
+5. **Middleware Integration**: Easily integrate with other middleware-based Node.js frameworks by mounting it on specific routes.
+
+6. **Event Handling**: The package provides hooks to handle events such as `proxyReq`, `proxyRes`, and errors for more customized behavior.
+
+7. **Custom Plugins**: Users can add plugins to extend or modify default behaviors further. These plugins can manipulate request/response data or add logging.
+
+Here’s how you would implement a basic proxy using this package in a Node.js application:
+
+```javascript
+// file: http-proxy-middleware.js
+const http = require('http');
+const httpProxy = require('http-proxy');
+
+class HttpProxyMiddleware {
+  /**
+   * Create a new proxy middleware.
+   * @param {Object} options The configuration options for the proxy.
+   */
+  constructor(options) {
+    this.options = options;
+    this.proxy = httpProxy.createProxyServer({});
+    this.bindEvents();
+  }
+
+  /**
+   * Bind events to the proxy to allow for custom behavior.
+   */
+  bindEvents() {
+    const { on } = this.options;
+    if (on) {
+      Object.keys(on).forEach(event => {
+        this.proxy.on(event, on[event]);
+      });
+    }
+  }
+
+  /**
+   * Middleware function to handle requests.
+   * @param {http.IncomingMessage} req The incoming HTTP request.
+   * @param {http.ServerResponse} res The HTTP response object.
+   * @param {Function} next The next middleware function.
+   */
+  middleware(req, res, next) {
+    const { target, changeOrigin } = this.options;
+    
+    req.url = req.originalUrl || req.url; // Ensure original URL is retained
+    const options = { target, changeOrigin };
+
+    // Use path rewrites if specified
+    if (this.options.pathRewrite) {
+      req.url = req.url.replace(new RegExp(Object.keys(this.options.pathRewrite).join('|')), (matched) => {
+        return this.options.pathRewrite[matched];
+      });
+    }
+
+    this.proxy.web(req, res, options, (err) => {
+      if (err) {
+        if (this.options.onError) {
+          return this.options.onError(err, req, res, target);
+        }
+        res.statusCode = 500;
+        res.end('Proxy error');
+      }
+    });
+  }
+
+  /**
+   * Upgrade handler for WebSocket support.
+   * @param {http.IncomingMessage} req The incoming HTTP request.
+   * @param {Socket} socket The network socket between the server and client.
+   * @param {Buffer} head The first packet of the upgraded stream.
+   */
+  upgrade(req, socket, head) {
+    const { target, changeOrigin } = this.options;
+    this.proxy.ws(req, socket, head, { target, changeOrigin });
+  }
+}
+
+/**
+ * Factory function to create a proxy middleware.
+ * @param {Object} options The configuration options for the proxy.
+ * @returns Middleware function to be used in server applications.
+ */
+function createProxyMiddleware(options) {
+  const proxyMiddleware = new HttpProxyMiddleware(options);
+  return (req, res, next) => {
+    proxyMiddleware.middleware(req, res, next);
+  };
+}
+
+module.exports = { createProxyMiddleware };
+```
+
+Usage with Express would look like:
+
+```javascript
+// file: server.js
+const express = require('express');
+const { createProxyMiddleware } = require('./http-proxy-middleware');
+
+const app = express();
+
+const proxy = createProxyMiddleware({
+  target: 'http://www.example.org/api',
+  changeOrigin: true,
+  pathRewrite: {
+    '^/api': '', // removes `/api` prefix when forwarding requests
+  },
+  // event handlers for customization
+  on: {
+    error: (err, req, res, target) => {
+      console.error(err);
+      res.status(500).send('Proxy error');
+    },
+    proxyReq: (proxyReq, req, res) => {
+      // modify request before sending
+    },
+    proxyRes: (proxyRes, req, res) => {
+      // modify response before sending to client
+    },
+  },
+});
+
+app.use('/api', proxy);
+
+app.listen(3000, () => {
+  console.log('Server running on http://localhost:3000');
+});
+```
+
+This code block demonstrates a complete setup of the package’s primary features, including error handling, basic transformation, and WebSocket support.

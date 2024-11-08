@@ -1,0 +1,176 @@
+The given Node.js JavaScript code defines a module that manages a cache system for tracking changes in files. This system allows for detection of changes in files based on either file metadata (mtime and size) or a checksum (MD5 hash). The module uses the following methods:
+
+1. **createFromFile**: Initializes the cache using a file's path, separating the filename and its directory.
+  
+2. **create**: Core function to set up the cache environment, based on specified `cacheId`, path, and whether to use checksums.
+  
+3. **removeNotFoundFiles**: Removes entries from the cache if the files are no longer present in the filesystem.
+  
+4. **getHash**: Computes the MD5 hash of a file's content.
+  
+5. **hasFileChanged**: Checks if a particular file has changed since the last reconciliation.
+
+6. **analyzeFiles**: Compares a list of files against the cache, categorizing them into changed, not changed, or not found.
+  
+7. **getFileDescriptor**: Retrieves file metadata and determines changes based on the selected method (checksum or metadata).
+
+8. **getUpdatedFiles**: Gets a list of files that have been updated since the last check.
+
+9. **normalizeEntries**: Normalizes entries using their file descriptors.
+
+10. **removeEntry**: Deletes a cache entry to ensure a file is treated as modified on the next run.
+  
+11. **deleteCacheFile**: Deletes the cache file from the disk.
+  
+12. **destroy**: Clears in-memory cache and destroys the cache file.
+  
+13. **reconcile**: Synchronizes current file states with the cache, adding new or updated files and optionally removing obsolete entries.
+
+Here’s a rewritten version of the original code:
+
+```javascript
+const path = require('path');
+const crypto = require('crypto');
+const fs = require('fs');
+const flatCache = require('flat-cache');
+
+module.exports = {
+  createFromFile(filePath, useChecksum) {
+    const fname = path.basename(filePath);
+    const dir = path.dirname(filePath);
+    return this.create(fname, dir, useChecksum);
+  },
+
+  create(cacheId, _path, useChecksum) {
+    const cache = flatCache.load(cacheId, _path);
+    let normalizedEntries = {};
+
+    function removeNotFoundFiles() {
+      const cachedEntries = cache.keys();
+      cachedEntries.forEach(function remover(fPath) {
+        try {
+          fs.statSync(fPath);
+        } catch (err) {
+          if (err.code === 'ENOENT') {
+            cache.removeKey(fPath);
+          }
+        }
+      });
+    }
+
+    removeNotFoundFiles();
+
+    return {
+      cache,
+      getHash(buffer) {
+        return crypto.createHash('md5').update(buffer).digest('hex');
+      },
+
+      hasFileChanged(file) {
+        return this.getFileDescriptor(file).changed;
+      },
+
+      analyzeFiles(files = []) {
+        const res = {
+          changedFiles: [],
+          notFoundFiles: [],
+          notChangedFiles: [],
+        };
+
+        this.normalizeEntries(files).forEach((entry) => {
+          if (entry.changed) res.changedFiles.push(entry.key);
+          else if (entry.notFound) res.notFoundFiles.push(entry.key);
+          else res.notChangedFiles.push(entry.key);
+        });
+
+        return res;
+      },
+
+      getFileDescriptor(file) {
+        try {
+          const fstat = fs.statSync(file);
+          return useChecksum ? this._getFileDescriptorUsingChecksum(file) : this._getFileDescriptorUsingMtimeAndSize(file, fstat);
+        } catch (ex) {
+          this.removeEntry(file);
+          return { key: file, notFound: true, err: ex };
+        }
+      },
+
+      _getFileDescriptorUsingMtimeAndSize(file, fstat) {
+        const meta = cache.getKey(file) || {};
+        const cSize = fstat.size;
+        const cTime = fstat.mtime.getTime();
+        
+        const changed = !meta.mtime || cTime !== meta.mtime || cSize !== meta.size;
+        const entry = { key: file, changed, meta: { size: cSize, mtime: cTime } };
+        normalizedEntries[file] = entry;
+        return entry;
+      },
+
+      _getFileDescriptorUsingChecksum(file) {
+        let contentBuffer = '';
+        try {
+          contentBuffer = fs.readFileSync(file);
+        } catch {}
+        
+        const hash = this.getHash(contentBuffer);
+        const meta = cache.getKey(file) || {};
+        const changed = !meta.hash || hash !== meta.hash;
+        const entry = { key: file, changed, meta: { hash: hash } };
+        normalizedEntries[file] = entry;
+        return entry;
+      },
+
+      getUpdatedFiles(files = []) {
+        return this.normalizeEntries(files)
+          .filter(entry => entry.changed)
+          .map(entry => entry.key);
+      },
+
+      normalizeEntries(files = []) {
+        return files.map(file => this.getFileDescriptor(file));
+      },
+
+      removeEntry(entryName) {
+        delete normalizedEntries[entryName];
+        cache.removeKey(entryName);
+      },
+
+      deleteCacheFile() {
+        cache.removeCacheFile();
+      },
+
+      destroy() {
+        normalizedEntries = {};
+        cache.destroy();
+      },
+
+      _getMetaForFileUsingCheckSum(cacheEntry) {
+        const contentBuffer = fs.readFileSync(cacheEntry.key);
+        const hash = this.getHash(contentBuffer);
+        return { ...cacheEntry.meta, hash };
+      },
+
+      _getMetaForFileUsingMtimeAndSize(cacheEntry) {
+        const stat = fs.statSync(cacheEntry.key);
+        return { ...cacheEntry.meta, size: stat.size, mtime: stat.mtime.getTime() };
+      },
+
+      reconcile(noPrune = true) {
+        removeNotFoundFiles();
+        Object.entries(normalizedEntries).forEach(([entryName, cacheEntry]) => {
+          try {
+            const meta = useChecksum
+              ? this._getMetaForFileUsingCheckSum(cacheEntry)
+              : this._getMetaForFileUsingMtimeAndSize(cacheEntry);
+            cache.setKey(entryName, meta);
+          } catch (err) {
+            if (err.code !== 'ENOENT') throw err;
+          }
+        });
+        cache.save(noPrune);
+      },
+    };
+  },
+};
+```
