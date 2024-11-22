@@ -17,6 +17,7 @@ from sklearn.metrics import roc_curve, auc
 import matplotlib.pyplot as plt
 from tqdm import tqdm  # Import tqdm for the progress bar
 import pandas as pd
+import logging
 
 
 from transformers import AutoModel, AutoTokenizer
@@ -131,18 +132,39 @@ def scoring_process(strategy='simcse', data=[]):
     plt.show()
 
 
-detector_llm = directory_path.split('/')[-1]
-df = pd.DataFrame(columns=["detector_llm", "dataset", "simcse_auc_score"])
+if __name__ == "__main__":
+      
+    # Directory containing the JSON files
+    directory_path = 'output/rewrite/gemini_flash_12t'
+    detector_llm = directory_path.split('/')[-1]
 
-for item in data1:
-    auc_score = scoring_process(strategy='simcse', data=item['data'])
-    row = [
-        {"detector_llm": detector_llm,
-         "dataset": '_'.join(item['dataset'].split('_')[1:3]), 
-         "simcse_auc_score": auc_score}
-    ]
+    print(f"Start working on {detector_llm} directory datasets.")
 
-df.to_csv("output.csv", index=False)
+    # Initialize an empty list to store the combined data
+    data1 = []
+
+    # Iterate over all JSON files in the directory
+    for filename in os.listdir(directory_path):
+        if filename.endswith('.json'):  # Process only JSON files
+            file_path = os.path.join(directory_path, filename)
+            # print(file_path)
+            with open(file_path, 'r') as file:
+                file_data = json.load(file)  # Load JSON content
+                data1.append({'data': file_data, 
+                            'dataset': file_path.split('/')[-1].split('.')[0]})  # Add content to 
+    
+    detector_llm = directory_path.split('/')[-1]
+    rows = []
+    for item in data1:
+        print(f"Process on {item['dataset']} dataset...")
+        auc_score = scoring_process(strategy='simcse', data=item['data'])
+        row = {"dataset": '_'.join(item['dataset'].split('_')[1:3]), 
+            f"AUC_{detector_llm}": f"{auc_score:.2f}"}
+        rows.append(row)
+
+    df = pd.DataFrame(rows)
+    print(df)
+    df.to_csv(f"output/{detector_llm}_output.csv", index=False)
 
 
 
