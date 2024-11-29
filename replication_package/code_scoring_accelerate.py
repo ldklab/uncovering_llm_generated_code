@@ -1,7 +1,6 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-
 import subprocess
 import os
 import TSED
@@ -9,8 +8,6 @@ import torch
 from scipy.spatial.distance import cosine
 import tiktoken
 enc = tiktoken.encoding_for_model("gpt-4")
-import os
-from openai import OpenAI
 import json
 import numpy as np
 from sklearn.metrics import roc_curve, auc, accuracy_score, precision_score, recall_score
@@ -19,77 +16,86 @@ from tqdm import tqdm  # Import tqdm for the progress bar
 import pandas as pd
 import logging
 import argparse
-
-
-
 from transformers import AutoModel, AutoTokenizer
-# Import our models. The package will take care of downloading the models automatically
+
+# Set the device to GPU if available
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+print(f"Using device: {device}")
+
+# Load the tokenizer and model, and move the model to the device
 tokenizer = AutoTokenizer.from_pretrained("princeton-nlp/sup-simcse-roberta-large")
-model = AutoModel.from_pretrained("princeton-nlp/sup-simcse-roberta-large")
-
-
+model = AutoModel.from_pretrained("princeton-nlp/sup-simcse-roberta-large").to(device)
+model.eval()  # Set model to evaluation mode
 
 def string_similarity(first, second):
-	output = subprocess.check_output(["node", "string-similarity-wrapper.js", first, second], universal_newlines=True)
-	
-	score = float(output.split(" ")[-1])
-	return score
+    output = subprocess.check_output(["node", "string-similarity-wrapper.js", first, second], universal_newlines=True)
+    score = float(output.split(" ")[-1])
+    return score
 
-def classify_package(item, num_rewrites, strategy):
-	texts = [item['code']]
-	texts.extend(item['rewrite'])
+def classify_package_batch(batch_items, strategy='simcse'):
+    batch_labels = []
+    batch_avg_scores = []
 
-	sim_scores = []
+    if strategy == 'simcse':
+        texts = []
+        code_indices = []
+        rewrite_indices = []
 
-	if strategy == 'simcse':
-		inputs = tokenizer(texts, padding=True, truncation=True, return_tensors="pt")
-		with torch.no_grad():
-			embeddings = model(**inputs, output_hidden_states=True, return_dict=True).pooler_output
+        for idx, item in enumerate(batch_items):
+            # Get the label (1 for machine, 0 for human)
+            label = 1 if item['writer'] == 'machine' else 0
+            batch_labels.append(label)
 
-		for i in range(num_rewrites):
-			sim = 1 - cosine(embeddings[0], embeddings[i+1])
-			sim_scores.append(sim)
+            code_index = len(texts)
+            texts.append(item['code'])
+            code_indices.append(code_index)
+            rewrite_indices_item = []
+            for rewrite in item['rewrite']:
+                rewrite_index = len(texts)
+                texts.append(rewrite)
+                rewrite_indices_item.append(rewrite_index)
+            rewrite_indices.append(rewrite_indices_item)
 
-	elif strategy == 'string':
-		for i in range(num_rewrites):
-			sim = string_similarity(texts[0], texts[i+1])
-			sim_scores.append(sim)
+        # Tokenize all texts
+        inputs = tokenizer(texts, padding=True, truncation=True, return_tensors="pt")
+        inputs = inputs.to(device)
+        with torch.no_grad():
+            embeddings = model(**inputs, output_hidden_states=True, return_dict=True).pooler_output
 
-	elif strategy == 'tsed':
-		for i in range(num_rewrites):
-			sim = TSED.Calculate("python", texts[0], texts[i+1], 1.0, 0.8, 1.0)
-			sim_scores.append(sim)
-	else:
-		print('ERROR. Invalid Strategy: "' + strategy + '"')
-		return []
+        for i in range(len(batch_items)):
+            code_emb = embeddings[code_indices[i]]
+            rewrite_embs = embeddings[rewrite_indices[i]]  # Shape: [num_rewrites_i, hidden_size]
+            if rewrite_embs.size(0) == 0:
+                # Handle case with no rewrites
+                avg_score = 0.0
+            else:
+                sim_scores = torch.nn.functional.cosine_similarity(
+                    code_emb.unsqueeze(0).expand(rewrite_embs.size(0), -1),
+                    rewrite_embs, dim=1
+                )
+                avg_score = sim_scores.mean().item()
+            batch_avg_scores.append(avg_score)
 
-	return sim_scores
+    else:
+        # For 'string' and 'tsed' strategies, batch processing is not implemented
+        print('ERROR. Invalid Strategy or not implemented for batch processing: "' + strategy + '"')
+        return [], []
 
+    return batch_labels, batch_avg_scores
 
-def scoring_process(strategy='simcse', data=[]):
+def scoring_process(strategy='simcse', data=[], batch_size=32):
     # Initialize lists to collect labels and scores
     labels = []
     scores = []
 
-    # Choose the strategy for similarity computation
-    strategy = strategy  # You can also use 'string' or 'tsed'
-
-    # Iterate over the dataset with a progress bar
-    for item in tqdm(data, desc="Processing items"):
-        # Get the label (1 for machine, 0 for human)
-        label = 1 if item['writer'] == 'machine' else 0
-        labels.append(label)
-        
-        # Compute similarity scores using classify_package
-        num_rewrites = len(item['rewrite'])
-        sim_scores = classify_package(item, num_rewrites, strategy)
-        
-        # Average the similarity scores as per the formula
-        avg_score = np.mean(sim_scores)
-        scores.append(avg_score)
-        
-        # if item['id'] > 10:
-        #     break
+    # Process data in batches
+    num_items = len(data)
+    for batch_start in tqdm(range(0, num_items, batch_size), desc="Processing items in batches"):
+        batch_items = data[batch_start:batch_start+batch_size]
+        # Process batch_items
+        batch_labels, batch_scores = classify_package_batch(batch_items, strategy)
+        labels.extend(batch_labels)
+        scores.extend(batch_scores)
 
     # Convert lists to numpy arrays for compatibility
     labels = np.array(labels)
@@ -98,7 +104,7 @@ def scoring_process(strategy='simcse', data=[]):
     # Compute ROC curve and AUC
     fpr, tpr, thresholds = roc_curve(labels, scores)
     roc_auc = auc(fpr, tpr)
-    
+
     # Find the optimal threshold (Youden's J statistic)
     J = tpr - fpr
     ix = np.argmax(J)
@@ -107,15 +113,13 @@ def scoring_process(strategy='simcse', data=[]):
 
     # Binarize the scores using the optimal threshold
     predicted_labels = (scores >= optimal_threshold).astype(int)
-    
+
     # Compute accuracy, precision, and recall
     accuracy = accuracy_score(labels, predicted_labels)
     precision = precision_score(labels, predicted_labels)
     recall = recall_score(labels, predicted_labels)
-    
+
     return roc_auc, accuracy, precision, recall
-
-
 
 if __name__ == "__main__":
     # Parse command-line arguments
@@ -125,7 +129,7 @@ if __name__ == "__main__":
     parser.add_argument('--output_folder', type=str, required=True,
                         help='Output folder to save CSV results.')
     args = parser.parse_args()
-    
+
     # Directory containing the JSON files
     directory_path = args.input_folder
     detector_llm = os.path.basename(directory_path)
@@ -150,7 +154,7 @@ if __name__ == "__main__":
     for item in data_list:
         print(f"Processing dataset '{item['dataset']}'...")
         # Unpack the metrics returned by scoring_process
-        roc_auc, accuracy, precision, recall = scoring_process(strategy='simcse', data=item['data'])
+        roc_auc, accuracy, precision, recall = scoring_process(strategy='simcse', data=item['data'], batch_size=32)
         
         # Format the numbers to 2 decimal places
         roc_auc_str = f"{roc_auc:.2f}"
