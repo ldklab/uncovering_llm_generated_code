@@ -36,6 +36,8 @@ def classify_package_batch(batch_items, strategy='simcse'):
     batch_labels = []
     batch_avg_scores = []
 
+    
+    
     if strategy == 'simcse':
         texts = []
         code_indices = []
@@ -55,6 +57,8 @@ def classify_package_batch(batch_items, strategy='simcse'):
                 texts.append(rewrite)
                 rewrite_indices_item.append(rewrite_index)
             rewrite_indices.append(rewrite_indices_item)
+            
+        
 
         # Tokenize all texts
         inputs = tokenizer(texts, padding=True, truncation=True, return_tensors="pt")
@@ -69,6 +73,9 @@ def classify_package_batch(batch_items, strategy='simcse'):
                 # Handle case with no rewrites
                 avg_score = 0.0
             else:
+                # print(code_emb.unsqueeze(0).expand(rewrite_embs.size(0), -1))
+                # print(rewrite_embs)
+                # exit()
                 sim_scores = torch.nn.functional.cosine_similarity(
                     code_emb.unsqueeze(0).expand(rewrite_embs.size(0), -1),
                     rewrite_embs, dim=1

@@ -88,8 +88,7 @@ def scoring_process(strategy='simcse', data=[]):
         avg_score = np.mean(sim_scores)
         scores.append(avg_score)
         
-        # if item['id'] > 10:
-        #     break
+        # if item['id'] > 10: break
 
     # Convert lists to numpy arrays for compatibility
     labels = np.array(labels)
