@@ -10,7 +10,6 @@ from scipy.spatial.distance import cosine
 import tiktoken
 enc = tiktoken.encoding_for_model("gpt-4")
 import os
-from openai import OpenAI
 import json
 import numpy as np
 from sklearn.metrics import roc_curve, auc, accuracy_score, precision_score, recall_score
@@ -19,7 +18,6 @@ from tqdm import tqdm  # Import tqdm for the progress bar
 import pandas as pd
 import logging
 import argparse
-
 
 
 from transformers import AutoModel, AutoTokenizer
